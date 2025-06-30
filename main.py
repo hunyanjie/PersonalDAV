@@ -316,7 +316,26 @@ class Database:
     def add_event(self, ical_data):
         with self._lock:
             # try:
-            ical = vobject.readOne(ical_data)
+            # 预处理日期格式 - 确保 DTSTART 和 DTEND 使用正确格式
+            def fix_date_format(match):
+                prefix = match.group(1)
+                date_str = match.group(2)
+                # 移除连字符并转换为 YYYYMMDD 格式
+                return prefix + date_str.replace("-", "")
+
+            # 修复 DTSTART 和 DTEND 格式
+            fixed_ical_data = ical_data
+            # 处理日期格式 (YYYY-MM-DD)
+            fixed_ical_data = re.sub(r'(DTSTART[^:]*:\s*)(\d{4}-\d{2}-\d{2})', fix_date_format, fixed_ical_data)
+            fixed_ical_data = re.sub(r'(DTEND[^:]*:\s*)(\d{4}-\d{2}-\d{2})', fix_date_format, fixed_ical_data)
+            # 处理日期时间格式 (YYYY-MM-DDTHH:MM:SS)
+            fixed_ical_data = re.sub(r'(DTSTART[^:]*:\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', fix_date_format,
+                                     fixed_ical_data)
+            fixed_ical_data = re.sub(r'(DTEND[^:]*:\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', fix_date_format,
+                                     fixed_ical_data)
+
+            # 尝试解析 iCalendar 数据
+            ical = vobject.readOne(fixed_ical_data)
             uid = ical.vevent.uid.value
             summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
             dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
@@ -331,17 +350,17 @@ class Database:
             operation = "inserted"
             if existing:
                 # 检查内容是否相同
-                if existing[0] == ical_data:
+                if existing[0] == fixed_ical_data:
                     operation = "unchanged"
                 else:
                     operation = "updated"
 
-            # 执行数据库操作
+            # 执行数据库操作 - 保存修复后的数据
             if operation != "unchanged":
                 c.execute('''INSERT OR REPLACE INTO events 
-                                 (uid, summary, dtstart, dtend, ical) 
-                                 VALUES (?, ?, ?, ?, ?)''',
-                          (uid, summary, str(dtstart), str(dtend), ical_data))
+                                     (uid, summary, dtstart, dtend, ical) 
+                                     VALUES (?, ?, ?, ?, ?)''',
+                          (uid, summary, str(dtstart), str(dtend), fixed_ical_data))
                 self.conn.commit()
 
             return uid, operation
@@ -3097,17 +3116,14 @@ class EventDialog:
         status = self.STATUS_MAPPING.get(status_zh, "CONFIRMED")
         event.add('status').value = status
 
-        # 设置开始和结束时间
-        start_date_str = self.start_date.get_date()
-        end_date_str = self.end_date.get_date()
+        # 获取开始和结束日期对象
+        start_date_obj = self.start_date.get_date()
+        end_date_obj = self.end_date.get_date()
 
-        # 修复日期格式问题 - 使用正确的 iCalendar 格式
         if self.allday_var.get():
-            # 全天事件 - 使用日期对象 (YYYYMMDD 格式)
-            start_date_fixed = start_date_str.replace("-", "")
-            end_date_fixed = end_date_str.replace("-", "")
-            event.add('dtstart').value = start_date_fixed
-            event.add('dtend').value = end_date_fixed
+            # 全天事件 - 使用字符串格式 (YYYYMMDD)
+            event.add('dtstart').value = start_date_obj.strftime("%Y%m%d")
+            event.add('dtend').value = end_date_obj.strftime("%Y%m%d")
         else:
             # 带时间的事件
             start_hour = self.start_hour.get()
@@ -3131,19 +3147,20 @@ class EventDialog:
                 end_tz_str = "UTC"
 
             # 创建带时区的 datetime 对象
-            start_time = datetime.strptime(
-                f"{start_date_str} {start_hour}:{start_minute}",
-                "%Y-%m-%d %H:%M"
-            ).replace(tzinfo=pytz.timezone(start_tz_str))
+            start_time = datetime(
+                start_date_obj.year, start_date_obj.month, start_date_obj.day,
+                int(start_hour), int(start_minute), 0,
+                tzinfo=pytz.timezone(start_tz_str)
+            )
 
-            end_time = datetime.strptime(
-                f"{end_date_str} {end_hour}:{end_minute}",
-                "%Y-%m-%d %H:%M"
-            ).replace(tzinfo=pytz.timezone(end_tz_str))
+            end_time = datetime(
+                end_date_obj.year, end_date_obj.month, end_date_obj.day,
+                int(end_hour), int(end_minute), 0,
+                tzinfo=pytz.timezone(end_tz_str))
 
-            # 设置带时区的开始和结束时间 (使用正确的格式)
-            event.add('dtstart').value = start_time.strftime("%Y%m%dT%H%M%S")
-            event.add('dtend').value = end_time.strftime("%Y%m%dT%H%M%S")
+            # 设置带时区的开始和结束时间 - 使用 datetime 对象
+            event.add('dtstart').value = start_time
+            event.add('dtend').value = end_time
 
         # 设置重复规则
         repeat_option = self.repeat_var.get()
