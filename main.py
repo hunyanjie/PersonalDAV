@@ -316,30 +316,9 @@ class Database:
     def add_event(self, ical_data):
         with self._lock:
             # try:
-            # 预处理日期格式 - 确保 DTSTART 和 DTEND 使用正确格式
-            def fix_date_format(match):
-                prefix = match.group(1)
-                date_str = match.group(2)
-                # 移除连字符并转换为 YYYYMMDD 格式
-                return prefix + date_str.replace("-", "")
-
-            # 修复 DTSTART 和 DTEND 格式
-            fixed_ical_data = ical_data
-            # 处理日期格式 (YYYY-MM-DD)
-            fixed_ical_data = re.sub(r'(DTSTART[^:]*:\s*)(\d{4}-\d{2}-\d{2})', fix_date_format, fixed_ical_data)
-            fixed_ical_data = re.sub(r'(DTEND[^:]*:\s*)(\d{4}-\d{2}-\d{2})', fix_date_format, fixed_ical_data)
-            # 处理日期时间格式 (YYYY-MM-DDTHH:MM:SS)
-            fixed_ical_data = re.sub(r'(DTSTART[^:]*:\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', fix_date_format,
-                                     fixed_ical_data)
-            fixed_ical_data = re.sub(r'(DTEND[^:]*:\s*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', fix_date_format,
-                                     fixed_ical_data)
-
-            # 尝试解析 iCalendar 数据
-            ical = vobject.readOne(fixed_ical_data)
-            uid = ical.vevent.uid.value
-            summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
-            dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
-            dtend = ical.vevent.dtend.value if hasattr(ical.vevent, 'dtend') else ""
+            # 直接提取UID
+            uid_match = re.search(r'UID:(.*?)\n', ical_data)
+            uid = uid_match.group(1).strip() if uid_match else str(uuid.uuid4())
 
             # 检查事件是否已存在
             c = self.conn.cursor()
@@ -350,23 +329,36 @@ class Database:
             operation = "inserted"
             if existing:
                 # 检查内容是否相同
-                if existing[0] == fixed_ical_data:
+                if existing[0] == ical_data:
                     operation = "unchanged"
                 else:
                     operation = "updated"
 
-            # 执行数据库操作 - 保存修复后的数据
+            # 执行数据库操作 - 保存原始数据
             if operation != "unchanged":
+                # 提取摘要用于显示
+                summary_match = re.search(r'SUMMARY:(.*?)\n', ical_data)
+                summary = summary_match.group(1).strip() if summary_match else ""
+
+                # 提取开始时间
+                dtstart_match = re.search(r'DTSTART(?:;.*?)?:(.*?)\n', ical_data)
+                dtstart = dtstart_match.group(1).strip() if dtstart_match else ""
+
+                # 提取结束时间
+                dtend_match = re.search(r'DTEND(?:;.*?)?:(.*?)\n', ical_data)
+                dtend = dtend_match.group(1).strip() if dtend_match else ""
+
                 c.execute('''INSERT OR REPLACE INTO events 
-                                     (uid, summary, dtstart, dtend, ical) 
-                                     VALUES (?, ?, ?, ?, ?)''',
-                          (uid, summary, str(dtstart), str(dtend), fixed_ical_data))
+                                (uid, summary, dtstart, dtend, ical) 
+                                VALUES (?, ?, ?, ?, ?)''',
+                          (uid, summary, dtstart, dtend, ical_data))
                 self.conn.commit()
 
             return uid, operation
         # except Exception as e:
         #     self.conn.rollback()
         #     logger.error(f"添加事件失败: {str(e)}")
+        #     traceback.print_exc()
         #     return None, f"Error: {str(e)}"
 
     def get_event(self, uid):
@@ -1612,30 +1604,14 @@ END:VCARD"""
     def add_event(self):
         dialog = EventDialog(self.root)
         if dialog.result:
-            # try:
-            ical = f"""BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//MyDAVServer//EN
-BEGIN:VEVENT
-UID:{dialog.result['uid']}
-DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}
-SUMMARY:{dialog.result['summary']}
-DTSTART:{dialog.result['start']}
-DTEND:{dialog.result['end']}
-LOCATION:{dialog.result.get('location', '')}
-DESCRIPTION:{dialog.result.get('description', '')}
-END:VEVENT
-END:VCALENDAR"""
+            # 直接获取对话框生成的原始iCalendar数据
+            ical = dialog.get_raw_ical()
+
+            # 保存到数据库
             uid, operation = self.db.add_event(ical)
             if uid:
                 self.refresh_events()
                 self.log_message(f"添加事件: {dialog.result['summary']} ({operation})")
-            else:
-                # messagebox.showerror("错误", f"添加事件失败: {operation}")
-                pass
-        # except Exception as e:
-        #     messagebox.showerror("错误", f"添加事件失败: {str(e)}")
-        #     logger.error(f"添加事件失败: {str(e)}")
 
     def edit_event(self):
         selected = self.events_tree.selection()
@@ -1675,29 +1651,14 @@ END:VCALENDAR"""
         })
 
         if dialog.result:
-            # try:
-            ical = f"""BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//MyDAVServer//EN
-BEGIN:VEVENT
-UID:{dialog.result['uid']}
-DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}
-SUMMARY:{dialog.result['summary']}
-DTSTART:{dialog.result['start']}
-DTEND:{dialog.result['end']}
-LOCATION:{dialog.result.get('location', '')}
-DESCRIPTION:{dialog.result.get('description', '')}
-END:VEVENT
-END:VCALENDAR"""
+            # 直接获取对话框生成的原始iCalendar数据
+            ical = dialog.get_raw_ical()
+
+            # 保存到数据库
             uid, operation = self.db.add_event(ical)
             if uid:
                 self.refresh_events()
                 self.log_message(f"更新事件: {dialog.result['summary']} ({operation})")
-            else:
-                messagebox.showerror("错误", f"更新事件失败: {operation}")
-        # except Exception as e:
-        #     messagebox.showerror("错误", f"更新事件失败: {str(e)}")
-        #     logger.error(f"更新事件失败: {str(e)}")
 
     def delete_event(self):
         selected = self.events_tree.selection()
@@ -2032,6 +1993,7 @@ class EventDialog:
         self.alarms = []
         self.repeat_days = []  # 存储重复的星期几
         self.end_count_var = tk.StringVar(value="5")  # 默认重复5次
+        self.raw_ical = None
 
         # 配置根窗口的网格权重
         self.root.grid_rowconfigure(0, weight=1)
@@ -2440,6 +2402,7 @@ class EventDialog:
                     self.end_timezone_var.set(tz_display)
                     break
         # 如果有初始数据，填充表单
+        print(self.initial)
         if self.initial:
             self.uid_var.set(self.initial.get('uid', f"event-{uuid.uuid4().hex}"))
             self.summary_var.set(self.initial.get('summary', ''))
@@ -2458,7 +2421,7 @@ class EventDialog:
 
             # 设置时间
             if 'start' in self.initial:
-                try:
+                # try:
                     if self.initial['start']:
                         start_dt = parser.parse(self.initial['start'])
                         self.start_date.set_date(start_dt.strftime("%Y-%m-%d"))
@@ -2470,14 +2433,17 @@ class EventDialog:
                             tz_name = start_dt.tzinfo.tzname(start_dt)
                             # 在列表中找到匹配项（使用括号内的部分）
                             for option in self.start_timezone_combo['values']:
+                                print(f"{option=}")
+                                print(f"{option.split('(')[-1]=}")
+                                print(f"{tz_name=}")
                                 if tz_name in option.split('(')[-1]:
                                     self.start_timezone_var.set(option)
                                     break
-                except Exception as e:
-                    logger.error(f"解析开始时间错误: {str(e)}")
+            # except Exception as e:
+            #     logger.error(f"解析开始时间错误: {str(e)}")
 
             if 'end' in self.initial:
-                try:
+                # try:
                     # 确保有结束时间值
                     if self.initial['end']:
                         end_dt = parser.parse(self.initial['end'])
@@ -2493,12 +2459,12 @@ class EventDialog:
                                 if tz_name in option:
                                     self.end_timezone_var.set(option)
                                     break
-                except Exception as e:
-                    logger.error(f"解析结束时间错误: {str(e)}")
-                    end_time = datetime.now() + timedelta(hours=1)
-                    self.end_date.set_date(end_time.strftime("%Y-%m-%d"))
-                    self.end_hour.set(end_time.strftime("%H"))
-                    self.end_minute.set(end_time.strftime("%M"))
+            # except Exception as e:
+            #     logger.error(f"解析结束时间错误: {str(e)}")
+            #     end_time = datetime.now() + timedelta(hours=1)
+            #     self.end_date.set_date(end_time.strftime("%Y-%m-%d"))
+            #     self.end_hour.set(end_time.strftime("%H"))
+            #     self.end_minute.set(end_time.strftime("%M"))
 
             # 设置重复规则和结束条件
             self.repeat_var.set(self.initial.get('repeat', '不重复'))
@@ -3150,8 +3116,7 @@ class EventDialog:
             start_time = datetime(
                 start_date_obj.year, start_date_obj.month, start_date_obj.day,
                 int(start_hour), int(start_minute), 0,
-                tzinfo=pytz.timezone(start_tz_str)
-            )
+                tzinfo=pytz.timezone(start_tz_str))
 
             end_time = datetime(
                 end_date_obj.year, end_date_obj.month, end_date_obj.day,
@@ -3161,6 +3126,12 @@ class EventDialog:
             # 设置带时区的开始和结束时间 - 使用 datetime 对象
             event.add('dtstart').value = start_time
             event.add('dtend').value = end_time
+
+            # 添加时区信息
+            if start_tz_str != "UTC":
+                event.dtstart.params['TZID'] = [start_tz_str]
+            if end_tz_str != "UTC":
+                event.dtend.params['TZID'] = [end_tz_str]
 
         # 设置重复规则
         repeat_option = self.repeat_var.get()
@@ -3264,6 +3235,10 @@ class EventDialog:
 
         return ""
 
+    def get_raw_ical(self):
+        """获取生成的原始iCalendar数据"""
+        return self.raw_ical
+
     def save(self):
         """保存事件但不关闭窗口"""
         ical = self.generate_ical()
@@ -3275,15 +3250,15 @@ class EventDialog:
 
     def ok(self):
         """保存并关闭窗口"""
-        if self.save():
-            self.result = {
-                'ical': self.generate_ical(),
-                'uid': self.uid_var.get(),
-                'summary': self.summary_var.get(),
-                'start': self.start_date.get_date(),
-                'end': self.end_date.get_date()
-            }
-            self.root.destroy()
+        # 在关闭窗口前生成iCalendar数据
+        self.raw_ical = self.generate_ical()
+        self.result = {
+            'uid': self.uid_var.get(),
+            'summary': self.summary_var.get(),
+            'start': self.start_date.get_date(),
+            'end': self.end_date.get_date()
+        }
+        self.root.destroy()
 
     def cancel(self):
         self.result = None
