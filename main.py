@@ -2906,15 +2906,43 @@ class EventDialog:
 
     def get_local_timezone_str(self):
         """获取本地时区的字符串表示（带偏移量）"""
-        local_tz = datetime.now().astimezone().tzinfo
-        now = datetime.utcnow()
-        offset = local_tz.utcoffset(now)
-        total_seconds = offset.total_seconds()
-        hours = int(total_seconds // 3600)
-        minutes = int((total_seconds % 3600) // 60)
-        sign = '+' if hours >= 0 else '-'
-        offset_str = f"UTC{sign}{abs(hours):02d}:{minutes:02d}"
-        return f"{offset_str} - {local_tz}"
+        try:
+            # 获取本地时区ID
+            local_tz_id = self.get_local_timezone_id()
+            local_tz = pytz.timezone(local_tz_id)
+
+            # 获取当前时间并计算偏移量
+            now = datetime.now(local_tz)
+            offset = now.utcoffset()
+            total_seconds = offset.total_seconds()
+            hours = int(total_seconds // 3600)
+            minutes = int((total_seconds % 3600) // 60)
+            sign = '+' if hours >= 0 else '-'
+            offset_str = f"UTC{sign}{abs(hours):02d}:{minutes:02d}"
+
+            # 获取城市名
+            if '/' in local_tz_id:
+                parts = local_tz_id.split('/')
+                city_name = parts[-1].replace('_', ' ')
+            else:
+                city_name = local_tz_id
+
+            # 获取本地化的时区名称
+            try:
+                localized_name = get_timezone_name(local_tz_id, locale='zh_CN')
+            except:
+                localized_name = local_tz_id
+
+            # 构建显示字符串
+            display = f"{offset_str} - {city_name} ({local_tz_id}) {localized_name}"
+
+            # 标记本地时区
+            display += " [本地]"
+
+            return display
+        except Exception as e:
+            logger.error(f"获取本地时区显示字符串失败: {str(e)}")
+            return "UTC+00:00 - UTC (UTC) 协调世界时 [本地]"
 
     def toggle_timezone_sync(self):
         """切换时区同步状态"""
