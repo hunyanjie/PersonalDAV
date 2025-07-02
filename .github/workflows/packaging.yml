@@ -1,0 +1,47 @@
+name: Package Python Application
+
+on:
+  push:
+    branches:
+      - master
+  # 如果需要，也可以在拉取请求时触发
+  # pull_request:
+  #   branches:
+  #     - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'  # 根据需要指定Python版本
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Install PyInstaller
+        run: |
+          pip install pyinstaller
+
+      - name: Package main.py
+        run: |
+          pyinstaller --onefile --clean main.py
+
+      - name: Upload package as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-executable
+          path: dist/
