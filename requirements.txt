@@ -1,0 +1,9 @@
+# PersonalDAV - 依赖库
+vobject
+pytz
+requests
+python-dateutil
+tzlocal
+Babel
+tkcalendar
+tkinterdnd2

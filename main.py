@@ -2951,25 +2951,6 @@ class EventDialog:
 
         dialog.destroy()
 
-    def update_end_condition_custom(self, dialog):
-        """更新自定义对话框中的结束条件输入"""
-        # 清除现有控件
-        for widget in self.end_input_custom_frame.winfo_children():
-            widget.destroy()
-
-        end_cond = self.end_cond_custom_var.get()
-
-        if end_cond == "按日期结束":
-            ttk.Label(self.end_input_custom_frame, text="结束日期:").grid(row=0, column=0, padx=(0, 5))
-            self.end_date_custom = DateEntry(self.end_input_custom_frame, date_pattern='yyyy-mm-dd', width=12)
-            self.end_date_custom.grid(row=0, column=1)
-        elif end_cond == "按次数结束":
-            ttk.Label(self.end_input_custom_frame, text="重复次数:").grid(row=0, column=0, padx=(0, 5))
-            self.end_count_custom_var = tk.StringVar(value="5")
-            ttk.Entry(self.end_input_custom_frame, textvariable=self.end_count_custom_var, width=5).grid(row=0,
-                                                                                                         column=1)
-            ttk.Label(self.end_input_custom_frame, text="次").grid(row=0, column=2, padx=(5, 0))
-
     def get_local_timezone_id(self):
         """获取本地时区对应的 pytz 时区 ID"""
         try:
