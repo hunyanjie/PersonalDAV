@@ -1,42 +1,39 @@
-name: Build EXE
+name: Package Python application to EXE
 
 on:
   push:
-    branches: [ "master" ]
-  # 如果需要，也可以添加 pull_request 触发条件
-  # pull_request:
-  #   branches: [ "master" ]
+    branches:
+      - master
+
+permissions:
+  contents: read
 
 jobs:
-  build-exe:
-    runs-on: windows-latest  # 使用Windows运行器，因为我们要打包成exe
+  build:
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"  # 根据需要指定Python版本
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if exist requirements.txt (
-            pip install -r requirements.txt
-          )
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if exist requirements.txt (pip install -r requirements.txt)
 
-      - name: Install pyinstaller
-        run: |
-          pip install pyinstaller
+    - name: Install PyInstaller
+      run: pip install pyinstaller
 
-      - name: Build EXE
-        run: |
-          pyinstaller --onefile --clean main.py
+    - name: Package main.py to EXE
+      run: pyinstaller --onefile --clean main.py
 
-      - name: Upload EXE as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: main-exe
-          path: dist/main.exe
+    - name: Upload EXE file as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: main.exe
+        path: dist/main.exe
