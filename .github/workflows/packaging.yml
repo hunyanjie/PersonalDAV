@@ -32,7 +32,7 @@ jobs:
     - name: Package main.py to EXE with commit hash
       run: |
         $commitHash = "${{ github.sha }}".Substring(0, 7)
-        pyinstaller -F -w --onefile --clean --name "main-$commitHash" main.py
+        pyinstaller --onefile --clean -F -w --name "main-$commitHash" main.py
 
     - name: Upload EXE file as artifact
       uses: actions/upload-artifact@v4
