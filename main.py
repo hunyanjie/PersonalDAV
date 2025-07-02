@@ -4,7 +4,6 @@ import logging
 import os
 import queue
 import quopri
-import re
 import sqlite3
 import threading
 import time
@@ -316,9 +315,11 @@ class Database:
     def add_event(self, ical_data):
         with self._lock:
             # try:
-            # 直接提取UID
-            uid_match = re.search(r'UID:(.*?)\n', ical_data)
-            uid = uid_match.group(1).strip() if uid_match else str(uuid.uuid4())
+            ical = vobject.readOne(ical_data)
+            uid = ical.vevent.uid.value
+            summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
+            dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
+            dtend = ical.vevent.dtend.value if hasattr(ical.vevent, 'dtend') else ""
 
             # 检查事件是否已存在
             c = self.conn.cursor()
@@ -336,18 +337,6 @@ class Database:
 
             # 执行数据库操作 - 保存原始数据
             if operation != "unchanged":
-                # 提取摘要用于显示
-                summary_match = re.search(r'SUMMARY:(.*?)\n', ical_data)
-                summary = summary_match.group(1).strip() if summary_match else ""
-
-                # 提取开始时间
-                dtstart_match = re.search(r'DTSTART(?:;.*?)?:(.*?)\n', ical_data)
-                dtstart = dtstart_match.group(1).strip() if dtstart_match else ""
-
-                # 提取结束时间
-                dtend_match = re.search(r'DTEND(?:;.*?)?:(.*?)\n', ical_data)
-                dtend = dtend_match.group(1).strip() if dtend_match else ""
-
                 c.execute('''INSERT OR REPLACE INTO events 
                                 (uid, summary, dtstart, dtend, ical) 
                                 VALUES (?, ?, ?, ?, ?)''',
@@ -1619,36 +1608,142 @@ END:VCARD"""
             messagebox.showinfo("提示", "请先选择一个事件")
             return
 
-        # 只编辑第一个选中的事件（双击或单个选择）
+        # 只编辑第一个选中的事件
         item = self.events_tree.item(selected[0])
-        # 确保所有值都是字符串
         values = [str(v) if v is not None else "" for v in item['values']]
-        uid, summary, start, end = values
+        uid, _, _, _ = values  # 只使用UID，其他字段从原始数据获取
 
         # 从数据库获取完整事件数据
         event_data = self.db.get_event(uid)
-        location = ""
-        description = ""
+        if not event_data:
+            messagebox.showerror("错误", "无法获取事件详情")
+            return
 
-        if event_data:
-            try:
-                ical = vobject.readOne(event_data)
-                vevent = ical.vevent
+        # 解析iCalendar数据
+        try:
+            ical = vobject.readOne(event_data)
+            vevent = ical.vevent
 
-                location = vevent.location.value if hasattr(vevent, 'location') else ""
-                description = vevent.description.value if hasattr(vevent, 'description') else ""
-            except Exception as e:
-                self.log_message(f"解析事件错误: {str(e)}")
-                logger.error(f"解析事件错误: {str(e)}")
+            # 准备初始数据
+            initial = {
+                'uid': uid,
+                'summary': self.decode_text(vevent.summary.value) if hasattr(vevent, 'summary') else "",
+                'location': self.decode_text(vevent.location.value) if hasattr(vevent, 'location') else "",
+                'description': self.decode_text(vevent.description.value) if hasattr(vevent, 'description') else "",
+                'status': vevent.status.value if hasattr(vevent, 'status') else "CONFIRMED",
+                'version': ical.version.value if hasattr(ical, 'version') else "2.0",
+                'allday': False,
+                'force_reminder': False,
+                'categories': "",
+                'priority': "5",
+                'transparency': "OPAQUE",
+                'sequence': "0",
+                'url': "",
+                'organizer': "",
+                'attendees': [],
+                'alarms': [],
+                'rrule': ""
+            }
 
-        dialog = EventDialog(self.root, initial={
-            'uid': uid,
-            'summary': summary,
-            'start': start,
-            'end': end,
-            'location': location,
-            'description': description
-        })
+            # 处理日期时间
+            if hasattr(vevent, 'dtstart'):
+                dtstart = vevent.dtstart.value
+                if isinstance(dtstart, datetime):
+                    initial['start'] = dtstart.isoformat()
+                    initial['allday'] = False
+                else:  # 全天事件
+                    initial['start'] = dtstart.strftime("%Y-%m-%d")
+                    initial['allday'] = True
+
+            if hasattr(vevent, 'dtend'):
+                dtend = vevent.dtend.value
+                if isinstance(dtend, datetime):
+                    initial['end'] = dtend.isoformat()
+                else:
+                    initial['end'] = dtend.strftime("%Y-%m-%d")
+
+            # 处理重复规则
+            if hasattr(vevent, 'rrule'):
+                rrule = vevent.rrule.value
+                initial['rrule'] = rrule
+
+                # 解析重复规则
+                if 'FREQ=DAILY' in rrule:
+                    initial['repeat'] = '每天'
+                elif 'FREQ=WEEKLY' in rrule:
+                    if 'INTERVAL=2' in rrule:
+                        initial['repeat'] = '每两周'
+                    else:
+                        initial['repeat'] = '每周'
+                elif 'FREQ=MONTHLY' in rrule:
+                    initial['repeat'] = '每月'
+                elif 'FREQ=YEARLY' in rrule:
+                    initial['repeat'] = '每年'
+                else:
+                    initial['repeat'] = '自定义'
+
+                # 解析结束条件
+                if 'UNTIL=' in rrule:
+                    initial['end_cond'] = '按日期结束'
+                    try:
+                        until_str = rrule.split('UNTIL=')[1].split(';')[0]
+                        until_date = parser.parse(until_str).strftime("%Y-%m-%d")
+                        initial['end_date'] = until_date
+                    except:
+                        pass
+                elif 'COUNT=' in rrule:
+                    initial['end_cond'] = '按次数结束'
+                    try:
+                        count = rrule.split('COUNT=')[1].split(';')[0]
+                        initial['end_count'] = count
+                    except:
+                        pass
+
+            # 处理提醒 - 解析所有VALARM组件
+            initial['alarms'] = []
+            for component in vevent.getChildren():
+                if component.name == 'VALARM':
+                    alarm = {
+                        'action': component.action.value if hasattr(component, 'action') else "DISPLAY",
+                        'trigger': component.trigger.value if hasattr(component, 'trigger') else "-PT15M"
+                    }
+
+                    # 解析特定类型的提醒属性
+                    if hasattr(component, 'description'):
+                        alarm['description'] = self.decode_text(component.description.value)
+                    if hasattr(component, 'attach'):
+                        alarm['attach'] = component.attach.value
+                    if hasattr(component, 'attendee'):
+                        alarm['attendee'] = component.attendee.value
+                    if hasattr(component, 'summary'):
+                        alarm['summary'] = self.decode_text(component.summary.value)
+
+                    initial['alarms'].append(alarm)
+
+            # 处理其他字段
+            if hasattr(vevent, 'categories'):
+                initial['categories'] = self.decode_text(vevent.categories.value)
+            if hasattr(vevent, 'priority'):
+                initial['priority'] = vevent.priority.value
+            if hasattr(vevent, 'transp'):
+                initial['transparency'] = vevent.transp.value
+            if hasattr(vevent, 'sequence'):
+                initial['sequence'] = vevent.sequence.value
+            if hasattr(vevent, 'url'):
+                initial['url'] = vevent.url.value
+            if hasattr(vevent, 'organizer'):
+                initial['organizer'] = vevent.organizer.value
+            if hasattr(vevent, 'attendee'):
+                initial['attendees'] = [self.decode_text(att.value) for att in vevent.attendee_list]
+
+        except Exception as e:
+            logger.error(f"解析事件错误: {str(e)}")
+            traceback.print_exc()
+            messagebox.showerror("错误", f"解析事件失败: {str(e)}")
+            return
+
+        # 创建对话框
+        dialog = EventDialog(self.root, initial=initial)
 
         if dialog.result:
             # 直接获取对话框生成的原始iCalendar数据
@@ -1659,6 +1754,25 @@ END:VCARD"""
             if uid:
                 self.refresh_events()
                 self.log_message(f"更新事件: {dialog.result['summary']} ({operation})")
+
+    def decode_text(self, text):
+        """解码QUOTED-PRINTABLE编码的文本"""
+        if not text:
+            return ""
+
+        # 检查是否包含QUOTED-PRINTABLE编码
+        if "ENCODING=QUOTED-PRINTABLE" in text:
+            try:
+                # 提取编码部分
+                encoded_part = text.split(":", 1)[1]
+                # 解码QUOTED-PRINTABLE
+                decoded_bytes = quopri.decodestring(encoded_part)
+                # 尝试UTF-8解码
+                return decoded_bytes.decode('utf-8')
+            except:
+                return text
+
+        return text
 
     def delete_event(self):
         selected = self.events_tree.selection()
@@ -2290,11 +2404,13 @@ class EventDialog:
         ttk.Label(frame, text="提醒类型:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.reminder_type_var = tk.StringVar(value="显示")
         reminder_types = ["显示", "声音", "邮件"]
-        ttk.Combobox(frame, textvariable=self.reminder_type_var, values=reminder_types, width=10,
-                     state="readonly").grid(
-            row=1, column=1, sticky="w", padx=5, pady=5)
+        self.reminder_type_combo = ttk.Combobox(frame, textvariable=self.reminder_type_var, values=reminder_types,
+                                                width=10,
+                                                state="readonly")
+        self.reminder_type_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.reminder_type_combo.bind("<<ComboboxSelected>>", self.on_reminder_type_change)
 
-        # 提醒时间
+        # 提前时间
         ttk.Label(frame, text="提前时间:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.reminder_time_frame = ttk.Frame(frame)
         self.reminder_time_frame.grid(row=2, column=1, sticky="w", padx=5, pady=5)
@@ -2302,12 +2418,12 @@ class EventDialog:
         self.reminder_days_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_time_frame, text="天:").grid(row=0, column=0, sticky="w")
         ttk.Spinbox(self.reminder_time_frame, from_=0, to=365, textvariable=self.reminder_days_var, width=3).grid(
-            row=0, column=1, padx=(5, 10))
+            row=0, column=1, padx=5)
 
         self.reminder_hours_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_time_frame, text="小时:").grid(row=0, column=2, sticky="w")
         ttk.Spinbox(self.reminder_time_frame, from_=0, to=23, textvariable=self.reminder_hours_var, width=3).grid(
-            row=0, column=3, padx=(5, 10))
+            row=0, column=3, padx=5)
 
         self.reminder_minutes_var = tk.StringVar(value="15")
         ttk.Label(self.reminder_time_frame, text="分钟:").grid(row=0, column=4, sticky="w")
@@ -2319,6 +2435,86 @@ class EventDialog:
         ttk.Checkbutton(frame, text="强制提醒", variable=self.force_reminder_var).grid(
             row=3, column=0, columnspan=2, sticky="w", padx=5, pady=10)
 
+        # 为不同类型提醒添加特定控件
+        self.audio_attach_var = tk.StringVar()
+        self.email_attendee_var = tk.StringVar()
+        self.email_summary_var = tk.StringVar()
+        self.email_attach_var = tk.StringVar()
+
+        self.display_frame = ttk.Frame(frame)
+        self.display_frame.grid(row=5, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.display_frame.grid_remove()  # 初始隐藏
+
+        self.audio_attach_frame = ttk.Frame(frame)
+        self.audio_attach_frame.grid(row=5, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.audio_attach_frame.grid_remove()  # 初始隐藏
+
+        self.email_frame = ttk.Frame(frame)
+        self.email_frame.grid(row=5, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.email_frame.grid_remove()  # 初始隐藏
+
+        ttk.Label(self.display_frame, text="提醒描述:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.display_description = tk.Text(self.display_frame, height=3, width=40)
+        self.display_description.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        display_scrollbar = ttk.Scrollbar(self.display_frame, command=self.display_description.yview)
+        display_scrollbar.grid(row=0, column=2, sticky="ns")
+        self.display_description.config(yscrollcommand=display_scrollbar.set)
+
+        ttk.Label(self.audio_attach_frame, text="音频文件地址:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40).grid(row=0, column=1,
+                                                                                              sticky="ew", padx=5,
+                                                                                              pady=5)
+
+        ttk.Label(self.email_frame, text="收件人邮箱:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40).grid(row=0, column=1, sticky="ew",
+                                                                                         padx=5, pady=5)
+
+        ttk.Label(self.email_frame, text="邮件主题:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40).grid(row=1, column=1, sticky="ew",
+                                                                                        padx=5, pady=5)
+        ttk.Label(self.email_frame, text="邮件正文:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.email_description = tk.Text(self.email_frame, height=3, width=40)
+        self.email_description.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
+        email_scrollbar = ttk.Scrollbar(self.email_frame, command=self.email_description.yview)
+        email_scrollbar.grid(row=2, column=2, sticky="ns")
+        self.display_description.config(yscrollcommand=email_scrollbar.set)
+
+        ttk.Label(self.email_frame, text="邮件附件:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40).grid(row=3, column=1, sticky="ew",
+                                                                                       padx=5, pady=5)
+
+        self.on_reminder_type_change()
+
+    def on_reminder_type_change(self, event=None):
+        reminder_type = self.reminder_type_var.get()
+        self.display_frame.grid_remove()
+        self.audio_attach_frame.grid_remove()
+        self.email_frame.grid_remove()
+
+        if reminder_type == "显示":
+            self.display_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        elif reminder_type == "声音":
+            self.audio_attach_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        elif reminder_type == "邮件":
+            self.email_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+    def update_reminder_listbox(self):
+        """更新提醒列表框的内容"""
+        self.reminder_listbox.delete(0, tk.END)
+        for alarm in self.alarms:
+            trigger = alarm['trigger']
+            action = alarm['action']
+
+            # 创建显示文本
+            display_text = f"{action} - {trigger}"
+            if alarm.get('description', False): display_text += f" - {alarm.get('description')}"
+            if alarm.get('attendee', False): display_text += f" - {alarm.get('attendee')}"
+            if alarm.get('summary', False): display_text += f" - {alarm.get('summary')}"
+            if alarm.get('description', False): display_text += f" - {alarm.get('description')}"
+            if alarm.get('attach', False): display_text += f" - {alarm.get('attach')}"
+
+            self.reminder_listbox.insert("end", display_text)
+
     def create_advanced_tab(self):
         frame = ttk.LabelFrame(self.advanced_frame, text="高级设置")
         frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -2327,7 +2523,7 @@ class EventDialog:
         frame.columnconfigure(1, weight=1)
 
         # 分类
-        ttk.Label(frame, text="分类:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(frame, text="日程分类:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.categories_var = tk.StringVar()
         ttk.Entry(frame, textvariable=self.categories_var, width=30).grid(
             row=0, column=1, sticky="we", padx=5, pady=5)
@@ -2383,26 +2579,12 @@ class EventDialog:
         # 获取本地时区 ID
         local_tz_id = self.get_local_timezone_id()
 
-        # 查找本地时区在列表中的显示字符串
-        local_tz_display = None
-        for tz_display in self.start_timezone_combo['values']:
-            if local_tz_id in tz_display:
-                local_tz_display = tz_display
-                break
-
         # 设置默认时区
-        if local_tz_display:
-            self.start_timezone_var.set(local_tz_display)
-            self.end_timezone_var.set(local_tz_display)
-        else:
-            # 如果找不到，使用 UTC
-            for tz_display in self.start_timezone_combo['values']:
-                if "UTC" in tz_display:
-                    self.start_timezone_var.set(tz_display)
-                    self.end_timezone_var.set(tz_display)
-                    break
+        local_tz_str = self.get_local_timezone_str()
+        self.start_timezone_var.set(local_tz_str)
+        self.end_timezone_var.set(local_tz_str)
+
         # 如果有初始数据，填充表单
-        print(self.initial)
         if self.initial:
             self.uid_var.set(self.initial.get('uid', f"event-{uuid.uuid4().hex}"))
             self.summary_var.set(self.initial.get('summary', ''))
@@ -2421,50 +2603,70 @@ class EventDialog:
 
             # 设置时间
             if 'start' in self.initial:
-                # try:
+                try:
                     if self.initial['start']:
-                        start_dt = parser.parse(self.initial['start'])
+                        # 解析日期时间字符串
+                        if isinstance(self.initial['start'], str):
+                            start_dt = parser.parse(self.initial['start'])
+                        else:
+                            start_dt = self.initial['start']
+
+                        # 设置日期和时间组件
                         self.start_date.set_date(start_dt.strftime("%Y-%m-%d"))
-                        self.start_hour.set(start_dt.strftime("%H"))
-                        self.start_minute.set(start_dt.strftime("%M"))
+
+                        if not self.initial.get('allday', False):
+                            self.start_hour.set(start_dt.strftime("%H"))
+                            self.start_minute.set(start_dt.strftime("%M"))
 
                         # 获取时区信息
-                        if start_dt.tzinfo:
+                        if hasattr(start_dt, 'tzinfo') and start_dt.tzinfo:
                             tz_name = start_dt.tzinfo.tzname(start_dt)
-                            # 在列表中找到匹配项（使用括号内的部分）
-                            for option in self.start_timezone_combo['values']:
-                                print(f"{option=}")
-                                print(f"{option.split('(')[-1]=}")
-                                print(f"{tz_name=}")
-                                if tz_name in option.split('(')[-1]:
-                                    self.start_timezone_var.set(option)
-                                    break
-            # except Exception as e:
-            #     logger.error(f"解析开始时间错误: {str(e)}")
+                            if tz_name:
+                                # 在列表中找到匹配项
+                                for option in self.start_timezone_combo['values']:
+                                    if tz_name in option:
+                                        self.start_timezone_var.set(option)
+                                        break
+                except Exception as e:
+                    logger.error(f"解析开始时间错误: {str(e)}")
+                    # 设置默认时间
+                    start_time = datetime.now()
+                    self.start_date.set_date(start_time.strftime("%Y-%m-%d"))
+                    self.start_hour.set(start_time.strftime("%H"))
+                    self.start_minute.set(start_time.strftime("%M"))
 
             if 'end' in self.initial:
-                # try:
-                    # 确保有结束时间值
+                try:
                     if self.initial['end']:
-                        end_dt = parser.parse(self.initial['end'])
+                        # 解析日期时间字符串
+                        if isinstance(self.initial['end'], str):
+                            end_dt = parser.parse(self.initial['end'])
+                        else:
+                            end_dt = self.initial['end']
+
+                        # 设置日期和时间组件
                         self.end_date.set_date(end_dt.strftime("%Y-%m-%d"))
-                        self.end_hour.set(end_dt.strftime("%H"))
-                        self.end_minute.set(end_dt.strftime("%M"))
+
+                        if not self.initial.get('allday', False):
+                            self.end_hour.set(end_dt.strftime("%H"))
+                            self.end_minute.set(end_dt.strftime("%M"))
 
                         # 获取时区信息
-                        if end_dt.tzinfo:
+                        if hasattr(end_dt, 'tzinfo') and end_dt.tzinfo:
                             tz_name = end_dt.tzinfo.tzname(end_dt)
-                            # 在列表中找到匹配项
-                            for option in self.end_timezone_combo['values']:
-                                if tz_name in option:
-                                    self.end_timezone_var.set(option)
-                                    break
-            # except Exception as e:
-            #     logger.error(f"解析结束时间错误: {str(e)}")
-            #     end_time = datetime.now() + timedelta(hours=1)
-            #     self.end_date.set_date(end_time.strftime("%Y-%m-%d"))
-            #     self.end_hour.set(end_time.strftime("%H"))
-            #     self.end_minute.set(end_time.strftime("%M"))
+                            if tz_name:
+                                # 在列表中找到匹配项
+                                for option in self.end_timezone_combo['values']:
+                                    if tz_name in option:
+                                        self.end_timezone_var.set(option)
+                                        break
+                except Exception as e:
+                    logger.error(f"解析结束时间错误: {str(e)}")
+                    # 设置默认时间
+                    end_time = datetime.now() + timedelta(hours=1)
+                    self.end_date.set_date(end_time.strftime("%Y-%m-%d"))
+                    self.end_hour.set(end_time.strftime("%H"))
+                    self.end_minute.set(end_time.strftime("%M"))
 
             # 设置重复规则和结束条件
             self.repeat_var.set(self.initial.get('repeat', '不重复'))
@@ -2479,47 +2681,12 @@ class EventDialog:
             if 'end_count' in self.initial:
                 self.end_count_var.set(str(self.initial['end_count']))
 
-            # 设置重复规则
-            rrule = self.initial.get('rrule', '')
-            if rrule:
-                # 简单解析重复规则
-                if 'FREQ=DAILY' in rrule:
-                    self.repeat_var.set('每天')
-                elif 'FREQ=WEEKLY' in rrule:
-                    if 'INTERVAL=2' in rrule:
-                        self.repeat_var.set('每两周')
-                    else:
-                        self.repeat_var.set('每周')
-                elif 'FREQ=MONTHLY' in rrule:
-                    self.repeat_var.set('每月')
-                elif 'FREQ=YEARLY' in rrule:
-                    self.repeat_var.set('每年')
-                else:
-                    self.repeat_var.set('自定义')
-                    self.custom_repeat_btn.config(state="normal")
-            else:
-                self.repeat_var.set('不重复')
-
-            # 设置结束条件
-            if 'UNTIL=' in rrule:
-                self.end_cond_var.set('按日期结束')
-                # 尝试解析结束日期
-                try:
-                    until_str = rrule.split('UNTIL=')[1].split(';')[0]
-                    until_date = parser.parse(until_str).strftime("%Y-%m-%d")
-                    self.end_date_entry.set_date(until_date)
-                except:
-                    pass
-            elif 'COUNT=' in rrule:
-                self.end_cond_var.set('按次数结束')
-                try:
-                    count = rrule.split('COUNT=')[1].split(';')[0]
-                    self.end_count_var.set(count)
-                except:
-                    pass
-
             # 提醒设置
             self.force_reminder_var.set(self.initial.get('force_reminder', False))
+
+            # 设置提醒列表
+            self.alarms = self.initial.get('alarms', [])
+            self.update_reminder_listbox()
 
             # 高级设置
             self.categories_var.set(self.initial.get('categories', ''))
@@ -2542,30 +2709,6 @@ class EventDialog:
 
             if 'attendees' in self.initial:
                 self.attendee_text.insert("1.0", "\n".join(self.initial['attendees']))
-
-            # 提醒列表
-            if 'alarms' in self.initial:
-                self.alarms = self.initial['alarms']
-                for alarm in self.alarms:
-                    trigger = alarm.get('trigger', '')
-                    action = alarm.get('action', 'DISPLAY')
-
-                    # 将英文类型转换为中文
-                    action_mapping = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
-                    action_zh = action_mapping.get(action, "显示")
-
-                    # 解析触发时间
-                    time_str = ""
-                    if trigger.startswith('-PT'):
-                        time_str = trigger[3:]  # 去掉 -PT
-                        if time_str.endswith('M'):
-                            time_str = time_str[:-1] + "分钟"
-                        elif time_str.endswith('H'):
-                            time_str = time_str[:-1] + "小时"
-                        elif time_str.endswith('D'):
-                            time_str = time_str[:-1] + "天"
-
-                    self.reminder_listbox.insert("end", f"{action_zh} - 提前{time_str}")
         else:
             # 设置默认值
             self.uid_var.set(f"event-{uuid.uuid4().hex}")
@@ -2581,12 +2724,6 @@ class EventDialog:
 
             self.status_var.set("已确认")
             self.transparency_var.set("忙碌")
-
-            # 设置默认时区
-            local_tz_str = self.get_local_timezone_str()
-            self.start_timezone_var.set(local_tz_str)
-            self.end_timezone_var.set(local_tz_str)
-            self.sync_timezone_var.set(True)
 
     def set_start_current_time(self):
         """设置开始时间为当前时间"""
@@ -2713,7 +2850,7 @@ class EventDialog:
         update_unit()  # 初始调用
 
         # 每周设置
-        week_frame = ttk.LabelFrame(main_frame, text="每周重复 (选择星期)")
+        week_frame = ttk.LabelFrame(main_frame, text="每周几重复 (选择星期)")
         week_frame.pack(fill="x", padx=5, pady=5)
 
         self.weekday_vars = []
@@ -2986,42 +3123,39 @@ class EventDialog:
 
     def add_reminder(self):
         """添加新的提醒"""
-        days = int(self.reminder_days_var.get() or 0)
-        hours = int(self.reminder_hours_var.get() or 0)
-        minutes = int(self.reminder_minutes_var.get() or 0)
+        days = - int(self.reminder_days_var.get())
+        hours = - int(self.reminder_hours_var.get())
+        minutes = - int(self.reminder_minutes_var.get())
+
+        # 创建触发时间（timedelta）
+        trigger = timedelta(days=days, hours=hours, minutes=minutes)
+
+        # 获取提醒类型
+        reminder_type = self.reminder_type_var.get()
 
         # 将中文类型转换为英文
-        action_zh = self.reminder_type_var.get()
         action_mapping = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}
-        action = action_mapping.get(action_zh, "DISPLAY")
+        action = action_mapping.get(reminder_type, "DISPLAY")
 
-        # 创建触发时间字符串 (ISO 8601格式)
-        trigger_parts = []
-        if days > 0:
-            trigger_parts.append(f"{days}D")
-        if hours > 0:
-            trigger_parts.append(f"{hours}H")
-        if minutes > 0:
-            trigger_parts.append(f"{minutes}M")
-
-        trigger_str = "PT" + "".join(trigger_parts)
-        trigger = f"-{trigger_str}"  # 负号表示提前
+        # 获取特定类型的额外信息
+        extra = {}
+        if reminder_type == "显示":
+            extra['description'] = self.display_description.get("1.0", "end").strip()
+        elif reminder_type == "声音":
+            extra['attach'] = self.audio_attach_var.get()
+        elif reminder_type == "邮件":
+            extra['attendee'] = self.email_attendee_var.get()
+            extra['summary'] = self.email_summary_var.get()
+            extra['description'] = self.email_description.get("1.0", "end").strip()
+            extra['attach'] = self.email_attach_var.get()
 
         # 添加到提醒列表
         alarm = {'action': action, 'trigger': trigger}
+        alarm.update(extra)
         self.alarms.append(alarm)
 
-        # 创建显示文本
-        time_parts = []
-        if days > 0:
-            time_parts.append(f"{days}天")
-        if hours > 0:
-            time_parts.append(f"{hours}小时")
-        if minutes > 0:
-            time_parts.append(f"{minutes}分钟")
-
-        display_time = "".join(time_parts) or "0分钟"
-        self.reminder_listbox.insert("end", f"{action_zh} - 提前{display_time}")
+        # 更新提醒列表框
+        self.update_reminder_listbox()
 
     def edit_reminder(self):
         """编辑选中的提醒"""
@@ -3035,26 +3169,39 @@ class EventDialog:
 
         # 解析触发时间
         trigger = alarm['trigger']
-        match = re.match(r"-PT(\d+)M", trigger)
-        if match:
-            total_minutes = int(match.group(1))
-            hours, minutes = divmod(total_minutes, 60)
-            days, hours = divmod(hours, 24)
+        if isinstance(trigger, timedelta):
+            days = trigger.days
+            hours, remainder = divmod(trigger.seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+        else:
+            days = 0
+            hours = 0
+            minutes = 15  # 默认值
 
-            self.reminder_days_var.set(str(days))
-            self.reminder_hours_var.set(str(hours))
-            self.reminder_minutes_var.set(str(minutes))
+        self.reminder_days_var.set(str(days))
+        self.reminder_hours_var.set(str(hours))
+        self.reminder_minutes_var.set(str(minutes))
 
         # 将英文类型转换为中文
         action_mapping = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
         action_zh = action_mapping.get(alarm['action'], "显示")
         self.reminder_type_var.set(action_zh)
 
-        # 删除原有提醒
-        self.delete_reminder()
+        # 设置特定类型的额外信息
+        if alarm['action'] == "DISPLAY":
+            self.display_description.delete("1.0", "end")
+            self.display_description.insert("1.0", alarm.get('description', ''))
+        elif alarm['action'] == "AUDIO":
+            self.audio_attach_var.set(alarm.get('attach', ''))
+        elif alarm['action'] == "EMAIL":
+            self.email_attendee_var.set(alarm.get('attendee', ''))
+            self.email_summary_var.set(alarm.get('summary', ''))
+            self.email_description.delete("1.0", "end")
+            self.email_description.insert("1.0", alarm.get('description', ''))
+            self.email_attach_var.set(alarm.get('attach', ''))
 
-        # 添加更新后的提醒
-        self.add_reminder()
+        # 更新提醒类型相关控件的状态
+        self.on_reminder_type_change()
 
     def delete_reminder(self):
         """删除选中的提醒"""
@@ -3116,8 +3263,10 @@ class EventDialog:
 
         if self.allday_var.get():
             # 全天事件 - 使用字符串格式 (YYYYMMDD)
-            event.add('dtstart').value = start_date_obj.strftime("%Y%m%d")
-            event.add('dtend').value = end_date_obj.strftime("%Y%m%d")
+            event.add('dtstart').value = start_date_obj
+            event.add('dtend').value = end_date_obj
+            # 设置特殊日历的全天事件标识符
+            event.add('X-ALLDAY').value = "1"
         else:
             # 带时间的事件
             start_hour = self.start_hour.get()
@@ -3176,8 +3325,26 @@ class EventDialog:
         for alarm in self.alarms:
             valarm = event.add('valarm')
             valarm.add('action').value = alarm['action']
-            valarm.add('trigger').value = alarm['trigger']
-            valarm.add('description').value = "提醒"
+
+            # 设置触发时间（timedelta）
+            valarm.add('trigger').value = alarm["trigger"]
+
+            # 添加其他提醒属性
+            if alarm['action'] == "DISPLAY":
+                if 'description' in alarm:
+                    valarm.add('description').value = alarm['description']
+            elif alarm['action'] == "AUDIO":
+                if 'attach' in alarm:
+                    valarm.add('attach').value = alarm['attach']
+            elif alarm['action'] == "EMAIL":
+                if 'attendee' in alarm:
+                    valarm.add('attendee').value = alarm['attendee']
+                if 'summary' in alarm:
+                    valarm.add('summary').value = alarm['summary']
+                if 'description' in alarm:
+                    valarm.add('description').value = alarm['description']
+                if 'attach' in alarm:
+                    valarm.add('attach').value = alarm['attach']
 
         # 设置高级属性
         categories = self.categories_var.get()
@@ -3214,22 +3381,21 @@ class EventDialog:
 
     def generate_rrule(self):
         """生成重复规则字符串"""
+        parts = []
         repeat_option = self.repeat_var.get()
 
         if repeat_option == "每天":
-            return "FREQ=DAILY"
+            parts.append("FREQ=DAILY")
         elif repeat_option == "每周":
-            return "FREQ=WEEKLY"
+            parts.append("FREQ=WEEKLY")
         elif repeat_option == "每两周":
-            return "FREQ=WEEKLY;INTERVAL=2"
+            parts.append("FREQ=WEEKLY;INTERVAL=2")
         elif repeat_option == "每月":
-            return "FREQ=MONTHLY"
+            parts.append("FREQ=MONTHLY")
         elif repeat_option == "每年":
-            return "FREQ=YEARLY"
+            parts.append("FREQ=YEARLY")
         elif repeat_option == "自定义":
             # 使用自定义设置生成规则
-            parts = []
-
             # 添加频率
             freq = self.custom_repeat_data.get('freq', 'WEEKLY')
             parts.append(f"FREQ={freq}")
@@ -3250,18 +3416,18 @@ class EventDialog:
                 bymonthday = self.custom_repeat_data.get('bymonthday', [])
                 if bymonthday:
                     parts.append(f"BYMONTHDAY={','.join(bymonthday)}")
+        else:
+            return ""
 
-            # 添加结束条件
-            if 'until' in self.custom_repeat_data:
-                until_date = self.custom_repeat_data['until']
-                parts.append(f"UNTIL={until_date}T000000Z")
-            elif 'count' in self.custom_repeat_data:
-                count = self.custom_repeat_data['count']
-                parts.append(f"COUNT={count}")
+        # 添加结束条件
+        if self.END_CONDITIONS.index(self.end_cond_var.get()) == 0:
+            pass
+        elif self.END_CONDITIONS.index(self.end_cond_var.get()) == 1:
+            parts.append(f"UNTIL={str(self.end_date_entry.get_date()).replace('-', '')}T000000Z")
+        elif self.END_CONDITIONS.index(self.end_cond_var.get()) == 2:
+            parts.append(f"COUNT={self.end_count_var.get()}")
 
-            return ";".join(parts)
-
-        return ""
+        return ";".join(parts)
 
     def get_raw_ical(self):
         """获取生成的原始iCalendar数据"""
