@@ -25,7 +25,7 @@ from tkinterdnd2 import TkinterDnD, DND_FILES
 from tzlocal import get_localzone
 
 # ======================
-# 配置日志
+# 配置日志和基础信息
 # ======================
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +37,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+software_name = "PrivateDAV"
+software_description = "私人 CardDAV/CalDAV 服务"
+software_version = "1.0"
 
 # ======================
 # 数据库管理
@@ -465,7 +468,9 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
 
                     # 生成包含所有事件的iCalendar集合
                     all_events = db.get_all_events()
-                    self.wfile.write("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//MyDAVServer//EN\n".encode('utf-8'))
+                    self.wfile.write(
+                        "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n".encode(
+                            'utf-8'))
                     for event in all_events:
                         # 去除每个事件的外部VCALENDAR标签
                         event_lines = event.splitlines()
@@ -481,9 +486,9 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
             # 根路径显示服务信息
             elif self.path == "/":
                 self.send_response(200)
-                self.send_header('Content-type', 'text/html')
+                self.send_header('Content-type', 'text/html; charset=utf-8')
                 self.end_headers()
-                self.wfile.write(b"<h1>Private CardDAV/CalDAV Service</h1>")
+                self.wfile.write(bytes(software_name + " v" + software_version + " - " + software_description, "utf-8"))
                 self.wfile.write(b"<p>CardDAV endpoint: <a href='/contacts/'>/contacts/</a></p>")
                 self.wfile.write(b"<p>CalDAV endpoint: <a href='/events/'>/events/</a></p>")
 
@@ -577,7 +582,7 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
 class DAVServerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("私人 CardDAV/CalDAV 服务")
+        self.root.title(software_name + " v" + software_version + " - " + software_description)
         self.root.geometry("1000x700")
 
         # 创建数据库实例
@@ -1070,7 +1075,8 @@ END:VCARD"""
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//MyDAVServer//EN\n")
+                f.write(
+                    "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "//ZH-CN\n")
                 for event in events:
                     # 去除每个事件的外部VCALENDAR标签
                     event_lines = event.splitlines()
@@ -2093,7 +2099,7 @@ class EventDialog:
     # 结束条件选项
     END_CONDITIONS = ["永不结束", "按日期结束", "按次数结束"]
 
-    def __init__(self, parent, initial=None, software_name="PrivateDAV", software_version="1.0"):
+    def __init__(self, parent, initial=None, software_name=software_name, software_version=software_version):
         self.root = tk.Toplevel(parent)
         self.root.title("添加/编辑日历事件")
         self.root.geometry("900x750")
@@ -3211,7 +3217,7 @@ class EventDialog:
         version = self.version_var.get()
         cal = vobject.iCalendar()
         cal.add('version').value = version
-        cal.add('prodid').value = f"-//{self.software_name}//{self.software_version}//EN"
+        cal.add('prodid').value = f"-//{self.software_name}//{self.software_version}//ZH-CN"
 
         # 创建事件
         event = cal.add('vevent')
