@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/PrivateCardDAVandCalDAVServer.iml" filepath="$PROJECT_DIR$/.idea/PrivateCardDAVandCalDAVServer.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/PersonalDAV.iml" filepath="$PROJECT_DIR$/.idea/PersonalDAV.iml" />
     </modules>
   </component>
 </project>
