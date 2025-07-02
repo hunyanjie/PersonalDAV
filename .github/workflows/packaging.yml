@@ -32,7 +32,14 @@ jobs:
     - name: Package main.py to EXE with commit hash
       run: |
         $commitHash = "${{ github.sha }}".Substring(0, 7)
-        pyinstaller --onefile --clean -F -w --name "main-$commitHash" main.py
+        $outputName = "main-$commitHash"
+        pyinstaller --onefile --clean -F -w --name $outputName main.py
+        echo "Output file name: $outputName"
+        echo "Output directory: $(Get-ChildItem -Path dist -Recurse)"
+
+    - name: List files in dist directory
+      run: |
+        Get-ChildItem -Path dist -Recurse
 
     - name: Upload EXE file as artifact
       uses: actions/upload-artifact@v4
