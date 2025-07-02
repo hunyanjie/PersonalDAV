@@ -29,11 +29,13 @@ jobs:
     - name: Install PyInstaller
       run: pip install pyinstaller
 
-    - name: Package main.py to EXE
-      run: pyinstaller -F -w --onefile --clean main.py
+    - name: Package main.py to EXE with commit hash
+      run: |
+        $commitHash = "${{ github.sha }}".Substring(0, 7)
+        pyinstaller -F -w --onefile --clean --name "main-$commitHash" main.py
 
     - name: Upload EXE file as artifact
       uses: actions/upload-artifact@v4
       with:
-        name: main.exe
-        path: dist/main.exe
+        name: main-$commitHash.exe
+        path: dist/main-$commitHash.exe
