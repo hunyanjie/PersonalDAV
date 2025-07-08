@@ -6,7 +6,6 @@ import queue
 import quopri
 import sqlite3
 import threading
-import time
 import tkinter as tk
 import traceback
 import uuid
@@ -24,22 +23,57 @@ from tkcalendar import DateEntry
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from tzlocal import get_localzone
 
+
 # ======================
 # 配置日志和基础信息
 # ======================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("dav_server.log"),
-        logging.StreamHandler()
-    ]
-)
+class GUIHandler(logging.Handler):
+    """自定义日志处理器，将日志发送到GUI"""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        # 设置格式化器 - 添加时间戳
+        self.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
+
+    def emit(self, record):
+        try:
+            # 使用格式化器格式化日志消息
+            formatted_message = self.format(record)
+
+            # 将格式化后的日志添加到队列
+            self.app.log_queue.put(formatted_message)
+        except Exception:
+            self.handleError(record)
+
+
+# 创建日志记录器
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 清除可能已有的处理器
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# 创建文件处理器
+file_handler = logging.FileHandler("dav_server.log", encoding='utf-8')
+file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
+
+# 创建控制台处理器
+console_handler = logging.StreamHandler()
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+# 添加到记录器
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 software_name = "PrivateDAV"
 software_description = "私人 CardDAV/CalDAV 服务"
-software_version = "1.0"
+software_version = "1.1"
+software_author = "hunyanjie"
+
 
 # ======================
 # 数据库管理
@@ -317,41 +351,41 @@ class Database:
 
     def add_event(self, ical_data):
         with self._lock:
-            # try:
-            ical = vobject.readOne(ical_data)
-            uid = ical.vevent.uid.value
-            summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
-            dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
-            dtend = ical.vevent.dtend.value if hasattr(ical.vevent, 'dtend') else ""
+            try:
+                ical = vobject.readOne(ical_data)
+                uid = ical.vevent.uid.value
+                summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
+                dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
+                dtend = ical.vevent.dtend.value if hasattr(ical.vevent, 'dtend') else ""
 
-            # 检查事件是否已存在
-            c = self.conn.cursor()
-            c.execute("SELECT ical FROM events WHERE uid=?", (uid,))
-            existing = c.fetchone()
+                # 检查事件是否已存在
+                c = self.conn.cursor()
+                c.execute("SELECT ical FROM events WHERE uid=?", (uid,))
+                existing = c.fetchone()
 
-            # 确定操作类型
-            operation = "inserted"
-            if existing:
-                # 检查内容是否相同
-                if existing[0] == ical_data:
-                    operation = "unchanged"
-                else:
-                    operation = "updated"
+                # 确定操作类型
+                operation = "inserted"
+                if existing:
+                    # 检查内容是否相同
+                    if existing[0] == ical_data:
+                        operation = "unchanged"
+                    else:
+                        operation = "updated"
 
-            # 执行数据库操作 - 保存原始数据
-            if operation != "unchanged":
-                c.execute('''INSERT OR REPLACE INTO events 
-                                (uid, summary, dtstart, dtend, ical) 
-                                VALUES (?, ?, ?, ?, ?)''',
-                          (uid, summary, dtstart, dtend, ical_data))
-                self.conn.commit()
+                # 执行数据库操作 - 保存原始数据
+                if operation != "unchanged":
+                    c.execute('''INSERT OR REPLACE INTO events 
+                                    (uid, summary, dtstart, dtend, ical) 
+                                    VALUES (?, ?, ?, ?, ?)''',
+                              (uid, summary, dtstart, dtend, ical_data))
+                    self.conn.commit()
 
-            return uid, operation
-        # except Exception as e:
-        #     self.conn.rollback()
-        #     logger.error(f"添加事件失败: {str(e)}")
-        #     traceback.print_exc()
-        #     return None, f"Error: {str(e)}"
+                return uid, operation
+            except Exception as e:
+                self.conn.rollback()
+                logger.error(f"添加事件失败: {str(e)}")
+                traceback.print_exc()
+                return None, f"Error: {str(e)}"
 
     def get_event(self, uid):
         with self._lock:
@@ -415,6 +449,8 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         db = Database()
         try:
+            self.log_message(f"处理GET请求: {self.path}")
+
             # 处理联系人请求
             if self.path.startswith("/contacts/"):
                 # 请求单个联系人
@@ -470,7 +506,7 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
                     all_events = db.get_all_events()
                     self.wfile.write(
                         (
-                                "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
+                                    "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
                             'utf-8')
                     )
                     for event in all_events:
@@ -500,12 +536,15 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"GET请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"PUT请求处理失败: {str(e)}")
 
     def do_PUT(self):
         db = Database()
         try:
+            self.log_message(f"处理PUT请求: {self.path}")
+
             content_length = int(self.headers['Content-Length'])
             data = self.rfile.read(content_length).decode('utf-8')
 
@@ -529,11 +568,14 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"PUT请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"PROPFIND请求处理失败: {str(e)}")
 
     def do_PROPFIND(self):
         try:
+            self.log_message(f"处理PROPFIND请求: {self.path}")
+
             # 简化版PROPFIND响应，仅返回200 OK
             self.send_response(207)
             self.send_header('Content-Type', 'text/xml; charset="utf-8"')
@@ -557,11 +599,14 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"PROPFIND请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"PROPFIND请求处理失败: {str(e)}")
 
     def do_OPTIONS(self):
         try:
+            self.log_message(f"处理OPTIONS请求: {self.path}")
+
             # 返回服务器支持的HTTP方法
             self.send_response(200)
             self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
@@ -570,11 +615,39 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"OPTIONS请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"OPTIONS请求处理失败: {str(e)}")
 
     def log_message(self, format, *args):
-        pass
+        # 生成日志消息
+        message = format % args
+        client_ip = self.client_address[0]
+
+        # 添加请求方法信息
+        method = self.command
+        path = self.path
+
+        # 创建详细的日志行
+        log_line = f"[{client_ip}] {method} {path} - {message}"
+
+        # 根据HTTP状态码确定日志级别
+        if len(args) >= 2:
+            status_code = args[1] if isinstance(args[1], str) else str(args[1])
+            if status_code.startswith("1"):
+                logger.info(log_line)
+            elif status_code.startswith("2"):
+                logger.info(log_line)  # 调试信息也用INFO级别
+            elif status_code.startswith("3"):
+                logger.warning(log_line)
+            elif status_code.startswith("4"):
+                logger.error(log_line)
+            elif status_code.startswith("5"):
+                logger.critical(log_line)
+            else:
+                logger.info(log_line)  # 其他状态码默认使用info级别
+        else:
+            logger.info(log_line)  # 没有状态码时使用info级别
 
 
 # ======================
@@ -593,6 +666,17 @@ class DAVServerApp:
         self.import_queue = queue.Queue()
         self.import_in_progress = False
         self.import_cancel_requested = False
+
+        # 创建日志队列
+        self.log_queue = queue.Queue()
+
+        # 添加GUI日志处理器 - 只添加一次
+        gui_handler = GUIHandler(self)
+        gui_handler.setLevel(logging.INFO)
+        logger.addHandler(gui_handler)  # 添加到全局logger
+
+        # 开始处理日志队列
+        self.root.after(100, self.process_log_queue)
 
         # 创建标签页
         self.notebook = ttk.Notebook(root)
@@ -635,6 +719,30 @@ class DAVServerApp:
         # 注册文件拖拽事件
         self.root.drop_target_register(DND_FILES)
         self.root.dnd_bind('<<Drop>>', self.handle_drop)
+
+    def process_log_queue(self):
+        """处理日志队列"""
+        try:
+            while not self.log_queue.empty():
+                log_message = self.log_queue.get_nowait()
+                self.append_to_log_window(log_message)
+        except queue.Empty:
+            pass
+
+        # 继续检查队列
+        self.root.after(100, self.process_log_queue)
+
+    def append_to_log_window(self, message):
+        """将消息添加到日志窗口"""
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert(tk.END, message + "\n")
+        self.log_text.see(tk.END)  # 滚动到最新内容
+        self.log_text.config(state=tk.DISABLED)
+
+    def log_message(self, message):
+        """记录日志消息"""
+        # 只通过 logger 记录消息，由 GUIHandler 负责格式化并放入队列
+        logger.info(message)
 
     def on_delete_key(self, event):
         """处理Delete键事件"""
@@ -893,7 +1001,6 @@ CalDAV 配置:
                     messagebox.showerror("错误", f"添加联系人失败: {operation}")
             except Exception as e:
                 messagebox.showerror("错误", f"添加联系人失败: {str(e)}")
-                logger.error(f"添加联系人失败: {str(e)}")
 
     def edit_contact(self):
         selected = self.contacts_tree.selection()
@@ -935,12 +1042,12 @@ CalDAV 配置:
             try:
                 # 构建 vCard
                 vcard_str = f"""BEGIN:VCARD
-VERSION:3.0
-FN:{dialog.result['name']}
-EMAIL:{dialog.result['email']}
-TEL:{dialog.result['phone']}
-UID:{dialog.result['uid']}
-END:VCARD"""
+        VERSION:3.0
+        FN:{dialog.result['name']}
+        EMAIL:{dialog.result['email']}
+        TEL:{dialog.result['phone']}
+        UID:{dialog.result['uid']}
+        END:VCARD"""
 
                 # 保存到数据库
                 uid, operation = self.db.add_contact(vcard_str)
@@ -951,7 +1058,6 @@ END:VCARD"""
                     messagebox.showerror("错误", f"更新联系人失败: {operation}")
             except Exception as e:
                 messagebox.showerror("错误", f"更新联系人失败: {str(e)}")
-                logger.error(f"更新联系人失败: {str(e)}")
 
     def delete_contact(self):
         selected = self.contacts_tree.selection()
@@ -978,12 +1084,10 @@ END:VCARD"""
                 try:
                     if self.db.delete_contact(uid):
                         success_count += 1
-                        self.log_message(f"删除联系人: {name}")
                     else:
                         fail_count += 1
                 except Exception as e:
                     fail_count += 1
-                    self.log_message(f"删除联系人失败: {name} - {str(e)}")
 
             self.refresh_contacts()
             if fail_count > 0:
@@ -991,6 +1095,8 @@ END:VCARD"""
                                     f"成功删除 {success_count} 个联系人\n失败 {fail_count} 个")
             else:
                 messagebox.showinfo("删除完成", f"成功删除 {success_count} 个联系人")
+
+            self.log_message(f"删除联系人: {success_count} 个成功, {fail_count} 个失败")
 
     def show_contact_raw(self):
         selected = self.contacts_tree.selection()
@@ -1274,13 +1380,11 @@ END:VCARD"""
                             error_details = f"源: {source_name} - 错误: {str(e)}"
                             errors.append(error_details)
                             error_var.set(error_details)
-                            self.log_message(f"导入错误: {error_details}")
                 except Exception as e:
                     error_count += 1
                     error_details = f"源: {source_name} - 错误: {str(e)}"
                     errors.append(error_details)
                     error_var.set(error_details)
-                    self.log_message(f"导入错误: {error_details}")
 
             # 导入完成
             progress_var.set(100)
@@ -1300,8 +1404,6 @@ END:VCARD"""
 
         except Exception as e:
             error_var.set(f"严重错误: {str(e)}")
-            self.log_message(f"导入过程中发生严重错误: {str(e)}")
-            traceback.print_exc()
         finally:
             # 关闭进度窗口
             self.root.after(0, progress_window.destroy)
@@ -1509,13 +1611,11 @@ END:VCARD"""
                             error_details = f"源: {source_name} - 事件: {summary} - 错误: {str(e)}"
                             errors.append(error_details)
                             error_var.set(error_details)
-                            self.log_message(f"导入错误: {error_details}")
                 except Exception as e:
                     error_count += 1
                     error_details = f"源: {source_name} - 错误: {str(e)}"
                     errors.append(error_details)
                     error_var.set(error_details)
-                    self.log_message(f"导入错误: {error_details}")
 
             # 导入完成
             progress_var.set(100)
@@ -1535,8 +1635,6 @@ END:VCARD"""
 
         except Exception as e:
             error_var.set(f"严重错误: {str(e)}")
-            self.log_message(f"导入过程中发生严重错误: {str(e)}")
-            traceback.print_exc()
         finally:
             # 关闭进度窗口
             self.root.after(0, progress_window.destroy)
@@ -1578,6 +1676,9 @@ END:VCARD"""
                 if result["errors"] == 0:
                     message = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}"
                     messagebox.showinfo("导入完成", message)
+
+                    self.log_message(
+                        f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}")
                 else:
                     # 显示详细的错误信息
                     error_msg = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}, 失败: {result['errors']}\n\n错误详情:\n"
@@ -1589,8 +1690,8 @@ END:VCARD"""
 
                     messagebox.showinfo("导入完成", error_msg)
 
-                self.log_message(
-                    f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}, 失败 {result['errors']}")
+                    self.log_message(
+                        f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}, 失败 {result['errors']}")
         except queue.Empty:
             pass
 
@@ -1812,12 +1913,10 @@ END:VCARD"""
                 try:
                     if self.db.delete_event(uid):
                         success_count += 1
-                        self.log_message(f"删除事件: {summary}")
                     else:
                         fail_count += 1
                 except Exception as e:
                     fail_count += 1
-                    self.log_message(f"删除事件失败: {summary} - {str(e)}")
 
             self.refresh_events()
             if fail_count > 0:
@@ -1825,6 +1924,8 @@ END:VCARD"""
                                     f"成功删除 {success_count} 个事件\n失败 {fail_count} 个")
             else:
                 messagebox.showinfo("删除完成", f"成功删除 {success_count} 个事件")
+
+            self.log_message(f"删除事件: {success_count} 个成功, {fail_count} 个失败")
 
     def show_event_raw(self):
         selected = self.events_tree.selection()
@@ -1867,7 +1968,6 @@ END:VCARD"""
 
         # 创建服务器
         self.server = HTTPServer(('', port), CustomHandler)
-
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.daemon = True
         self.server_thread.start()
@@ -1883,13 +1983,14 @@ END:VCARD"""
         self.log_text.insert(tk.END, f"CalDAV URL: http://localhost:{port}/events/\n")
         self.log_text.config(state=tk.DISABLED)
 
-        self.log_message(f"服务器启动: 端口 {port}")
+        logger.info(f"服务器启动: 端口 {port}")
 
     def stop_server(self):
         if self.server:
             self.server.shutdown()
             self.server.server_close()
-            self.server_thread.join()
+            if self.server_thread:
+                self.server_thread.join()
             self.server = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
@@ -1899,19 +2000,8 @@ END:VCARD"""
             self.log_text.insert(tk.END, "服务器已停止\n")
             self.log_text.config(state=tk.DISABLED)
 
-            self.log_message("服务器已停止")
+            # 只记录一次日志
             logger.info("服务器已停止")
-
-    def log_message(self, message):
-        timestamp = time.strftime("%H:%M:%S")
-        log_line = f"[{timestamp}] {message}"
-        # 输出到GUI日志
-        self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, log_line + "\n")
-        self.log_text.see(tk.END)
-        self.log_text.config(state=tk.DISABLED)
-        # 输出到控制台（通过logging）
-        logger.info(message)
 
     def on_closing(self):
         if self.server:
