@@ -469,8 +469,10 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
                     # 生成包含所有事件的iCalendar集合
                     all_events = db.get_all_events()
                     self.wfile.write(
-                        "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n".encode(
-                            'utf-8'))
+                        (
+                                "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
+                            'utf-8')
+                    )
                     for event in all_events:
                         # 去除每个事件的外部VCALENDAR标签
                         event_lines = event.splitlines()
@@ -572,7 +574,6 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
             logger.error(f"OPTIONS请求处理失败: {str(e)}")
 
     def log_message(self, format, *args):
-        # 自定义日志输出，避免在控制台打印过多信息
         pass
 
 
@@ -1711,10 +1712,16 @@ END:VCARD"""
                 if component.name == 'VALARM':
                     alarm = {
                         'action': component.action.value if hasattr(component, 'action') else "DISPLAY",
-                        'trigger': component.trigger.value if hasattr(component, 'trigger') else "-PT15M"
+                        'trigger': component.trigger.value if hasattr(component, 'trigger') else timedelta(
+                            minutes=-15)
                     }
 
-                    # 解析特定类型的提醒属性
+                    # 添加REPEAT和DURATION
+                    if hasattr(component, 'repeat') and hasattr(component, 'duration'):
+                        alarm['repeat'] = component.repeat.value
+                        alarm['duration'] = component.duration.value
+
+                    # 添加其他属性
                     if hasattr(component, 'description'):
                         alarm['description'] = self.decode_text(component.description.value)
                     if hasattr(component, 'attach'):
@@ -1877,7 +1884,6 @@ END:VCARD"""
         self.log_text.config(state=tk.DISABLED)
 
         self.log_message(f"服务器启动: 端口 {port}")
-        logger.info(f"服务器启动: 端口 {port}")
 
     def stop_server(self):
         if self.server:
@@ -2441,6 +2447,37 @@ class EventDialog:
         ttk.Checkbutton(frame, text="强制提醒", variable=self.force_reminder_var).grid(
             row=3, column=0, columnspan=2, sticky="w", padx=5, pady=10)
 
+        # 在现有控件后添加REPEAT和DURATION字段
+        reminder_repeat_frame = ttk.Frame(frame)
+        reminder_repeat_frame.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+
+        # 重复次数
+        ttk.Label(reminder_repeat_frame, text="重复次数:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.reminder_repeat_var = tk.StringVar(value="0")
+        ttk.Spinbox(reminder_repeat_frame, from_=0, to=999, textvariable=self.reminder_repeat_var, width=3).grid(
+            row=0, column=1, sticky="w", padx=5, pady=5)
+
+        # 间隔时间
+        ttk.Label(reminder_repeat_frame, text="间隔时间:").grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        self.reminder_duration_frame = ttk.Frame(reminder_repeat_frame)
+        self.reminder_duration_frame.grid(row=0, column=3, sticky="w", padx=5, pady=5)  # 调整到第3列
+
+        # 间隔时间的子控件
+        self.reminder_duration_days_var = tk.StringVar(value="0")
+        ttk.Label(self.reminder_duration_frame, text="天:").grid(row=0, column=0, sticky="w", padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=365,
+                    textvariable=self.reminder_duration_days_var, width=3).grid(row=0, column=1, padx=2)
+
+        self.reminder_duration_hours_var = tk.StringVar(value="0")
+        ttk.Label(self.reminder_duration_frame, text="小时:").grid(row=0, column=2, sticky="w", padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=23,
+                    textvariable=self.reminder_duration_hours_var, width=3).grid(row=0, column=3, padx=2)
+
+        self.reminder_duration_minutes_var = tk.StringVar(value="15")
+        ttk.Label(self.reminder_duration_frame, text="分钟:").grid(row=0, column=4, sticky="w", padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=59,
+                    textvariable=self.reminder_duration_minutes_var, width=3).grid(row=0, column=5, padx=2)
+
         # 为不同类型提醒添加特定控件
         self.audio_attach_var = tk.StringVar()
         self.email_attendee_var = tk.StringVar()
@@ -2512,14 +2549,80 @@ class EventDialog:
             action = alarm['action']
 
             # 创建显示文本
-            display_text = f"{action} - {trigger}"
-            if alarm.get('description', False): display_text += f" - {alarm.get('description')}"
-            if alarm.get('attendee', False): display_text += f" - {alarm.get('attendee')}"
-            if alarm.get('summary', False): display_text += f" - {alarm.get('summary')}"
-            if alarm.get('description', False): display_text += f" - {alarm.get('description')}"
-            if alarm.get('attach', False): display_text += f" - {alarm.get('attach')}"
+            if isinstance(trigger, timedelta):
+                # 提取天、小时、分钟
+                days = abs(trigger.days)
+                seconds = abs(trigger.seconds)
+                hours = seconds // 3600
+                minutes = (seconds % 3600) // 60
+
+                # 创建显示字符串
+                trigger_text = f"{days}天{hours}小时{minutes}分钟前"
+            else:
+                trigger_text = str(trigger)
+
+            display_text = f"{action} - {trigger_text}"
+
+            # 添加重复信息
+            repeat = alarm.get('repeat', '0')
+            if repeat != '0' and 'duration' in alarm:
+                duration = alarm['duration']
+                if isinstance(duration, timedelta):
+                    # 提取天、小时、分钟
+                    days = duration.days
+                    seconds = duration.seconds
+                    hours = seconds // 3600
+                    minutes = (seconds % 3600) // 60
+
+                    # 创建间隔字符串
+                    interval_text = ""
+                    if days > 0:
+                        interval_text += f"{days}天"
+                    if hours > 0:
+                        interval_text += f"{hours}小时"
+                    if minutes > 0:
+                        interval_text += f"{minutes}分钟"
+
+                    display_text += f" (重复{repeat}次, 间隔{interval_text})"
+
+            # 添加其他属性
+            if 'description' in alarm:
+                display_text += f" - {alarm['description'][:10] + '...' if alarm['description'] and len(alarm['description']) >= 10 else alarm['description'] if alarm['description'] else '[无描述/正文]'}"
+            if 'attendee' in alarm:
+                display_text += f" - {alarm['attendee'][:10] + '...' if alarm['attendee'] and len(alarm['attendee']) >= 10 else alarm['attendee'] if alarm['attendee'] else '[无收件人]'}"
+            if 'summary' in alarm:
+                display_text += f" - {alarm['summary'][:10] + '...' if alarm['summary'] and len(alarm['summary']) >= 10 else alarm['summary'] if alarm['summary'] else '[无主题]'}"
+            if 'attach' in alarm:
+                display_text += f" - {alarm['attach'][:10] + '...' if alarm['attach'] and len(alarm['attach']) >= 10 else alarm['attach'] if alarm['attach'] else '[无文件]'}"
 
             self.reminder_listbox.insert("end", display_text)
+
+    def parse_duration_for_display(self, duration_str):
+        """解析持续时间用于显示"""
+        # 简化的解析逻辑，实际应用中应使用更健壮的解析
+        days = 0
+        hours = 0
+        minutes = 0
+
+        if 'D' in duration_str:
+            days_part = duration_str.split('D')[0]
+            if days_part.startswith('P'):
+                days_part = days_part[1:]
+            days = int(days_part) if days_part else 0
+
+        if 'H' in duration_str:
+            hours_part = duration_str.split('H')[0]
+            if 'T' in hours_part:
+                hours_part = hours_part.split('T')[1]
+            hours = int(hours_part) if hours_part else 0
+
+        if 'M' in duration_str and 'T' in duration_str:
+            minutes_part = duration_str.split('M')[0]
+            if 'H' in minutes_part:
+                minutes_part = minutes_part.split('H')[1]
+            minutes = int(minutes_part) if minutes_part else 0
+
+        return days, hours, minutes
 
     def create_advanced_tab(self):
         frame = ttk.LabelFrame(self.advanced_frame, text="高级设置")
@@ -2594,10 +2697,10 @@ class EventDialog:
         if self.initial:
             self.uid_var.set(self.initial.get('uid', f"event-{uuid.uuid4().hex}"))
             self.summary_var.set(self.initial.get('summary', ''))
-            self.location_var.set(self.initial.get('location', ''))
+            self.location_var.set(self.decode_text(self.initial.get('location', '')))
 
             if 'description' in self.initial:
-                self.description_text.insert("1.0", self.initial['description'])
+                self.description_text.insert("1.0", self.decode_text(self.initial.get('description', '')))
 
             # 状态转换（英文->中文）
             status_en = self.initial.get('status', 'CONFIRMED')
@@ -2691,7 +2794,16 @@ class EventDialog:
             self.force_reminder_var.set(self.initial.get('force_reminder', False))
 
             # 设置提醒列表
-            self.alarms = self.initial.get('alarms', [])
+            self.alarms = []
+            for alarm in self.initial.get('alarms', []):
+                # 解码提醒中的文本字段
+                decoded_alarm = alarm.copy()
+                if 'description' in decoded_alarm:
+                    decoded_alarm['description'] = self.decode_text(decoded_alarm['description'])
+                if 'summary' in decoded_alarm:
+                    decoded_alarm['summary'] = self.decode_text(decoded_alarm['summary'])
+                self.alarms.append(decoded_alarm)
+
             self.update_reminder_listbox()
 
             # 高级设置
@@ -3110,9 +3222,9 @@ class EventDialog:
 
     def add_reminder(self):
         """添加新的提醒"""
-        days = - int(self.reminder_days_var.get())
-        hours = - int(self.reminder_hours_var.get())
-        minutes = - int(self.reminder_minutes_var.get())
+        days = int(self.reminder_days_var.get())
+        hours = int(self.reminder_hours_var.get())
+        minutes = int(self.reminder_minutes_var.get())
 
         # 创建触发时间（timedelta）
         trigger = timedelta(days=days, hours=hours, minutes=minutes)
@@ -3124,21 +3236,34 @@ class EventDialog:
         action_mapping = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}
         action = action_mapping.get(reminder_type, "DISPLAY")
 
-        # 获取特定类型的额外信息
-        extra = {}
-        if reminder_type == "显示":
-            extra['description'] = self.display_description.get("1.0", "end").strip()
-        elif reminder_type == "声音":
-            extra['attach'] = self.audio_attach_var.get()
-        elif reminder_type == "邮件":
-            extra['attendee'] = self.email_attendee_var.get()
-            extra['summary'] = self.email_summary_var.get()
-            extra['description'] = self.email_description.get("1.0", "end").strip()
-            extra['attach'] = self.email_attach_var.get()
+        # 获取REPEAT和DURATION值
+        repeat = self.reminder_repeat_var.get()
+        duration_days = int(self.reminder_duration_days_var.get())
+        duration_hours = int(self.reminder_duration_hours_var.get())
+        duration_minutes = int(self.reminder_duration_minutes_var.get())
+
+        # 创建持续时间（timedelta）
+        duration = timedelta(days=duration_days, hours=duration_hours, minutes=duration_minutes)
 
         # 添加到提醒列表
-        alarm = {'action': action, 'trigger': trigger}
-        alarm.update(extra)
+        alarm = {
+            'action': action,
+            'trigger': trigger,
+            'repeat': repeat,
+            'duration': duration
+        }
+
+        # 获取特定类型的额外信息
+        if reminder_type == "显示":
+            alarm['description'] = self.display_description.get("1.0", "end").strip()
+        elif reminder_type == "声音":
+            alarm['attach'] = self.audio_attach_var.get()
+        elif reminder_type == "邮件":
+            alarm['attendee'] = self.email_attendee_var.get()
+            alarm['summary'] = self.email_summary_var.get()
+            alarm['description'] = self.email_description.get("1.0", "end").strip()
+            alarm['attach'] = self.email_attach_var.get()
+
         self.alarms.append(alarm)
 
         # 更新提醒列表框
@@ -3154,20 +3279,93 @@ class EventDialog:
         index = selected[0]
         alarm = self.alarms[index]
 
-        # 解析触发时间
-        trigger = alarm['trigger']
-        if isinstance(trigger, timedelta):
-            days = trigger.days
-            hours, remainder = divmod(trigger.seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
-        else:
-            days = 0
-            hours = 0
-            minutes = 15  # 默认值
+        # 设置触发时间
+        if isinstance(alarm['trigger'], timedelta):
+            # 使用绝对值显示在UI上
+            total_seconds = abs(alarm['trigger'].total_seconds())
+            days = int(total_seconds // 86400)
+            remaining_seconds = total_seconds % 86400
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
 
-        self.reminder_days_var.set(str(days))
-        self.reminder_hours_var.set(str(hours))
-        self.reminder_minutes_var.set(str(minutes))
+            self.reminder_days_var.set(str(days))
+            self.reminder_hours_var.set(str(hours))
+            self.reminder_minutes_var.set(str(minutes))
+        else:
+            # 处理旧格式
+            trigger_str = alarm['trigger']
+            if trigger_str.startswith('-P'):
+                duration_str = trigger_str[1:]  # 去掉负号
+                days = 0
+                hours = 0
+                minutes = 0
+
+                if 'T' in duration_str:
+                    date_part, time_part = duration_str.split('T')
+                else:
+                    date_part = duration_str
+                    time_part = ""
+
+                # 解析日期部分
+                if 'D' in date_part:
+                    days = int(date_part.split('D')[0][1:])  # 去掉P前缀
+
+                # 解析时间部分
+                if time_part:
+                    if 'H' in time_part:
+                        hours = int(time_part.split('H')[0])
+                        time_part = time_part.split('H')[1]
+                    if 'M' in time_part:
+                        minutes = int(time_part.split('M')[0])
+
+                self.reminder_days_var.set(str(days))
+                self.reminder_hours_var.set(str(hours))
+                self.reminder_minutes_var.set(str(minutes))
+
+        # 设置REPEAT值
+        self.reminder_repeat_var.set(str(alarm.get('repeat', '0')))
+
+        # 设置DURATION值
+        if 'duration' in alarm and isinstance(alarm['duration'], timedelta):
+            duration = alarm['duration']
+            days = duration.days
+            seconds = duration.seconds
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+
+            self.reminder_duration_days_var.set(str(days))
+            self.reminder_duration_hours_var.set(str(hours))
+            self.reminder_duration_minutes_var.set(str(minutes))
+        else:
+            # 处理旧格式
+            duration_str = alarm.get('duration', 'PT15M')
+            if duration_str.startswith('P'):
+                duration_str = duration_str[1:]  # 去掉P
+                days = 0
+                hours = 0
+                minutes = 0
+
+                if 'T' in duration_str:
+                    date_part, time_part = duration_str.split('T')
+                else:
+                    date_part = duration_str
+                    time_part = ""
+
+                # 解析日期部分
+                if 'D' in date_part:
+                    days = int(date_part.split('D')[0])
+
+                # 解析时间部分
+                if time_part:
+                    if 'H' in time_part:
+                        hours = int(time_part.split('H')[0])
+                        time_part = time_part.split('H')[1]
+                    if 'M' in time_part:
+                        minutes = int(time_part.split('M')[0])
+
+                self.reminder_duration_days_var.set(str(days))
+                self.reminder_duration_hours_var.set(str(hours))
+                self.reminder_duration_minutes_var.set(str(minutes))
 
         # 将英文类型转换为中文
         action_mapping = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
@@ -3211,6 +3409,25 @@ class EventDialog:
             return f"ENCODING=QUOTED-PRINTABLE;CHARSET=UTF-8:{encoded}"
         return text
 
+    def decode_text(self, text):
+        """解码QUOTED-PRINTABLE编码的文本"""
+        if not text:
+            return ""
+
+        # 检查是否包含QUOTED-PRINTABLE编码
+        if "ENCODING=QUOTED-PRINTABLE" in text:
+            try:
+                # 提取编码部分
+                encoded_part = text.split(":", 1)[1]
+                # 解码QUOTED-PRINTABLE
+                decoded_bytes = quopri.decodestring(encoded_part)
+                # 尝试UTF-8解码
+                return decoded_bytes.decode('utf-8')
+            except:
+                return text
+
+        return text
+
     def generate_ical(self):
         """生成iCalendar格式的内容"""
         # 创建日历对象
@@ -3229,7 +3446,7 @@ class EventDialog:
         # 编码并设置摘要、地点和描述
         summary = self.summary_var.get()
         if summary:
-            event.add('summary').value = self.encode_text(summary)
+            event.add('summary').value = summary
 
         location = self.location_var.get()
         if location:
@@ -3313,13 +3530,55 @@ class EventDialog:
             valarm = event.add('valarm')
             valarm.add('action').value = alarm['action']
 
-            # 设置触发时间（timedelta）
-            valarm.add('trigger').value = alarm["trigger"]
+            # 确保TRIGGER是timedelta对象
+            if isinstance(alarm['trigger'], str):
+                # 解析字符串为timedelta
+                if alarm['trigger'].startswith('-P'):
+                    duration_str = alarm['trigger'][1:]  # 去掉负号
+                    days = 0
+                    hours = 0
+                    minutes = 0
+
+                    if 'T' in duration_str:
+                        date_part, time_part = duration_str.split('T')
+                    else:
+                        date_part = duration_str
+                        time_part = ""
+
+                    # 解析日期部分
+                    if 'D' in date_part:
+                        days = int(date_part.split('D')[0][1:])  # 去掉P前缀
+
+                    # 解析时间部分
+                    if time_part:
+                        if 'H' in time_part:
+                            hours = int(time_part.split('H')[0])
+                            time_part = time_part.split('H')[1]
+                        if 'M' in time_part:
+                            minutes = int(time_part.split('M')[0])
+
+                    trigger = timedelta(days=days, hours=hours, minutes=minutes)
+                else:
+                    # 默认为15分钟
+                    trigger = timedelta(minutes=15)
+            else:
+                trigger = alarm['trigger']
+
+            valarm.add('trigger').value = trigger
+
+            # 添加REPEAT和DURATION（如果设置了）
+            if 'repeat' in alarm and 'duration' in alarm:
+                repeat = alarm['repeat']
+                duration = alarm['duration']
+                if repeat and int(repeat) > 0 and duration:
+                    valarm.add('repeat').value = repeat
+                    valarm.add('duration').value = duration
 
             # 添加其他提醒属性
             if alarm['action'] == "DISPLAY":
                 if 'description' in alarm:
-                    valarm.add('description').value = alarm['description']
+                    # 编码描述
+                    valarm.add('description').value = self.encode_text(alarm['description'])
             elif alarm['action'] == "AUDIO":
                 if 'attach' in alarm:
                     valarm.add('attach').value = alarm['attach']
@@ -3327,9 +3586,11 @@ class EventDialog:
                 if 'attendee' in alarm:
                     valarm.add('attendee').value = alarm['attendee']
                 if 'summary' in alarm:
-                    valarm.add('summary').value = alarm['summary']
+                    # 编码邮件主题
+                    valarm.add('summary').value = self.encode_text(alarm['summary'])
                 if 'description' in alarm:
-                    valarm.add('description').value = alarm['description']
+                    # 编码邮件正文
+                    valarm.add('description').value = self.encode_text(alarm['description'])
                 if 'attach' in alarm:
                     valarm.add('attach').value = alarm['attach']
 
