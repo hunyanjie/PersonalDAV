@@ -1995,10 +1995,10 @@ CalDAV 配置:
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
 
-            # 更新日志
-            self.log_text.config(state=tk.NORMAL)
-            self.log_text.insert(tk.END, "服务器已停止\n")
-            self.log_text.config(state=tk.DISABLED)
+            # # 更新日志
+            # self.log_text.config(state=tk.NORMAL)
+            # self.log_text.insert(tk.END, "服务器已停止\n")
+            # self.log_text.config(state=tk.DISABLED)
 
             # 只记录一次日志
             logger.info("服务器已停止")

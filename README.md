@@ -16,6 +16,8 @@ PersonalDAV是一个带图形界面的私人CardDAV/CalDAV服务，允许您在�
 - 💾 **本地数据库** - 使用SQLite存储数据，无需额外配置
 - 🌐 **跨平台** - 支持Windows、macOS和Linux
 
+> 注意：目前只有Windows平台有打包好的程序包，其他平台的请自行打包
+
 ## 安装与运行
 
 ### 前提条件
