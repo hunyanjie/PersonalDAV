@@ -6,7 +6,6 @@ import queue
 import quopri
 import sqlite3
 import threading
-import time
 import tkinter as tk
 import traceback
 import uuid
@@ -24,22 +23,57 @@ from tkcalendar import DateEntry
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from tzlocal import get_localzone
 
+
 # ======================
 # 配置日志和基础信息
 # ======================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("dav_server.log"),
-        logging.StreamHandler()
-    ]
-)
+class GUIHandler(logging.Handler):
+    """自定义日志处理器，将日志发送到GUI"""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        # 设置格式化器 - 添加时间戳
+        self.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
+
+    def emit(self, record):
+        try:
+            # 使用格式化器格式化日志消息
+            formatted_message = self.format(record)
+
+            # 将格式化后的日志添加到队列
+            self.app.log_queue.put(formatted_message)
+        except Exception:
+            self.handleError(record)
+
+
+# 创建日志记录器
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 清除可能已有的处理器
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# 创建文件处理器
+file_handler = logging.FileHandler("dav_server.log", encoding='utf-8')
+file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(file_formatter)
+
+# 创建控制台处理器
+console_handler = logging.StreamHandler()
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+# 添加到记录器
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 software_name = "PrivateDAV"
 software_description = "私人 CardDAV/CalDAV 服务"
-software_version = "1.0"
+software_version = "1.1"
+software_author = "hunyanjie"
+
 
 # ======================
 # 数据库管理
@@ -317,41 +351,41 @@ class Database:
 
     def add_event(self, ical_data):
         with self._lock:
-            # try:
-            ical = vobject.readOne(ical_data)
-            uid = ical.vevent.uid.value
-            summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
-            dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
-            dtend = ical.vevent.dtend.value if hasattr(ical.vevent, 'dtend') else ""
+            try:
+                ical = vobject.readOne(ical_data)
+                uid = ical.vevent.uid.value
+                summary = ical.vevent.summary.value if hasattr(ical.vevent, 'summary') else ""
+                dtstart = ical.vevent.dtstart.value if hasattr(ical.vevent, 'dtstart') else ""
+                dtend = ical.vevent.dtend.value if hasattr(ical.vevent, 'dtend') else ""
 
-            # 检查事件是否已存在
-            c = self.conn.cursor()
-            c.execute("SELECT ical FROM events WHERE uid=?", (uid,))
-            existing = c.fetchone()
+                # 检查事件是否已存在
+                c = self.conn.cursor()
+                c.execute("SELECT ical FROM events WHERE uid=?", (uid,))
+                existing = c.fetchone()
 
-            # 确定操作类型
-            operation = "inserted"
-            if existing:
-                # 检查内容是否相同
-                if existing[0] == ical_data:
-                    operation = "unchanged"
-                else:
-                    operation = "updated"
+                # 确定操作类型
+                operation = "inserted"
+                if existing:
+                    # 检查内容是否相同
+                    if existing[0] == ical_data:
+                        operation = "unchanged"
+                    else:
+                        operation = "updated"
 
-            # 执行数据库操作 - 保存原始数据
-            if operation != "unchanged":
-                c.execute('''INSERT OR REPLACE INTO events 
-                                (uid, summary, dtstart, dtend, ical) 
-                                VALUES (?, ?, ?, ?, ?)''',
-                          (uid, summary, dtstart, dtend, ical_data))
-                self.conn.commit()
+                # 执行数据库操作 - 保存原始数据
+                if operation != "unchanged":
+                    c.execute('''INSERT OR REPLACE INTO events 
+                                    (uid, summary, dtstart, dtend, ical) 
+                                    VALUES (?, ?, ?, ?, ?)''',
+                              (uid, summary, dtstart, dtend, ical_data))
+                    self.conn.commit()
 
-            return uid, operation
-        # except Exception as e:
-        #     self.conn.rollback()
-        #     logger.error(f"添加事件失败: {str(e)}")
-        #     traceback.print_exc()
-        #     return None, f"Error: {str(e)}"
+                return uid, operation
+            except Exception as e:
+                self.conn.rollback()
+                logger.error(f"添加事件失败: {str(e)}")
+                traceback.print_exc()
+                return None, f"Error: {str(e)}"
 
     def get_event(self, uid):
         with self._lock:
@@ -415,6 +449,8 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         db = Database()
         try:
+            self.log_message(f"处理GET请求: {self.path}")
+
             # 处理联系人请求
             if self.path.startswith("/contacts/"):
                 # 请求单个联系人
@@ -469,8 +505,10 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
                     # 生成包含所有事件的iCalendar集合
                     all_events = db.get_all_events()
                     self.wfile.write(
-                        "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n".encode(
-                            'utf-8'))
+                        (
+                                    "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
+                            'utf-8')
+                    )
                     for event in all_events:
                         # 去除每个事件的外部VCALENDAR标签
                         event_lines = event.splitlines()
@@ -498,12 +536,15 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"GET请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"PUT请求处理失败: {str(e)}")
 
     def do_PUT(self):
         db = Database()
         try:
+            self.log_message(f"处理PUT请求: {self.path}")
+
             content_length = int(self.headers['Content-Length'])
             data = self.rfile.read(content_length).decode('utf-8')
 
@@ -527,11 +568,14 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"PUT请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"PROPFIND请求处理失败: {str(e)}")
 
     def do_PROPFIND(self):
         try:
+            self.log_message(f"处理PROPFIND请求: {self.path}")
+
             # 简化版PROPFIND响应，仅返回200 OK
             self.send_response(207)
             self.send_header('Content-Type', 'text/xml; charset="utf-8"')
@@ -555,11 +599,14 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"PROPFIND请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"PROPFIND请求处理失败: {str(e)}")
 
     def do_OPTIONS(self):
         try:
+            self.log_message(f"处理OPTIONS请求: {self.path}")
+
             # 返回服务器支持的HTTP方法
             self.send_response(200)
             self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
@@ -568,12 +615,39 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Server error: {str(e)}".encode('utf-8'))
-            logger.error(f"OPTIONS请求处理失败: {str(e)}")
+            error_msg = f"Server error: {str(e)}"
+            self.wfile.write(error_msg.encode('utf-8'))
+            self.log_message(f"OPTIONS请求处理失败: {str(e)}")
 
     def log_message(self, format, *args):
-        # 自定义日志输出，避免在控制台打印过多信息
-        pass
+        # 生成日志消息
+        message = format % args
+        client_ip = self.client_address[0]
+
+        # 添加请求方法信息
+        method = self.command
+        path = self.path
+
+        # 创建详细的日志行
+        log_line = f"[{client_ip}] {method} {path} - {message}"
+
+        # 根据HTTP状态码确定日志级别
+        if len(args) >= 2:
+            status_code = args[1] if isinstance(args[1], str) else str(args[1])
+            if status_code.startswith("1"):
+                logger.info(log_line)
+            elif status_code.startswith("2"):
+                logger.info(log_line)  # 调试信息也用INFO级别
+            elif status_code.startswith("3"):
+                logger.warning(log_line)
+            elif status_code.startswith("4"):
+                logger.error(log_line)
+            elif status_code.startswith("5"):
+                logger.critical(log_line)
+            else:
+                logger.info(log_line)  # 其他状态码默认使用info级别
+        else:
+            logger.info(log_line)  # 没有状态码时使用info级别
 
 
 # ======================
@@ -592,6 +666,17 @@ class DAVServerApp:
         self.import_queue = queue.Queue()
         self.import_in_progress = False
         self.import_cancel_requested = False
+
+        # 创建日志队列
+        self.log_queue = queue.Queue()
+
+        # 添加GUI日志处理器 - 只添加一次
+        gui_handler = GUIHandler(self)
+        gui_handler.setLevel(logging.INFO)
+        logger.addHandler(gui_handler)  # 添加到全局logger
+
+        # 开始处理日志队列
+        self.root.after(100, self.process_log_queue)
 
         # 创建标签页
         self.notebook = ttk.Notebook(root)
@@ -635,6 +720,30 @@ class DAVServerApp:
         self.root.drop_target_register(DND_FILES)
         self.root.dnd_bind('<<Drop>>', self.handle_drop)
 
+    def process_log_queue(self):
+        """处理日志队列"""
+        try:
+            while not self.log_queue.empty():
+                log_message = self.log_queue.get_nowait()
+                self.append_to_log_window(log_message)
+        except queue.Empty:
+            pass
+
+        # 继续检查队列
+        self.root.after(100, self.process_log_queue)
+
+    def append_to_log_window(self, message):
+        """将消息添加到日志窗口"""
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert(tk.END, message + "\n")
+        self.log_text.see(tk.END)  # 滚动到最新内容
+        self.log_text.config(state=tk.DISABLED)
+
+    def log_message(self, message):
+        """记录日志消息"""
+        # 只通过 logger 记录消息，由 GUIHandler 负责格式化并放入队列
+        logger.info(message)
+
     def on_delete_key(self, event):
         """处理Delete键事件"""
         current_tab = self.notebook.select()
@@ -647,7 +756,42 @@ class DAVServerApp:
 
     def handle_drop(self, event):
         """处理文件拖拽事件"""
-        files = event.data.split()
+        # 改进文件路径解析
+        files = []
+
+        # 尝试解析为文件列表
+        if isinstance(event.data, (list, tuple)):
+            files = [f for f in event.data if os.path.exists(f)]
+        else:
+            # 处理字符串格式的路径
+            raw_paths = event.data
+
+            # 尝试解析大括号格式的路径
+            if raw_paths.startswith('{') and raw_paths.endswith('}'):
+                # 去掉首尾大括号
+                raw_paths = raw_paths[1:-1]
+                # 分割路径
+                possible_paths = raw_paths.split('} {')
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        files.append(path)
+            else:
+                # 尝试直接作为单个路径
+                if os.path.exists(raw_paths):
+                    files.append(raw_paths)
+                else:
+                    # 尝试分割空格分隔的路径
+                    possible_paths = raw_paths.split()
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            files.append(path)
+
+        # 记录结果
+        if not files:
+            self.log_message(f"未找到有效文件路径: {event.data}")
+            return
+
+        self.log_message(f"拖拽导入文件: {', '.join(files)}")
 
         current_tab = self.notebook.select()
         tab_text = self.notebook.tab(current_tab, "text")
@@ -892,7 +1036,6 @@ CalDAV 配置:
                     messagebox.showerror("错误", f"添加联系人失败: {operation}")
             except Exception as e:
                 messagebox.showerror("错误", f"添加联系人失败: {str(e)}")
-                logger.error(f"添加联系人失败: {str(e)}")
 
     def edit_contact(self):
         selected = self.contacts_tree.selection()
@@ -934,12 +1077,12 @@ CalDAV 配置:
             try:
                 # 构建 vCard
                 vcard_str = f"""BEGIN:VCARD
-VERSION:3.0
-FN:{dialog.result['name']}
-EMAIL:{dialog.result['email']}
-TEL:{dialog.result['phone']}
-UID:{dialog.result['uid']}
-END:VCARD"""
+        VERSION:3.0
+        FN:{dialog.result['name']}
+        EMAIL:{dialog.result['email']}
+        TEL:{dialog.result['phone']}
+        UID:{dialog.result['uid']}
+        END:VCARD"""
 
                 # 保存到数据库
                 uid, operation = self.db.add_contact(vcard_str)
@@ -950,7 +1093,6 @@ END:VCARD"""
                     messagebox.showerror("错误", f"更新联系人失败: {operation}")
             except Exception as e:
                 messagebox.showerror("错误", f"更新联系人失败: {str(e)}")
-                logger.error(f"更新联系人失败: {str(e)}")
 
     def delete_contact(self):
         selected = self.contacts_tree.selection()
@@ -977,12 +1119,10 @@ END:VCARD"""
                 try:
                     if self.db.delete_contact(uid):
                         success_count += 1
-                        self.log_message(f"删除联系人: {name}")
                     else:
                         fail_count += 1
                 except Exception as e:
                     fail_count += 1
-                    self.log_message(f"删除联系人失败: {name} - {str(e)}")
 
             self.refresh_contacts()
             if fail_count > 0:
@@ -990,6 +1130,8 @@ END:VCARD"""
                                     f"成功删除 {success_count} 个联系人\n失败 {fail_count} 个")
             else:
                 messagebox.showinfo("删除完成", f"成功删除 {success_count} 个联系人")
+
+            self.log_message(f"删除联系人: {success_count} 个成功, {fail_count} 个失败")
 
     def show_contact_raw(self):
         selected = self.contacts_tree.selection()
@@ -1273,13 +1415,11 @@ END:VCARD"""
                             error_details = f"源: {source_name} - 错误: {str(e)}"
                             errors.append(error_details)
                             error_var.set(error_details)
-                            self.log_message(f"导入错误: {error_details}")
                 except Exception as e:
                     error_count += 1
                     error_details = f"源: {source_name} - 错误: {str(e)}"
                     errors.append(error_details)
                     error_var.set(error_details)
-                    self.log_message(f"导入错误: {error_details}")
 
             # 导入完成
             progress_var.set(100)
@@ -1299,8 +1439,6 @@ END:VCARD"""
 
         except Exception as e:
             error_var.set(f"严重错误: {str(e)}")
-            self.log_message(f"导入过程中发生严重错误: {str(e)}")
-            traceback.print_exc()
         finally:
             # 关闭进度窗口
             self.root.after(0, progress_window.destroy)
@@ -1508,13 +1646,11 @@ END:VCARD"""
                             error_details = f"源: {source_name} - 事件: {summary} - 错误: {str(e)}"
                             errors.append(error_details)
                             error_var.set(error_details)
-                            self.log_message(f"导入错误: {error_details}")
                 except Exception as e:
                     error_count += 1
                     error_details = f"源: {source_name} - 错误: {str(e)}"
                     errors.append(error_details)
                     error_var.set(error_details)
-                    self.log_message(f"导入错误: {error_details}")
 
             # 导入完成
             progress_var.set(100)
@@ -1534,8 +1670,6 @@ END:VCARD"""
 
         except Exception as e:
             error_var.set(f"严重错误: {str(e)}")
-            self.log_message(f"导入过程中发生严重错误: {str(e)}")
-            traceback.print_exc()
         finally:
             # 关闭进度窗口
             self.root.after(0, progress_window.destroy)
@@ -1577,6 +1711,9 @@ END:VCARD"""
                 if result["errors"] == 0:
                     message = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}"
                     messagebox.showinfo("导入完成", message)
+
+                    self.log_message(
+                        f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}")
                 else:
                     # 显示详细的错误信息
                     error_msg = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}, 失败: {result['errors']}\n\n错误详情:\n"
@@ -1588,8 +1725,8 @@ END:VCARD"""
 
                     messagebox.showinfo("导入完成", error_msg)
 
-                self.log_message(
-                    f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}, 失败 {result['errors']}")
+                    self.log_message(
+                        f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}, 失败 {result['errors']}")
         except queue.Empty:
             pass
 
@@ -1711,10 +1848,16 @@ END:VCARD"""
                 if component.name == 'VALARM':
                     alarm = {
                         'action': component.action.value if hasattr(component, 'action') else "DISPLAY",
-                        'trigger': component.trigger.value if hasattr(component, 'trigger') else "-PT15M"
+                        'trigger': component.trigger.value if hasattr(component, 'trigger') else timedelta(
+                            minutes=-15)
                     }
 
-                    # 解析特定类型的提醒属性
+                    # 添加REPEAT和DURATION
+                    if hasattr(component, 'repeat') and hasattr(component, 'duration'):
+                        alarm['repeat'] = component.repeat.value
+                        alarm['duration'] = component.duration.value
+
+                    # 添加其他属性
                     if hasattr(component, 'description'):
                         alarm['description'] = self.decode_text(component.description.value)
                     if hasattr(component, 'attach'):
@@ -1805,12 +1948,10 @@ END:VCARD"""
                 try:
                     if self.db.delete_event(uid):
                         success_count += 1
-                        self.log_message(f"删除事件: {summary}")
                     else:
                         fail_count += 1
                 except Exception as e:
                     fail_count += 1
-                    self.log_message(f"删除事件失败: {summary} - {str(e)}")
 
             self.refresh_events()
             if fail_count > 0:
@@ -1818,6 +1959,8 @@ END:VCARD"""
                                     f"成功删除 {success_count} 个事件\n失败 {fail_count} 个")
             else:
                 messagebox.showinfo("删除完成", f"成功删除 {success_count} 个事件")
+
+            self.log_message(f"删除事件: {success_count} 个成功, {fail_count} 个失败")
 
     def show_event_raw(self):
         selected = self.events_tree.selection()
@@ -1860,7 +2003,6 @@ END:VCARD"""
 
         # 创建服务器
         self.server = HTTPServer(('', port), CustomHandler)
-
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.daemon = True
         self.server_thread.start()
@@ -1876,36 +2018,25 @@ END:VCARD"""
         self.log_text.insert(tk.END, f"CalDAV URL: http://localhost:{port}/events/\n")
         self.log_text.config(state=tk.DISABLED)
 
-        self.log_message(f"服务器启动: 端口 {port}")
         logger.info(f"服务器启动: 端口 {port}")
 
     def stop_server(self):
         if self.server:
             self.server.shutdown()
             self.server.server_close()
-            self.server_thread.join()
+            if self.server_thread:
+                self.server_thread.join()
             self.server = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
 
-            # 更新日志
-            self.log_text.config(state=tk.NORMAL)
-            self.log_text.insert(tk.END, "服务器已停止\n")
-            self.log_text.config(state=tk.DISABLED)
+            # # 更新日志
+            # self.log_text.config(state=tk.NORMAL)
+            # self.log_text.insert(tk.END, "服务器已停止\n")
+            # self.log_text.config(state=tk.DISABLED)
 
-            self.log_message("服务器已停止")
+            # 只记录一次日志
             logger.info("服务器已停止")
-
-    def log_message(self, message):
-        timestamp = time.strftime("%H:%M:%S")
-        log_line = f"[{timestamp}] {message}"
-        # 输出到GUI日志
-        self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, log_line + "\n")
-        self.log_text.see(tk.END)
-        self.log_text.config(state=tk.DISABLED)
-        # 输出到控制台（通过logging）
-        logger.info(message)
 
     def on_closing(self):
         if self.server:
@@ -2246,7 +2377,7 @@ class EventDialog:
 
         # 全天事件
         self.allday_var = tk.BooleanVar()
-        ttk.Checkbutton(frame, text="全天事件", variable=self.allday_var).grid(
+        ttk.Checkbutton(frame, text="全天事件", variable=self.allday_var, command=self.toggle_allday_event).grid(
             row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
 
         # 开始时间 - 使用框架组织
@@ -2311,9 +2442,10 @@ class EventDialog:
 
         # 同步时区复选框
         self.sync_timezone_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="结束时间使用相同时区", variable=self.sync_timezone_var,
-                        command=self.toggle_timezone_sync).grid(row=5, column=0, columnspan=3, sticky="w", padx=5,
-                                                                pady=5)
+        self.sync_timezone_check = ttk.Checkbutton(frame, text="结束时间使用相同时区",
+                                                   variable=self.sync_timezone_var,
+                                                   command=self.toggle_timezone_sync)
+        self.sync_timezone_check.grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
         # 绑定开始时间时区改变事件
         self.start_timezone_var.trace("w", self.sync_timezones)
@@ -2369,18 +2501,16 @@ class EventDialog:
         # 根据重复规则更新结束条件状态
         self.on_repeat_changed()
 
-    def on_end_cond_changed(self, *args):
-        """当结束条件改变时更新UI"""
-        self.update_end_condition_input(self.end_cond_var.get())
-
     def create_reminder_tab(self):
+        """创建提醒设置标签页"""
+        # 主框架
         frame = ttk.LabelFrame(self.reminder_frame, text="提醒设置")
-        frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         # 配置网格权重
         frame.columnconfigure(1, weight=1)
 
-        # 提醒列表框架
+        # 提醒列表框架 - 显示所有已设置的提醒
         reminder_list_frame = ttk.LabelFrame(frame, text="提醒列表")
         reminder_list_frame.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=5, pady=5)
         reminder_list_frame.columnconfigure(0, weight=1)
@@ -2406,20 +2536,32 @@ class EventDialog:
         # 绑定双击事件
         self.reminder_listbox.bind("<Double-1>", lambda e: self.edit_reminder())
 
-        # 提醒类型
+        # 提醒类型选择
         ttk.Label(frame, text="提醒类型:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.reminder_type_var = tk.StringVar(value="显示")
         reminder_types = ["显示", "声音", "邮件"]
-        self.reminder_type_combo = ttk.Combobox(frame, textvariable=self.reminder_type_var, values=reminder_types,
-                                                width=10,
-                                                state="readonly")
+        self.reminder_type_combo = ttk.Combobox(frame, textvariable=self.reminder_type_var,
+                                                values=reminder_types, width=10, state="readonly")
         self.reminder_type_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         self.reminder_type_combo.bind("<<ComboboxSelected>>", self.on_reminder_type_change)
 
-        # 提前时间
-        ttk.Label(frame, text="提前时间:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        # 提醒触发类型选择
+        ttk.Label(frame, text="提醒触发方式:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.reminder_trigger_type = tk.StringVar(value="relative")  # relative or absolute
+        trigger_frame = ttk.Frame(frame)
+        trigger_frame.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+        ttk.Radiobutton(trigger_frame, text="提前时间提醒",
+                        variable=self.reminder_trigger_type, value="relative",
+                        command=self.toggle_reminder_trigger_type).pack(side="left", padx=5)
+        ttk.Radiobutton(trigger_frame, text="指定时间提醒",
+                        variable=self.reminder_trigger_type, value="absolute",
+                        command=self.toggle_reminder_trigger_type).pack(side="left", padx=5)
+
+        # 提前时间提醒设置
+        ttk.Label(frame, text="提前多少时间提醒:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.reminder_time_frame = ttk.Frame(frame)
-        self.reminder_time_frame.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        self.reminder_time_frame.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
         self.reminder_days_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_time_frame, text="天:").grid(row=0, column=0, sticky="w")
@@ -2436,29 +2578,86 @@ class EventDialog:
         ttk.Spinbox(self.reminder_time_frame, from_=0, to=59, textvariable=self.reminder_minutes_var, width=3).grid(
             row=0, column=5, padx=5)
 
-        # 强制提醒
+        # 指定时间提醒设置框架
+        self.absolute_trigger_frame = ttk.Frame(frame)
+        self.absolute_trigger_frame.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+        self.absolute_trigger_frame.grid_remove()  # 初始隐藏
+
+        # 指定日期
+        ttk.Label(self.absolute_trigger_frame, text="提醒日期:").grid(row=0, column=0, sticky="w")
+        self.absolute_trigger_date = DateEntry(self.absolute_trigger_frame, date_pattern='yyyy-mm-dd', width=12)
+        self.absolute_trigger_date.grid(row=0, column=1, padx=5)
+
+        # 指定时间
+        ttk.Label(self.absolute_trigger_frame, text="时间:").grid(row=0, column=2, padx=(10, 0))
+        self.absolute_trigger_hour = ttk.Combobox(self.absolute_trigger_frame, width=3,
+                                                  values=[f"{h:02d}" for h in range(24)], state="readonly")
+        self.absolute_trigger_hour.grid(row=0, column=3, padx=5)
+        self.absolute_trigger_hour.set("09")
+
+        ttk.Label(self.absolute_trigger_frame, text=":").grid(row=0, column=4)
+        self.absolute_trigger_minute = ttk.Combobox(self.absolute_trigger_frame, width=3,
+                                                    values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly")
+        self.absolute_trigger_minute.grid(row=0, column=5, padx=5)
+        self.absolute_trigger_minute.set("00")
+
+        # 时区选择
+        ttk.Label(self.absolute_trigger_frame, text="时区:").grid(row=0, column=6, padx=(10, 0))
+        self.absolute_trigger_timezone = ttk.Combobox(self.absolute_trigger_frame,
+                                                      values=self.get_timezone_list(), width=30)
+        self.absolute_trigger_timezone.grid(row=0, column=7, padx=5)
+        self.absolute_trigger_timezone.set(self.get_local_timezone_str())
+
+        # 提醒重复设置
+        reminder_repeat_frame = ttk.Frame(frame)
+        reminder_repeat_frame.grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+
+        # 重复次数
+        ttk.Label(reminder_repeat_frame, text="重复次数:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.reminder_repeat_var = tk.StringVar(value="0")
+        ttk.Spinbox(reminder_repeat_frame, from_=0, to=999, textvariable=self.reminder_repeat_var, width=3).grid(
+            row=0, column=1, sticky="w", padx=5, pady=5)
+
+        # 间隔时间
+        ttk.Label(reminder_repeat_frame, text="间隔时间:").grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        self.reminder_duration_frame = ttk.Frame(reminder_repeat_frame)
+        self.reminder_duration_frame.grid(row=0, column=3, sticky="w", padx=5, pady=5)
+
+        # 间隔时间子控件
+        self.reminder_duration_days_var = tk.StringVar(value="0")
+        ttk.Label(self.reminder_duration_frame, text="天:").grid(row=0, column=0, sticky="w", padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=365,
+                    textvariable=self.reminder_duration_days_var, width=3).grid(row=0, column=1, padx=2)
+
+        self.reminder_duration_hours_var = tk.StringVar(value="0")
+        ttk.Label(self.reminder_duration_frame, text="小时:").grid(row=0, column=2, sticky="w", padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=23,
+                    textvariable=self.reminder_duration_hours_var, width=3).grid(row=0, column=3, padx=2)
+
+        self.reminder_duration_minutes_var = tk.StringVar(value="15")
+        ttk.Label(self.reminder_duration_frame, text="分钟:").grid(row=0, column=4, sticky="w", padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=59,
+                    textvariable=self.reminder_duration_minutes_var, width=3).grid(row=0, column=5, padx=2)
+
+        # 强制提醒选项
         self.force_reminder_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(frame, text="强制提醒", variable=self.force_reminder_var).grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=5, pady=10)
+            row=6, column=0, columnspan=2, sticky="w", padx=5, pady=10)
 
-        # 为不同类型提醒添加特定控件
-        self.audio_attach_var = tk.StringVar()
-        self.email_attendee_var = tk.StringVar()
-        self.email_summary_var = tk.StringVar()
-        self.email_attach_var = tk.StringVar()
-
+        # 根据不同提醒类型显示特定控件
         self.display_frame = ttk.Frame(frame)
-        self.display_frame.grid(row=5, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
-        self.display_frame.grid_remove()  # 初始隐藏
+        self.display_frame.grid(row=7, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.display_frame.grid_remove()
 
         self.audio_attach_frame = ttk.Frame(frame)
-        self.audio_attach_frame.grid(row=5, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
-        self.audio_attach_frame.grid_remove()  # 初始隐藏
+        self.audio_attach_frame.grid(row=7, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.audio_attach_frame.grid_remove()
 
         self.email_frame = ttk.Frame(frame)
-        self.email_frame.grid(row=5, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
-        self.email_frame.grid_remove()  # 初始隐藏
+        self.email_frame.grid(row=7, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.email_frame.grid_remove()
 
+        # 显示提醒的描述框
         ttk.Label(self.display_frame, text="提醒描述:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.display_description = tk.Text(self.display_frame, height=3, width=40)
         self.display_description.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
@@ -2466,60 +2665,40 @@ class EventDialog:
         display_scrollbar.grid(row=0, column=2, sticky="ns")
         self.display_description.config(yscrollcommand=display_scrollbar.set)
 
+        # 声音提醒的附件框
         ttk.Label(self.audio_attach_frame, text="音频文件地址:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40).grid(row=0, column=1,
-                                                                                              sticky="ew", padx=5,
-                                                                                              pady=5)
+        self.audio_attach_var = tk.StringVar()
+        ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40).grid(
+            row=0, column=1, sticky="ew", padx=5, pady=5)
 
+        # 邮件提醒的多个字段
         ttk.Label(self.email_frame, text="收件人邮箱:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40).grid(row=0, column=1, sticky="ew",
-                                                                                         padx=5, pady=5)
+        self.email_attendee_var = tk.StringVar()
+        ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40).grid(
+            row=0, column=1, sticky="ew", padx=5, pady=5)
 
         ttk.Label(self.email_frame, text="邮件主题:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40).grid(row=1, column=1, sticky="ew",
-                                                                                        padx=5, pady=5)
+        self.email_summary_var = tk.StringVar()
+        ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40).grid(
+            row=1, column=1, sticky="ew", padx=5, pady=5)
+
         ttk.Label(self.email_frame, text="邮件正文:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.email_description = tk.Text(self.email_frame, height=3, width=40)
         self.email_description.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
         email_scrollbar = ttk.Scrollbar(self.email_frame, command=self.email_description.yview)
         email_scrollbar.grid(row=2, column=2, sticky="ns")
-        self.display_description.config(yscrollcommand=email_scrollbar.set)
+        self.email_description.config(yscrollcommand=email_scrollbar.set)
 
         ttk.Label(self.email_frame, text="邮件附件:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-        ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40).grid(row=3, column=1, sticky="ew",
-                                                                                       padx=5, pady=5)
+        self.email_attach_var = tk.StringVar()
+        ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40).grid(
+            row=3, column=1, sticky="ew", padx=5, pady=5)
 
+        # 初始化提醒类型相关控件的状态
         self.on_reminder_type_change()
 
-    def on_reminder_type_change(self, event=None):
-        reminder_type = self.reminder_type_var.get()
-        self.display_frame.grid_remove()
-        self.audio_attach_frame.grid_remove()
-        self.email_frame.grid_remove()
-
-        if reminder_type == "显示":
-            self.display_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-        elif reminder_type == "声音":
-            self.audio_attach_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-        elif reminder_type == "邮件":
-            self.email_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-
-    def update_reminder_listbox(self):
-        """更新提醒列表框的内容"""
-        self.reminder_listbox.delete(0, tk.END)
-        for alarm in self.alarms:
-            trigger = alarm['trigger']
-            action = alarm['action']
-
-            # 创建显示文本
-            display_text = f"{action} - {trigger}"
-            if alarm.get('description', False): display_text += f" - {alarm.get('description')}"
-            if alarm.get('attendee', False): display_text += f" - {alarm.get('attendee')}"
-            if alarm.get('summary', False): display_text += f" - {alarm.get('summary')}"
-            if alarm.get('description', False): display_text += f" - {alarm.get('description')}"
-            if alarm.get('attach', False): display_text += f" - {alarm.get('attach')}"
-
-            self.reminder_listbox.insert("end", display_text)
+        # 初始化触发类型显示
+        self.toggle_reminder_trigger_type()
 
     def create_advanced_tab(self):
         frame = ttk.LabelFrame(self.advanced_frame, text="高级设置")
@@ -2531,8 +2710,8 @@ class EventDialog:
         # 分类
         ttk.Label(frame, text="日程分类:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.categories_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.categories_var, width=30).grid(
-            row=0, column=1, sticky="we", padx=5, pady=5)
+        self.categories_entry = ttk.Entry(frame, textvariable=self.categories_var, width=30)
+        self.categories_entry.grid(row=0, column=1, sticky="we", padx=5, pady=5)
 
         # 优先级 - 使用Scale
         ttk.Label(frame, text="优先级:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
@@ -2581,6 +2760,165 @@ class EventDialog:
         scrollbar.grid(row=6, column=2, sticky="ns")
         self.attendee_text.config(yscrollcommand=scrollbar.set)
 
+    def on_end_cond_changed(self, *args):
+        """当结束条件改变时更新UI"""
+        self.update_end_condition_input(self.end_cond_var.get())
+
+    def on_reminder_type_change(self, event=None):
+        reminder_type = self.reminder_type_var.get()
+        self.display_frame.grid_remove()
+        self.audio_attach_frame.grid_remove()
+        self.email_frame.grid_remove()
+
+        if reminder_type == "显示":
+            self.display_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        elif reminder_type == "声音":
+            self.audio_attach_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        elif reminder_type == "邮件":
+            self.email_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+    def update_reminder_listbox(self):
+        """更新提醒列表框的内容"""
+        self.reminder_listbox.delete(0, tk.END)
+        for alarm in self.alarms:
+            trigger = alarm['trigger']
+            action = alarm['action']
+
+            # 创建显示文本
+            if isinstance(trigger, timedelta):
+                # 提取天、小时、分钟
+                days = abs(trigger.days)
+                seconds = abs(trigger.seconds)
+                hours = seconds // 3600
+                minutes = (seconds % 3600) // 60
+
+                # 创建显示字符串
+                trigger_text = f"{days}天{hours}小时{minutes}分钟前"
+            else:
+                trigger_text = str(trigger)
+
+            display_text = f"{action} - {trigger_text}"
+
+            # 添加重复信息
+            repeat = alarm.get('repeat', '0')
+            if repeat != '0' and 'duration' in alarm:
+                duration = alarm['duration']
+                if isinstance(duration, timedelta):
+                    # 提取天、小时、分钟
+                    days = duration.days
+                    seconds = duration.seconds
+                    hours = seconds // 3600
+                    minutes = (seconds % 3600) // 60
+
+                    # 创建间隔字符串
+                    interval_text = ""
+                    if days > 0:
+                        interval_text += f"{days}天"
+                    if hours > 0:
+                        interval_text += f"{hours}小时"
+                    if minutes > 0:
+                        interval_text += f"{minutes}分钟"
+
+                    display_text += f" (重复{repeat}次, 间隔{interval_text})"
+
+            # 添加其他属性
+            if 'description' in alarm:
+                display_text += f" - {alarm['description'][:10] + '...' if alarm['description'] and len(alarm['description']) >= 10 else alarm['description'] if alarm['description'] else '[无描述/正文]'}"
+            if 'attendee' in alarm:
+                display_text += f" - {alarm['attendee'][:10] + '...' if alarm['attendee'] and len(alarm['attendee']) >= 10 else alarm['attendee'] if alarm['attendee'] else '[无收件人]'}"
+            if 'summary' in alarm:
+                display_text += f" - {alarm['summary'][:10] + '...' if alarm['summary'] and len(alarm['summary']) >= 10 else alarm['summary'] if alarm['summary'] else '[无主题]'}"
+            if 'attach' in alarm:
+                display_text += f" - {alarm['attach'][:10] + '...' if alarm['attach'] and len(alarm['attach']) >= 10 else alarm['attach'] if alarm['attach'] else '[无文件]'}"
+
+            self.reminder_listbox.insert("end", display_text)
+
+    def toggle_reminder_trigger_type(self):
+        """切换提醒触发类型显示"""
+        if self.reminder_trigger_type.get() == "relative":
+            self.reminder_time_frame.grid()
+            self.absolute_trigger_frame.grid_remove()
+        else:
+            self.reminder_time_frame.grid_remove()
+            self.absolute_trigger_frame.grid()
+
+    def toggle_allday_event(self):
+        """切换全天事件状态"""
+        is_allday = self.allday_var.get()
+
+        # 启用/禁用时间选择控件
+        state = "disabled" if is_allday else "readonly"
+        self.start_hour.config(state=state)
+        self.start_minute.config(state=state)
+        self.end_hour.config(state=state)
+        self.end_minute.config(state=state)
+
+        # 启用/禁用时区选择
+        self.start_timezone_combo.config(state=state)
+        self.end_timezone_combo.config(state=state)
+
+        # 禁用时区同步选项
+        self.sync_timezone_check.config(state="disabled" if is_allday else "normal")
+
+        # 如果是全天事件，强制使用绝对时间提醒
+        if is_allday:
+            self.reminder_trigger_type.set("absolute")
+            self.toggle_reminder_trigger_type()
+
+            # 设置默认提醒时间为当天上午9点
+            start_date = self.start_date.get_date()
+            self.absolute_trigger_date.set_date(start_date)
+            self.absolute_trigger_hour.set("09")
+            self.absolute_trigger_minute.set("00")
+            self.absolute_trigger_timezone.set(self.start_timezone_var.get())
+
+            # 禁用相对时间提醒控件
+            self.reminder_time_frame.grid_remove()
+
+            # 显示提示信息
+            if not hasattr(self, 'allday_reminder_hint'):
+                self.allday_reminder_hint = ttk.Label(
+                    self.reminder_frame,
+                    text="全天事件只能使用指定时间提醒，默认设置为事件当天上午9点",
+                    foreground="blue"
+                )
+                self.allday_reminder_hint.grid(row=10, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+            self.allday_reminder_hint.grid()
+        else:
+            # 启用相对时间提醒
+            self.reminder_time_frame.grid()
+
+            # 隐藏提示信息
+            if hasattr(self, 'allday_reminder_hint'):
+                self.allday_reminder_hint.grid_remove()
+
+    def parse_duration_for_display(self, duration_str):
+        """解析持续时间用于显示"""
+        # 简化的解析逻辑，实际应用中应使用更健壮的解析
+        days = 0
+        hours = 0
+        minutes = 0
+
+        if 'D' in duration_str:
+            days_part = duration_str.split('D')[0]
+            if days_part.startswith('P'):
+                days_part = days_part[1:]
+            days = int(days_part) if days_part else 0
+
+        if 'H' in duration_str:
+            hours_part = duration_str.split('H')[0]
+            if 'T' in hours_part:
+                hours_part = hours_part.split('T')[1]
+            hours = int(hours_part) if hours_part else 0
+
+        if 'M' in duration_str and 'T' in duration_str:
+            minutes_part = duration_str.split('M')[0]
+            if 'H' in minutes_part:
+                minutes_part = minutes_part.split('H')[1]
+            minutes = int(minutes_part) if minutes_part else 0
+
+        return days, hours, minutes
+
     def set_initial_values(self):
         # 获取本地时区 ID
         local_tz_id = self.get_local_timezone_id()
@@ -2594,10 +2932,10 @@ class EventDialog:
         if self.initial:
             self.uid_var.set(self.initial.get('uid', f"event-{uuid.uuid4().hex}"))
             self.summary_var.set(self.initial.get('summary', ''))
-            self.location_var.set(self.initial.get('location', ''))
+            self.location_var.set(self.decode_text(self.initial.get('location', '')))
 
             if 'description' in self.initial:
-                self.description_text.insert("1.0", self.initial['description'])
+                self.description_text.insert("1.0", self.decode_text(self.initial.get('description', '')))
 
             # 状态转换（英文->中文）
             status_en = self.initial.get('status', 'CONFIRMED')
@@ -2605,7 +2943,12 @@ class EventDialog:
             self.status_var.set(status_zh)
 
             self.version_var.set(self.initial.get('version', '2.0'))
+
             self.allday_var.set(self.initial.get('allday', False))
+
+            # 如果是全天事件，应用相关设置
+            if self.allday_var.get():
+                self.toggle_allday_event()
 
             # 设置时间
             if 'start' in self.initial:
@@ -2691,11 +3034,25 @@ class EventDialog:
             self.force_reminder_var.set(self.initial.get('force_reminder', False))
 
             # 设置提醒列表
-            self.alarms = self.initial.get('alarms', [])
+            self.alarms = []
+            for alarm in self.initial.get('alarms', []):
+                # 解码提醒中的文本字段
+                decoded_alarm = alarm.copy()
+                if 'description' in decoded_alarm:
+                    decoded_alarm['description'] = self.decode_text(decoded_alarm['description'])
+                if 'summary' in decoded_alarm:
+                    decoded_alarm['summary'] = self.decode_text(decoded_alarm['summary'])
+                self.alarms.append(decoded_alarm)
+
             self.update_reminder_listbox()
 
             # 高级设置
-            self.categories_var.set(self.initial.get('categories', ''))
+            if 'categories' in self.initial:
+                categories = self.initial['categories']
+                # 如果是列表，转换为逗号分隔的字符串
+                if isinstance(categories, (list, tuple)):
+                    categories = ''.join([str(c) for c in categories if c])
+                self.categories_var.set(str(categories))
 
             # 优先级
             priority = self.initial.get('priority', '5')
@@ -3070,7 +3427,7 @@ class EventDialog:
 
     def toggle_timezone_sync(self):
         """切换时区同步状态"""
-        if self.sync_timezone_var.get():
+        if self.sync_timezone_var.get() and not self.allday_var.get():
             # 同步时区
             self.end_timezone_var.set(self.start_timezone_var.get())
             self.end_timezone_combo.config(state="disabled")
@@ -3110,35 +3467,64 @@ class EventDialog:
 
     def add_reminder(self):
         """添加新的提醒"""
-        days = - int(self.reminder_days_var.get())
-        hours = - int(self.reminder_hours_var.get())
-        minutes = - int(self.reminder_minutes_var.get())
-
-        # 创建触发时间（timedelta）
-        trigger = timedelta(days=days, hours=hours, minutes=minutes)
-
         # 获取提醒类型
         reminder_type = self.reminder_type_var.get()
+
+        # 根据触发类型设置提醒
+        trigger_type = self.reminder_trigger_type.get()
+
+        if trigger_type == "relative":
+            # 相对时间提醒
+            days = int(self.reminder_days_var.get())
+            hours = int(self.reminder_hours_var.get())
+            minutes = int(self.reminder_minutes_var.get())
+            trigger = timedelta(days=days, hours=hours, minutes=minutes)
+        else:
+            # 绝对时间提醒
+            date_str = self.absolute_trigger_date.get_date()
+            hour = self.absolute_trigger_hour.get()
+            minute = self.absolute_trigger_minute.get()
+
+            # 获取时区
+            tz_str = self.absolute_trigger_timezone.get().split('(')[-1].split(')')[0]
+            tz = pytz.timezone(tz_str) if tz_str else pytz.utc
+
+            # 创建带时区的datetime对象
+            trigger = datetime.strptime(f"{date_str} {hour}:{minute}", "%Y-%m-%d %H:%M")
+            trigger = tz.localize(trigger)
 
         # 将中文类型转换为英文
         action_mapping = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}
         action = action_mapping.get(reminder_type, "DISPLAY")
 
-        # 获取特定类型的额外信息
-        extra = {}
-        if reminder_type == "显示":
-            extra['description'] = self.display_description.get("1.0", "end").strip()
-        elif reminder_type == "声音":
-            extra['attach'] = self.audio_attach_var.get()
-        elif reminder_type == "邮件":
-            extra['attendee'] = self.email_attendee_var.get()
-            extra['summary'] = self.email_summary_var.get()
-            extra['description'] = self.email_description.get("1.0", "end").strip()
-            extra['attach'] = self.email_attach_var.get()
+        # 获取REPEAT和DURATION值
+        repeat = self.reminder_repeat_var.get()
+        duration_days = int(self.reminder_duration_days_var.get())
+        duration_hours = int(self.reminder_duration_hours_var.get())
+        duration_minutes = int(self.reminder_duration_minutes_var.get())
+
+        # 创建持续时间（timedelta）
+        duration = timedelta(days=duration_days, hours=duration_hours, minutes=duration_minutes)
 
         # 添加到提醒列表
-        alarm = {'action': action, 'trigger': trigger}
-        alarm.update(extra)
+        alarm = {
+            'action': action,
+            'trigger': trigger,
+            'repeat': repeat,
+            'duration': duration
+        }
+
+        # 获取特定类型的额外信息
+        if reminder_type == "显示":
+            alarm['description'] = self.display_description.get("1.0", "end").strip()
+        elif reminder_type == "声音":
+            alarm['attach'] = self.audio_attach_var.get()
+        elif reminder_type == "邮件":
+            alarm['attendee'] = self.email_attendee_var.get()
+            alarm['summary'] = self.email_summary_var.get()
+            alarm['description'] = self.email_description.get("1.0", "end").strip()
+            alarm['attach'] = self.email_attach_var.get()
+
         self.alarms.append(alarm)
 
         # 更新提醒列表框
@@ -3154,20 +3540,93 @@ class EventDialog:
         index = selected[0]
         alarm = self.alarms[index]
 
-        # 解析触发时间
-        trigger = alarm['trigger']
-        if isinstance(trigger, timedelta):
-            days = trigger.days
-            hours, remainder = divmod(trigger.seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
-        else:
-            days = 0
-            hours = 0
-            minutes = 15  # 默认值
+        # 设置触发时间
+        if isinstance(alarm['trigger'], timedelta):
+            # 使用绝对值显示在UI上
+            total_seconds = abs(alarm['trigger'].total_seconds())
+            days = int(total_seconds // 86400)
+            remaining_seconds = total_seconds % 86400
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
 
-        self.reminder_days_var.set(str(days))
-        self.reminder_hours_var.set(str(hours))
-        self.reminder_minutes_var.set(str(minutes))
+            self.reminder_days_var.set(str(days))
+            self.reminder_hours_var.set(str(hours))
+            self.reminder_minutes_var.set(str(minutes))
+        else:
+            # 处理旧格式
+            trigger_str = alarm['trigger']
+            if trigger_str.startswith('-P'):
+                duration_str = trigger_str[1:]  # 去掉负号
+                days = 0
+                hours = 0
+                minutes = 0
+
+                if 'T' in duration_str:
+                    date_part, time_part = duration_str.split('T')
+                else:
+                    date_part = duration_str
+                    time_part = ""
+
+                # 解析日期部分
+                if 'D' in date_part:
+                    days = int(date_part.split('D')[0][1:])  # 去掉P前缀
+
+                # 解析时间部分
+                if time_part:
+                    if 'H' in time_part:
+                        hours = int(time_part.split('H')[0])
+                        time_part = time_part.split('H')[1]
+                    if 'M' in time_part:
+                        minutes = int(time_part.split('M')[0])
+
+                self.reminder_days_var.set(str(days))
+                self.reminder_hours_var.set(str(hours))
+                self.reminder_minutes_var.set(str(minutes))
+
+        # 设置REPEAT值
+        self.reminder_repeat_var.set(str(alarm.get('repeat', '0')))
+
+        # 设置DURATION值
+        if 'duration' in alarm and isinstance(alarm['duration'], timedelta):
+            duration = alarm['duration']
+            days = duration.days
+            seconds = duration.seconds
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+
+            self.reminder_duration_days_var.set(str(days))
+            self.reminder_duration_hours_var.set(str(hours))
+            self.reminder_duration_minutes_var.set(str(minutes))
+        else:
+            # 处理旧格式
+            duration_str = alarm.get('duration', 'PT15M')
+            if duration_str.startswith('P'):
+                duration_str = duration_str[1:]  # 去掉P
+                days = 0
+                hours = 0
+                minutes = 0
+
+                if 'T' in duration_str:
+                    date_part, time_part = duration_str.split('T')
+                else:
+                    date_part = duration_str
+                    time_part = ""
+
+                # 解析日期部分
+                if 'D' in date_part:
+                    days = int(date_part.split('D')[0])
+
+                # 解析时间部分
+                if time_part:
+                    if 'H' in time_part:
+                        hours = int(time_part.split('H')[0])
+                        time_part = time_part.split('H')[1]
+                    if 'M' in time_part:
+                        minutes = int(time_part.split('M')[0])
+
+                self.reminder_duration_days_var.set(str(days))
+                self.reminder_duration_hours_var.set(str(hours))
+                self.reminder_duration_minutes_var.set(str(minutes))
 
         # 将英文类型转换为中文
         action_mapping = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
@@ -3211,6 +3670,25 @@ class EventDialog:
             return f"ENCODING=QUOTED-PRINTABLE;CHARSET=UTF-8:{encoded}"
         return text
 
+    def decode_text(self, text):
+        """解码QUOTED-PRINTABLE编码的文本"""
+        if not text:
+            return ""
+
+        # 检查是否包含QUOTED-PRINTABLE编码
+        if "ENCODING=QUOTED-PRINTABLE" in text:
+            try:
+                # 提取编码部分
+                encoded_part = text.split(":", 1)[1]
+                # 解码QUOTED-PRINTABLE
+                decoded_bytes = quopri.decodestring(encoded_part)
+                # 尝试UTF-8解码
+                return decoded_bytes.decode('utf-8')
+            except:
+                return text
+
+        return text
+
     def generate_ical(self):
         """生成iCalendar格式的内容"""
         # 创建日历对象
@@ -3229,7 +3707,7 @@ class EventDialog:
         # 编码并设置摘要、地点和描述
         summary = self.summary_var.get()
         if summary:
-            event.add('summary').value = self.encode_text(summary)
+            event.add('summary').value = summary
 
         location = self.location_var.get()
         if location:
@@ -3254,6 +3732,7 @@ class EventDialog:
             event.add('dtend').value = end_date_obj
             # 设置特殊日历的全天事件标识符
             event.add('X-ALLDAY').value = "1"
+            event.add('X-MICROSOFT-CDO-ALLDAYEVENT').value = "TRUE"
         else:
             # 带时间的事件
             start_hour = self.start_hour.get()
@@ -3313,13 +3792,58 @@ class EventDialog:
             valarm = event.add('valarm')
             valarm.add('action').value = alarm['action']
 
-            # 设置触发时间（timedelta）
-            valarm.add('trigger').value = alarm["trigger"]
+            # 确保TRIGGER是timedelta对象
+            if isinstance(alarm['trigger'], str):
+                # 解析字符串为timedelta
+                if alarm['trigger'].startswith('-P'):
+                    duration_str = alarm['trigger'][1:]  # 去掉负号
+                    days = 0
+                    hours = 0
+                    minutes = 0
+
+                    if 'T' in duration_str:
+                        date_part, time_part = duration_str.split('T')
+                    else:
+                        date_part = duration_str
+                        time_part = ""
+
+                    # 解析日期部分
+                    if 'D' in date_part:
+                        days = int(date_part.split('D')[0][1:])  # 去掉P前缀
+
+                    # 解析时间部分
+                    if time_part:
+                        if 'H' in time_part:
+                            hours = int(time_part.split('H')[0])
+                            time_part = time_part.split('H')[1]
+                        if 'M' in time_part:
+                            minutes = int(time_part.split('M')[0])
+
+                    valarm.add('trigger').value = timedelta(days=days, hours=hours, minutes=minutes)
+                else:
+                    # 默认为15分钟
+                    valarm.add('trigger').value = timedelta(minutes=15)
+            elif isinstance(alarm['trigger'], datetime):
+                # 绝对时间提醒
+                valarm.add('trigger').value = alarm['trigger']
+                valarm.trigger.params['VALUE'] = ['DATE-TIME']
+            else:
+                # 相对时间提醒
+                valarm.add('trigger').value = alarm['trigger']
+
+            # 添加REPEAT和DURATION（如果设置了）
+            if 'repeat' in alarm and 'duration' in alarm:
+                repeat = alarm['repeat']
+                duration = alarm['duration']
+                if repeat and int(repeat) > 0 and duration:
+                    valarm.add('repeat').value = repeat
+                    valarm.add('duration').value = duration
 
             # 添加其他提醒属性
             if alarm['action'] == "DISPLAY":
                 if 'description' in alarm:
-                    valarm.add('description').value = alarm['description']
+                    # 编码描述
+                    valarm.add('description').value = self.encode_text(alarm['description'])
             elif alarm['action'] == "AUDIO":
                 if 'attach' in alarm:
                     valarm.add('attach').value = alarm['attach']
@@ -3327,15 +3851,19 @@ class EventDialog:
                 if 'attendee' in alarm:
                     valarm.add('attendee').value = alarm['attendee']
                 if 'summary' in alarm:
-                    valarm.add('summary').value = alarm['summary']
+                    # 编码邮件主题
+                    valarm.add('summary').value = self.encode_text(alarm['summary'])
                 if 'description' in alarm:
-                    valarm.add('description').value = alarm['description']
+                    # 编码邮件正文
+                    valarm.add('description').value = self.encode_text(alarm['description'])
                 if 'attach' in alarm:
                     valarm.add('attach').value = alarm['attach']
 
         # 设置高级属性
-        categories = self.categories_var.get()
+        categories = self.categories_var.get().strip()
         if categories:
+            # 去除多余的逗号和空格
+            # cleaned_categories = ', '.join([c.strip() for c in categories.split(',') if c.strip()])
             event.add('categories').value = categories
 
         priority = str(self.priority_var.get())
