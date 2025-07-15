@@ -71,7 +71,7 @@ logger.addHandler(console_handler)
 
 software_name = "PrivateDAV"
 software_description = "私人 CardDAV/CalDAV 服务"
-software_version = "1.1"
+software_version = "1.2"
 software_author = "hunyanjie"
 
 
@@ -868,16 +868,32 @@ CalDAV 配置:
         list_frame = ttk.LabelFrame(self.contacts_tab, text="联系人列表")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        columns = ("uid", "name", "email", "phone")
+        # 添加操作提示
+        hint_frame = ttk.Frame(list_frame)
+        hint_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        hint_label = ttk.Label(
+            hint_frame,
+            text="操作提示: 1) 点击复选框选择/取消选择单个联系人 2) 点击表头复选框全选/取消全选 3) 按住鼠标拖动选择多行 4) 在其他列单击只选择当前行",
+            foreground="blue"
+        )
+        hint_label.pack(side=tk.LEFT)
+
+        # 添加列 - 第一列为复选框
+        columns = ("selected", "uid", "name", "email", "phone")
         self.contacts_tree = ttk.Treeview(
             list_frame, columns=columns, show="headings", selectmode="extended"
         )
 
+        # 配置列标题
+        self.contacts_tree.heading("selected", text="✓")
         self.contacts_tree.heading("uid", text="ID")
         self.contacts_tree.heading("name", text="姓名")
         self.contacts_tree.heading("email", text="邮箱")
         self.contacts_tree.heading("phone", text="电话")
 
+        # 配置列宽
+        self.contacts_tree.column("selected", width=30, anchor=tk.CENTER)
         self.contacts_tree.column("uid", width=100, anchor=tk.CENTER)
         self.contacts_tree.column("name", width=150)
         self.contacts_tree.column("email", width=200)
@@ -889,11 +905,24 @@ CalDAV 配置:
         self.contacts_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 添加双击编辑功能
-        self.contacts_tree.bind('<Double-1>', self.on_contact_double_click)
+        # 添加全选复选框到表头
+        self.contacts_tree.heading("selected", command=self.toggle_all_contacts_selection)
 
-        # 绑定Ctrl+A快捷键
+        # 添加事件绑定
+        self.contacts_tree.bind('<ButtonPress-1>', self.on_contact_tree_click)
+        self.contacts_tree.bind('<B1-Motion>', self.on_contact_tree_drag)
+        self.contacts_tree.bind('<ButtonRelease-1>', self.on_contact_tree_release)
+        self.contacts_tree.bind('<Double-1>', self.on_contact_double_click)
         self.contacts_tree.bind("<Control-a>", lambda e: self.select_all(e, self.contacts_tree))
+
+        # 添加自动滚动绑定
+        self.contacts_tree.bind("<Motion>", self.on_contact_tree_motion)
+
+        # 初始化拖拽状态变量
+        self.contact_drag_start = None
+        self.contact_drag_item = None
+        self.contact_dragging = False
+        self.auto_scroll_active = False
 
         # 操作按钮
         btn_frame = ttk.Frame(self.contacts_tab)
@@ -920,16 +949,32 @@ CalDAV 配置:
         list_frame = ttk.LabelFrame(self.calendar_tab, text="日历事件")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        columns = ("uid", "summary", "start", "end")
+        # 添加操作提示
+        hint_frame = ttk.Frame(list_frame)
+        hint_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        hint_label = ttk.Label(
+            hint_frame,
+            text="操作提示: 1) 点击复选框选择/取消选择单个事件 2) 点击表头复选框全选/取消全选 3) 按住鼠标拖动选择多行 4) 在其他列单击只选择当前行",
+            foreground="blue"
+        )
+        hint_label.pack(side=tk.LEFT)
+
+        # 添加列 - 第一列为复选框
+        columns = ("selected", "uid", "summary", "start", "end")
         self.events_tree = ttk.Treeview(
             list_frame, columns=columns, show="headings", selectmode="extended"
         )
 
+        # 配置列标题
+        self.events_tree.heading("selected", text="✓")
         self.events_tree.heading("uid", text="ID")
         self.events_tree.heading("summary", text="事件")
         self.events_tree.heading("start", text="开始时间")
         self.events_tree.heading("end", text="结束时间")
 
+        # 配置列宽
+        self.events_tree.column("selected", width=30, anchor=tk.CENTER)
         self.events_tree.column("uid", width=100, anchor=tk.CENTER)
         self.events_tree.column("summary", width=200)
         self.events_tree.column("start", width=150)
@@ -941,11 +986,24 @@ CalDAV 配置:
         self.events_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 添加双击编辑功能
-        self.events_tree.bind('<Double-1>', self.on_event_double_click)
+        # 添加全选复选框到表头
+        self.events_tree.heading("selected", command=self.toggle_all_events_selection)
 
-        # 绑定Ctrl+A快捷键
+        # 添加事件绑定
+        self.events_tree.bind('<ButtonPress-1>', self.on_event_tree_click)
+        self.events_tree.bind('<B1-Motion>', self.on_event_tree_drag)
+        self.events_tree.bind('<ButtonRelease-1>', self.on_event_tree_release)
+        self.events_tree.bind('<Double-1>', self.on_event_double_click)
         self.events_tree.bind("<Control-a>", lambda e: self.select_all(e, self.events_tree))
+
+        # 添加自动滚动绑定
+        self.events_tree.bind("<Motion>", self.on_event_tree_motion)
+
+        # 初始化拖拽状态变量
+        self.event_drag_start = None
+        self.event_drag_item = None
+        self.event_dragging = False
+        self.auto_scroll_active = False
 
         # 操作按钮
         btn_frame = ttk.Frame(self.calendar_tab)
@@ -965,6 +1023,362 @@ CalDAV 配置:
         ttk.Button(import_export_frame, text="导出选中", command=self.export_selected_events).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.LEFT, padx=5)
+
+    def toggle_all_contacts_selection(self):
+        """切换所有联系人的选择状态"""
+        all_items = self.contacts_tree.get_children()
+        if not all_items:
+            return
+
+        # 检查当前是否全部已选
+        all_selected = all(item in self.contacts_tree.selection() for item in all_items)
+
+        new_selection = [] if all_selected else all_items
+
+        # 更新Treeview选择
+        self.contacts_tree.selection_set(new_selection)
+
+        # 更新复选框状态
+        for item in all_items:
+            values = list(self.contacts_tree.item(item, 'values'))
+            values[0] = "✓" if not all_selected else " "
+            self.contacts_tree.item(item, values=values)
+
+    def toggle_all_events_selection(self):
+        """切换所有事件的选择状态"""
+        all_items = self.events_tree.get_children()
+        if not all_items:
+            return
+
+        # 检查当前是否全部已选
+        all_selected = all(item in self.events_tree.selection() for item in all_items)
+
+        new_selection = [] if all_selected else all_items
+
+        # 更新Treeview选择
+        self.events_tree.selection_set(new_selection)
+
+        # 更新复选框状态
+        for item in all_items:
+            values = list(self.events_tree.item(item, 'values'))
+            values[0] = "✓" if not all_selected else " "
+            self.events_tree.item(item, values=values)
+
+    def on_contact_tree_click(self, event):
+        """处理联系人列表点击事件"""
+        region = self.contacts_tree.identify("region", event.x, event.y)
+        item = self.contacts_tree.identify_row(event.y)
+        column = self.contacts_tree.identify_column(event.x)
+
+        # 记录拖拽起始位置
+        self.contact_drag_start = (event.x, event.y)
+        self.contact_drag_item = item  # 保存起始行
+        self.contact_dragging = False
+
+        if region == "heading" and column == "#1":
+            # 点击了表头复选框
+            self.toggle_all_contacts_selection()
+            return "break"
+
+        if region == "cell" and column == "#1" and item:
+            # 点击了复选框列
+            values = list(self.contacts_tree.item(item, 'values'))
+            current_selection = self.contacts_tree.selection()
+
+            if item in current_selection:
+                # 如果已选中，则取消选中
+                self.contacts_tree.selection_remove(item)
+                values[0] = " "
+            else:
+                # 如果未选中，则选中
+                self.contacts_tree.selection_add(item)
+                values[0] = "✓"
+
+            self.contacts_tree.item(item, values=values)
+            return "break"
+
+        if region == "cell" and column != "#1" and item:
+            # 点击非复选框列 - 只选择当前行
+            # 检查Ctrl键是否按下（允许Ctrl多选）
+            ctrl_pressed = event.state & 0x0004  # Ctrl键状态
+
+            if not ctrl_pressed:
+                # 如果没有按下Ctrl键，清除所有选择
+                self.contacts_tree.selection_set([])
+
+            # 选中当前行
+            self.contacts_tree.selection_add(item)
+
+            # 更新所有行的复选框状态
+            all_items = self.contacts_tree.get_children()
+            for itm in all_items:
+                vals = list(self.contacts_tree.item(itm, 'values'))
+                if itm == item:
+                    vals[0] = "✓"
+                elif not ctrl_pressed:
+                    # 如果没有按下Ctrl键，清除其他行的选择
+                    vals[0] = " "
+                self.contacts_tree.item(itm, values=vals)
+
+            return "break"
+
+    def on_contact_tree_drag(self, event):
+        """处理联系人列表拖拽事件"""
+        if not self.contact_drag_start or not self.contact_drag_item:
+            return
+
+        # 设置拖拽状态
+        self.contact_dragging = True
+
+        # 获取当前拖拽位置对应的行
+        item = self.contacts_tree.identify_row(event.y)
+        if not item:
+            return
+
+        # 获取起始行和当前行的索引
+        start_index = self.contacts_tree.index(self.contact_drag_item)
+        current_index = self.contacts_tree.index(item)
+
+        # 获取所有行
+        all_items = list(self.contacts_tree.get_children())
+
+        # 确定选择范围
+        start = min(start_index, current_index)
+        end = max(start_index, current_index)
+
+        # 获取范围内的所有行
+        selected_items = all_items[start:end + 1]
+
+        # 更新选择
+        self.contacts_tree.selection_set(selected_items)
+
+        # 更新复选框状态
+        for item in all_items:
+            values = list(self.contacts_tree.item(item, 'values'))
+            if item in selected_items:
+                values[0] = "✓"
+            else:
+                values[0] = " "
+            self.contacts_tree.item(item, values=values)
+
+    def on_contact_tree_release(self, event):
+        """处理联系人列表鼠标释放事件"""
+        self.contact_drag_start = None
+        self.contact_drag_item = None
+        self.contact_dragging = False
+        return "break"
+
+    def on_contact_tree_motion(self, event):
+        """处理联系人列表鼠标移动事件 - 实现自动滚动"""
+        if not self.contact_dragging:
+            return
+
+        # 获取Treeview的高度
+        height = self.contacts_tree.winfo_height()
+        if height == 0:
+            return
+
+        # 计算鼠标在Treeview中的相对位置
+        rel_y = event.y / height
+
+        # 如果鼠标在顶部10%区域，向上滚动
+        if rel_y < 0.1:
+            self.contacts_tree.yview_scroll(-1, "units")
+        # 如果鼠标在底部10%区域，向下滚动
+        elif rel_y > 0.9:
+            self.contacts_tree.yview_scroll(1, "units")
+
+    def on_event_tree_click(self, event):
+        """处理事件列表点击事件"""
+        region = self.events_tree.identify("region", event.x, event.y)
+        item = self.events_tree.identify_row(event.y)
+        column = self.events_tree.identify_column(event.x)
+
+        # 记录拖拽起始位置
+        self.event_drag_start = (event.x, event.y)
+        self.event_drag_item = item  # 保存起始行
+        self.event_dragging = False
+
+        if region == "heading" and column == "#1":
+            # 点击了表头复选框
+            self.toggle_all_events_selection()
+            return "break"
+
+        if region == "cell" and column == "#1" and item:
+            # 点击了复选框列
+            values = list(self.events_tree.item(item, 'values'))
+            current_selection = self.events_tree.selection()
+
+            if item in current_selection:
+                # 如果已选中，则取消选中
+                self.events_tree.selection_remove(item)
+                values[0] = " "
+            else:
+                # 如果未选中，则选中
+                self.events_tree.selection_add(item)
+                values[0] = "✓"
+
+            self.events_tree.item(item, values=values)
+            return "break"
+
+        if region == "cell" and column != "#1" and item:
+            # 点击非复选框列 - 只选择当前行
+            # 检查Ctrl键是否按下（允许Ctrl多选）
+            ctrl_pressed = event.state & 0x0004  # Ctrl键状态
+
+            if not ctrl_pressed:
+                # 如果没有按下Ctrl键，清除所有选择
+                self.events_tree.selection_set([])
+
+            # 选中当前行
+            self.events_tree.selection_add(item)
+
+            # 更新所有行的复选框状态
+            all_items = self.events_tree.get_children()
+            for itm in all_items:
+                vals = list(self.events_tree.item(itm, 'values'))
+                if itm == item:
+                    vals[0] = "✓"
+                elif not ctrl_pressed:
+                    # 如果没有按下Ctrl键，清除其他行的选择
+                    vals[0] = " "
+                self.events_tree.item(itm, values=vals)
+
+            return "break"
+
+    def on_event_tree_drag(self, event):
+        """处理事件列表拖拽事件"""
+        if not self.event_drag_start or not self.event_drag_item:
+            return
+
+        # 设置拖拽状态
+        self.event_dragging = True
+
+        # 获取当前拖拽位置对应的行
+        item = self.events_tree.identify_row(event.y)
+        if not item:
+            return
+
+        # 获取起始行和当前行的索引
+        start_index = self.events_tree.index(self.event_drag_item)
+        current_index = self.events_tree.index(item)
+
+        # 获取所有行
+        all_items = list(self.events_tree.get_children())
+
+        # 确定选择范围
+        start = min(start_index, current_index)
+        end = max(start_index, current_index)
+
+        # 获取范围内的所有行
+        selected_items = all_items[start:end + 1]
+
+        # 更新选择
+        self.events_tree.selection_set(selected_items)
+
+        # 更新复选框状态
+        for item in all_items:
+            values = list(self.events_tree.item(item, 'values'))
+            if item in selected_items:
+                values[0] = "✓"
+            else:
+                values[0] = " "
+            self.events_tree.item(item, values=values)
+
+    def on_event_tree_release(self, event):
+        """处理事件列表鼠标释放事件"""
+        self.event_drag_start = None
+        self.event_drag_item = None
+        self.event_dragging = False
+        return "break"
+
+    def on_event_tree_motion(self, event):
+        """处理事件列表鼠标移动事件 - 实现自动滚动"""
+        if not self.event_dragging:
+            return
+
+        # 获取Treeview的高度
+        height = self.events_tree.winfo_height()
+        if height == 0:
+            return
+
+        # 计算鼠标在Treeview中的相对位置
+        rel_y = event.y / height
+
+        # 如果鼠标在顶部10%区域，向上滚动
+        if rel_y < 0.1:
+            self.events_tree.yview_scroll(-1, "units")
+        # 如果鼠标在底部10%区域，向下滚动
+        elif rel_y > 0.9:
+            self.events_tree.yview_scroll(1, "units")
+
+    def refresh_contacts(self):
+        # 清除现有项
+        for item in self.contacts_tree.get_children():
+            self.contacts_tree.delete(item)
+
+        # 获取联系人数据
+        contacts = self.db.get_contacts()
+
+        # 获取当前选中的UID
+        selected_uids = set()
+        for item_id in self.contacts_tree.selection():
+            item = self.contacts_tree.item(item_id)
+            values = item['values']
+            if len(values) > 1:  # 确保有足够的列
+                selected_uids.add(values[1])  # uid在索引1的位置
+
+        # 添加联系人到列表
+        for contact in contacts:
+            # 确保所有值都是字符串
+            contact = [str(item) if item is not None else "" for item in contact]
+            uid = contact[0]  # UID是第一个元素
+
+            # 确定是否选中
+            selected = "✓" if uid in selected_uids else " "
+
+            # 插入新行（复选框、UID、姓名、邮箱、电话）
+            item_id = self.contacts_tree.insert("", tk.END, values=[selected] + contact)
+
+            # 如果之前是选中的，添加到当前选择
+            if selected == "✓":
+                self.contacts_tree.selection_add(item_id)
+
+        self.update_status_bar()
+
+    def refresh_events(self):
+        # 清除现有项
+        for item in self.events_tree.get_children():
+            self.events_tree.delete(item)
+
+        # 获取事件数据
+        events = self.db.get_events()
+
+        # 获取当前选中的UID
+        selected_uids = set()
+        for item_id in self.events_tree.selection():
+            item = self.events_tree.item(item_id)
+            values = item['values']
+            if len(values) > 1:  # 确保有足够的列
+                selected_uids.add(values[1])  # uid在索引1的位置
+
+        # 添加事件到列表
+        for event in events:
+            # 确保所有值都是字符串
+            event = [str(item) if item is not None else "" for item in event]
+            uid = event[0]  # UID是第一个元素
+
+            # 确定是否选中
+            selected = "✓" if uid in selected_uids else " "
+
+            # 插入新行（复选框、UID、摘要、开始时间、结束时间）
+            item_id = self.events_tree.insert("", tk.END, values=[selected] + event)
+
+            # 如果之前是选中的，添加到当前选择
+            if selected == "✓":
+                self.events_tree.selection_add(item_id)
+
+        self.update_status_bar()
 
     def select_all(self, event, tree=None):
         """全选当前列表项"""
@@ -991,30 +1405,6 @@ CalDAV 配置:
     def on_event_double_click(self, event):
         """双击事件列表项时触发编辑"""
         self.edit_event()
-
-    def refresh_contacts(self):
-        for item in self.contacts_tree.get_children():
-            self.contacts_tree.delete(item)
-
-        contacts = self.db.get_contacts()
-        for contact in contacts:
-            # 确保所有值都是字符串
-            contact = [str(item) if item is not None else "" for item in contact]
-            self.contacts_tree.insert("", tk.END, values=contact)
-
-        self.update_status_bar()
-
-    def refresh_events(self):
-        for item in self.events_tree.get_children():
-            self.events_tree.delete(item)
-
-        events = self.db.get_events()
-        for event in events:
-            # 确保所有值都是字符串
-            event = [str(item) if item is not None else "" for item in event]
-            self.events_tree.insert("", tk.END, values=event)
-
-        self.update_status_bar()
 
     def update_status_bar(self):
         contact_count = self.db.count_contacts()
@@ -1197,7 +1587,7 @@ CalDAV 配置:
         uids = []
         for item_id in selected:
             item = self.events_tree.item(item_id)
-            uid = item['values'][0]
+            uid = item['values'][1]
             uids.append(uid)
 
         # 获取选中的事件数据
@@ -1754,7 +2144,7 @@ CalDAV 配置:
         # 只编辑第一个选中的事件
         item = self.events_tree.item(selected[0])
         values = [str(v) if v is not None else "" for v in item['values']]
-        uid, _, _, _ = values  # 只使用UID，其他字段从原始数据获取
+        _, uid, _, _, _ = values  # 只使用UID，其他字段从原始数据获取
 
         # 从数据库获取完整事件数据
         event_data = self.db.get_event(uid)
