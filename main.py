@@ -1133,6 +1133,20 @@ CalDAV 配置:
         # 获取当前拖拽位置对应的行
         item = self.contacts_tree.identify_row(event.y)
         if not item:
+            # 添加自动滚动逻辑
+            height = self.contacts_tree.winfo_height()
+            if height == 0:
+                return
+
+            # 计算鼠标在Treeview中的相对位置
+            rel_y = event.y / height
+
+            # 如果鼠标在顶部10%区域，向上滚动
+            if rel_y < 0.1:
+                self.contacts_tree.yview_scroll(-1, "units")
+            # 如果鼠标在底部10%区域，向下滚动
+            elif rel_y > 0.9:
+                self.contacts_tree.yview_scroll(1, "units")
             return
 
         # 获取起始行和当前行的索引
@@ -1160,6 +1174,21 @@ CalDAV 配置:
             else:
                 values[0] = " "
             self.contacts_tree.item(item, values=values)
+
+        # 添加自动滚动逻辑
+        height = self.contacts_tree.winfo_height()
+        if height == 0:
+            return
+
+        # 计算鼠标在Treeview中的相对位置
+        rel_y = event.y / height
+
+        # 如果鼠标在顶部10%区域，向上滚动
+        if rel_y < 0.1:
+            self.contacts_tree.yview_scroll(-1, "units")
+        # 如果鼠标在底部10%区域，向下滚动
+        elif rel_y > 0.9:
+            self.contacts_tree.yview_scroll(1, "units")
 
     def on_contact_tree_release(self, event):
         """处理联系人列表鼠标释放事件"""
@@ -1257,6 +1286,20 @@ CalDAV 配置:
         # 获取当前拖拽位置对应的行
         item = self.events_tree.identify_row(event.y)
         if not item:
+            # 添加自动滚动逻辑
+            height = self.events_tree.winfo_height()
+            if height == 0:
+                return
+
+            # 计算鼠标在Treeview中的相对位置
+            rel_y = event.y / height
+
+            # 如果鼠标在顶部10%区域，向上滚动
+            if rel_y < 0.1:
+                self.events_tree.yview_scroll(-1, "units")
+            # 如果鼠标在底部10%区域，向下滚动
+            elif rel_y > 0.9:
+                self.events_tree.yview_scroll(1, "units")
             return
 
         # 获取起始行和当前行的索引
@@ -1284,6 +1327,21 @@ CalDAV 配置:
             else:
                 values[0] = " "
             self.events_tree.item(item, values=values)
+
+        # 添加自动滚动逻辑
+        height = self.events_tree.winfo_height()
+        if height == 0:
+            return
+
+        # 计算鼠标在Treeview中的相对位置
+        rel_y = event.y / height
+
+        # 如果鼠标在顶部10%区域，向上滚动
+        if rel_y < 0.1:
+            self.events_tree.yview_scroll(-1, "units")
+        # 如果鼠标在底部10%区域，向下滚动
+        elif rel_y > 0.9:
+            self.events_tree.yview_scroll(1, "units")
 
     def on_event_tree_release(self, event):
         """处理事件列表鼠标释放事件"""
