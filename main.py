@@ -2,21 +2,21 @@ import base64
 import locale
 import logging
 import os
+import pytz
 import queue
 import quopri
+import requests
 import sqlite3
 import threading
 import tkinter as tk
 import traceback
 import uuid
+import vobject
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from tkinter import ttk, messagebox, simpledialog, filedialog
 from urllib.parse import urlparse
 
-import pytz
-import requests
-import vobject
 from babel.dates import get_timezone_name
 from dateutil import parser
 from tkcalendar import DateEntry
@@ -404,18 +404,36 @@ class Database:
         with self._lock:
             c = self.conn.cursor()
             c.execute("SELECT ical FROM events")
-            return [row[0] for row in c.fetchall()]
+            events = []
+            for row in c.fetchall():
+                try:
+                    cal = vobject.readOne(row[0])
+                    for component in cal.components():
+                        if component.name == 'VEVENT':
+                            events.append(component.serialize())
+                except Exception as e:
+                    logger.error(f"解析事件失败: {str(e)}")
+                    continue
+            return events
 
     def get_selected_events(self, uids):
-        """获取选中的事件数据"""
         if not uids:
             return []
-
         with self._lock:
             c = self.conn.cursor()
             placeholders = ','.join(['?'] * len(uids))
             c.execute(f"SELECT ical FROM events WHERE uid IN ({placeholders})", uids)
-            return [row[0] for row in c.fetchall()]
+            events = []
+            for row in c.fetchall():
+                try:
+                    cal = vobject.readOne(row[0])
+                    for component in cal.components():
+                        if component.name == 'VEVENT':
+                            events.append(component.serialize())
+                except Exception as e:
+                    logger.error(f"解析事件失败: {str(e)}")
+                    continue
+            return events
 
     def delete_event(self, uid):
         with self._lock:
@@ -510,12 +528,7 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
                             'utf-8')
                     )
                     for event in all_events:
-                        # 去除每个事件的外部VCALENDAR标签
-                        event_lines = event.splitlines()
-                        if event_lines[0].startswith("BEGIN:VCALENDAR"):
-                            event_lines = event_lines[1:-1]  # 去掉第一行和最后一行
-                        self.wfile.write("\n".join(event_lines).encode('utf-8'))
-                        self.wfile.write(b"\n")
+                        self.wfile.write(event.encode('utf-8'))
                     self.wfile.write("END:VCALENDAR\n".encode('utf-8'))
                 else:
                     self.send_response(404)
@@ -955,7 +968,7 @@ CalDAV 配置:
 
         hint_label = ttk.Label(
             hint_frame,
-            text="操作提示: 1) 点击复选框选择/取消选择单个事件 2) 点击表头复选框全选/取消全选 3) 按住鼠标拖动选择多行 4) 在其他列单击只选择当前行",
+            text="操作提示: \n1) 点击复选框选择/取消选择单个事件 2) 点击表头复选框全选/取消全选 3) 按住鼠标拖动选择多行 4) 在其他列单击只选择当前行 5) 如果选择多列并编辑则只会编辑第一项",
             foreground="blue"
         )
         hint_label.pack(side=tk.LEFT)
@@ -974,7 +987,7 @@ CalDAV 配置:
         self.events_tree.heading("end", text="结束时间")
 
         # 配置列宽
-        self.events_tree.column("selected", width=30, anchor=tk.CENTER)
+        self.events_tree.column("selected", width=10, anchor=tk.CENTER)
         self.events_tree.column("uid", width=100, anchor=tk.CENTER)
         self.events_tree.column("summary", width=200)
         self.events_tree.column("start", width=150)
@@ -1563,12 +1576,9 @@ CalDAV 配置:
         self.update_status_bar()
 
     def select_all(self, event, tree=None):
-        """全选当前列表项"""
         if tree is None:
-            # 确定当前活动的标签页
             current_tab = self.notebook.select()
             tab_text = self.notebook.tab(current_tab, "text")
-
             if tab_text == "联系人":
                 tree = self.contacts_tree
             elif tab_text == "日历事件":
@@ -1576,9 +1586,19 @@ CalDAV 配置:
             else:
                 return
 
+        # 获取所有项目
         items = tree.get_children()
+
+        # 设置选中状态
         tree.selection_set(items)
-        return "break"  # 阻止默认行为
+
+        # 更新第一列的勾选框状态
+        for item in items:
+            values = list(tree.item(item, 'values'))
+            values[0] = "✓"  # 设置为选中状态
+            tree.item(item, values=values)
+
+        return "break"
 
     def on_contact_double_click(self, event):
         """双击联系人列表项时触发编辑"""
@@ -1619,7 +1639,7 @@ CalDAV 配置:
         item = self.contacts_tree.item(selected[0])
         # 确保所有值都是字符串
         values = [str(v) if v is not None else "" for v in item['values']]
-        uid, name, email, phone = values
+        _, uid, name, email, phone = values
 
         # 获取完整的 vCard 数据
         vcard_data = self.db.get_contact(uid)
