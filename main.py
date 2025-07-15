@@ -1080,6 +1080,69 @@ CalDAV 配置:
             self.toggle_all_contacts_selection()
             return "break"
 
+        # 处理Shift键区间选择
+        if event.state & 0x0001:  # Shift键按下
+            if not item:
+                return "break"
+
+            if not hasattr(self, 'contact_last_selected'):
+                self.contact_last_selected = item
+
+            # 获取所有行
+            all_items = list(self.contacts_tree.get_children())
+
+            # 获取起始和结束索引
+            start_idx = all_items.index(self.contact_last_selected)
+            end_idx = all_items.index(item)
+
+            # 确定选择范围
+            start = min(start_idx, end_idx)
+            end = max(start_idx, end_idx)
+
+            # 获取范围内的所有行
+            selected_items = all_items[start:end + 1]
+
+            # 更新选择
+            self.contacts_tree.selection_set(selected_items)
+
+            # 更新复选框状态
+            for itm in all_items:
+                values = list(self.contacts_tree.item(itm, 'values'))
+                if itm in selected_items:
+                    values[0] = "✓"
+                else:
+                    if itm not in self.contacts_tree.selection():
+                        values[0] = " "
+                self.contacts_tree.item(itm, values=values)
+
+            return "break"
+
+        # 处理Ctrl键多选/反选
+        if event.state & 0x0004:  # Ctrl键按下
+            if not item:
+                return "break"
+
+            # 记录最后选择的项
+            self.contact_last_selected = item
+
+            # 获取当前选择状态
+            current_selection = self.contacts_tree.selection()
+
+            if item in current_selection:
+                # 如果已选中，则取消选中
+                self.contacts_tree.selection_remove(item)
+                values = list(self.contacts_tree.item(item, 'values'))
+                values[0] = " "
+                self.contacts_tree.item(item, values=values)
+            else:
+                # 如果未选中，则选中
+                self.contacts_tree.selection_add(item)
+                values = list(self.contacts_tree.item(item, 'values'))
+                values[0] = "✓"
+                self.contacts_tree.item(item, values=values)
+
+            return "break"
+
         if region == "cell" and column == "#1" and item:
             # 点击了复选框列
             values = list(self.contacts_tree.item(item, 'values'))
@@ -1095,16 +1158,14 @@ CalDAV 配置:
                 values[0] = "✓"
 
             self.contacts_tree.item(item, values=values)
+            # 记录最后选择的项
+            self.contact_last_selected = item
             return "break"
 
         if region == "cell" and column != "#1" and item:
             # 点击非复选框列 - 只选择当前行
-            # 检查Ctrl键是否按下（允许Ctrl多选）
-            ctrl_pressed = event.state & 0x0004  # Ctrl键状态
-
-            if not ctrl_pressed:
-                # 如果没有按下Ctrl键，清除所有选择
-                self.contacts_tree.selection_set([])
+            # 清除所有选择
+            self.contacts_tree.selection_set([])
 
             # 选中当前行
             self.contacts_tree.selection_add(item)
@@ -1115,11 +1176,12 @@ CalDAV 配置:
                 vals = list(self.contacts_tree.item(itm, 'values'))
                 if itm == item:
                     vals[0] = "✓"
-                elif not ctrl_pressed:
-                    # 如果没有按下Ctrl键，清除其他行的选择
+                else:
                     vals[0] = " "
                 self.contacts_tree.item(itm, values=vals)
 
+            # 记录最后选择的项
+            self.contact_last_selected = item
             return "break"
 
     def on_contact_tree_drag(self, event):
@@ -1233,6 +1295,69 @@ CalDAV 配置:
             self.toggle_all_events_selection()
             return "break"
 
+        # 处理Shift键区间选择
+        if event.state & 0x0001:  # Shift键按下
+            if not item:
+                return "break"
+
+            if not hasattr(self, 'event_last_selected'):
+                self.event_last_selected = item
+
+            # 获取所有行
+            all_items = list(self.events_tree.get_children())
+
+            # 获取起始和结束索引
+            start_idx = all_items.index(self.event_last_selected)
+            end_idx = all_items.index(item)
+
+            # 确定选择范围
+            start = min(start_idx, end_idx)
+            end = max(start_idx, end_idx)
+
+            # 获取范围内的所有行
+            selected_items = all_items[start:end + 1]
+
+            # 更新选择
+            self.events_tree.selection_set(selected_items)
+
+            # 更新复选框状态
+            for itm in all_items:
+                values = list(self.events_tree.item(itm, 'values'))
+                if itm in selected_items:
+                    values[0] = "✓"
+                else:
+                    if itm not in self.events_tree.selection():
+                        values[0] = " "
+                self.events_tree.item(itm, values=values)
+
+            return "break"
+
+        # 处理Ctrl键多选/反选
+        if event.state & 0x0004:  # Ctrl键按下
+            if not item:
+                return "break"
+
+            # 记录最后选择的项
+            self.event_last_selected = item
+
+            # 获取当前选择状态
+            current_selection = self.events_tree.selection()
+
+            if item in current_selection:
+                # 如果已选中，则取消选中
+                self.events_tree.selection_remove(item)
+                values = list(self.events_tree.item(item, 'values'))
+                values[0] = " "
+                self.events_tree.item(item, values=values)
+            else:
+                # 如果未选中，则选中
+                self.events_tree.selection_add(item)
+                values = list(self.events_tree.item(item, 'values'))
+                values[0] = "✓"
+                self.events_tree.item(item, values=values)
+
+            return "break"
+
         if region == "cell" and column == "#1" and item:
             # 点击了复选框列
             values = list(self.events_tree.item(item, 'values'))
@@ -1248,16 +1373,14 @@ CalDAV 配置:
                 values[0] = "✓"
 
             self.events_tree.item(item, values=values)
+            # 记录最后选择的项
+            self.event_last_selected = item
             return "break"
 
         if region == "cell" and column != "#1" and item:
             # 点击非复选框列 - 只选择当前行
-            # 检查Ctrl键是否按下（允许Ctrl多选）
-            ctrl_pressed = event.state & 0x0004  # Ctrl键状态
-
-            if not ctrl_pressed:
-                # 如果没有按下Ctrl键，清除所有选择
-                self.events_tree.selection_set([])
+            # 清除所有选择
+            self.events_tree.selection_set([])
 
             # 选中当前行
             self.events_tree.selection_add(item)
@@ -1268,11 +1391,12 @@ CalDAV 配置:
                 vals = list(self.events_tree.item(itm, 'values'))
                 if itm == item:
                     vals[0] = "✓"
-                elif not ctrl_pressed:
-                    # 如果没有按下Ctrl键，清除其他行的选择
+                else:
                     vals[0] = " "
                 self.events_tree.item(itm, values=vals)
 
+            # 记录最后选择的项
+            self.event_last_selected = item
             return "break"
 
     def on_event_tree_drag(self, event):
@@ -2383,7 +2507,7 @@ CalDAV 配置:
             item = self.events_tree.item(item_id)
             # 确保所有值都是字符串
             values = [str(v) if v is not None else "" for v in item['values']]
-            uid, summary, start, end = values
+            _, uid, summary, start, end = values
             events_to_delete.append((uid, summary))
 
         # 确认删除
