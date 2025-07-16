@@ -2,21 +2,21 @@ import base64
 import locale
 import logging
 import os
-import pytz
 import queue
 import quopri
-import requests
 import sqlite3
 import threading
 import tkinter as tk
 import traceback
 import uuid
-import vobject
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from tkinter import ttk, messagebox, simpledialog, filedialog
 from urllib.parse import urlparse
 
+import pytz
+import requests
+import vobject
 from babel.dates import get_timezone_name
 from dateutil import parser
 from tkcalendar import DateEntry
@@ -119,14 +119,12 @@ class Database:
     def add_contact(self, vcard_data):
         with self._lock:
             try:
-                # 尝试解析 vCard
                 try:
                     vcard = vobject.readOne(vcard_data)
                 except Exception as e:
                     logger.warning(f"使用 vobject 解析失败，尝试手动解析: {str(e)}")
                     return self._manual_add_contact(vcard_data)
 
-                # 获取 UID
                 uid = getattr(vcard, 'uid', None)
                 if uid is None:
                     uid = str(uuid.uuid4())
@@ -134,13 +132,11 @@ class Database:
                 else:
                     uid = uid.value
 
-                # 获取全名
                 full_name = ""
                 if hasattr(vcard, 'fn'):
                     full_name = vcard.fn.value
                 elif hasattr(vcard, 'n'):
                     n = vcard.n.value
-                    # 组合 N 属性中的各个部分
                     name_parts = []
                     if hasattr(n, 'prefix') and n.prefix:
                         name_parts.append(n.prefix)
@@ -154,7 +150,6 @@ class Database:
                         name_parts.append(n.suffix)
                     full_name = " ".join(name_parts)
 
-                # 获取邮箱
                 emails = []
                 if hasattr(vcard, 'email_list'):
                     for email in vcard.email_list:
@@ -162,7 +157,6 @@ class Database:
                 elif hasattr(vcard, 'email'):
                     emails.append(vcard.email.value)
 
-                # 获取电话
                 phones = []
                 if hasattr(vcard, 'tel_list'):
                     for tel in vcard.tel_list:
@@ -178,7 +172,6 @@ class Database:
                 # 确定操作类型
                 operation = "inserted"
                 if existing:
-                    # 检查内容是否相同
                     if existing[0] == vcard_data:
                         operation = "unchanged"
                     else:
@@ -201,7 +194,6 @@ class Database:
     def _manual_add_contact(self, vcard_data):
         """手动解析 vCard 数据"""
         try:
-            # 解析 vCard 属性
             properties = {}
             current_property = None
 
@@ -210,7 +202,6 @@ class Database:
                 if not line:
                     continue
 
-                # 处理多行值
                 if line.startswith(" ") or line.startswith("\t"):
                     if current_property:
                         properties[current_property]["value"] += line.strip()
@@ -253,11 +244,9 @@ class Database:
                 else:
                     logger.warning(f"忽略无效行: {line}")
 
-            # 提取关键信息
             uid = properties.get("UID", {}).get("value", str(uuid.uuid4()))
             full_name = properties.get("FN", {}).get("value", "")
 
-            # 处理 N 属性
             if not full_name and "N" in properties:
                 n_value = properties["N"]["value"]
                 n_parts = n_value.split(";")
@@ -272,13 +261,11 @@ class Database:
                     if suffix: name_parts.append(suffix)
                     full_name = " ".join(name_parts)
 
-            # 提取邮箱
             emails = []
             for key in properties:
                 if key.startswith("EMAIL") or key == "EMAIL":
                     emails.append(properties[key]["value"])
 
-            # 提取电话
             phones = []
             for key in properties:
                 if key.startswith("TEL") or key == "TEL":
@@ -292,7 +279,6 @@ class Database:
             # 确定操作类型
             operation = "inserted"
             if existing:
-                # 检查内容是否相同
                 if existing[0] == vcard_data:
                     operation = "unchanged"
                 else:
@@ -366,7 +352,6 @@ class Database:
                 # 确定操作类型
                 operation = "inserted"
                 if existing:
-                    # 检查内容是否相同
                     if existing[0] == ical_data:
                         operation = "unchanged"
                     else:
@@ -589,7 +574,6 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         try:
             self.log_message(f"处理PROPFIND请求: {self.path}")
 
-            # 简化版PROPFIND响应，仅返回200 OK
             self.send_response(207)
             self.send_header('Content-Type', 'text/xml; charset="utf-8"')
             self.end_headers()
@@ -620,7 +604,6 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
         try:
             self.log_message(f"处理OPTIONS请求: {self.path}")
 
-            # 返回服务器支持的HTTP方法
             self.send_response(200)
             self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
             self.send_header('DAV', '1, 2')
@@ -749,7 +732,7 @@ class DAVServerApp:
         """将消息添加到日志窗口"""
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n")
-        self.log_text.see(tk.END)  # 滚动到最新内容
+        self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
 
     def log_message(self, message):
@@ -769,7 +752,6 @@ class DAVServerApp:
 
     def handle_drop(self, event):
         """处理文件拖拽事件"""
-        # 改进文件路径解析
         files = []
 
         # 尝试解析为文件列表
@@ -781,9 +763,7 @@ class DAVServerApp:
 
             # 尝试解析大括号格式的路径
             if raw_paths.startswith('{') and raw_paths.endswith('}'):
-                # 去掉首尾大括号
                 raw_paths = raw_paths[1:-1]
-                # 分割路径
                 possible_paths = raw_paths.split('} {')
                 for path in possible_paths:
                     if os.path.exists(path):
@@ -799,7 +779,6 @@ class DAVServerApp:
                         if os.path.exists(path):
                             files.append(path)
 
-        # 记录结果
         if not files:
             self.log_message(f"未找到有效文件路径: {event.data}")
             return
@@ -887,7 +866,7 @@ CalDAV 配置:
 
         hint_label = ttk.Label(
             hint_frame,
-            text="操作提示: 1) 点击复选框选择/取消选择单个联系人 2) 点击表头复选框全选/取消全选 3) 按住鼠标拖动选择多行 4) 在其他列单击只选择当前行",
+            text="操作提示: \n1) 点击复选框选择/取消选择单个事件 2) 点击表头复选框全选/取消全选 3) 按住鼠标拖动选择多行 4) 在其他列单击只选择当前行 5) 如果选择多列并编辑则只会编辑第一项",
             foreground="blue"
         )
         hint_label.pack(side=tk.LEFT)
@@ -1108,7 +1087,6 @@ CalDAV 配置:
             start_idx = all_items.index(self.contact_last_selected)
             end_idx = all_items.index(item)
 
-            # 确定选择范围
             start = min(start_idx, end_idx)
             end = max(start_idx, end_idx)
 
@@ -1323,7 +1301,6 @@ CalDAV 配置:
             start_idx = all_items.index(self.event_last_selected)
             end_idx = all_items.index(item)
 
-            # 确定选择范围
             start = min(start_idx, end_idx)
             end = max(start_idx, end_idx)
 
@@ -1450,7 +1427,6 @@ CalDAV 配置:
         start = min(start_index, current_index)
         end = max(start_index, current_index)
 
-        # 获取范围内的所有行
         selected_items = all_items[start:end + 1]
 
         # 更新选择
@@ -1554,14 +1530,14 @@ CalDAV 配置:
         for item_id in self.events_tree.selection():
             item = self.events_tree.item(item_id)
             values = item['values']
-            if len(values) > 1:  # 确保有足够的列
-                selected_uids.add(values[1])  # uid在索引1的位置
+            if len(values) > 1:
+                selected_uids.add(values[1])
 
         # 添加事件到列表
         for event in events:
             # 确保所有值都是字符串
             event = [str(item) if item is not None else "" for item in event]
-            uid = event[0]  # UID是第一个元素
+            uid = event[0]
 
             # 确定是否选中
             selected = "✓" if uid in selected_uids else " "
@@ -1595,7 +1571,7 @@ CalDAV 配置:
         # 更新第一列的勾选框状态
         for item in items:
             values = list(tree.item(item, 'values'))
-            values[0] = "✓"  # 设置为选中状态
+            values[0] = "✓"
             tree.item(item, values=values)
 
         return "break"
@@ -1637,7 +1613,6 @@ CalDAV 配置:
 
         # 只编辑第一个选中的联系人（双击或单个选择）
         item = self.contacts_tree.item(selected[0])
-        # 确保所有值都是字符串
         values = [str(v) if v is not None else "" for v in item['values']]
         _, uid, name, email, phone = values
 
@@ -1692,16 +1667,13 @@ CalDAV 配置:
             messagebox.showinfo("提示", "请先选择要删除的联系人")
             return
 
-        # 获取所有选中的联系人
         contacts_to_delete = []
         for item_id in selected:
             item = self.contacts_tree.item(item_id)
-            # 确保所有值都是字符串
             values = [str(v) if v is not None else "" for v in item['values']]
             uid, name, email, phone = values
             contacts_to_delete.append((uid, name))
 
-        # 确认删除
         names = ", ".join([name for _, name in contacts_to_delete])
         if messagebox.askyesno("确认删除", f"确定要删除以下联系人吗?\n{names}"):
             success_count = 0
@@ -1744,7 +1716,6 @@ CalDAV 配置:
             messagebox.showinfo("提示", "请先选择要导出的联系人")
             return
 
-        # 获取选中的UID
         uids = []
         for item_id in selected:
             item = self.contacts_tree.item(item_id)
@@ -1757,10 +1728,9 @@ CalDAV 配置:
             messagebox.showerror("错误", "没有找到选中的联系人数据")
             return
 
-        # 询问保存位置
         file_path = filedialog.asksaveasfilename(
             title="保存联系人文件",
-            filetypes=[("vCard 文件", "*.vcf")],
+            filetypes=[("vCard 文件", "*.vcf"), ("所有文件", "*.*")],
             defaultextension=".vcf"
         )
         if not file_path:
@@ -1785,7 +1755,6 @@ CalDAV 配置:
             messagebox.showinfo("提示", "请先选择要导出的事件")
             return
 
-        # 获取选中的UID
         uids = []
         for item_id in selected:
             item = self.events_tree.item(item_id)
@@ -1798,10 +1767,9 @@ CalDAV 配置:
             messagebox.showerror("错误", "没有找到选中的事件数据")
             return
 
-        # 询问保存位置
         file_path = filedialog.asksaveasfilename(
             title="保存日历文件",
-            filetypes=[("iCalendar 文件", "*.ics")],
+            filetypes=[("iCalendar 文件", "*.ics"), ("所有文件", "*.*")],
             defaultextension=".ics"
         )
         if not file_path:
@@ -1815,7 +1783,7 @@ CalDAV 配置:
                     # 去除每个事件的外部VCALENDAR标签
                     event_lines = event.splitlines()
                     if event_lines[0].startswith("BEGIN:VCALENDAR"):
-                        event_lines = event_lines[1:-1]  # 去掉第一行和最后一行
+                        event_lines = event_lines[1:-1]
                     f.write("\n".join(event_lines))
                     f.write("\n")
                 f.write("END:VCALENDAR\n")
@@ -2032,7 +2000,6 @@ CalDAV 配置:
         except Exception as e:
             error_var.set(f"严重错误: {str(e)}")
         finally:
-            # 关闭进度窗口
             self.root.after(0, progress_window.destroy)
             self.import_in_progress = False
 
@@ -2244,7 +2211,6 @@ CalDAV 配置:
                     errors.append(error_details)
                     error_var.set(error_details)
 
-            # 导入完成
             progress_var.set(100)
             status_var.set(
                 f"导入完成! 新增: {inserted_count}, 更新: {updated_count}, 相同: {unchanged_count}, 失败: {error_count}")
@@ -2263,7 +2229,6 @@ CalDAV 配置:
         except Exception as e:
             error_var.set(f"严重错误: {str(e)}")
         finally:
-            # 关闭进度窗口
             self.root.after(0, progress_window.destroy)
             self.import_in_progress = False
 
@@ -2299,7 +2264,6 @@ CalDAV 配置:
 
                 self.update_status_bar()
 
-                # 显示导入结果
                 if result["errors"] == 0:
                     message = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}"
                     messagebox.showinfo("导入完成", message)
@@ -2307,7 +2271,6 @@ CalDAV 配置:
                     self.log_message(
                         f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}")
                 else:
-                    # 显示详细的错误信息
                     error_msg = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}, 失败: {result['errors']}\n\n错误详情:\n"
                     for i, err in enumerate(result["error_list"][:10]):  # 最多显示前10个错误
                         error_msg += f"{i + 1}. {err}\n"
@@ -2444,12 +2407,10 @@ CalDAV 配置:
                             minutes=-15)
                     }
 
-                    # 添加REPEAT和DURATION
                     if hasattr(component, 'repeat') and hasattr(component, 'duration'):
                         alarm['repeat'] = component.repeat.value
                         alarm['duration'] = component.duration.value
 
-                    # 添加其他属性
                     if hasattr(component, 'description'):
                         alarm['description'] = self.decode_text(component.description.value)
                     if hasattr(component, 'attach'):
@@ -2461,7 +2422,6 @@ CalDAV 配置:
 
                     initial['alarms'].append(alarm)
 
-            # 处理其他字段
             if hasattr(vevent, 'categories'):
                 initial['categories'] = self.decode_text(vevent.categories.value)
             if hasattr(vevent, 'priority'):
@@ -2483,7 +2443,6 @@ CalDAV 配置:
             messagebox.showerror("错误", f"解析事件失败: {str(e)}")
             return
 
-        # 创建对话框
         dialog = EventDialog(self.root, initial=initial)
 
         if dialog.result:
@@ -2622,11 +2581,6 @@ CalDAV 配置:
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
 
-            # # 更新日志
-            # self.log_text.config(state=tk.NORMAL)
-            # self.log_text.insert(tk.END, "服务器已停止\n")
-            # self.log_text.config(state=tk.DISABLED)
-
             # 只记录一次日志
             logger.info("服务器已停止")
 
@@ -2661,7 +2615,6 @@ class ContactDialog(tk.Toplevel):
             self.email_entry.insert(0, self.initial.get('email', ''))
             self.phone_entry.insert(0, self.initial.get('phone', ''))
         else:
-            # 生成唯一ID
             uid = f"contact-{int(datetime.now().timestamp())}"
             self.uid_entry.insert(0, uid)
 
@@ -2669,7 +2622,6 @@ class ContactDialog(tk.Toplevel):
         if self.vcard:
             ttk.Button(self, text="显示完整 vCard", command=self.show_full_vcard).pack(pady=5)
 
-        # 添加按钮
         button_frame = ttk.Frame(self)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
 
@@ -2834,8 +2786,8 @@ class EventDialog:
         self.initial = initial or {}
         self.result = None
         self.alarms = []
-        self.repeat_days = []  # 存储重复的星期几
-        self.end_count_var = tk.StringVar(value="5")  # 默认重复5次
+        self.repeat_days = []
+        self.end_count_var = tk.StringVar(value="5")
         self.raw_ical = None
 
         # 配置根窗口的网格权重
@@ -2995,7 +2947,7 @@ class EventDialog:
         ttk.Button(start_frame, text="当前时间", command=self.set_start_current_time, width=10).grid(row=0, column=6,
                                                                                                      padx=(10, 0))
 
-        # 结束时间 - 使用框架组织
+        # 结束时间
         end_frame = ttk.Frame(frame)
         end_frame.grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
@@ -3378,13 +3330,11 @@ class EventDialog:
 
             # 创建显示文本
             if isinstance(trigger, timedelta):
-                # 提取天、小时、分钟
                 days = abs(trigger.days)
                 seconds = abs(trigger.seconds)
                 hours = seconds // 3600
                 minutes = (seconds % 3600) // 60
 
-                # 创建显示字符串
                 trigger_text = f"{days}天{hours}小时{minutes}分钟前"
             else:
                 trigger_text = str(trigger)
@@ -3396,13 +3346,11 @@ class EventDialog:
             if repeat != '0' and 'duration' in alarm:
                 duration = alarm['duration']
                 if isinstance(duration, timedelta):
-                    # 提取天、小时、分钟
                     days = duration.days
                     seconds = duration.seconds
                     hours = seconds // 3600
                     minutes = (seconds % 3600) // 60
 
-                    # 创建间隔字符串
                     interval_text = ""
                     if days > 0:
                         interval_text += f"{days}天"
@@ -3486,7 +3434,6 @@ class EventDialog:
 
     def parse_duration_for_display(self, duration_str):
         """解析持续时间用于显示"""
-        # 简化的解析逻辑，实际应用中应使用更健壮的解析
         days = 0
         hours = 0
         minutes = 0
@@ -3733,63 +3680,72 @@ class EventDialog:
         elif end_cond == "按次数结束":
             self.end_input_frame.grid()
             ttk.Label(self.end_input_frame, text="重复次数:").grid(row=0, column=0, padx=(0, 5))
-            # 使用 self.end_count_var
             ttk.Entry(self.end_input_frame, textvariable=self.end_count_var, width=5).grid(row=0, column=1)
             ttk.Label(self.end_input_frame, text="次").grid(row=0, column=2, padx=(5, 0))
         else:
             self.end_input_frame.grid_remove()
 
     def custom_repeat_settings(self):
-        """打开自定义重复设置对话框"""
         dialog = tk.Toplevel(self.root)
         dialog.title("自定义重复设置")
         dialog.geometry("500x450")
         dialog.transient(self.root)
         dialog.grab_set()
 
-        # 主框架
         main_frame = ttk.Frame(dialog)
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # 创建自定义设置数据结构（如果不存在）
-        if not hasattr(self, 'custom_repeat_data'):
-            self.custom_repeat_data = {
-                'freq': 'WEEKLY',  # 默认每周
-                'interval': '1',  # 默认间隔1
-                'byday': [],  # 选择的星期
-                'bymonthday': []  # 选择的月份日期
-            }
+        # 获取当前开始日期
+        try:
+            current_start_date = self.start_date.get_date()
+            current_weekday = current_start_date.weekday()  # 0=周一, 6=周日
+            current_day = current_start_date.day
+        except:
+            current_weekday = 0
+            current_day = 1
 
-        # 频率设置
+        # 检查是否需要更新默认设置
+        if not hasattr(self, 'custom_repeat_data'):
+            # 第一次打开，使用开始日期作为默认
+            self.custom_repeat_data = {
+                'freq': 'WEEKLY',
+                'interval': '1',
+                'byday': [self.WEEKDAYS_RRULE[current_weekday]],
+                'bymonthday': [str(current_day)],
+                'last_start_date': current_start_date  # 记录上次的开始日期
+            }
+        elif not hasattr(self.custom_repeat_data, 'last_start_date'):
+            # 已有设置但没有记录开始日期，添加记录
+            self.custom_repeat_data['last_start_date'] = current_start_date
+        elif self.custom_repeat_data['last_start_date'] != current_start_date:
+            # 开始日期已更改，且用户没有自定义设置过，则更新默认值
+            if not self.custom_repeat_data.get('user_modified', False):
+                self.custom_repeat_data['byday'] = [self.WEEKDAYS_RRULE[current_weekday]]
+                self.custom_repeat_data['bymonthday'] = [str(current_day)]
+            self.custom_repeat_data['last_start_date'] = current_start_date
+
         freq_frame = ttk.LabelFrame(main_frame, text="重复频率")
         freq_frame.pack(fill="x", padx=5, pady=5)
 
         self.repeat_freq_var = tk.StringVar(value="每周")
         freqs = ["每天", "每周", "每月", "每年"]
         freq_map = {"每天": "DAILY", "每周": "WEEKLY", "每月": "MONTHLY", "每年": "YEARLY"}
-
-        # 加载保存的频率
         saved_freq = next((k for k, v in freq_map.items() if v == self.custom_repeat_data.get('freq', 'WEEKLY')),
                           "每周")
         self.repeat_freq_var.set(saved_freq)
 
         for freq in freqs:
-            ttk.Radiobutton(freq_frame, text=freq, variable=self.repeat_freq_var, value=freq).pack(
-                anchor="w", padx=5, pady=2)
+            ttk.Radiobutton(freq_frame, text=freq, variable=self.repeat_freq_var, value=freq).pack(anchor="w", padx=5,
+                                                                                                   pady=2)
 
-        # 间隔设置
         interval_frame = ttk.Frame(freq_frame)
         interval_frame.pack(fill="x", padx=5, pady=5)
-
         ttk.Label(interval_frame, text="每").pack(side="left")
         self.interval_var = tk.StringVar(value=self.custom_repeat_data.get('interval', '1'))
         ttk.Spinbox(interval_frame, from_=1, to=365, textvariable=self.interval_var, width=3).pack(side="left", padx=5)
-
-        # 动态更新单位标签
         self.unit_label_var = tk.StringVar(value="周")
         ttk.Label(interval_frame, textvariable=self.unit_label_var).pack(side="left")
 
-        # 根据频率更新单位
         def update_unit(*args):
             freq = self.repeat_freq_var.get()
             if freq == "每天":
@@ -3802,9 +3758,9 @@ class EventDialog:
                 self.unit_label_var.set("年")
 
         self.repeat_freq_var.trace("w", update_unit)
-        update_unit()  # 初始调用
+        update_unit()
 
-        # 每周设置
+        # 每周重复选项
         week_frame = ttk.LabelFrame(main_frame, text="每周几重复 (选择星期)")
         week_frame.pack(fill="x", padx=5, pady=5)
 
@@ -3812,42 +3768,36 @@ class EventDialog:
         weekday_frame = ttk.Frame(week_frame)
         weekday_frame.pack(padx=5, pady=5)
 
-        # 加载保存的星期设置
         saved_days = self.custom_repeat_data.get('byday', [])
-
         for i, day in enumerate(self.WEEKDAYS):
             var = tk.BooleanVar()
-            # 检查是否已保存
             if self.WEEKDAYS_RRULE[i] in saved_days:
                 var.set(True)
             self.weekday_vars.append(var)
-            cb = ttk.Checkbutton(weekday_frame, text=day, variable=var)
+            cb = ttk.Checkbutton(weekday_frame, text=day, variable=var,
+                                 command=lambda: self.custom_repeat_data.update({'user_modified': True}))
             cb.grid(row=i // 4, column=i % 4, sticky="w", padx=10, pady=2)
 
-        # 每月设置
+        # 每月重复选项
         month_frame = ttk.LabelFrame(main_frame, text="每月重复 (选择日期)")
         month_frame.pack(fill="x", padx=5, pady=5)
 
-        # 创建1-31的复选框，每行7个
         self.day_vars = []
         days_frame = ttk.Frame(month_frame)
         days_frame.pack(padx=5, pady=5)
 
-        # 加载保存的日期设置
         saved_days = self.custom_repeat_data.get('bymonthday', [])
-
         for i in range(31):
             var = tk.BooleanVar()
-            # 检查是否已保存
             if str(i + 1) in saved_days:
                 var.set(True)
             self.day_vars.append(var)
             row = i // 7
             col = i % 7
-            cb = ttk.Checkbutton(days_frame, text=str(i + 1), variable=var, width=3)
+            cb = ttk.Checkbutton(days_frame, text=str(i + 1), variable=var, width=3,
+                                 command=lambda: self.custom_repeat_data.update({'user_modified': True}))
             cb.grid(row=row, column=col, padx=2, pady=2)
 
-        # 根据频率显示/隐藏相关框架
         def toggle_frames(*args):
             freq = self.repeat_freq_var.get()
             if freq == "每周":
@@ -3861,30 +3811,18 @@ class EventDialog:
                 month_frame.pack_forget()
 
         self.repeat_freq_var.trace("w", toggle_frames)
-        toggle_frames()  # 初始调用
+        toggle_frames()
 
-        # 按钮框架（放在底部）
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(side="bottom", fill="x", pady=10)
-
-        ttk.Button(btn_frame, text="确定",
-                   command=lambda: self.save_custom_settings(dialog)).pack(side="right", padx=5)
-        ttk.Button(btn_frame, text="取消",
-                   command=dialog.destroy).pack(side="right", padx=5)
+        ttk.Button(btn_frame, text="确定", command=lambda: self.save_custom_settings(dialog)).pack(side="right", padx=5)
+        ttk.Button(btn_frame, text="取消", command=dialog.destroy).pack(side="right", padx=5)
 
     def save_custom_settings(self, dialog):
-        """保存自定义重复设置"""
-        # 保存频率和间隔
-        freq_map = {
-            "每天": "DAILY",
-            "每周": "WEEKLY",
-            "每月": "MONTHLY",
-            "每年": "YEARLY"
-        }
+        freq_map = {"每天": "DAILY", "每周": "WEEKLY", "每月": "MONTHLY", "每年": "YEARLY"}
         self.custom_repeat_data['freq'] = freq_map.get(self.repeat_freq_var.get(), "WEEKLY")
         self.custom_repeat_data['interval'] = self.interval_var.get()
 
-        # 保存每周设置
         if self.repeat_freq_var.get() == "每周":
             byday = []
             for i, var in enumerate(self.weekday_vars):
@@ -3894,7 +3832,6 @@ class EventDialog:
         else:
             self.custom_repeat_data['byday'] = []
 
-        # 保存每月设置
         if self.repeat_freq_var.get() == "每月":
             bymonthday = []
             for i, var in enumerate(self.day_vars):
@@ -3903,6 +3840,9 @@ class EventDialog:
             self.custom_repeat_data['bymonthday'] = bymonthday
         else:
             self.custom_repeat_data['bymonthday'] = []
+
+        # 标记为用户已修改过设置
+        self.custom_repeat_data['user_modified'] = True
 
         dialog.destroy()
 
@@ -3933,7 +3873,6 @@ class EventDialog:
         timezones = []
         now = datetime.utcnow()
 
-        # 获取本地时区 ID
         local_tz_id = self.get_local_timezone_id()
 
         for tz_id in pytz.all_timezones:
@@ -3946,7 +3885,6 @@ class EventDialog:
                 sign = '+' if hours >= 0 else '-'
                 offset_str = f"UTC{sign}{abs(hours):02d}:{minutes:02d}"
 
-                # 提取城市名称
                 if '/' in tz_id:
                     city_name = tz_id.split('/')[-1].replace('_', ' ')
                 else:
@@ -3961,7 +3899,6 @@ class EventDialog:
                     print(f"Error occurred for {tz_id}: {e}")
                     localized_name = tz_id  # 如果获取失败，使用时区 ID 作为默认值
 
-                # 创建显示字符串
                 display = f"{offset_str} - {city_name} ({tz_id}) {localized_name}"
 
                 # 标记本地时区
@@ -3980,7 +3917,6 @@ class EventDialog:
     def get_local_timezone_str(self):
         """获取本地时区的字符串表示（带偏移量）"""
         try:
-            # 获取本地时区ID
             local_tz_id = self.get_local_timezone_id()
             local_tz = pytz.timezone(local_tz_id)
 
@@ -4006,7 +3942,6 @@ class EventDialog:
             except:
                 localized_name = local_tz_id
 
-            # 构建显示字符串
             display = f"{offset_str} - {city_name} ({local_tz_id}) {localized_name}"
 
             # 标记本地时区
@@ -4134,7 +4069,6 @@ class EventDialog:
 
         # 设置触发时间
         if isinstance(alarm['trigger'], timedelta):
-            # 使用绝对值显示在UI上
             total_seconds = abs(alarm['trigger'].total_seconds())
             days = int(total_seconds // 86400)
             remaining_seconds = total_seconds % 86400
@@ -4145,7 +4079,7 @@ class EventDialog:
             self.reminder_hours_var.set(str(hours))
             self.reminder_minutes_var.set(str(minutes))
         else:
-            # 处理旧格式
+            # 处理其他格式
             trigger_str = alarm['trigger']
             if trigger_str.startswith('-P'):
                 duration_str = trigger_str[1:]  # 去掉负号
@@ -4159,11 +4093,9 @@ class EventDialog:
                     date_part = duration_str
                     time_part = ""
 
-                # 解析日期部分
                 if 'D' in date_part:
-                    days = int(date_part.split('D')[0][1:])  # 去掉P前缀
+                    days = int(date_part.split('D')[0][1:])
 
-                # 解析时间部分
                 if time_part:
                     if 'H' in time_part:
                         hours = int(time_part.split('H')[0])
@@ -4175,10 +4107,8 @@ class EventDialog:
                 self.reminder_hours_var.set(str(hours))
                 self.reminder_minutes_var.set(str(minutes))
 
-        # 设置REPEAT值
         self.reminder_repeat_var.set(str(alarm.get('repeat', '0')))
 
-        # 设置DURATION值
         if 'duration' in alarm and isinstance(alarm['duration'], timedelta):
             duration = alarm['duration']
             days = duration.days
@@ -4190,10 +4120,10 @@ class EventDialog:
             self.reminder_duration_hours_var.set(str(hours))
             self.reminder_duration_minutes_var.set(str(minutes))
         else:
-            # 处理旧格式
+            # 处理其他格式
             duration_str = alarm.get('duration', 'PT15M')
             if duration_str.startswith('P'):
-                duration_str = duration_str[1:]  # 去掉P
+                duration_str = duration_str[1:]
                 days = 0
                 hours = 0
                 minutes = 0
@@ -4204,11 +4134,9 @@ class EventDialog:
                     date_part = duration_str
                     time_part = ""
 
-                # 解析日期部分
                 if 'D' in date_part:
                     days = int(date_part.split('D')[0])
 
-                # 解析时间部分
                 if time_part:
                     if 'H' in time_part:
                         hours = int(time_part.split('H')[0])
@@ -4358,7 +4286,7 @@ class EventDialog:
                 int(end_hour), int(end_minute), 0,
                 tzinfo=pytz.timezone(end_tz_str))
 
-            # 设置带时区的开始和结束时间 - 使用 datetime 对象
+            # 设置带时区的开始和结束时间
             event.add('dtstart').value = start_time
             event.add('dtend').value = end_time
 
@@ -4386,9 +4314,8 @@ class EventDialog:
 
             # 确保TRIGGER是timedelta对象
             if isinstance(alarm['trigger'], str):
-                # 解析字符串为timedelta
                 if alarm['trigger'].startswith('-P'):
-                    duration_str = alarm['trigger'][1:]  # 去掉负号
+                    duration_str = alarm['trigger'][1:]
                     days = 0
                     hours = 0
                     minutes = 0
@@ -4399,11 +4326,9 @@ class EventDialog:
                         date_part = duration_str
                         time_part = ""
 
-                    # 解析日期部分
                     if 'D' in date_part:
-                        days = int(date_part.split('D')[0][1:])  # 去掉P前缀
+                        days = int(date_part.split('D')[0][1:])
 
-                    # 解析时间部分
                     if time_part:
                         if 'H' in time_part:
                             hours = int(time_part.split('H')[0])
@@ -4454,8 +4379,6 @@ class EventDialog:
         # 设置高级属性
         categories = self.categories_var.get().strip()
         if categories:
-            # 去除多余的逗号和空格
-            # cleaned_categories = ', '.join([c.strip() for c in categories.split(',') if c.strip()])
             event.add('categories').value = categories
 
         priority = str(self.priority_var.get())
