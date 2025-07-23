@@ -1704,7 +1704,7 @@ CalDAV 配置:
             return
 
         item = self.contacts_tree.item(selected[0])
-        uid = item['values'][0]
+        uid = item['values'][1]
         vcard_data = self.db.get_contact(uid)
 
         self.show_raw_data(vcard_data, "联系人原始数据")
@@ -2520,7 +2520,7 @@ CalDAV 配置:
             return
 
         item = self.events_tree.item(selected[0])
-        uid = item['values'][0]
+        uid = item['values'][1]
         event_data = self.db.get_event(uid)
 
         self.show_raw_data(event_data, "事件原始数据")
@@ -2865,52 +2865,46 @@ class EventDialog:
     def create_basic_tab(self):
         frame = ttk.LabelFrame(self.basic_frame, text="事件基本信息")
         frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-
-        # 配置网格权重
         frame.grid_rowconfigure(3, weight=1)
         frame.grid_columnconfigure(1, weight=1)
 
-        # UID
         ttk.Label(frame, text="事件ID:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.uid_var = tk.StringVar()
         ttk.Entry(frame, textvariable=self.uid_var, width=40).grid(row=0, column=1, columnspan=3, sticky="we", padx=5,
                                                                    pady=5)
 
-        # 摘要
         ttk.Label(frame, text="事件标题*:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.summary_var = tk.StringVar()
         ttk.Entry(frame, textvariable=self.summary_var, width=40).grid(row=1, column=1, columnspan=3, sticky="we",
                                                                        padx=5, pady=5)
 
-        # 地点
         ttk.Label(frame, text="地点:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.location_var = tk.StringVar()
         ttk.Entry(frame, textvariable=self.location_var, width=40).grid(row=2, column=1, columnspan=3, sticky="we",
                                                                         padx=5, pady=5)
 
-        # 描述
         ttk.Label(frame, text="描述:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.description_text = tk.Text(frame, height=5, width=50)
         self.description_text.grid(row=3, column=1, columnspan=3, sticky="nsew", padx=5, pady=5)
-
-        # 添加滚动条
         scrollbar = ttk.Scrollbar(frame, command=self.description_text.yview)
         scrollbar.grid(row=3, column=4, sticky="ns")
         self.description_text.config(yscrollcommand=scrollbar.set)
 
-        # 状态 - 使用中文选项
         ttk.Label(frame, text="事件状态:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.status_var = tk.StringVar()
         status_options = ["待定", "已确认", "已取消"]
-        ttk.Combobox(frame, textvariable=self.status_var, values=status_options, width=15, state="readonly").grid(
-            row=4, column=1, sticky="w", padx=5, pady=5)
+        ttk.Combobox(frame, textvariable=self.status_var, values=status_options, width=15, state="readonly").grid(row=4,
+                                                                                                                  column=1,
+                                                                                                                  sticky="w",
+                                                                                                                  padx=5,
+                                                                                                                  pady=5)
+        self.status_var.trace("w", self.on_status_changed)  # 添加状态变更监听
 
-        # 日历版本
         ttk.Label(frame, text="日历版本:").grid(row=4, column=2, sticky="e", padx=5, pady=5)
         self.version_var = tk.StringVar(value="2.0")
         version_options = ["1.0", "2.0", "2.1", "3.0"]
-        ttk.Combobox(frame, textvariable=self.version_var, values=version_options, width=8, state="readonly").grid(
-            row=4, column=3, sticky="w", padx=5, pady=5)
+        ttk.Combobox(frame, textvariable=self.version_var, values=version_options,
+                     width=8, state="readonly").grid(row=4, column=3, sticky="w", padx=5, pady=5)
 
     def create_time_tab(self):
         frame = ttk.LabelFrame(self.time_frame, text="时间设置")
@@ -3320,6 +3314,40 @@ class EventDialog:
             self.audio_attach_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
         elif reminder_type == "邮件":
             self.email_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+    def on_status_changed(self, *args):
+        """当事件状态变更时的处理"""
+        status = self.status_var.get()
+        is_cancelled = (status == "已取消")
+        is_tentative = (status == "待定")
+
+        # 保存原有设置以便恢复
+        if not hasattr(self, 'original_settings'):
+            self.original_settings = {
+                'time': {
+                    'start_date': self.start_date.get_date(),
+                    'start_hour': self.start_hour.get(),
+                    'start_minute': self.start_minute.get(),
+                    'end_date': self.end_date.get_date(),
+                    'end_hour': self.end_hour.get(),
+                    'end_minute': self.end_minute.get()
+                },
+                'alarms': self.alarms.copy()
+            }
+
+        # 根据状态设置页面可用性
+        if is_cancelled:
+            # 已取消状态：禁用时间和提醒设置
+            self.notebook.tab(1, state="disabled")  # 时间设置
+            self.notebook.tab(2, state="disabled")  # 提醒设置
+        elif is_tentative:
+            # 待定状态：只禁用提醒设置
+            self.notebook.tab(1, state="normal")  # 时间设置保持可用
+            self.notebook.tab(2, state="disabled")  # 提醒设置禁用
+        else:
+            # 其他状态：全部可用
+            self.notebook.tab(1, state="normal")
+            self.notebook.tab(2, state="normal")
 
     def update_reminder_listbox(self):
         """更新提醒列表框的内容"""
@@ -4217,166 +4245,132 @@ class EventDialog:
         cal.add('version').value = version
         cal.add('prodid').value = f"-//{self.software_name}//{self.software_version}//ZH-CN"
 
-        # 创建事件
         event = cal.add('vevent')
-
-        # 设置事件基本属性
         event.add('uid').value = self.uid_var.get()
         event.add('dtstamp').value = datetime.utcnow()
 
-        # 编码并设置摘要、地点和描述
         summary = self.summary_var.get()
         if summary:
             event.add('summary').value = summary
 
-        location = self.location_var.get()
-        if location:
-            event.add('location').value = self.encode_text(location)
-
-        description = self.description_text.get("1.0", "end").strip()
-        if description:
-            event.add('description').value = self.encode_text(description)
-
-        # 设置状态（中文->英文）
         status_zh = self.status_var.get()
         status = self.STATUS_MAPPING.get(status_zh, "CONFIRMED")
         event.add('status').value = status
 
-        # 获取开始和结束日期对象
-        start_date_obj = self.start_date.get_date()
-        end_date_obj = self.end_date.get_date()
+        # 只有状态不是"已取消"时才添加时间信息
+        if status_zh != "已取消":
+            location = self.location_var.get()
+            if location:
+                event.add('location').value = self.encode_text(location)
 
-        if self.allday_var.get():
-            # 全天事件 - 使用字符串格式 (YYYYMMDD)
-            event.add('dtstart').value = start_date_obj
-            event.add('dtend').value = end_date_obj
-            # 设置特殊日历的全天事件标识符
-            event.add('X-ALLDAY').value = "1"
-            event.add('X-MICROSOFT-CDO-ALLDAYEVENT').value = "TRUE"
-        else:
-            # 带时间的事件
-            start_hour = self.start_hour.get()
-            start_minute = self.start_minute.get()
-            end_hour = self.end_hour.get()
-            end_minute = self.end_minute.get()
+            description = self.description_text.get("1.0", "end").strip()
+            if description:
+                event.add('description').value = self.encode_text(description)
 
-            # 获取开始和结束时区名称
-            try:
-                start_tz_str = self.start_timezone_var.get().split('(')[-1].split(')')[0]
-                if not start_tz_str or start_tz_str == "":
-                    start_tz_str = "UTC"
-            except:
-                start_tz_str = "UTC"
+            start_date_obj = self.start_date.get_date()
+            end_date_obj = self.end_date.get_date()
 
-            try:
-                end_tz_str = self.end_timezone_var.get().split('(')[-1].split(')')[0]
-                if not end_tz_str or end_tz_str == "":
-                    end_tz_str = "UTC"
-            except:
-                end_tz_str = "UTC"
-
-            # 创建带时区的 datetime 对象
-            start_time = datetime(
-                start_date_obj.year, start_date_obj.month, start_date_obj.day,
-                int(start_hour), int(start_minute), 0,
-                tzinfo=pytz.timezone(start_tz_str))
-
-            end_time = datetime(
-                end_date_obj.year, end_date_obj.month, end_date_obj.day,
-                int(end_hour), int(end_minute), 0,
-                tzinfo=pytz.timezone(end_tz_str))
-
-            # 设置带时区的开始和结束时间
-            event.add('dtstart').value = start_time
-            event.add('dtend').value = end_time
-
-            # 添加时区信息
-            if start_tz_str != "UTC":
-                event.dtstart.params['TZID'] = [start_tz_str]
-            if end_tz_str != "UTC":
-                event.dtend.params['TZID'] = [end_tz_str]
-
-        # 设置重复规则
-        repeat_option = self.repeat_var.get()
-        if repeat_option != "不重复":
-            rrule = self.generate_rrule()
-            if rrule:
-                event.add('rrule').value = rrule
-
-        # 设置强制提醒
-        if self.force_reminder_var.get():
-            event.add('force-reminder').value = "1"
-
-        # 添加提醒
-        for alarm in self.alarms:
-            valarm = event.add('valarm')
-            valarm.add('action').value = alarm['action']
-
-            # 确保TRIGGER是timedelta对象
-            if isinstance(alarm['trigger'], str):
-                if alarm['trigger'].startswith('-P'):
-                    duration_str = alarm['trigger'][1:]
-                    days = 0
-                    hours = 0
-                    minutes = 0
-
-                    if 'T' in duration_str:
-                        date_part, time_part = duration_str.split('T')
-                    else:
-                        date_part = duration_str
-                        time_part = ""
-
-                    if 'D' in date_part:
-                        days = int(date_part.split('D')[0][1:])
-
-                    if time_part:
-                        if 'H' in time_part:
-                            hours = int(time_part.split('H')[0])
-                            time_part = time_part.split('H')[1]
-                        if 'M' in time_part:
-                            minutes = int(time_part.split('M')[0])
-
-                    valarm.add('trigger').value = timedelta(days=days, hours=hours, minutes=minutes)
-                else:
-                    # 默认为15分钟
-                    valarm.add('trigger').value = timedelta(minutes=15)
-            elif isinstance(alarm['trigger'], datetime):
-                # 绝对时间提醒
-                valarm.add('trigger').value = alarm['trigger']
-                valarm.trigger.params['VALUE'] = ['DATE-TIME']
+            if self.allday_var.get():
+                event.add('dtstart').value = start_date_obj
+                event.add('dtend').value = end_date_obj
+                event.add('X-ALLDAY').value = "1"
+                event.add('X-MICROSOFT-CDO-ALLDAYEVENT').value = "TRUE"
             else:
-                # 相对时间提醒
-                valarm.add('trigger').value = alarm['trigger']
+                start_hour = self.start_hour.get()
+                start_minute = self.start_minute.get()
+                end_hour = self.end_hour.get()
+                end_minute = self.end_minute.get()
 
-            # 添加REPEAT和DURATION（如果设置了）
-            if 'repeat' in alarm and 'duration' in alarm:
-                repeat = alarm['repeat']
-                duration = alarm['duration']
-                if repeat and int(repeat) > 0 and duration:
-                    valarm.add('repeat').value = repeat
-                    valarm.add('duration').value = duration
+                try:
+                    start_tz_str = self.start_timezone_var.get().split('(')[-1].split(')')[0]
+                    if not start_tz_str:
+                        start_tz_str = "UTC"
+                except:
+                    start_tz_str = "UTC"
 
-            # 添加其他提醒属性
-            if alarm['action'] == "DISPLAY":
-                if 'description' in alarm:
-                    # 编码描述
-                    valarm.add('description').value = self.encode_text(alarm['description'])
-            elif alarm['action'] == "AUDIO":
-                if 'attach' in alarm:
-                    valarm.add('attach').value = alarm['attach']
-            elif alarm['action'] == "EMAIL":
-                if 'attendee' in alarm:
-                    valarm.add('attendee').value = alarm['attendee']
-                if 'summary' in alarm:
-                    # 编码邮件主题
-                    valarm.add('summary').value = self.encode_text(alarm['summary'])
-                if 'description' in alarm:
-                    # 编码邮件正文
-                    valarm.add('description').value = self.encode_text(alarm['description'])
-                if 'attach' in alarm:
-                    valarm.add('attach').value = alarm['attach']
+                try:
+                    end_tz_str = self.end_timezone_var.get().split('(')[-1].split(')')[0]
+                    if not end_tz_str:
+                        end_tz_str = "UTC"
+                except:
+                    end_tz_str = "UTC"
 
-        # 设置高级属性
+                start_time = datetime(start_date_obj.year, start_date_obj.month, start_date_obj.day,
+                                      int(start_hour), int(start_minute), 0, tzinfo=pytz.timezone(start_tz_str))
+                end_time = datetime(end_date_obj.year, end_date_obj.month, end_date_obj.day,
+                                    int(end_hour), int(end_minute), 0, tzinfo=pytz.timezone(end_tz_str))
+
+                event.add('dtstart').value = start_time
+                event.add('dtend').value = end_time
+
+                if start_tz_str != "UTC":
+                    event.dtstart.params['TZID'] = [start_tz_str]
+                if end_tz_str != "UTC":
+                    event.dtend.params['TZID'] = [end_tz_str]
+
+            repeat_option = self.repeat_var.get()
+            if repeat_option != "不重复":
+                rrule = self.generate_rrule()
+                if rrule:
+                    event.add('rrule').value = rrule
+
+            # 只有状态不是"待定"时才添加提醒
+            if status_zh != "待定":
+                for alarm in self.alarms:
+                    valarm = event.add('valarm')
+                    valarm.add('action').value = alarm['action']
+
+                    if isinstance(alarm['trigger'], str):
+                        if alarm['trigger'].startswith('-P'):
+                            duration_str = alarm['trigger'][1:]
+                            days = 0
+                            hours = 0
+                            minutes = 0
+                            if 'T' in duration_str:
+                                date_part, time_part = duration_str.split('T')
+                            else:
+                                date_part = duration_str
+                                time_part = ""
+                            if 'D' in date_part:
+                                days = int(date_part.split('D')[0][1:])
+                            if time_part:
+                                if 'H' in time_part:
+                                    hours = int(time_part.split('H')[0])
+                                    time_part = time_part.split('H')[1]
+                                if 'M' in time_part:
+                                    minutes = int(time_part.split('M')[0])
+                            valarm.add('trigger').value = timedelta(days=days, hours=hours, minutes=minutes)
+                        else:
+                            valarm.add('trigger').value = timedelta(minutes=15)
+                    elif isinstance(alarm['trigger'], datetime):
+                        valarm.add('trigger').value = alarm['trigger']
+                        valarm.trigger.params['VALUE'] = ['DATE-TIME']
+                    else:
+                        valarm.add('trigger').value = alarm['trigger']
+
+                    if 'repeat' in alarm and 'duration' in alarm:
+                        repeat = alarm['repeat']
+                        duration = alarm['duration']
+                        if repeat and int(repeat) > 0 and duration:
+                            valarm.add('repeat').value = repeat
+                            valarm.add('duration').value = duration
+
+                    if alarm['action'] == "DISPLAY":
+                        if 'description' in alarm:
+                            valarm.add('description').value = self.encode_text(alarm['description'])
+                    elif alarm['action'] == "AUDIO":
+                        if 'attach' in alarm:
+                            valarm.add('attach').value = alarm['attach']
+                    elif alarm['action'] == "EMAIL":
+                        if 'attendee' in alarm:
+                            valarm.add('attendee').value = alarm['attendee']
+                        if 'summary' in alarm:
+                            valarm.add('summary').value = self.encode_text(alarm['summary'])
+                        if 'description' in alarm:
+                            valarm.add('description').value = self.encode_text(alarm['description'])
+                        if 'attach' in alarm:
+                            valarm.add('attach').value = alarm['attach']
+
         categories = self.categories_var.get().strip()
         if categories:
             event.add('categories').value = categories
@@ -4385,7 +4379,6 @@ class EventDialog:
         if priority != "0":
             event.add('priority').value = priority
 
-        # 设置透明度（中文->英文）
         transparency_zh = self.transparency_var.get()
         transparency = self.TRANSPARENCY_MAPPING.get(transparency_zh, "OPAQUE")
         event.add('transp').value = transparency
@@ -4473,8 +4466,42 @@ class EventDialog:
         return False
 
     def ok(self):
-        """保存并关闭窗口"""
-        # 在关闭窗口前生成iCalendar数据
+        """确定按钮点击事件"""
+        status = self.status_var.get()
+        if status == "已取消":
+            # 检查是否有时间或提醒设置会被清除
+            has_settings = (
+                    self.start_date.get_date() != self.original_settings['time']['start_date'] or
+                    self.start_hour.get() != self.original_settings['time']['start_hour'] or
+                    self.start_minute.get() != self.original_settings['time']['start_minute'] or
+                    len(self.alarms) > 0
+            )
+
+            if has_settings:
+                response = messagebox.askyesno(
+                    "警告",
+                    "事件状态为'已取消'时，时间设置和提醒设置将被清除。\n确定要继续保存吗？",
+                    parent=self.root
+                )
+                if not response:
+                    return
+
+            # 清除设置
+            self.alarms = []
+
+        elif status == "待定":
+            # 检查是否有提醒设置会被清除
+            if len(self.alarms) > 0:
+                response = messagebox.askyesno(
+                    "警告",
+                    "事件状态为'待定'时，提醒设置将被清除。\n确定要继续保存吗？",
+                    parent=self.root
+                )
+                if not response:
+                    return
+
+            self.alarms = []
+
         self.raw_ical = self.generate_ical()
         self.result = {
             'uid': self.uid_var.get(),
