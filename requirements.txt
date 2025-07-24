@@ -1,9 +1,9 @@
 # PersonalDAV - 依赖库
-vobject
-pytz
-requests
-python-dateutil
-tzlocal
-Babel
-tkcalendar
-tkinterdnd2
+vobject~=0.9.9
+pytz~=2025.2
+requests~=2.32.4
+python-dateutil~=2.9.0.post0
+tzlocal~=5.2
+Babel~=2.16.0
+tkcalendar~=1.6.1
+tkinterdnd2~=0.4.3
