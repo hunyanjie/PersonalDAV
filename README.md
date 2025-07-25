@@ -107,9 +107,9 @@ PersonalDAV是一个带图形界面的私人CardDAV/CalDAV服务，允许您在�
 
 欢迎贡献代码！请提交[Pull Request](https://github.com/hunyanjie/PersonalDAV/compare)。
 
-## 许愿
+## 想提意见？
 
-支持[许愿](https://github.com/hunyanjie/PersonalDAV/issues)，但是不一定会实现呦~
+支持[提issue](https://github.com/hunyanjie/PersonalDAV/issues)。如果是愿望，不一定会实现呦~
 
 ## 许可证
 

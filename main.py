@@ -7,6 +7,7 @@ import quopri
 import sqlite3
 import tempfile  # 用于从WebDAV导入时生成临时文件
 import threading
+import time
 import tkinter as tk
 import traceback
 import uuid
@@ -53,8 +54,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 清除可能已有的处理器
-if logger.hasHandlers():
-    logger.handlers.clear()
+if logger.hasHandlers(): logger.handlers.clear()
 
 # 创建文件处理器
 file_handler = logging.FileHandler("dav_server.log", encoding='utf-8')
@@ -100,21 +100,11 @@ class Database:
     def create_tables(self):
         c = self.conn.cursor()
         # 联系人表
-        c.execute('''CREATE TABLE IF NOT EXISTS contacts (
-                     id INTEGER PRIMARY KEY,
-                     uid TEXT UNIQUE,
-                     full_name TEXT,
-                     email TEXT,
-                     phone TEXT,
-                     vcard TEXT)''')
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS contacts (id INTEGER PRIMARY KEY, uid TEXT UNIQUE, full_name TEXT, email TEXT, phone TEXT, vcard TEXT)''')
         # 日历事件表
-        c.execute('''CREATE TABLE IF NOT EXISTS events (
-                     id INTEGER PRIMARY KEY,
-                     uid TEXT UNIQUE,
-                     summary TEXT,
-                     dtstart TEXT,
-                     dtend TEXT,
-                     ical TEXT)''')
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, uid TEXT UNIQUE, summary TEXT, dtstart TEXT, dtend TEXT, ical TEXT)''')
         self.conn.commit()
 
     def add_contact(self, vcard_data):
@@ -180,9 +170,8 @@ class Database:
 
                 # 执行数据库操作
                 if operation != "unchanged":
-                    c.execute('''INSERT OR REPLACE INTO contacts 
-                                 (uid, full_name, email, phone, vcard) 
-                                 VALUES (?, ?, ?, ?, ?)''',
+                    c.execute(
+                        '''INSERT OR REPLACE INTO contacts (uid, full_name, email, phone, vcard) VALUES (?, ?, ?, ?, ?)''',
                               (uid, full_name, ";".join(emails), ";".join(phones), vcard_data))
                     self.conn.commit()
 
@@ -200,8 +189,7 @@ class Database:
 
             for line in vcard_data.splitlines():
                 line = line.strip()
-                if not line:
-                    continue
+                if not line: continue
 
                 if line.startswith(" ") or line.startswith("\t"):
                     if current_property:
@@ -287,9 +275,8 @@ class Database:
 
             # 执行数据库操作
             if operation != "unchanged":
-                c.execute('''INSERT OR REPLACE INTO contacts 
-                             (uid, full_name, email, phone, vcard) 
-                             VALUES (?, ?, ?, ?, ?)''',
+                c.execute(
+                    '''INSERT OR REPLACE INTO contacts (uid, full_name, email, phone, vcard) VALUES (?, ?, ?, ?, ?)''',
                           (uid, full_name, ";".join(emails), ";".join(phones), vcard_data))
                 self.conn.commit()
 
@@ -320,8 +307,7 @@ class Database:
 
     def get_selected_contacts(self, uids):
         """获取选中的联系人数据"""
-        if not uids:
-            return []
+        if not uids: return []
 
         with self._lock:
             c = self.conn.cursor()
@@ -360,9 +346,8 @@ class Database:
 
                 # 执行数据库操作 - 保存原始数据
                 if operation != "unchanged":
-                    c.execute('''INSERT OR REPLACE INTO events 
-                                    (uid, summary, dtstart, dtend, ical) 
-                                    VALUES (?, ?, ?, ?, ?)''',
+                    c.execute(
+                        '''INSERT OR REPLACE INTO events (uid, summary, dtstart, dtend, ical) VALUES (?, ?, ?, ?, ?)''',
                               (uid, summary, dtstart, dtend, ical_data))
                     self.conn.commit()
 
@@ -403,8 +388,7 @@ class Database:
             return events
 
     def get_selected_events(self, uids):
-        if not uids:
-            return []
+        if not uids: return []
         with self._lock:
             c = self.conn.cursor()
             placeholders = ','.join(['?'] * len(uids))
@@ -444,53 +428,6 @@ class Database:
         if self.conn:
             self.conn.close()
             self.conn = None
-
-    @staticmethod
-    def test_webdav_connection(url, username=None, password=None, path=None, timeout=10):
-        """
-        测试WebDAV服务器连接
-        返回: (是否成功, 错误消息)
-        """
-        try:
-            from webdav3.client import Client
-
-            options = {
-                'webdav_hostname': url,
-                'webdav_timeout': timeout,
-                'webdav_verbose': False
-            }
-            if username:
-                options['webdav_login'] = username
-            if password:
-                options['webdav_password'] = password
-
-            client = Client(options)
-
-            # 测试基本连接
-            try:
-                client.list("/")
-            except Exception as e:
-                if "401" in str(e):
-                    if not username or not password:
-                        return False, "需要认证但未提供用户名/密码"
-                    return False, "认证失败，请检查用户名和密码"
-                elif "404" in str(e):
-                    return False, "服务器响应404，请检查URL是否正确"
-                return False, f"失败: {str(e)}"
-
-            # 如果指定了路径，验证路径
-            if path:
-                try:
-                    if not client.check(path):
-                        return False, f"路径不存在: {path}"
-                except Exception as e:
-                    return False, f"路径验证失败: {str(e)}"
-
-            return True, "连接成功"
-        except ImportError:
-            return False, "未安装webdavclient3库，请运行: pip install webdavclient3"
-        except Exception as e:
-            return False, f"连接异常: {str(e)}"
 
 
 # ======================
@@ -555,11 +492,9 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
 
                     # 生成包含所有事件的iCalendar集合
                     all_events = db.get_all_events()
-                    self.wfile.write(
-                        (
-                                    "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
-                            'utf-8')
-                    )
+                    self.wfile.write((
+                                                 "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
+                        'utf-8'))
                     for event in all_events:
                         self.wfile.write(event.encode('utf-8'))
                     self.wfile.write("END:VCALENDAR\n".encode('utf-8'))
@@ -627,18 +562,8 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             # 返回一个基本的WebDAV多状态响应
-            response = """<?xml version="1.0" encoding="utf-8" ?>
-<D:multistatus xmlns:D="DAV:">
-    <D:response>
-        <D:href>{}</D:href>
-        <D:propstat>
-            <D:prop>
-                <D:resourcetype/>
-            </D:prop>
-            <D:status>HTTP/1.1 200 OK</D:status>
-        </D:propstat>
-    </D:response>
-</D:multistatus>""".format(self.path)
+            response = """<?xml version="1.0" encoding="utf-8" ?><D:multistatus xmlns:D="DAV:"><D:response><D:href>{}</D:href><D:propstat><D:prop><D:resourcetype/></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>""".format(
+                self.path)
 
             self.wfile.write(response.encode('utf-8'))
         except Exception as e:
@@ -921,9 +846,7 @@ CalDAV 配置:
 
         # 添加列 - 第一列为复选框
         columns = ("selected", "uid", "name", "email", "phone")
-        self.contacts_tree = ttk.Treeview(
-            list_frame, columns=columns, show="headings", selectmode="extended"
-        )
+        self.contacts_tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="extended")
 
         # 配置列标题
         self.contacts_tree.heading("selected", text="✓")
@@ -1002,9 +925,7 @@ CalDAV 配置:
 
         # 添加列 - 第一列为复选框
         columns = ("selected", "uid", "summary", "start", "end")
-        self.events_tree = ttk.Treeview(
-            list_frame, columns=columns, show="headings", selectmode="extended"
-        )
+        self.events_tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="extended")
 
         # 配置列标题
         self.events_tree.heading("selected", text="✓")
@@ -1067,8 +988,7 @@ CalDAV 配置:
     def toggle_all_contacts_selection(self):
         """切换所有联系人的选择状态"""
         all_items = self.contacts_tree.get_children()
-        if not all_items:
-            return
+        if not all_items: return
 
         # 检查当前是否全部已选
         all_selected = all(item in self.contacts_tree.selection() for item in all_items)
@@ -1087,8 +1007,7 @@ CalDAV 配置:
     def toggle_all_events_selection(self):
         """切换所有事件的选择状态"""
         all_items = self.events_tree.get_children()
-        if not all_items:
-            return
+        if not all_items: return
 
         # 检查当前是否全部已选
         all_selected = all(item in self.events_tree.selection() for item in all_items)
@@ -1122,11 +1041,9 @@ CalDAV 配置:
 
         # 处理Shift键区间选择
         if event.state & 0x0001:  # Shift键按下
-            if not item:
-                return "break"
+            if not item: return "break"
 
-            if not hasattr(self, 'contact_last_selected'):
-                self.contact_last_selected = item
+            if not hasattr(self, 'contact_last_selected'): self.contact_last_selected = item
 
             # 获取所有行
             all_items = list(self.contacts_tree.get_children())
@@ -1150,16 +1067,14 @@ CalDAV 配置:
                 if itm in selected_items:
                     values[0] = "✓"
                 else:
-                    if itm not in self.contacts_tree.selection():
-                        values[0] = " "
+                    if itm not in self.contacts_tree.selection(): values[0] = " "
                 self.contacts_tree.item(itm, values=values)
 
             return "break"
 
         # 处理Ctrl键多选/反选
         if event.state & 0x0004:  # Ctrl键按下
-            if not item:
-                return "break"
+            if not item: return "break"
 
             # 记录最后选择的项
             self.contact_last_selected = item
@@ -1225,8 +1140,7 @@ CalDAV 配置:
 
     def on_contact_tree_drag(self, event):
         """处理联系人列表拖拽事件"""
-        if not self.contact_drag_start or not self.contact_drag_item:
-            return
+        if not self.contact_drag_start or not self.contact_drag_item: return
 
         # 设置拖拽状态
         self.contact_dragging = True
@@ -1236,8 +1150,7 @@ CalDAV 配置:
         if not item:
             # 添加自动滚动逻辑
             height = self.contacts_tree.winfo_height()
-            if height == 0:
-                return
+            if height == 0: return
 
             # 计算鼠标在Treeview中的相对位置
             rel_y = event.y / height
@@ -1278,8 +1191,7 @@ CalDAV 配置:
 
         # 添加自动滚动逻辑
         height = self.contacts_tree.winfo_height()
-        if height == 0:
-            return
+        if height == 0: return
 
         # 计算鼠标在Treeview中的相对位置
         rel_y = event.y / height
@@ -1300,13 +1212,11 @@ CalDAV 配置:
 
     def on_contact_tree_motion(self, event):
         """处理联系人列表鼠标移动事件 - 实现自动滚动"""
-        if not self.contact_dragging:
-            return
+        if not self.contact_dragging: return
 
         # 获取Treeview的高度
         height = self.contacts_tree.winfo_height()
-        if height == 0:
-            return
+        if height == 0: return
 
         # 计算鼠标在Treeview中的相对位置
         rel_y = event.y / height
@@ -1336,11 +1246,9 @@ CalDAV 配置:
 
         # 处理Shift键区间选择
         if event.state & 0x0001:  # Shift键按下
-            if not item:
-                return "break"
+            if not item: return "break"
 
-            if not hasattr(self, 'event_last_selected'):
-                self.event_last_selected = item
+            if not hasattr(self, 'event_last_selected'): self.event_last_selected = item
 
             # 获取所有行
             all_items = list(self.events_tree.get_children())
@@ -1364,16 +1272,14 @@ CalDAV 配置:
                 if itm in selected_items:
                     values[0] = "✓"
                 else:
-                    if itm not in self.events_tree.selection():
-                        values[0] = " "
+                    if itm not in self.events_tree.selection(): values[0] = " "
                 self.events_tree.item(itm, values=values)
 
             return "break"
 
         # 处理Ctrl键多选/反选
         if event.state & 0x0004:  # Ctrl键按下
-            if not item:
-                return "break"
+            if not item: return "break"
 
             # 记录最后选择的项
             self.event_last_selected = item
@@ -1439,8 +1345,7 @@ CalDAV 配置:
 
     def on_event_tree_drag(self, event):
         """处理事件列表拖拽事件"""
-        if not self.event_drag_start or not self.event_drag_item:
-            return
+        if not self.event_drag_start or not self.event_drag_item: return
 
         # 设置拖拽状态
         self.event_dragging = True
@@ -1450,8 +1355,7 @@ CalDAV 配置:
         if not item:
             # 添加自动滚动逻辑
             height = self.events_tree.winfo_height()
-            if height == 0:
-                return
+            if height == 0: return
 
             # 计算鼠标在Treeview中的相对位置
             rel_y = event.y / height
@@ -1491,8 +1395,7 @@ CalDAV 配置:
 
         # 添加自动滚动逻辑
         height = self.events_tree.winfo_height()
-        if height == 0:
-            return
+        if height == 0: return
 
         # 计算鼠标在Treeview中的相对位置
         rel_y = event.y / height
@@ -1513,13 +1416,11 @@ CalDAV 配置:
 
     def on_event_tree_motion(self, event):
         """处理事件列表鼠标移动事件 - 实现自动滚动"""
-        if not self.event_dragging:
-            return
+        if not self.event_dragging: return
 
         # 获取Treeview的高度
         height = self.events_tree.winfo_height()
-        if height == 0:
-            return
+        if height == 0: return
 
         # 计算鼠标在Treeview中的相对位置
         rel_y = event.y / height
@@ -1533,8 +1434,7 @@ CalDAV 配置:
 
     def refresh_contacts(self):
         # 清除现有项
-        for item in self.contacts_tree.get_children():
-            self.contacts_tree.delete(item)
+        for item in self.contacts_tree.get_children(): self.contacts_tree.delete(item)
 
         # 获取联系人数据
         contacts = self.db.get_contacts()
@@ -1544,14 +1444,13 @@ CalDAV 配置:
         for item_id in self.contacts_tree.selection():
             item = self.contacts_tree.item(item_id)
             values = item['values']
-            if len(values) > 1:  # 确保有足够的列
-                selected_uids.add(values[1])  # uid在索引1的位置
+            if len(values) > 1: selected_uids.add(values[1])
 
         # 添加联系人到列表
         for contact in contacts:
             # 确保所有值都是字符串
             contact = [str(item) if item is not None else "" for item in contact]
-            uid = contact[0]  # UID是第一个元素
+            uid = contact[1]
 
             # 确定是否选中
             selected = "✓" if uid in selected_uids else " "
@@ -1560,15 +1459,13 @@ CalDAV 配置:
             item_id = self.contacts_tree.insert("", tk.END, values=[selected] + contact)
 
             # 如果之前是选中的，添加到当前选择
-            if selected == "✓":
-                self.contacts_tree.selection_add(item_id)
+            if selected == "✓": self.contacts_tree.selection_add(item_id)
 
         self.update_status_bar()
 
     def refresh_events(self):
         # 清除现有项
-        for item in self.events_tree.get_children():
-            self.events_tree.delete(item)
+        for item in self.events_tree.get_children(): self.events_tree.delete(item)
 
         # 获取事件数据
         events = self.db.get_events()
@@ -1578,14 +1475,13 @@ CalDAV 配置:
         for item_id in self.events_tree.selection():
             item = self.events_tree.item(item_id)
             values = item['values']
-            if len(values) > 1:
-                selected_uids.add(values[1])
+            if len(values) > 1: selected_uids.add(values[1])
 
         # 添加事件到列表
         for event in events:
             # 确保所有值都是字符串
             event = [str(item) if item is not None else "" for item in event]
-            uid = event[0]
+            uid = event[1]
 
             # 确定是否选中
             selected = "✓" if uid in selected_uids else " "
@@ -1738,8 +1634,7 @@ CalDAV 配置:
 
             self.refresh_contacts()
             if fail_count > 0:
-                messagebox.showinfo("删除完成",
-                                    f"成功删除 {success_count} 个联系人\n失败 {fail_count} 个")
+                messagebox.showinfo("删除完成", f"成功删除 {success_count} 个联系人\n失败 {fail_count} 个")
             else:
                 messagebox.showinfo("删除完成", f"成功删除 {success_count} 个联系人")
 
@@ -1767,7 +1662,7 @@ CalDAV 配置:
         uids = []
         for item_id in selected:
             item = self.contacts_tree.item(item_id)
-            uid = item['values'][0]
+            uid = item['values'][1]
             uids.append(uid)
 
         # 获取选中的联系人数据
@@ -1781,8 +1676,7 @@ CalDAV 配置:
             filetypes=[("vCard 文件", "*.vcf"), ("所有文件", "*.*")],
             defaultextension=".vcf"
         )
-        if not file_path:
-            return
+        if not file_path: return
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -1820,8 +1714,7 @@ CalDAV 配置:
             filetypes=[("iCalendar 文件", "*.ics"), ("所有文件", "*.*")],
             defaultextension=".ics"
         )
-        if not file_path:
-            return
+        if not file_path: return
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -1865,26 +1758,22 @@ CalDAV 配置:
                    command=lambda: self._import_contacts_from_text(import_dialog)).pack(pady=5)
 
     def _import_contacts_from_file(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         file_paths = filedialog.askopenfilenames(
             title="选择联系人文件",
             filetypes=[("vCard 文件", "*.vcf *.vcard"), ("所有文件", "*.*")]
         )
-        if not file_paths:
-            return
+        if not file_paths: return
 
         logger.info(f"联系人导入：从文件导入: {file_paths}")
         self._start_import_contacts(file_paths, "文件")
 
     def _import_contacts_from_url(self, dialog=None, initialvalue=""):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         url = simpledialog.askstring("从URL导入", "请输入联系人文件的URL:", parent=self.root, initialvalue=initialvalue)
-        if not url:
-            return
+        if not url: return
 
         # 验证URL格式
         parsed_url = urlparse(url)
@@ -1898,8 +1787,7 @@ CalDAV 配置:
         self._start_import_contacts([url], "URL")
 
     def _import_contacts_from_clipboard(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
         try:
             import pyperclip
             data = pyperclip.paste()
@@ -1914,8 +1802,7 @@ CalDAV 配置:
             messagebox.showerror("错误", "需要安装pyperclip库才能使用剪切板功能\n请运行: pip install pyperclip")
 
     def _import_contacts_from_webdav(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         webdav_dialog = tk.Toplevel(self.root)
         webdav_dialog.title("从WebDAV服务器导入联系人")
@@ -1957,57 +1844,92 @@ CalDAV 配置:
         username = self.webdav_username_entry.get().strip()
         password = self.webdav_password_entry.get().strip()
         path = self.webdav_path_entry.get().strip()
-
         if not url:
             messagebox.showerror("错误", "请输入服务器地址")
             return
 
-        # 创建持久化错误显示窗口（现在可以正常关闭）
         error_window = tk.Toplevel(dialog)
         error_window.title("WebDAV联系人导入")
         error_window.geometry("700x500")
         error_window.transient(dialog)
         error_window.grab_set()
 
-        # 添加组件
+        # 创建取消事件和线程锁
+        cancel_event = threading.Event()
+        import_lock = threading.Lock()
+        active_downloads = []
+
+        def safe_ui_update(func):
+            """安全更新UI的装饰器"""
+
+            def wrapper(*args, **kwargs):
+                if error_window.winfo_exists():
+                    try:
+                        return func(*args, **kwargs)
+                    except tk.TclError:
+                        pass
+
+            return wrapper
+
+        @safe_ui_update
+        def update_status(text):
+            status_var.set(text)
+
+        @safe_ui_update
+        def update_progress(value):
+            progress_var.set(value)
+
+        @safe_ui_update
+        def update_button(text, command):
+            cancel_button.config(text=text, command=command)
+
+        @safe_ui_update
+        def show_error_message(message):
+            messagebox.showerror("错误", message)
+
+        def on_window_close():
+            cancel_event.set()  # 设置取消标志
+            with import_lock:  # 确保线程安全
+                # 中断所有活跃下载
+                for temp_file in active_downloads[:]:
+                    try:
+                        if os.path.exists(temp_file): os.remove(temp_file)
+                        active_downloads.remove(temp_file)
+                    except:
+                        pass
+            log_to_ui("用户主动取消了导入操作", "info")
+            error_window.destroy()
+
+        error_window.protocol("WM_DELETE_WINDOW", on_window_close)
+
         ttk.Label(error_window, text="WebDAV联系人导入进度", font=("Arial", 12)).pack(pady=5)
 
-        # 状态标签
         status_var = tk.StringVar(value="正在初始化...")
         status_label = ttk.Label(error_window, textvariable=status_var, font=("Arial", 10))
         status_label.pack(pady=5)
 
-        # 进度条
         progress_var = tk.DoubleVar()
         progress_bar = ttk.Progressbar(error_window, variable=progress_var, maximum=100)
         progress_bar.pack(fill=tk.X, padx=20, pady=5)
 
-        # 错误信息文本框
         error_frame = ttk.LabelFrame(error_window, text="详细日志")
         error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         error_text = tk.Text(error_frame, wrap=tk.WORD)
         scrollbar = ttk.Scrollbar(error_frame, command=error_text.yview)
         error_text.configure(yscrollcommand=scrollbar.set)
-
         error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 添加关闭按钮（初始禁用）
-        close_button = ttk.Button(error_window, text="关闭", state=tk.DISABLED,
-                                  command=error_window.destroy)
-        close_button.pack(pady=10)
+        cancel_button = ttk.Button(error_window, text="取消", command=on_window_close)
+        cancel_button.pack(pady=10)
 
+        @safe_ui_update
         def log_to_ui(message, level="info"):
-            """将消息记录到UI和日志文件"""
             timestamp = datetime.now().strftime("%H:%M:%S")
             formatted_msg = f"[{timestamp}] {message}"
-
-            # 添加到UI文本框
             error_text.insert(tk.END, formatted_msg + "\n")
             error_text.see(tk.END)
-
-            # 记录到日志文件
             if level == "error":
                 logger.error(formatted_msg)
             elif level == "warning":
@@ -2015,155 +1937,181 @@ CalDAV 配置:
             else:
                 logger.info(formatted_msg)
 
-        def enable_close():
-            """安全启用关闭按钮"""
-            close_button.config(state=tk.NORMAL)
-            error_window.protocol("WM_DELETE_WINDOW", error_window.destroy)
-
         def import_task():
+            client = None
             try:
-                # 第一阶段：验证连接
-                status_var.set("正在验证服务器连接...")
-                log_to_ui(f"正在测试连接: {url}")
+                if cancel_event.is_set(): return
 
-                # 检查是否需要认证
+                update_status("正在验证服务器连接...")
+                log_to_ui(f"正在测试连接: {url}")
                 need_auth = bool(username or password)
                 log_to_ui(f"认证要求: {'需要' if need_auth else '不需要'}")
 
-                # 执行连接测试
-                success, msg = Database.test_webdav_connection(
-                    url=url,
-                    username=username if need_auth else None,
-                    password=password if need_auth else None,
-                    path=path
-                )
+                from webdav3.client import Client
+                options = {
+                    'webdav_hostname': url,
+                    'webdav_timeout': 5,
+                    'webdav_verbose': False
+                }
+                if username: options['webdav_login'] = username
+                if password: options['webdav_password'] = password
 
-                if not success:
-                    log_to_ui(f"连接测试失败: {msg}", "error")
-                    status_var.set("连接失败")
-                    error_window.after(0, lambda: messagebox.showerror("连接失败", msg))
-                    error_window.after(0, enable_close)
-                    return
+                client = Client(options)
 
-                log_to_ui("服务器连接验证通过")
+                if cancel_event.is_set(): return
 
-                # 第二阶段：开始导入
+                update_status("正在获取文件列表...")
+                log_to_ui(f"正在列出路径: {path}")
+
                 try:
-                    from webdav3.client import Client
-
-                    options = {
-                        'webdav_hostname': url,
-                        'webdav_timeout': 30,
-                        'webdav_verbose': True
-                    }
-                    if username:
-                        options['webdav_login'] = username
-                    if password:
-                        options['webdav_password'] = password
-
-                    client = Client(options)
-
-                    # 获取文件列表
-                    status_var.set("正在获取文件列表...")
-                    log_to_ui(f"正在列出路径: {path}")
-
-                    try:
-                        files = client.list(path)
-                        log_to_ui(f"找到 {len(files)} 个文件/目录")
-                    except Exception as e:
+                    files = client.list(path)
+                    log_to_ui(f"找到 {len(files)} 个文件/目录")
+                except Exception as e:
+                    if not cancel_event.is_set():
                         error_msg = f"获取文件列表失败: {str(e)}"
                         log_to_ui(error_msg, "error")
-                        status_var.set("导入失败")
-                        error_window.after(0, lambda: messagebox.showerror("列表错误", error_msg))
-                        error_window.after(0, enable_close)
+                        update_status("导入失败")
+                        show_error_message(error_msg)
+                    return
+
+                vcf_files = [f for f in files if f.lower().endswith('.vcf')]
+                if not vcf_files:
+                    error_msg = f"在 {path} 中没有找到.vcf文件"
+                    log_to_ui(error_msg, "error")
+                    update_status("导入失败")
+                    show_error_message(error_msg)
+                    return
+
+                total_files = len(vcf_files)
+                success_count = 0
+                failed_count = 0
+
+                for i, filename in enumerate(vcf_files):
+                    if cancel_event.is_set():
+                        log_to_ui("导入被用户取消")
+                        update_status("已取消")
                         return
 
-                    # 过滤vCard文件
-                    vcf_files = [f for f in files if f.lower().endswith('.vcf')]
+                    update_status(f"正在处理 {i + 1}/{total_files}: {filename}")
+                    update_progress((i / total_files) * 100)
+                    log_to_ui(f"正在处理文件: {filename}")
 
-                    if not vcf_files:
-                        error_msg = f"在 {path} 中没有找到.vcf文件"
-                        log_to_ui(error_msg, "error")
-                        status_var.set("导入失败")
-                        error_window.after(0, lambda: messagebox.showerror("无文件", error_msg))
-                        error_window.after(0, enable_close)
-                        return
+                    temp_file = None
+                    try:
+                        temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}.vcf")
 
-                    # 导入过程
-                    total_files = len(vcf_files)
-                    success_count = 0
-                    failed_count = 0
+                        with import_lock:
+                            if cancel_event.is_set(): raise Exception("导入被用户取消")
+                            active_downloads.append(temp_file)
 
-                    for i, filename in enumerate(vcf_files):
-                        if self.import_cancel_requested:
-                            log_to_ui("导入被用户取消")
-                            status_var.set("已取消")
-                            error_window.after(0, enable_close)
-                            return
-
-                        status_var.set(f"正在处理 {i + 1}/{total_files}: {filename}")
-                        progress_var.set((i / total_files) * 100)
-                        log_to_ui(f"正在处理文件: {filename}")
-
-                        try:
-                            # 下载文件
-                            temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}.vcf")
-                            client.download_sync(remote_path=f"{path}{filename}", local_path=temp_file)
-
-                            # 读取并验证内容
-                            with open(temp_file, 'r', encoding='utf-8') as f:
-                                content = f.read()
-
-                            if "BEGIN:VCARD" not in content:
-                                error_msg = f"文件 {filename} 不是有效的vCard格式"
-                                log_to_ui(error_msg, "error")
-                                failed_count += 1
-                                os.remove(temp_file)
-                                continue
-
-                            # 导入到数据库
+                        def download_file():
                             try:
-                                uid, operation = self.db.add_contact(content)
-                                log_to_ui(f"成功 {operation} 联系人: {uid} ({uid})")
-                                success_count += 1
-                            except Exception as e:
-                                error_msg = f"导入联系人失败: {str(e)}"
-                                log_to_ui(error_msg, "error")
-                                failed_count += 1
+                                # 创建自定义回调函数来检查取消事件
+                                def progress_callback(current, total):
+                                    if cancel_event.is_set(): raise Exception("下载被用户取消")
+                                    return True
 
-                            os.remove(temp_file)
+                                # 使用支持回调的下载方法
+                                client.download_sync(
+                                    remote_path=f"{path}{filename}",
+                                    local_path=temp_file,
+                                    callback=progress_callback
+                                )
+                                return True
+                            except Exception as e:
+                                if cancel_event.is_set() or "下载被用户取消" in str(e): return False
+                                raise Exception(str(e))
+
+                        # 在单独的线程中执行下载以便可以中断
+                        download_success = False
+                        download_thread = threading.Thread(
+                            target=lambda: setattr(download_file, '_result', download_file()))
+                        download_thread.daemon = True
+                        download_thread.start()
+
+                        # 等待线程完成或取消
+                        while download_thread.is_alive():
+                            if cancel_event.is_set():
+                                log_to_ui("正在取消下载...", "info")
+                                break
+                            time.sleep(0.1)
+
+                        download_thread.join(timeout=1)  # 给线程1秒时间正常退出
+                        download_success = getattr(download_file, '_result', False) and not cancel_event.is_set()
+
+                        if not download_success: raise Exception("下载失败")
+
+                        # 检查文件内容
+                        with open(temp_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+
+                        if "BEGIN:VCARD" not in content:
+                            error_msg = f"文件 {filename} 不是有效的vCard格式"
+                            log_to_ui(error_msg, "error")
+                            failed_count += 1
+                            continue
+
+                        # 导入联系人
+                        try:
+                            uid, operation = self.db.add_contact(content)
+                            log_to_ui(f"成功 {operation} 联系人: {filename} ({uid})")
+                            success_count += 1
                         except Exception as e:
-                            error_msg = f"处理文件 {filename} 失败: {str(e)}"
+                            error_msg = f"导入联系人失败: {str(e)}"
                             log_to_ui(error_msg, "error")
                             failed_count += 1
 
-                    # 导入完成
-                    progress_var.set(100)
+                    except Exception as e:
+                        if not cancel_event.is_set():  # 如果不是用户取消导致的错误
+                            error_msg = f"处理文件 {filename} 失败: {str(e)}"
+                            log_to_ui(error_msg, "error")
+                        failed_count += 1
+                    finally:
+                        if temp_file:
+                            with import_lock:
+                                if temp_file in active_downloads: active_downloads.remove(temp_file)
+                            try:
+                                if os.path.exists(temp_file): os.remove(temp_file)
+                            except:
+                                pass
+
+                if not cancel_event.is_set():
+                    update_progress(100)
                     result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
                     log_to_ui(result_msg)
-                    status_var.set(result_msg)
-                    error_window.after(0, enable_close)
-
-                except Exception as e:
-                    error_msg = f"导入过程中发生错误: {str(e)}"
-                    log_to_ui(error_msg, "error")
-                    status_var.set("导入失败")
-                    error_window.after(0, lambda: messagebox.showerror("导入错误", error_msg))
-                    error_window.after(0, enable_close)
+                    update_status(result_msg)
 
             except Exception as e:
-                error_msg = f"意外错误: {str(e)}"
-                log_to_ui(error_msg, "error")
-                status_var.set("导入失败")
-                error_window.after(0, lambda: messagebox.showerror("错误", error_msg))
-                error_window.after(0, enable_close)
+                if not cancel_event.is_set():  # 如果不是用户取消导致的错误
+                    error_msg = f"导入过程中发生错误: {str(e)}"
+                    log_to_ui(error_msg, "error")
+                    update_status("导入失败")
+                    show_error_message(error_msg)
+            finally:
+                if client:
+                    try:
+                        client.session.close()  # 关闭连接
+                    except:
+                        pass
+                update_button("关闭", error_window.destroy)
 
         # 启动导入线程
-        threading.Thread(target=import_task, daemon=True).start()
+        import_thread = threading.Thread(target=import_task)
+        import_thread.start()
+
+        # 监控线程状态
+        def check_thread():
+            if import_thread.is_alive():
+                error_window.after(100, check_thread)
+            else:
+                if error_window.winfo_exists():
+                    error_window.protocol("WM_DELETE_WINDOW", error_window.destroy)
+                    update_button("关闭", error_window.destroy)
+
+        error_window.after(100, check_thread)
 
     def _import_contacts_from_text(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         text_dialog = tk.Toplevel(self.root)
         text_dialog.title("从文本导入联系人")
@@ -2193,8 +2141,7 @@ CalDAV 配置:
         try:
             import pyperclip
             clipboard_content = pyperclip.paste()
-            if "BEGIN:VCARD" in clipboard_content:
-                self.contact_text_editor.insert(tk.END, clipboard_content)
+            if "BEGIN:VCARD" in clipboard_content: self.contact_text_editor.insert(tk.END, clipboard_content)
         except ImportError:
             pass
 
@@ -2248,8 +2195,7 @@ CalDAV 配置:
         error_label = ttk.Label(progress_window, textvariable=error_var, foreground="red", wraplength=550)
         error_label.pack(pady=5)
 
-        cancel_btn = ttk.Button(progress_window, text="取消",
-                                command=lambda: self.cancel_import(progress_window))
+        cancel_btn = ttk.Button(progress_window, text="取消", command=lambda: self.cancel_import(progress_window))
         cancel_btn.pack(pady=10)
 
         # 启动后台导入线程
@@ -2376,8 +2322,7 @@ CalDAV 配置:
             logger.error(f"联系人导入线程异常: {str(e)}")
             traceback.print_exc()
         finally:
-            if not self.import_cancel_requested:
-                self.root.after(0, progress_window.destroy)
+            if not self.import_cancel_requested: self.root.after(0, progress_window.destroy)
             self.import_in_progress = False
 
     def update_import_stats(self, inserted, updated, unchanged, errors):
@@ -2411,25 +2356,21 @@ CalDAV 配置:
                    command=lambda: self._import_events_from_text(import_dialog)).pack(pady=5)
 
     def _import_events_from_file(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         file_paths = filedialog.askopenfilenames(
             title="选择日历事件文件",
             filetypes=[("iCalendar 文件", "*.ics"), ("所有文件", "*.*")]
         )
-        if not file_paths:
-            return
+        if not file_paths: return
 
         self._start_import_events(file_paths, "文件")
 
     def _import_events_from_url(self, dialog=None, initialvalue=""):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         url = simpledialog.askstring("从URL导入", "请输入日历文件的URL:", parent=self.root, initialvalue=initialvalue)
-        if not url:
-            return
+        if not url: return
 
         # 验证URL格式
         parsed_url = urlparse(url)
@@ -2442,8 +2383,7 @@ CalDAV 配置:
         self._start_import_events([url], "URL")
 
     def _import_events_from_clipboard(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
         try:
             import pyperclip
             data = pyperclip.paste()
@@ -2455,8 +2395,7 @@ CalDAV 配置:
             messagebox.showerror("错误", "需要安装pyperclip库才能使用剪切板功能\n请运行: pip install pyperclip")
 
     def _import_events_from_webdav(self, dialog=None):
-        if dialog:
-            dialog.destroy()
+        if dialog: dialog.destroy()
 
         webdav_dialog = tk.Toplevel(self.root)
         webdav_dialog.title("从WebDAV服务器导入日历事件")
@@ -2489,9 +2428,289 @@ CalDAV 配置:
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=4, column=0, columnspan=2, pady=10)
 
-        ttk.Button(button_frame, text="导入",
-                   command=lambda: self._fetch_events_from_webdav(webdav_dialog)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="导入", command=lambda: self._fetch_events_from_webdav(webdav_dialog)).pack(
+            side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="取消", command=webdav_dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    def _fetch_events_from_webdav(self, dialog):
+        url = self.webdav_url_entry.get().strip()
+        username = self.webdav_username_entry.get().strip()
+        password = self.webdav_password_entry.get().strip()
+        path = self.webdav_path_entry.get().strip()
+
+        if not url:
+            messagebox.showerror("错误", "请输入服务器地址")
+            return
+
+        error_window = tk.Toplevel(dialog)
+        error_window.title("WebDAV日历导入")
+        error_window.geometry("700x500")
+        error_window.transient(dialog)
+        error_window.grab_set()
+
+        # 创建取消事件和线程锁
+        cancel_event = threading.Event()
+        import_lock = threading.Lock()
+        active_downloads = []
+
+        def safe_ui_update(func):
+            """安全更新UI的装饰器"""
+
+            def wrapper(*args, **kwargs):
+                if error_window.winfo_exists():
+                    try:
+                        return func(*args, **kwargs)
+                    except tk.TclError:
+                        pass
+
+            return wrapper
+
+        @safe_ui_update
+        def update_status(text):
+            status_var.set(text)
+
+        @safe_ui_update
+        def update_progress(value):
+            progress_var.set(value)
+
+        @safe_ui_update
+        def update_button(text, command):
+            cancel_button.config(text=text, command=command)
+
+        @safe_ui_update
+        def show_error_message(message):
+            messagebox.showerror("错误", message)
+
+        def on_window_close():
+            cancel_event.set()
+            with import_lock:
+                for temp_file in active_downloads[:]:
+                    try:
+                        if os.path.exists(temp_file): os.remove(temp_file)
+                        active_downloads.remove(temp_file)
+                    except:
+                        pass
+            log_to_ui("用户主动取消了导入操作", "info")
+            error_window.destroy()
+
+        error_window.protocol("WM_DELETE_WINDOW", on_window_close)
+
+        ttk.Label(error_window, text="WebDAV日历导入进度", font=("Arial", 12)).pack(pady=5)
+
+        status_var = tk.StringVar(value="正在初始化...")
+        status_label = ttk.Label(error_window, textvariable=status_var, font=("Arial", 10))
+        status_label.pack(pady=5)
+
+        progress_var = tk.DoubleVar()
+        progress_bar = ttk.Progressbar(error_window, variable=progress_var, maximum=100)
+        progress_bar.pack(fill=tk.X, padx=20, pady=5)
+
+        error_frame = ttk.LabelFrame(error_window, text="详细日志")
+        error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        error_text = tk.Text(error_frame, wrap=tk.WORD)
+        scrollbar = ttk.Scrollbar(error_frame, command=error_text.yview)
+        error_text.configure(yscrollcommand=scrollbar.set)
+        error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        cancel_button = ttk.Button(error_window, text="取消", command=on_window_close)
+        cancel_button.pack(pady=10)
+
+        @safe_ui_update
+        def log_to_ui(message, level="info"):
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            formatted_msg = f"[{timestamp}] {message}"
+            error_text.insert(tk.END, formatted_msg + "\n")
+            error_text.see(tk.END)
+            if level == "error":
+                logger.error(formatted_msg)
+            elif level == "warning":
+                logger.warning(formatted_msg)
+            else:
+                logger.info(formatted_msg)
+
+        def import_task():
+            client = None
+            try:
+                if cancel_event.is_set(): return
+
+                update_status("正在验证服务器连接...")
+                log_to_ui(f"正在测试连接: {url}")
+
+                need_auth = bool(username or password)
+                log_to_ui(f"认证要求: {'需要' if need_auth else '不需要'}")
+
+                from webdav3.client import Client
+                options = {'webdav_hostname': url, 'webdav_timeout': 5, 'webdav_verbose': False}
+                if username: options['webdav_login'] = username
+                if password: options['webdav_password'] = password
+
+                client = Client(options)
+
+                if cancel_event.is_set(): return
+
+                update_status("正在获取文件列表...")
+                log_to_ui(f"正在列出路径: {path}")
+
+                try:
+                    files = client.list(path)
+                    log_to_ui(f"找到 {len(files)} 个文件/目录")
+                except Exception as e:
+                    if not cancel_event.is_set():
+                        error_msg = f"获取文件列表失败: {str(e)}"
+                        log_to_ui(error_msg, "error")
+                        update_status("导入失败")
+                        show_error_message(error_msg)
+                    return
+
+                ics_files = [f for f in files if f.lower().endswith('.ics')]
+                if not ics_files:
+                    error_msg = f"在 {path} 中没有找到.ics文件"
+                    log_to_ui(error_msg, "error")
+                    update_status("导入失败")
+                    show_error_message(error_msg)
+                    return
+
+                total_files = len(ics_files)
+                success_count = 0
+                failed_count = 0
+
+                for i, filename in enumerate(ics_files):
+                    if cancel_event.is_set():
+                        log_to_ui("导入被用户取消")
+                        update_status("已取消")
+                        return
+
+                    update_status(f"正在处理 {i + 1}/{total_files}: {filename}")
+                    update_progress((i / total_files) * 100)
+                    log_to_ui(f"正在处理日历文件: {filename}")
+
+                    temp_file = None
+                    try:
+                        temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}.ics")
+
+                        with import_lock:
+                            if cancel_event.is_set(): raise Exception("导入被用户取消")
+                            active_downloads.append(temp_file)
+
+                        def download_file():
+                            try:
+                                def progress_callback(current, total):
+                                    if cancel_event.is_set(): raise Exception("下载被用户取消")
+                                    return True
+
+                                client.download_sync(
+                                    remote_path=f"{path}{filename}",
+                                    local_path=temp_file,
+                                    callback=progress_callback
+                                )
+                                return True
+                            except Exception as e:
+                                if cancel_event.is_set() or "下载被用户取消" in str(e): return False
+                                raise Exception(str(e))
+
+                        download_success = False
+                        download_thread = threading.Thread(
+                            target=lambda: setattr(download_file, '_result', download_file()))
+                        download_thread.daemon = True
+                        download_thread.start()
+
+                        while download_thread.is_alive():
+                            if cancel_event.is_set():
+                                log_to_ui("正在取消下载...", "info")
+                                break
+                            time.sleep(0.1)
+
+                        download_thread.join(timeout=1)
+                        download_success = getattr(download_file, '_result', False) and not cancel_event.is_set()
+
+                        if not download_success: raise Exception("下载失败")
+
+                        with open(temp_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+
+                        if "BEGIN:VCALENDAR" not in content and "BEGIN:VEVENT" not in content:
+                            error_msg = f"文件 {filename} 不是有效的iCalendar格式"
+                            log_to_ui(error_msg, "error")
+                            failed_count += 1
+                            continue
+
+                        # 写入日历
+                        try:
+                            cal = vobject.readOne(content)
+                            events = [comp for comp in cal.components() if comp.name == 'VEVENT']
+                            if not events:
+                                error_msg = f"文件 {filename} 中没有找到日历事件"
+                                log_to_ui(error_msg, "warning")
+                                failed_count += 1
+                                continue
+                        except Exception as e:
+                            error_msg = f"解析日历文件失败: {str(e)}"
+                            log_to_ui(error_msg, "error")
+                            failed_count += 1
+                            continue
+
+                        for event in events:
+                            try:
+                                new_cal = vobject.iCalendar()
+                                new_cal.add(event)
+                                uid, operation = self.db.add_event(new_cal.serialize())
+                                summary = getattr(event, 'summary', None)
+                                event_name = summary.value if summary else "未命名事件"
+                                log_to_ui(f"成功{operation}事件: {event_name} ({uid})")
+                                success_count += 1
+                            except Exception as e:
+                                error_msg = f"导入事件失败: {str(e)}"
+                                log_to_ui(error_msg, "error")
+                                failed_count += 1
+
+                    except Exception as e:
+                        if not cancel_event.is_set():
+                            error_msg = f"处理文件 {filename} 失败: {str(e)}"
+                            log_to_ui(error_msg, "error")
+                        failed_count += 1
+                    finally:
+                        if temp_file:
+                            with import_lock:
+                                if temp_file in active_downloads: active_downloads.remove(temp_file)
+                            try:
+                                if os.path.exists(temp_file): os.remove(temp_file)
+                            except:
+                                pass
+
+                if not cancel_event.is_set():
+                    update_progress(100)
+                    result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
+                    log_to_ui(result_msg)
+                    update_status(result_msg)
+
+            except Exception as e:
+                if not cancel_event.is_set():
+                    error_msg = f"导入过程中发生错误: {str(e)}"
+                    log_to_ui(error_msg, "error")
+                    update_status("导入失败")
+                    show_error_message(error_msg)
+            finally:
+                if client:
+                    try:
+                        client.session.close()
+                    except:
+                        pass
+                update_button("关闭", error_window.destroy)
+
+        import_thread = threading.Thread(target=import_task)
+        import_thread.start()
+
+        def check_thread():
+            if import_thread.is_alive():
+                error_window.after(100, check_thread)
+            else:
+                if error_window.winfo_exists():
+                    error_window.protocol("WM_DELETE_WINDOW", error_window.destroy)
+                    update_button("关闭", error_window.destroy)
+
+        error_window.after(100, check_thread)
 
     def _import_events_from_text(self, dialog=None):
         if dialog:
@@ -2529,222 +2748,6 @@ CalDAV 配置:
                 self.event_text_editor.insert(tk.END, clipboard_content)
         except ImportError:
             pass
-
-    def _fetch_events_from_webdav(self, dialog):
-        url = self.webdav_url_entry.get().strip()
-        username = self.webdav_username_entry.get().strip()
-        password = self.webdav_password_entry.get().strip()
-        path = self.webdav_path_entry.get().strip()
-
-        if not url:
-            messagebox.showerror("错误", "请输入服务器地址")
-            return
-
-        # 创建持久化错误显示窗口（现在可以正常关闭）
-        error_window = tk.Toplevel(dialog)
-        error_window.title("WebDAV日历导入")
-        error_window.geometry("700x500")
-        error_window.transient(dialog)
-        error_window.grab_set()
-
-        # 添加组件
-        ttk.Label(error_window, text="WebDAV日历导入进度", font=("Arial", 12)).pack(pady=5)
-
-        # 状态标签
-        status_var = tk.StringVar(value="正在初始化...")
-        status_label = ttk.Label(error_window, textvariable=status_var, font=("Arial", 10))
-        status_label.pack(pady=5)
-
-        # 进度条
-        progress_var = tk.DoubleVar()
-        progress_bar = ttk.Progressbar(error_window, variable=progress_var, maximum=100)
-        progress_bar.pack(fill=tk.X, padx=20, pady=5)
-
-        # 错误信息文本框
-        error_frame = ttk.LabelFrame(error_window, text="详细日志")
-        error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        error_text = tk.Text(error_frame, wrap=tk.WORD)
-        scrollbar = ttk.Scrollbar(error_frame, command=error_text.yview)
-        error_text.configure(yscrollcommand=scrollbar.set)
-
-        error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # 添加关闭按钮（初始禁用）
-        close_button = ttk.Button(error_window, text="关闭", state=tk.DISABLED,
-                                  command=error_window.destroy)
-        close_button.pack(pady=10)
-
-        def log_to_ui(message, level="info"):
-            """将消息记录到UI和日志文件"""
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            formatted_msg = f"[{timestamp}] {message}"
-
-            # 添加到UI文本框
-            error_text.insert(tk.END, formatted_msg + "\n")
-            error_text.see(tk.END)
-
-            # 记录到日志文件
-            if level == "error":
-                logger.error(formatted_msg)
-            elif level == "warning":
-                logger.warning(formatted_msg)
-            else:
-                logger.info(formatted_msg)
-
-        def enable_close():
-            """安全启用关闭按钮"""
-            close_button.config(state=tk.NORMAL)
-            error_window.protocol("WM_DELETE_WINDOW", error_window.destroy)
-
-        def import_task():
-            try:
-                # 相同的连接验证流程
-                status_var.set("正在验证服务器连接...")
-                log_to_ui(f"正在测试连接: {url}")
-
-                success, msg = Database.test_webdav_connection(
-                    url=url,
-                    username=username,
-                    password=password,
-                    path=path
-                )
-
-                if not success:
-                    log_to_ui(f"连接测试失败: {msg}", "error")
-                    status_var.set("连接失败")
-                    error_window.after(0, lambda: messagebox.showerror("连接失败", msg))
-                    error_window.after(0, enable_close)
-                    return
-
-                log_to_ui("服务器连接验证通过")
-
-                # 开始导入日历事件
-                try:
-                    from webdav3.client import Client
-
-                    options = {
-                        'webdav_hostname': url,
-                        'webdav_login': username,
-                        'webdav_password': password,
-                        'webdav_timeout': 30
-                    }
-
-                    client = Client(options)
-
-                    # 获取文件列表
-                    status_var.set("正在获取日历文件...")
-                    log_to_ui(f"正在列出路径: {path}")
-
-                    files = client.list(path)
-                    ics_files = [f for f in files if f.lower().endswith('.ics')]
-
-                    if not ics_files:
-                        error_msg = f"在 {path} 中没有找到.ics文件"
-                        log_to_ui(error_msg, "error")
-                        status_var.set("导入失败")
-                        error_window.after(0, lambda: messagebox.showerror("无文件", error_msg))
-                        error_window.after(0, enable_close)
-                        return
-
-                    # 导入过程
-                    total_files = len(ics_files)
-                    success_count = 0
-                    failed_count = 0
-
-                    for i, filename in enumerate(ics_files):
-                        if self.import_cancel_requested:
-                            log_to_ui("导入被用户取消")
-                            status_var.set("已取消")
-                            error_window.after(0, enable_close)
-                            return
-
-                        status_var.set(f"正在处理 {i + 1}/{total_files}: {filename}")
-                        progress_var.set((i / total_files) * 100)
-                        log_to_ui(f"正在处理日历文件: {filename}")
-
-                        try:
-                            # 下载文件
-                            temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}.ics")
-                            client.download_sync(remote_path=f"{path}{filename}", local_path=temp_file)
-
-                            # 读取并验证内容
-                            with open(temp_file, 'r', encoding='utf-8') as f:
-                                content = f.read()
-
-                            if "BEGIN:VCALENDAR" not in content and "BEGIN:VEVENT" not in content:
-                                error_msg = f"文件 {filename} 不是有效的iCalendar格式"
-                                log_to_ui(error_msg, "error")
-                                failed_count += 1
-                                os.remove(temp_file)
-                                continue
-
-                            # 解析日历
-                            try:
-                                cal = vobject.readOne(content)
-                                events = [comp for comp in cal.components() if comp.name == 'VEVENT']
-
-                                if not events:
-                                    error_msg = f"文件 {filename} 中没有找到日历事件"
-                                    log_to_ui(error_msg, "warning")
-                                    failed_count += 1
-                                    os.remove(temp_file)
-                                    continue
-
-                            except Exception as e:
-                                error_msg = f"解析日历文件失败: {str(e)}"
-                                log_to_ui(error_msg, "error")
-                                failed_count += 1
-                                os.remove(temp_file)
-                                continue
-
-                            # 导入每个事件
-                            for event in events:
-                                try:
-                                    new_cal = vobject.iCalendar()
-                                    new_cal.add(event)
-                                    uid, operation = self.db.add_event(new_cal.serialize())
-
-                                    summary = getattr(event, 'summary', None)
-                                    event_name = summary.value if summary else "未命名事件"
-                                    log_to_ui(f"成功{operation}事件: {event_name} ({uid})")
-                                    success_count += 1
-
-                                except Exception as e:
-                                    error_msg = f"导入事件失败: {str(e)}"
-                                    log_to_ui(error_msg, "error")
-                                    failed_count += 1
-
-                            os.remove(temp_file)
-                        except Exception as e:
-                            error_msg = f"处理文件 {filename} 失败: {str(e)}"
-                            log_to_ui(error_msg, "error")
-                            failed_count += 1
-
-                    # 导入完成
-                    progress_var.set(100)
-                    result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
-                    log_to_ui(result_msg)
-                    status_var.set(result_msg)
-                    error_window.after(0, enable_close)
-
-                except Exception as e:
-                    error_msg = f"导入过程中发生错误: {str(e)}"
-                    log_to_ui(error_msg, "error")
-                    status_var.set("导入失败")
-                    error_window.after(0, lambda: messagebox.showerror("导入错误", error_msg))
-                    error_window.after(0, enable_close)
-
-            except Exception as e:
-                error_msg = f"意外错误: {str(e)}"
-                log_to_ui(error_msg, "error")
-                status_var.set("导入失败")
-                error_window.after(0, lambda: messagebox.showerror("错误", error_msg))
-                error_window.after(0, enable_close)
-
-        # 启动导入线程
-        threading.Thread(target=import_task, daemon=True).start()
 
     def _start_import_events(self, sources, source_type):
         # 创建进度窗口
@@ -2989,8 +2992,8 @@ CalDAV 配置:
             # 更新进度条
             progress_window.update()
             # 继续监控
-            self.root.after(100, lambda: self.monitor_import_progress(
-                progress_var, status_var, error_var, progress_window))
+            self.root.after(100,
+                            lambda: self.monitor_import_progress(progress_var, status_var, error_var, progress_window))
         else:
             progress_window.destroy()
 
@@ -3023,16 +3026,15 @@ CalDAV 配置:
                         f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}")
                 else:
                     error_msg = f"导入完成!\n新增: {result['inserted']}, 更新: {result['updated']}, 相同: {result['unchanged']}, 失败: {result['errors']}\n\n错误详情:\n"
-                    for i, err in enumerate(result["error_list"][:10]):  # 最多显示前10个错误
-                        error_msg += f"{i + 1}. {err}\n"
-
-                    if len(result["error_list"]) > 10:
-                        error_msg += f"\n...以及另外 {len(result['error_list']) - 10} 条错误"
+                    for i, err in enumerate(result["error_list"][:10]): error_msg += f"{i + 1}. {err}\n"
+                    if len(result[
+                               "error_list"]) > 10: error_msg += f"\n...以及另外 {len(result['error_list']) - 10} 条错误"
 
                     messagebox.showinfo("导入完成", error_msg)
 
                     self.log_message(
-                        f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}, 失败 {result['errors']}")
+                        f"导入{result['type']}: 新增 {result['inserted']}, 更新 {result['updated']}, 相同 {result['unchanged']}, 失败 {result['errors']}" + (
+                            (" - 错误详情: " + str(result["error_list"])) if result["errors"] != 0 else ""))
         except queue.Empty:
             pass
 
@@ -3162,31 +3164,22 @@ CalDAV 配置:
                         alarm['repeat'] = component.repeat.value
                         alarm['duration'] = component.duration.value
 
-                    if hasattr(component, 'description'):
-                        alarm['description'] = self.decode_text(component.description.value)
-                    if hasattr(component, 'attach'):
-                        alarm['attach'] = component.attach.value
-                    if hasattr(component, 'attendee'):
-                        alarm['attendee'] = component.attendee.value
-                    if hasattr(component, 'summary'):
-                        alarm['summary'] = self.decode_text(component.summary.value)
+                    if hasattr(component, 'description'): alarm['description'] = self.decode_text(
+                        component.description.value)
+                    if hasattr(component, 'attach'): alarm['attach'] = component.attach.value
+                    if hasattr(component, 'attendee'): alarm['attendee'] = component.attendee.value
+                    if hasattr(component, 'summary'): alarm['summary'] = self.decode_text(component.summary.value)
 
                     initial['alarms'].append(alarm)
 
-            if hasattr(vevent, 'categories'):
-                initial['categories'] = self.decode_text(vevent.categories.value)
-            if hasattr(vevent, 'priority'):
-                initial['priority'] = vevent.priority.value
-            if hasattr(vevent, 'transp'):
-                initial['transparency'] = vevent.transp.value
-            if hasattr(vevent, 'sequence'):
-                initial['sequence'] = vevent.sequence.value
-            if hasattr(vevent, 'url'):
-                initial['url'] = vevent.url.value
-            if hasattr(vevent, 'organizer'):
-                initial['organizer'] = vevent.organizer.value
-            if hasattr(vevent, 'attendee'):
-                initial['attendees'] = [self.decode_text(att.value) for att in vevent.attendee_list]
+            if hasattr(vevent, 'categories'): initial['categories'] = self.decode_text(vevent.categories.value)
+            if hasattr(vevent, 'priority'): initial['priority'] = vevent.priority.value
+            if hasattr(vevent, 'transp'): initial['transparency'] = vevent.transp.value
+            if hasattr(vevent, 'sequence'): initial['sequence'] = vevent.sequence.value
+            if hasattr(vevent, 'url'): initial['url'] = vevent.url.value
+            if hasattr(vevent, 'organizer'): initial['organizer'] = vevent.organizer.value
+            if hasattr(vevent, 'attendee'): initial['attendees'] = [self.decode_text(att.value) for att in
+                                                                    vevent.attendee_list]
 
         except Exception as e:
             logger.error(f"解析事件错误: {str(e)}")
@@ -3208,8 +3201,7 @@ CalDAV 配置:
 
     def decode_text(self, text):
         """解码QUOTED-PRINTABLE编码的文本"""
-        if not text:
-            return ""
+        if not text: return ""
 
         # 检查是否包含QUOTED-PRINTABLE编码
         if "ENCODING=QUOTED-PRINTABLE" in text:
@@ -3257,8 +3249,7 @@ CalDAV 配置:
 
             self.refresh_events()
             if fail_count > 0:
-                messagebox.showinfo("删除完成",
-                                    f"成功删除 {success_count} 个事件\n失败 {fail_count} 个")
+                messagebox.showinfo("删除完成", f"成功删除 {success_count} 个事件\n失败 {fail_count} 个")
             else:
                 messagebox.showinfo("删除完成", f"成功删除 {success_count} 个事件")
 
@@ -3300,8 +3291,7 @@ CalDAV 配置:
         port = int(self.port_entry.get())
 
         # 创建自定义处理程序
-        class CustomHandler(SimpleDAVHandler):
-            pass
+        class CustomHandler(SimpleDAVHandler): pass
 
         # 创建服务器
         self.server = HTTPServer(('', port), CustomHandler)
@@ -3326,8 +3316,7 @@ CalDAV 配置:
         if self.server:
             self.server.shutdown()
             self.server.server_close()
-            if self.server_thread:
-                self.server_thread.join()
+            if self.server_thread: self.server_thread.join()
             self.server = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
@@ -3336,8 +3325,7 @@ CalDAV 配置:
             logger.info("服务器已停止")
 
     def on_closing(self):
-        if self.server:
-            self.stop_server()
+        if self.server: self.stop_server()
         self.db.close()
         self.root.destroy()
 
@@ -3370,8 +3358,7 @@ class ContactDialog(tk.Toplevel):
             self.uid_entry.insert(0, uid)
 
         # 添加更多字段按钮
-        if self.vcard:
-            ttk.Button(self, text="显示完整 vCard", command=self.show_full_vcard).pack(pady=5)
+        if self.vcard: ttk.Button(self, text="显示完整 vCard", command=self.show_full_vcard).pack(pady=5)
 
         button_frame = ttk.Frame(self)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
@@ -3442,8 +3429,7 @@ class ContactDialog(tk.Toplevel):
 
     def show_full_vcard(self):
         """显示完整的 vCard 内容"""
-        if not self.vcard:
-            return
+        if not self.vcard: return
 
         vcard_window = tk.Toplevel(self)
         vcard_window.title("完整 vCard")
@@ -3472,10 +3458,8 @@ class ContactDialog(tk.Toplevel):
 
         # 检查必填项
         missing_fields = []
-        if not uid:
-            missing_fields.append("UID")
-        if not name:
-            missing_fields.append("姓名")
+        if not uid: missing_fields.append("UID")
+        if not name: missing_fields.append("姓名")
 
         if missing_fields:
             messagebox.showerror("缺少必填项", f"以下字段是必填的: {', '.join(missing_fields)}")
@@ -3508,15 +3492,7 @@ class EventDialog:
     }
 
     # 重复频率选项
-    REPEAT_OPTIONS = [
-        "不重复",
-        "每天",
-        "每周",
-        "每两周",
-        "每月",
-        "每年",
-        "自定义"
-    ]
+    REPEAT_OPTIONS = ["不重复", "每天", "每周", "每两周", "每月", "每年", "自定义"]
 
     # 星期选项
     WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -3731,8 +3707,7 @@ class EventDialog:
 
         # 同步时区复选框
         self.sync_timezone_var = tk.BooleanVar(value=True)
-        self.sync_timezone_check = ttk.Checkbutton(frame, text="结束时间使用相同时区",
-                                                   variable=self.sync_timezone_var,
+        self.sync_timezone_check = ttk.Checkbutton(frame, text="结束时间使用相同时区", variable=self.sync_timezone_var,
                                                    command=self.toggle_timezone_sync)
         self.sync_timezone_check.grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
@@ -3755,13 +3730,13 @@ class EventDialog:
         repeat_frame.grid(row=6, column=1, columnspan=2, sticky="w", padx=5, pady=5)
 
         self.repeat_var = tk.StringVar(value="不重复")
-        repeat_combo = ttk.Combobox(repeat_frame, textvariable=self.repeat_var,
-                                    values=self.REPEAT_OPTIONS, width=10, state="readonly")
+        repeat_combo = ttk.Combobox(repeat_frame, textvariable=self.repeat_var, values=self.REPEAT_OPTIONS, width=10,
+                                    state="readonly")
         repeat_combo.grid(row=0, column=0, sticky="w")
 
         # 当选择"自定义"时，显示详细设置按钮
-        self.custom_repeat_btn = ttk.Button(repeat_frame, text="详细设置...",
-                                            command=self.custom_repeat_settings, state="disabled")
+        self.custom_repeat_btn = ttk.Button(repeat_frame, text="详细设置...", command=self.custom_repeat_settings,
+                                            state="disabled")
         self.custom_repeat_btn.grid(row=0, column=1, padx=(10, 0))
 
         # 绑定事件
@@ -3777,8 +3752,11 @@ class EventDialog:
         self.end_cond_var = tk.StringVar(value="永不结束")
         self.end_cond_var.trace("w", self.on_end_cond_changed)
         for i, option in enumerate(self.END_CONDITIONS):
-            ttk.Radiobutton(self.end_cond_frame, text=option, variable=self.end_cond_var, value=option).grid(
-                row=0, column=i, padx=(0, 10), sticky="w")
+            ttk.Radiobutton(self.end_cond_frame, text=option, variable=self.end_cond_var, value=option).grid(row=0,
+                                                                                                             column=i,
+                                                                                                             padx=(
+                                                                                                             0, 10),
+                                                                                                             sticky="w")
 
         # 结束日期/次数输入
         self.end_input_frame = ttk.Frame(frame)
@@ -3829,8 +3807,8 @@ class EventDialog:
         ttk.Label(frame, text="提醒类型:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.reminder_type_var = tk.StringVar(value="显示")
         reminder_types = ["显示", "声音", "邮件"]
-        self.reminder_type_combo = ttk.Combobox(frame, textvariable=self.reminder_type_var,
-                                                values=reminder_types, width=10, state="readonly")
+        self.reminder_type_combo = ttk.Combobox(frame, textvariable=self.reminder_type_var, values=reminder_types,
+                                                width=10, state="readonly")
         self.reminder_type_combo.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         self.reminder_type_combo.bind("<<ComboboxSelected>>", self.on_reminder_type_change)
 
@@ -3854,13 +3832,15 @@ class EventDialog:
 
         self.reminder_days_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_time_frame, text="天:").grid(row=0, column=0, sticky="w")
-        ttk.Spinbox(self.reminder_time_frame, from_=0, to=365, textvariable=self.reminder_days_var, width=3).grid(
-            row=0, column=1, padx=5)
+        ttk.Spinbox(self.reminder_time_frame, from_=0, to=365, textvariable=self.reminder_days_var, width=3).grid(row=0,
+                                                                                                                  column=1,
+                                                                                                                  padx=5)
 
         self.reminder_hours_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_time_frame, text="小时:").grid(row=0, column=2, sticky="w")
-        ttk.Spinbox(self.reminder_time_frame, from_=0, to=23, textvariable=self.reminder_hours_var, width=3).grid(
-            row=0, column=3, padx=5)
+        ttk.Spinbox(self.reminder_time_frame, from_=0, to=23, textvariable=self.reminder_hours_var, width=3).grid(row=0,
+                                                                                                                  column=3,
+                                                                                                                  padx=5)
 
         self.reminder_minutes_var = tk.StringVar(value="15")
         ttk.Label(self.reminder_time_frame, text="分钟:").grid(row=0, column=4, sticky="w")
@@ -3892,8 +3872,8 @@ class EventDialog:
 
         # 时区选择
         ttk.Label(self.absolute_trigger_frame, text="时区:").grid(row=0, column=6, padx=(10, 0))
-        self.absolute_trigger_timezone = ttk.Combobox(self.absolute_trigger_frame,
-                                                      values=self.get_timezone_list(), width=30)
+        self.absolute_trigger_timezone = ttk.Combobox(self.absolute_trigger_frame, values=self.get_timezone_list(),
+                                                      width=30)
         self.absolute_trigger_timezone.grid(row=0, column=7, padx=5)
         self.absolute_trigger_timezone.set(self.get_local_timezone_str())
 
@@ -3904,8 +3884,11 @@ class EventDialog:
         # 重复次数
         ttk.Label(reminder_repeat_frame, text="重复次数:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.reminder_repeat_var = tk.StringVar(value="0")
-        ttk.Spinbox(reminder_repeat_frame, from_=0, to=999, textvariable=self.reminder_repeat_var, width=3).grid(
-            row=0, column=1, sticky="w", padx=5, pady=5)
+        ttk.Spinbox(reminder_repeat_frame, from_=0, to=999, textvariable=self.reminder_repeat_var, width=3).grid(row=0,
+                                                                                                                 column=1,
+                                                                                                                 sticky="w",
+                                                                                                                 padx=5,
+                                                                                                                 pady=5)
 
         # 间隔时间
         ttk.Label(reminder_repeat_frame, text="间隔时间:").grid(row=0, column=2, sticky="w", padx=5, pady=5)
@@ -3915,23 +3898,23 @@ class EventDialog:
         # 间隔时间子控件
         self.reminder_duration_days_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_duration_frame, text="天:").grid(row=0, column=0, sticky="w", padx=2)
-        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=365,
-                    textvariable=self.reminder_duration_days_var, width=3).grid(row=0, column=1, padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=365, textvariable=self.reminder_duration_days_var,
+                    width=3).grid(row=0, column=1, padx=2)
 
         self.reminder_duration_hours_var = tk.StringVar(value="0")
         ttk.Label(self.reminder_duration_frame, text="小时:").grid(row=0, column=2, sticky="w", padx=2)
-        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=23,
-                    textvariable=self.reminder_duration_hours_var, width=3).grid(row=0, column=3, padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=23, textvariable=self.reminder_duration_hours_var,
+                    width=3).grid(row=0, column=3, padx=2)
 
         self.reminder_duration_minutes_var = tk.StringVar(value="15")
         ttk.Label(self.reminder_duration_frame, text="分钟:").grid(row=0, column=4, sticky="w", padx=2)
-        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=59,
-                    textvariable=self.reminder_duration_minutes_var, width=3).grid(row=0, column=5, padx=2)
+        ttk.Spinbox(self.reminder_duration_frame, from_=0, to=59, textvariable=self.reminder_duration_minutes_var,
+                    width=3).grid(row=0, column=5, padx=2)
 
         # 强制提醒选项
         self.force_reminder_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frame, text="强制提醒", variable=self.force_reminder_var).grid(
-            row=6, column=0, columnspan=2, sticky="w", padx=5, pady=10)
+        ttk.Checkbutton(frame, text="强制提醒", variable=self.force_reminder_var).grid(row=6, column=0, columnspan=2,
+                                                                                       sticky="w", padx=5, pady=10)
 
         # 根据不同提醒类型显示特定控件
         self.display_frame = ttk.Frame(frame)
@@ -3957,19 +3940,20 @@ class EventDialog:
         # 声音提醒的附件框
         ttk.Label(self.audio_attach_frame, text="音频文件地址:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.audio_attach_var = tk.StringVar()
-        ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40).grid(
-            row=0, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40).grid(row=0, column=1,
+                                                                                              sticky="ew", padx=5,
+                                                                                              pady=5)
 
         # 邮件提醒的多个字段
         ttk.Label(self.email_frame, text="收件人邮箱:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.email_attendee_var = tk.StringVar()
-        ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40).grid(
-            row=0, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40).grid(row=0, column=1, sticky="ew",
+                                                                                         padx=5, pady=5)
 
         ttk.Label(self.email_frame, text="邮件主题:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.email_summary_var = tk.StringVar()
-        ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40).grid(
-            row=1, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40).grid(row=1, column=1, sticky="ew",
+                                                                                        padx=5, pady=5)
 
         ttk.Label(self.email_frame, text="邮件正文:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.email_description = tk.Text(self.email_frame, height=3, width=40)
@@ -3980,8 +3964,8 @@ class EventDialog:
 
         ttk.Label(self.email_frame, text="邮件附件:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.email_attach_var = tk.StringVar()
-        ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40).grid(
-            row=3, column=1, sticky="ew", padx=5, pady=5)
+        ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40).grid(row=3, column=1, sticky="ew",
+                                                                                       padx=5, pady=5)
 
         # 初始化提醒类型相关控件的状态
         self.on_reminder_type_change()
@@ -4018,26 +4002,23 @@ class EventDialog:
         ttk.Label(frame, text="透明度:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.transparency_var = tk.StringVar(value="忙碌")
         transparencies = ["忙碌", "空闲"]
-        ttk.Combobox(frame, textvariable=self.transparency_var, values=transparencies,
-                     width=15, state="readonly").grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        ttk.Combobox(frame, textvariable=self.transparency_var, values=transparencies, width=15, state="readonly").grid(
+            row=2, column=1, sticky="w", padx=5, pady=5)
 
         # 序列号
         ttk.Label(frame, text="序列号:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.sequence_var = tk.StringVar(value="0")
-        ttk.Entry(frame, textvariable=self.sequence_var, width=10).grid(
-            row=3, column=1, sticky="w", padx=5, pady=5)
+        ttk.Entry(frame, textvariable=self.sequence_var, width=10).grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
         # URL
         ttk.Label(frame, text="URL:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.url_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.url_var, width=30).grid(
-            row=4, column=1, sticky="we", padx=5, pady=5)
+        ttk.Entry(frame, textvariable=self.url_var, width=30).grid(row=4, column=1, sticky="we", padx=5, pady=5)
 
         # 组织者
         ttk.Label(frame, text="组织者:").grid(row=5, column=0, sticky="w", padx=5, pady=5)
         self.organizer_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.organizer_var, width=30).grid(
-            row=5, column=1, sticky="we", padx=5, pady=5)
+        ttk.Entry(frame, textvariable=self.organizer_var, width=30).grid(row=5, column=1, sticky="we", padx=5, pady=5)
 
         # 参与者
         ttk.Label(frame, text="参与者:").grid(row=6, column=0, sticky="nw", padx=5, pady=5)
@@ -4131,12 +4112,9 @@ class EventDialog:
                     minutes = (seconds % 3600) // 60
 
                     interval_text = ""
-                    if days > 0:
-                        interval_text += f"{days}天"
-                    if hours > 0:
-                        interval_text += f"{hours}小时"
-                    if minutes > 0:
-                        interval_text += f"{minutes}分钟"
+                    if days > 0: interval_text += f"{days}天"
+                    if hours > 0: interval_text += f"{hours}小时"
+                    if minutes > 0: interval_text += f"{minutes}分钟"
 
                     display_text += f" (重复{repeat}次, 间隔{interval_text})"
 
@@ -4208,8 +4186,7 @@ class EventDialog:
             self.reminder_time_frame.grid()
 
             # 隐藏提示信息
-            if hasattr(self, 'allday_reminder_hint'):
-                self.allday_reminder_hint.grid_remove()
+            if hasattr(self, 'allday_reminder_hint'): self.allday_reminder_hint.grid_remove()
 
     def parse_duration_for_display(self, duration_str):
         """解析持续时间用于显示"""
@@ -4219,20 +4196,17 @@ class EventDialog:
 
         if 'D' in duration_str:
             days_part = duration_str.split('D')[0]
-            if days_part.startswith('P'):
-                days_part = days_part[1:]
+            if days_part.startswith('P'): days_part = days_part[1:]
             days = int(days_part) if days_part else 0
 
         if 'H' in duration_str:
             hours_part = duration_str.split('H')[0]
-            if 'T' in hours_part:
-                hours_part = hours_part.split('T')[1]
+            if 'T' in hours_part: hours_part = hours_part.split('T')[1]
             hours = int(hours_part) if hours_part else 0
 
         if 'M' in duration_str and 'T' in duration_str:
             minutes_part = duration_str.split('M')[0]
-            if 'H' in minutes_part:
-                minutes_part = minutes_part.split('H')[1]
+            if 'H' in minutes_part: minutes_part = minutes_part.split('H')[1]
             minutes = int(minutes_part) if minutes_part else 0
 
         return days, hours, minutes
@@ -4249,8 +4223,8 @@ class EventDialog:
             self.summary_var.set(self.decode_text(self.initial.get('summary', '')))
             self.location_var.set(self.decode_text(self.initial.get('location', '')))
 
-            if 'description' in self.initial:
-                self.description_text.insert("1.0", self.decode_text(self.initial.get('description', '')))
+            if 'description' in self.initial: self.description_text.insert("1.0", self.decode_text(
+                self.initial.get('description', '')))
 
             # 状态转换（英文->中文）
             status_en = self.initial.get('status', 'CONFIRMED')
@@ -4262,8 +4236,7 @@ class EventDialog:
             self.allday_var.set(self.initial.get('allday', False))
 
             # 如果是全天事件，应用相关设置
-            if self.allday_var.get():
-                self.toggle_allday_event()
+            if self.allday_var.get(): self.toggle_allday_event()
 
             # 设置时间
             if 'start' in self.initial:
@@ -4340,10 +4313,8 @@ class EventDialog:
             self.update_end_condition_input(self.end_cond_var.get())
 
             # 如果有结束日期或次数，设置它们
-            if 'end_date' in self.initial:
-                self.end_date_entry.set_date(self.initial['end_date'])
-            if 'end_count' in self.initial:
-                self.end_count_var.set(str(self.initial['end_count']))
+            if 'end_date' in self.initial: self.end_date_entry.set_date(self.initial['end_date'])
+            if 'end_count' in self.initial: self.end_count_var.set(str(self.initial['end_count']))
 
             # 提醒设置
             self.force_reminder_var.set(self.initial.get('force_reminder', False))
@@ -4353,10 +4324,9 @@ class EventDialog:
             for alarm in self.initial.get('alarms', []):
                 # 解码提醒中的文本字段
                 decoded_alarm = alarm.copy()
-                if 'description' in decoded_alarm:
-                    decoded_alarm['description'] = self.decode_text(decoded_alarm['description'])
-                if 'summary' in decoded_alarm:
-                    decoded_alarm['summary'] = self.decode_text(decoded_alarm['summary'])
+                if 'description' in decoded_alarm: decoded_alarm['description'] = self.decode_text(
+                    decoded_alarm['description'])
+                if 'summary' in decoded_alarm: decoded_alarm['summary'] = self.decode_text(decoded_alarm['summary'])
                 self.alarms.append(decoded_alarm)
 
             self.update_reminder_listbox()
@@ -4365,8 +4335,7 @@ class EventDialog:
             if 'categories' in self.initial:
                 categories = self.initial['categories']
                 # 如果是列表，转换为逗号分隔的字符串
-                if isinstance(categories, (list, tuple)):
-                    categories = ''.join([str(c) for c in categories if c])
+                if isinstance(categories, (list, tuple)): categories = ''.join([str(c) for c in categories if c])
                 self.categories_var.set(str(categories))
 
             # 优先级
@@ -4385,8 +4354,7 @@ class EventDialog:
             self.url_var.set(self.initial.get('url', ''))
             self.organizer_var.set(self.initial.get('organizer', ''))
 
-            if 'attendees' in self.initial:
-                self.attendee_text.insert("1.0", "\n".join(self.initial['attendees']))
+            if 'attendees' in self.initial: self.attendee_text.insert("1.0", "\n".join(self.initial['attendees']))
         else:
             # 设置默认值
             self.uid_var.set(f"event-{uuid.uuid4().hex}")
@@ -4430,13 +4398,11 @@ class EventDialog:
         # 更新结束条件状态
         if repeat_option == "不重复":
             # 禁用结束条件选项
-            for widget in self.end_cond_frame.winfo_children():
-                widget.config(state="disabled")
+            for widget in self.end_cond_frame.winfo_children(): widget.config(state="disabled")
             self.end_input_frame.grid_remove()
         else:
             # 启用结束条件选项
-            for widget in self.end_cond_frame.winfo_children():
-                widget.config(state="normal")
+            for widget in self.end_cond_frame.winfo_children(): widget.config(state="normal")
             self.update_end_condition_input(self.end_cond_var.get())
 
         # 更新结束条件输入框
@@ -4445,8 +4411,7 @@ class EventDialog:
     def update_end_condition_input(self, end_cond):
         """根据结束条件显示相应的输入控件"""
         # 清除现有控件
-        for widget in self.end_input_frame.winfo_children():
-            widget.destroy()
+        for widget in self.end_input_frame.winfo_children(): widget.destroy()
 
         if end_cond == "按日期结束":
             self.end_input_frame.grid()
@@ -4510,9 +4475,8 @@ class EventDialog:
                           "每周")
         self.repeat_freq_var.set(saved_freq)
 
-        for freq in freqs:
-            ttk.Radiobutton(freq_frame, text=freq, variable=self.repeat_freq_var, value=freq).pack(anchor="w", padx=5,
-                                                                                                   pady=2)
+        for freq in freqs: ttk.Radiobutton(freq_frame, text=freq, variable=self.repeat_freq_var, value=freq).pack(
+            anchor="w", padx=5, pady=2)
 
         interval_frame = ttk.Frame(freq_frame)
         interval_frame.pack(fill="x", padx=5, pady=5)
@@ -4547,8 +4511,7 @@ class EventDialog:
         saved_days = self.custom_repeat_data.get('byday', [])
         for i, day in enumerate(self.WEEKDAYS):
             var = tk.BooleanVar()
-            if self.WEEKDAYS_RRULE[i] in saved_days:
-                var.set(True)
+            if self.WEEKDAYS_RRULE[i] in saved_days: var.set(True)
             self.weekday_vars.append(var)
             cb = ttk.Checkbutton(weekday_frame, text=day, variable=var,
                                  command=lambda: self.custom_repeat_data.update({'user_modified': True}))
@@ -4565,8 +4528,7 @@ class EventDialog:
         saved_days = self.custom_repeat_data.get('bymonthday', [])
         for i in range(31):
             var = tk.BooleanVar()
-            if str(i + 1) in saved_days:
-                var.set(True)
+            if str(i + 1) in saved_days: var.set(True)
             self.day_vars.append(var)
             row = i // 7
             col = i % 7
@@ -4602,8 +4564,7 @@ class EventDialog:
         if self.repeat_freq_var.get() == "每周":
             byday = []
             for i, var in enumerate(self.weekday_vars):
-                if var.get():
-                    byday.append(self.WEEKDAYS_RRULE[i])
+                if var.get(): byday.append(self.WEEKDAYS_RRULE[i])
             self.custom_repeat_data['byday'] = byday
         else:
             self.custom_repeat_data['byday'] = []
@@ -4611,8 +4572,7 @@ class EventDialog:
         if self.repeat_freq_var.get() == "每月":
             bymonthday = []
             for i, var in enumerate(self.day_vars):
-                if var.get():
-                    bymonthday.append(str(i + 1))
+                if var.get(): bymonthday.append(str(i + 1))
             self.custom_repeat_data['bymonthday'] = bymonthday
         else:
             self.custom_repeat_data['bymonthday'] = []
@@ -4630,18 +4590,16 @@ class EventDialog:
             local_tz_name = str(local_tz)
 
             # 如果本地时区名称已经是 pytz 支持的时区 ID，直接返回
-            if local_tz_name in pytz.all_timezones:
-                return local_tz_name
+            if local_tz_name in pytz.all_timezones: return local_tz_name
 
             # 如果不是标准时区 ID，尝试匹配
             for tz_id in pytz.all_timezones:
-                if tz_id.endswith(local_tz_name):
-                    return tz_id
+                if tz_id.endswith(local_tz_name): return tz_id
 
             # 如果都匹配不到，使用 UTC 作为备选
             return "UTC"
         except Exception as e:
-            print(f"Error occurred: {e}")
+            print(f"错误: {e}")
             return "UTC"
 
     def get_timezone_list(self):
@@ -4678,8 +4636,7 @@ class EventDialog:
                 display = f"{offset_str} - {city_name} ({tz_id}) {localized_name}"
 
                 # 标记本地时区
-                if tz_id == local_tz_id:
-                    display = f"{display} [本地]"
+                if tz_id == local_tz_id: display = f"{display} [本地]"
 
                 timezones.append(display)
             except Exception as e:
@@ -4740,14 +4697,12 @@ class EventDialog:
 
     def sync_timezones(self, *args):
         """同步时区"""
-        if self.sync_timezone_var.get():
-            self.end_timezone_var.set(self.start_timezone_var.get())
+        if self.sync_timezone_var.get(): self.end_timezone_var.set(self.start_timezone_var.get())
 
     def show_raw_data(self):
         """显示事件的原始数据"""
         ical = self.generate_ical()
-        if not ical:
-            return
+        if not ical: return
 
         raw_window = tk.Toplevel(self.root)
         raw_window.title("事件原始数据")
@@ -4869,8 +4824,7 @@ class EventDialog:
                     date_part = duration_str
                     time_part = ""
 
-                if 'D' in date_part:
-                    days = int(date_part.split('D')[0][1:])
+                if 'D' in date_part: days = int(date_part.split('D')[0][1:])
 
                 if time_part:
                     if 'H' in time_part:
@@ -4910,8 +4864,7 @@ class EventDialog:
                     date_part = duration_str
                     time_part = ""
 
-                if 'D' in date_part:
-                    days = int(date_part.split('D')[0])
+                if 'D' in date_part: days = int(date_part.split('D')[0])
 
                 if time_part:
                     if 'H' in time_part:
@@ -4948,8 +4901,7 @@ class EventDialog:
     def delete_reminder(self):
         """删除选中的提醒"""
         selected = self.reminder_listbox.curselection()
-        if not selected:
-            return
+        if not selected: return
 
         index = selected[0]
         self.reminder_listbox.delete(index)
@@ -4957,8 +4909,7 @@ class EventDialog:
 
     def encode_text(self, text):
         """对文本进行编码处理，防止特殊字符问题"""
-        if not text:
-            return ""
+        if not text: return ""
 
         # 检查是否包含非ASCII字符
         if any(ord(char) > 127 for char in text):
@@ -4968,8 +4919,7 @@ class EventDialog:
 
     def decode_text(self, text):
         """解码QUOTED-PRINTABLE编码的文本"""
-        if not text:
-            return ""
+        if not text: return ""
 
         # 检查是否包含QUOTED-PRINTABLE编码
         if "ENCODING=QUOTED-PRINTABLE" in text:
@@ -4998,20 +4948,17 @@ class EventDialog:
         event.add('dtstamp').value = datetime.utcnow()
 
         summary = self.summary_var.get()
-        if summary:
-            event.add('summary').value = self.encode_text(summary)
+        if summary: event.add('summary').value = self.encode_text(summary)
 
         status_zh = self.status_var.get()
         status = self.STATUS_MAPPING.get(status_zh, "CONFIRMED")
         event.add('status').value = status
 
         location = self.location_var.get()
-        if location:
-            event.add('location').value = self.encode_text(location)
+        if location: event.add('location').value = self.encode_text(location)
 
         description = self.description_text.get("1.0", "end").strip()
-        if description:
-            event.add('description').value = self.encode_text(description)
+        if description: event.add('description').value = self.encode_text(description)
 
         # 只有状态不是"已取消"时才添加时间信息
         if status_zh != "已取消":
@@ -5031,15 +4978,13 @@ class EventDialog:
 
                 try:
                     start_tz_str = self.start_timezone_var.get().split('(')[-1].split(')')[0]
-                    if not start_tz_str:
-                        start_tz_str = "UTC"
+                    if not start_tz_str: start_tz_str = "UTC"
                 except:
                     start_tz_str = "UTC"
 
                 try:
                     end_tz_str = self.end_timezone_var.get().split('(')[-1].split(')')[0]
-                    if not end_tz_str:
-                        end_tz_str = "UTC"
+                    if not end_tz_str: end_tz_str = "UTC"
                 except:
                     end_tz_str = "UTC"
 
@@ -5051,16 +4996,13 @@ class EventDialog:
                 event.add('dtstart').value = start_time
                 event.add('dtend').value = end_time
 
-                if start_tz_str != "UTC":
-                    event.dtstart.params['TZID'] = [start_tz_str]
-                if end_tz_str != "UTC":
-                    event.dtend.params['TZID'] = [end_tz_str]
+                if start_tz_str != "UTC": event.dtstart.params['TZID'] = [start_tz_str]
+                if end_tz_str != "UTC": event.dtend.params['TZID'] = [end_tz_str]
 
             repeat_option = self.repeat_var.get()
             if repeat_option != "不重复":
                 rrule = self.generate_rrule()
-                if rrule:
-                    event.add('rrule').value = rrule
+                if rrule: event.add('rrule').value = rrule
 
             # 只有状态不是"待定"时才添加提醒
             if status_zh != "待定":
@@ -5079,8 +5021,7 @@ class EventDialog:
                             else:
                                 date_part = duration_str
                                 time_part = ""
-                            if 'D' in date_part:
-                                days = int(date_part.split('D')[0][1:])
+                            if 'D' in date_part: days = int(date_part.split('D')[0][1:])
                             if time_part:
                                 if 'H' in time_part:
                                     hours = int(time_part.split('H')[0])
@@ -5104,49 +5045,39 @@ class EventDialog:
                             valarm.add('duration').value = duration
 
                     if alarm['action'] == "DISPLAY":
-                        if 'description' in alarm:
-                            valarm.add('description').value = self.encode_text(alarm['description'])
+                        if 'description' in alarm: valarm.add('description').value = self.encode_text(
+                            alarm['description'])
                     elif alarm['action'] == "AUDIO":
-                        if 'attach' in alarm:
-                            valarm.add('attach').value = alarm['attach']
+                        if 'attach' in alarm: valarm.add('attach').value = alarm['attach']
                     elif alarm['action'] == "EMAIL":
-                        if 'attendee' in alarm:
-                            valarm.add('attendee').value = alarm['attendee']
-                        if 'summary' in alarm:
-                            valarm.add('summary').value = self.encode_text(alarm['summary'])
-                        if 'description' in alarm:
-                            valarm.add('description').value = self.encode_text(alarm['description'])
-                        if 'attach' in alarm:
-                            valarm.add('attach').value = alarm['attach']
+                        if 'attendee' in alarm: valarm.add('attendee').value = alarm['attendee']
+                        if 'summary' in alarm: valarm.add('summary').value = self.encode_text(alarm['summary'])
+                        if 'description' in alarm: valarm.add('description').value = self.encode_text(
+                            alarm['description'])
+                        if 'attach' in alarm: valarm.add('attach').value = alarm['attach']
 
         categories = self.categories_var.get().strip()
-        if categories:
-            event.add('categories').value = categories
+        if categories: event.add('categories').value = categories
 
         priority = str(self.priority_var.get())
-        if priority != "0":
-            event.add('priority').value = priority
+        if priority != "0": event.add('priority').value = priority
 
         transparency_zh = self.transparency_var.get()
         transparency = self.TRANSPARENCY_MAPPING.get(transparency_zh, "OPAQUE")
         event.add('transp').value = transparency
 
         sequence = self.sequence_var.get()
-        if sequence:
-            event.add('sequence').value = sequence
+        if sequence: event.add('sequence').value = sequence
 
         url = self.url_var.get()
-        if url:
-            event.add('url').value = url
+        if url: event.add('url').value = url
 
         organizer = self.organizer_var.get()
-        if organizer:
-            event.add('organizer').value = organizer
+        if organizer: event.add('organizer').value = organizer
 
         attendees = self.attendee_text.get("1.0", "end").strip().splitlines()
         for attendee in attendees:
-            if attendee.strip():
-                event.add('attendee').value = attendee.strip()
+            if attendee.strip(): event.add('attendee').value = attendee.strip()
 
         return cal.serialize()
 
@@ -5173,20 +5104,17 @@ class EventDialog:
 
             # 添加间隔
             interval = self.custom_repeat_data.get('interval', '1')
-            if interval != '1':
-                parts.append(f"INTERVAL={interval}")
+            if interval != '1': parts.append(f"INTERVAL={interval}")
 
             # 添加每周设置
             if freq == 'WEEKLY':
                 byday = self.custom_repeat_data.get('byday', [])
-                if byday:
-                    parts.append(f"BYDAY={','.join(byday)}")
+                if byday: parts.append(f"BYDAY={','.join(byday)}")
 
             # 添加每月设置
             if freq == 'MONTHLY':
                 bymonthday = self.custom_repeat_data.get('bymonthday', [])
-                if bymonthday:
-                    parts.append(f"BYMONTHDAY={','.join(bymonthday)}")
+                if bymonthday: parts.append(f"BYMONTHDAY={','.join(bymonthday)}")
         else:
             return ""
 
@@ -5201,11 +5129,9 @@ class EventDialog:
         return ";".join(parts)
 
     def get_raw_ical(self):
-        """获取生成的原始iCalendar数据"""
         return self.raw_ical
 
     def save(self):
-        """保存事件但不关闭窗口"""
         ical = self.generate_ical()
         if ical:
             # 在实际应用中，这里可以调用回调函数保存事件
@@ -5231,8 +5157,7 @@ class EventDialog:
                     "事件状态为'已取消'时，时间设置和提醒设置将被清除。\n确定要继续保存吗？",
                     parent=self.root
                 )
-                if not response:
-                    return
+                if not response: return
 
             # 清除设置
             self.alarms = []
@@ -5245,8 +5170,7 @@ class EventDialog:
                     "事件状态为'待定'时，提醒设置将被清除。\n确定要继续保存吗？",
                     parent=self.root
                 )
-                if not response:
-                    return
+                if not response: return
 
             self.alarms = []
 
