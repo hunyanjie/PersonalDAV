@@ -7,7 +7,6 @@ import quopri
 import sqlite3
 import tempfile  # 用于从WebDAV导入时生成临时文件
 import threading
-import time
 import tkinter as tk
 import traceback
 import uuid
@@ -24,6 +23,7 @@ from dateutil import parser
 from tkcalendar import DateEntry
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from tzlocal import get_localzone
+from webdav3.client import Client
 
 
 # ======================
@@ -620,6 +620,279 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
 
 
 # ======================
+# 从 WebDAV 中获取数据
+# ======================
+class WebDAVClient:
+    def __init__(self):
+        self.cancel_event = threading.Event()
+        self.import_lock = threading.Lock()
+        self.active_downloads = []
+
+    def create_import_dialog(self, parent, title, on_complete=None):
+        """创建通用的WebDAV导入对话框"""
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.geometry('500x300')
+        dialog.transient(parent)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text='WebDAV服务器配置', font=('Arial', 12)).pack(pady=10)
+
+        frame = ttk.Frame(dialog)
+        frame.pack(fill=tk.BOTH, padx=10, pady=10, expand=True)
+
+        ttk.Label(frame, text='服务器地址:').grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.url_entry = ttk.Entry(frame, width=40)
+        self.url_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
+
+        ttk.Label(frame, text='用户名:').grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.username_entry = ttk.Entry(frame, width=40)
+        self.username_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
+
+        ttk.Label(frame, text='密码:').grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.password_entry = ttk.Entry(frame, width=40, show='*')
+        self.password_entry.grid(row=2, column=1, sticky=tk.W, pady=5)
+
+        ttk.Label(frame, text='路径(可选):').grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.path_entry = ttk.Entry(frame, width=40)
+        self.path_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
+
+        ttk.Button(button_frame, text='导入', command=lambda: self.start_import(
+            dialog, on_complete)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text='取消', command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+        return dialog
+
+    def start_import(self, dialog, on_complete):
+        """开始导入流程"""
+        url = self.url_entry.get().strip()
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+        path = self.path_entry.get().strip()
+
+        if not url:
+            messagebox.showerror('错误', '请输入服务器地址', parent=dialog)
+            return
+
+        progress_window = self.create_progress_window(dialog, "WebDAV导入进度")
+
+        import_thread = threading.Thread(
+            target=self._import_task,
+            args=(url, username, password, path, progress_window, on_complete),
+            daemon=True
+        )
+        import_thread.start()
+
+        self.monitor_import_thread(import_thread, progress_window)
+
+    def create_progress_window(self, parent, title):
+        """创建进度显示窗口"""
+        window = tk.Toplevel(parent)
+        window.title(title)
+        window.geometry('700x500')
+        window.transient(parent)
+        window.grab_set()
+
+        self.cancel_event.clear()
+
+        ttk.Label(window, text=title, font=('Arial', 12)).pack(pady=5)
+
+        self.status_var = tk.StringVar(value='正在初始化...')
+        status_label = ttk.Label(window, textvariable=self.status_var, font=('Arial', 10))
+        status_label.pack(pady=5)
+
+        self.progress_var = tk.DoubleVar()
+        progress_bar = ttk.Progressbar(window, variable=self.progress_var, maximum=100)
+        progress_bar.pack(fill=tk.X, padx=20, pady=5)
+
+        error_frame = ttk.LabelFrame(window, text='详细日志')
+        error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        self.log_text = tk.Text(error_frame, wrap=tk.WORD)
+        scrollbar = ttk.Scrollbar(error_frame, command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.cancel_button = ttk.Button(window, text='取消', command=lambda: self.cancel_import(window))
+        self.cancel_button.pack(pady=10)
+
+        window.protocol('WM_DELETE_WINDOW', lambda: self.cancel_import(window))
+        return window
+
+    def cancel_import(self, window):
+        """取消导入操作"""
+        self.cancel_event.set()
+        with self.import_lock:
+            for temp_file in self.active_downloads[:]:
+                try:
+                    if os.path.exists(temp_file): os.remove(temp_file)
+                    self.active_downloads.remove(temp_file)
+                except:
+                    pass
+        self.log("用户主动取消了导入操作", 'info')
+        window.destroy()
+
+    def log(self, message, level='info'):
+        """记录日志"""
+        timestamp = datetime.now().strftime('%H:%M:%S')
+
+        if hasattr(self, 'log_text'):
+            self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+            self.log_text.see(tk.END)
+        if level == 'error':
+            logger.error(f"{message}")
+        elif level == 'warning':
+            logger.warning(f"{message}")
+        else:
+            logger.info(f"{message}")
+
+    def update_status(self, text):
+        """更新状态文本"""
+        if hasattr(self, 'status_var'):
+            self.status_var.set(text)
+
+    def update_progress(self, value):
+        """更新进度条"""
+        if hasattr(self, 'progress_var'):
+            self.progress_var.set(value)
+
+    def monitor_import_thread(self, thread, window):
+        """监控导入线程状态"""
+        if thread.is_alive():
+            window.after(100, lambda: self.monitor_import_thread(thread, window))
+        elif window.winfo_exists():
+            window.protocol('WM_DELETE_WINDOW', window.destroy)
+            self.cancel_button.config(text='关闭', command=window.destroy)
+
+    def _import_task(self, url, username, password, path, progress_window, on_complete):
+        """执行实际的导入任务"""
+        client = None
+        temp_files = []
+
+        try:
+            if self.cancel_event.is_set(): return
+
+            self.update_status('正在验证服务器连接...')
+            self.log(f"正在测试连接: {url}")
+
+            options = {
+                'webdav_hostname': url,
+                'webdav_timeout': 5,
+                'webdav_verbose': False
+            }
+            if username: options['webdav_login'] = username
+            if password: options['webdav_password'] = password
+
+            client = Client(options)
+
+            if self.cancel_event.is_set(): return
+
+            self.update_status('正在获取文件列表...')
+            self.log(f"正在列出路径: {path}")
+
+            try:
+                files = client.list(path)
+                self.log(f"找到 {len(files)} 个文件/目录")
+            except Exception as e:
+                if not self.cancel_event.is_set():
+                    error_msg = f"获取文件列表失败: {str(e)}"
+                    self.log(error_msg, 'error')
+                    self.update_status('导入失败')
+                    messagebox.showerror('错误', error_msg, parent=progress_window)
+                return
+
+            if on_complete and hasattr(on_complete, 'filter_files'):
+                target_files = on_complete.filter_files(files)
+            else:
+                target_files = files
+
+            if not target_files:
+                error_msg = f"在 {path} 中没有找到目标文件"
+                self.log(error_msg, 'error')
+                self.update_status('导入失败')
+                messagebox.showerror('错误', error_msg, parent=progress_window)
+                return
+
+            total_files = len(target_files)
+            success_count = 0
+            failed_count = 0
+
+            for i, filename in enumerate(target_files):
+                if self.cancel_event.is_set():
+                    self.log('导入被用户取消')
+                    self.update_status('已取消')
+                    return
+
+                self.update_status(f"正在处理 {i + 1}/{total_files}: {filename}")
+                self.update_progress(i / total_files * 100)
+                self.log(f"正在处理文件: {filename}")
+
+                temp_file = None
+                try:
+                    temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}")
+                    with self.import_lock:
+                        if self.cancel_event.is_set(): raise Exception('导入被用户取消')
+                        self.active_downloads.append(temp_file)
+
+                    self._download_file(client, f"{path}{filename}", temp_file)
+
+                    if on_complete:
+                        result = on_complete.process_file(temp_file, filename)
+                        if result:
+                            success_count += 1
+                            temp_files.append(temp_file)  # 跟踪成功处理的文件
+                            self.log(f"成功处理文件: {filename}")
+                        else:
+                            failed_count += 1
+
+                except Exception as e:
+                    failed_count += 1
+                    if not self.cancel_event.is_set():
+                        error_msg = f"处理文件 {filename} 失败: {str(e)}"
+                        self.log(error_msg, 'error')
+                    # 如果处理失败，删除临时文件
+                    if temp_file and os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
+
+            if not self.cancel_event.is_set():
+                self.update_progress(100)
+                result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
+                self.log(result_msg)
+                self.update_status(result_msg)
+
+                if on_complete and hasattr(on_complete, 'on_import_complete'):
+                    on_complete.on_import_complete(temp_files)
+
+        except Exception as e:
+            if not self.cancel_event.is_set():
+                error_msg = f"导入过程中发生错误: {str(e)}"
+                self.log(error_msg, 'error')
+                self.update_status('导入失败')
+                messagebox.showerror('错误', error_msg, parent=progress_window)
+        finally:
+            if client:
+                try:
+                    client.session.close()
+                except:
+                    pass
+
+    def _download_file(self, client, remote_path, local_path):
+        """下载单个文件"""
+
+        def progress_callback(current, total):
+            if self.cancel_event.is_set(): raise Exception('下载被用户取消')
+            return True
+
+        client.download_sync(remote_path=remote_path, local_path=local_path, callback=progress_callback)
+
+# ======================
 # GUI 应用
 # ======================
 class DAVServerApp:
@@ -677,6 +950,9 @@ class DAVServerApp:
 
         # 显示数据统计
         self.update_status_bar()
+
+        # 注册 WebDAV 客户端
+        self.webdav_client = WebDAVClient()
 
         # 开始处理导入队列
         self.root.after(100, self.process_import_queue)
@@ -1802,313 +2078,45 @@ CalDAV 配置:
             messagebox.showerror("错误", "需要安装pyperclip库才能使用剪切板功能\n请运行: pip install pyperclip")
 
     def _import_contacts_from_webdav(self, dialog=None):
+        """从WebDAV导入联系人"""
         if dialog: dialog.destroy()
 
-        webdav_dialog = tk.Toplevel(self.root)
-        webdav_dialog.title("从WebDAV服务器导入联系人")
-        webdav_dialog.geometry("500x300")
-        webdav_dialog.transient(self.root)
-        webdav_dialog.grab_set()
+        class ContactsImportHandler:
+            def filter_files(self, files):
+                return [f for f in files if f.lower().endswith(('.vcf', '.vcard'))]
 
-        ttk.Label(webdav_dialog, text="WebDAV服务器配置", font=("Arial", 12)).pack(pady=10)
+            def process_file(self, file_path, filename):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
 
-        frame = ttk.Frame(webdav_dialog)
-        frame.pack(fill=tk.BOTH, padx=10, pady=10, expand=True)
+                    if 'BEGIN:VCARD' not in content:
+                        raise Exception('文件内容不是有效的vCard格式')
 
-        ttk.Label(frame, text="服务器地址:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.webdav_url_entry = ttk.Entry(frame, width=40)
-        self.webdav_url_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
+                    uid, operation = self.app.db.add_contact(content)
+                    self.app.log_message(f"成功 {operation} 联系人: {filename} ({uid})")
+                    return True
+                except Exception as e:
+                    self.app.log_message(f"导入联系人失败: {str(e)}", 'error')
+                    return False
 
-        ttk.Label(frame, text="用户名:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.webdav_username_entry = ttk.Entry(frame, width=40)
-        self.webdav_username_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
-
-        ttk.Label(frame, text="密码:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.webdav_password_entry = ttk.Entry(frame, width=40, show="*")
-        self.webdav_password_entry.grid(row=2, column=1, sticky=tk.W, pady=5)
-
-        ttk.Label(frame, text="路径(可选):").grid(row=3, column=0, sticky=tk.W, pady=5)
-        self.webdav_path_entry = ttk.Entry(frame, width=40)
-        self.webdav_path_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
-        self.webdav_path_entry.insert(0, "/contacts/")
-
-        button_frame = ttk.Frame(frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
-
-        ttk.Button(button_frame, text="导入",
-                   command=lambda: self._fetch_contacts_from_webdav(webdav_dialog)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="取消", command=webdav_dialog.destroy).pack(side=tk.LEFT, padx=5)
-
-    def _fetch_contacts_from_webdav(self, dialog):
-        url = self.webdav_url_entry.get().strip()
-        username = self.webdav_username_entry.get().strip()
-        password = self.webdav_password_entry.get().strip()
-        path = self.webdav_path_entry.get().strip()
-        if not url:
-            messagebox.showerror("错误", "请输入服务器地址")
-            return
-
-        error_window = tk.Toplevel(dialog)
-        error_window.title("WebDAV联系人导入")
-        error_window.geometry("700x500")
-        error_window.transient(dialog)
-        error_window.grab_set()
-
-        # 创建取消事件和线程锁
-        cancel_event = threading.Event()
-        import_lock = threading.Lock()
-        active_downloads = []
-
-        def safe_ui_update(func):
-            """安全更新UI的装饰器"""
-
-            def wrapper(*args, **kwargs):
-                if error_window.winfo_exists():
-                    try:
-                        return func(*args, **kwargs)
-                    except tk.TclError:
-                        pass
-
-            return wrapper
-
-        @safe_ui_update
-        def update_status(text):
-            status_var.set(text)
-
-        @safe_ui_update
-        def update_progress(value):
-            progress_var.set(value)
-
-        @safe_ui_update
-        def update_button(text, command):
-            cancel_button.config(text=text, command=command)
-
-        @safe_ui_update
-        def show_error_message(message):
-            messagebox.showerror("错误", message)
-
-        def on_window_close():
-            cancel_event.set()  # 设置取消标志
-            with import_lock:  # 确保线程安全
-                # 中断所有活跃下载
-                for temp_file in active_downloads[:]:
+            def on_import_complete(self, temp_files):
+                # 不需要在这里处理，因为process_file已经直接添加到数据库了
+                # 只需删除临时文件
+                for temp_file in temp_files:
                     try:
                         if os.path.exists(temp_file): os.remove(temp_file)
-                        active_downloads.remove(temp_file)
                     except:
                         pass
-            log_to_ui("用户主动取消了导入操作", "info")
-            error_window.destroy()
 
-        error_window.protocol("WM_DELETE_WINDOW", on_window_close)
+        handler = ContactsImportHandler()
+        handler.app = self  # 传递app引用
 
-        ttk.Label(error_window, text="WebDAV联系人导入进度", font=("Arial", 12)).pack(pady=5)
-
-        status_var = tk.StringVar(value="正在初始化...")
-        status_label = ttk.Label(error_window, textvariable=status_var, font=("Arial", 10))
-        status_label.pack(pady=5)
-
-        progress_var = tk.DoubleVar()
-        progress_bar = ttk.Progressbar(error_window, variable=progress_var, maximum=100)
-        progress_bar.pack(fill=tk.X, padx=20, pady=5)
-
-        error_frame = ttk.LabelFrame(error_window, text="详细日志")
-        error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        error_text = tk.Text(error_frame, wrap=tk.WORD)
-        scrollbar = ttk.Scrollbar(error_frame, command=error_text.yview)
-        error_text.configure(yscrollcommand=scrollbar.set)
-        error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        cancel_button = ttk.Button(error_window, text="取消", command=on_window_close)
-        cancel_button.pack(pady=10)
-
-        @safe_ui_update
-        def log_to_ui(message, level="info"):
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            formatted_msg = f"[{timestamp}] {message}"
-            error_text.insert(tk.END, formatted_msg + "\n")
-            error_text.see(tk.END)
-            if level == "error":
-                logger.error(formatted_msg)
-            elif level == "warning":
-                logger.warning(formatted_msg)
-            else:
-                logger.info(formatted_msg)
-
-        def import_task():
-            client = None
-            try:
-                if cancel_event.is_set(): return
-
-                update_status("正在验证服务器连接...")
-                log_to_ui(f"正在测试连接: {url}")
-                need_auth = bool(username or password)
-                log_to_ui(f"认证要求: {'需要' if need_auth else '不需要'}")
-
-                from webdav3.client import Client
-                options = {
-                    'webdav_hostname': url,
-                    'webdav_timeout': 5,
-                    'webdav_verbose': False
-                }
-                if username: options['webdav_login'] = username
-                if password: options['webdav_password'] = password
-
-                client = Client(options)
-
-                if cancel_event.is_set(): return
-
-                update_status("正在获取文件列表...")
-                log_to_ui(f"正在列出路径: {path}")
-
-                try:
-                    files = client.list(path)
-                    log_to_ui(f"找到 {len(files)} 个文件/目录")
-                except Exception as e:
-                    if not cancel_event.is_set():
-                        error_msg = f"获取文件列表失败: {str(e)}"
-                        log_to_ui(error_msg, "error")
-                        update_status("导入失败")
-                        show_error_message(error_msg)
-                    return
-
-                vcf_files = [f for f in files if f.lower().endswith('.vcf')]
-                if not vcf_files:
-                    error_msg = f"在 {path} 中没有找到.vcf文件"
-                    log_to_ui(error_msg, "error")
-                    update_status("导入失败")
-                    show_error_message(error_msg)
-                    return
-
-                total_files = len(vcf_files)
-                success_count = 0
-                failed_count = 0
-
-                for i, filename in enumerate(vcf_files):
-                    if cancel_event.is_set():
-                        log_to_ui("导入被用户取消")
-                        update_status("已取消")
-                        return
-
-                    update_status(f"正在处理 {i + 1}/{total_files}: {filename}")
-                    update_progress((i / total_files) * 100)
-                    log_to_ui(f"正在处理文件: {filename}")
-
-                    temp_file = None
-                    try:
-                        temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}.vcf")
-
-                        with import_lock:
-                            if cancel_event.is_set(): raise Exception("导入被用户取消")
-                            active_downloads.append(temp_file)
-
-                        def download_file():
-                            try:
-                                # 创建自定义回调函数来检查取消事件
-                                def progress_callback(current, total):
-                                    if cancel_event.is_set(): raise Exception("下载被用户取消")
-                                    return True
-
-                                # 使用支持回调的下载方法
-                                client.download_sync(
-                                    remote_path=f"{path}{filename}",
-                                    local_path=temp_file,
-                                    callback=progress_callback
-                                )
-                                return True
-                            except Exception as e:
-                                if cancel_event.is_set() or "下载被用户取消" in str(e): return False
-                                raise Exception(str(e))
-
-                        # 在单独的线程中执行下载以便可以中断
-                        download_success = False
-                        download_thread = threading.Thread(
-                            target=lambda: setattr(download_file, '_result', download_file()))
-                        download_thread.daemon = True
-                        download_thread.start()
-
-                        # 等待线程完成或取消
-                        while download_thread.is_alive():
-                            if cancel_event.is_set():
-                                log_to_ui("正在取消下载...", "info")
-                                break
-                            time.sleep(0.1)
-
-                        download_thread.join(timeout=1)  # 给线程1秒时间正常退出
-                        download_success = getattr(download_file, '_result', False) and not cancel_event.is_set()
-
-                        if not download_success: raise Exception("下载失败")
-
-                        # 检查文件内容
-                        with open(temp_file, 'r', encoding='utf-8') as f:
-                            content = f.read()
-
-                        if "BEGIN:VCARD" not in content:
-                            error_msg = f"文件 {filename} 不是有效的vCard格式"
-                            log_to_ui(error_msg, "error")
-                            failed_count += 1
-                            continue
-
-                        # 导入联系人
-                        try:
-                            uid, operation = self.db.add_contact(content)
-                            log_to_ui(f"成功 {operation} 联系人: {filename} ({uid})")
-                            success_count += 1
-                        except Exception as e:
-                            error_msg = f"导入联系人失败: {str(e)}"
-                            log_to_ui(error_msg, "error")
-                            failed_count += 1
-
-                    except Exception as e:
-                        if not cancel_event.is_set():  # 如果不是用户取消导致的错误
-                            error_msg = f"处理文件 {filename} 失败: {str(e)}"
-                            log_to_ui(error_msg, "error")
-                        failed_count += 1
-                    finally:
-                        if temp_file:
-                            with import_lock:
-                                if temp_file in active_downloads: active_downloads.remove(temp_file)
-                            try:
-                                if os.path.exists(temp_file): os.remove(temp_file)
-                            except:
-                                pass
-
-                if not cancel_event.is_set():
-                    update_progress(100)
-                    result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
-                    log_to_ui(result_msg)
-                    update_status(result_msg)
-
-            except Exception as e:
-                if not cancel_event.is_set():  # 如果不是用户取消导致的错误
-                    error_msg = f"导入过程中发生错误: {str(e)}"
-                    log_to_ui(error_msg, "error")
-                    update_status("导入失败")
-                    show_error_message(error_msg)
-            finally:
-                if client:
-                    try:
-                        client.session.close()  # 关闭连接
-                    except:
-                        pass
-                update_button("关闭", error_window.destroy)
-
-        # 启动导入线程
-        import_thread = threading.Thread(target=import_task)
-        import_thread.start()
-
-        # 监控线程状态
-        def check_thread():
-            if import_thread.is_alive():
-                error_window.after(100, check_thread)
-            else:
-                if error_window.winfo_exists():
-                    error_window.protocol("WM_DELETE_WINDOW", error_window.destroy)
-                    update_button("关闭", error_window.destroy)
-
-        error_window.after(100, check_thread)
+        self.webdav_client.create_import_dialog(
+            self.root,
+            '从WebDAV导入联系人',
+            on_complete=handler
+        )
 
     def _import_contacts_from_text(self, dialog=None):
         if dialog: dialog.destroy()
@@ -2395,322 +2403,63 @@ CalDAV 配置:
             messagebox.showerror("错误", "需要安装pyperclip库才能使用剪切板功能\n请运行: pip install pyperclip")
 
     def _import_events_from_webdav(self, dialog=None):
+        """从WebDAV导入日历事件"""
         if dialog: dialog.destroy()
 
-        webdav_dialog = tk.Toplevel(self.root)
-        webdav_dialog.title("从WebDAV服务器导入日历事件")
-        webdav_dialog.geometry("500x300")
-        webdav_dialog.transient(self.root)
-        webdav_dialog.grab_set()
+        class EventsImportHandler:
+            def filter_files(self, files):
+                return [f for f in files if f.lower().endswith('.ics')]
 
-        ttk.Label(webdav_dialog, text="WebDAV服务器配置", font=("Arial", 12)).pack(pady=10)
+            def process_file(self, file_path, filename):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
 
-        frame = ttk.Frame(webdav_dialog)
-        frame.pack(fill=tk.BOTH, padx=10, pady=10, expand=True)
+                    if 'BEGIN:VCALENDAR' not in content and 'BEGIN:VEVENT' not in content:
+                        raise Exception('文件内容不是有效的iCalendar格式')
 
-        ttk.Label(frame, text="服务器地址:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.webdav_url_entry = ttk.Entry(frame, width=40)
-        self.webdav_url_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
+                    cal = vobject.readOne(content)
+                    events = [comp for comp in cal.components() if comp.name == 'VEVENT']
+                    if not events:
+                        self.app.log_message("文件中没有找到日历事件", 'warning')
+                        return False
 
-        ttk.Label(frame, text="用户名:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.webdav_username_entry = ttk.Entry(frame, width=40)
-        self.webdav_username_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
+                    success = 0
+                    for event in events:
+                        try:
+                            new_cal = vobject.iCalendar()
+                            new_cal.add(event)
+                            uid, operation = self.app.db.add_event(new_cal.serialize())
+                            summary = getattr(event, 'summary', None)
+                            event_name = summary.value if summary else '未命名事件'
+                            self.app.log_message(f"成功{operation}事件: {event_name} ({uid})")
+                            success += 1
+                        except Exception as e:
+                            self.app.log_message(f"导入事件失败: {str(e)}", 'error')
 
-        ttk.Label(frame, text="密码:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.webdav_password_entry = ttk.Entry(frame, width=40, show="*")
-        self.webdav_password_entry.grid(row=2, column=1, sticky=tk.W, pady=5)
+                    return success > 0
+                except Exception as e:
+                    self.app.log_message(f"处理日历文件失败: {str(e)}", 'error')
+                    return False
 
-        ttk.Label(frame, text="路径(可选):").grid(row=3, column=0, sticky=tk.W, pady=5)
-        self.webdav_path_entry = ttk.Entry(frame, width=40)
-        self.webdav_path_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
-        self.webdav_path_entry.insert(0, "/events/")
-
-        button_frame = ttk.Frame(frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
-
-        ttk.Button(button_frame, text="导入", command=lambda: self._fetch_events_from_webdav(webdav_dialog)).pack(
-            side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="取消", command=webdav_dialog.destroy).pack(side=tk.LEFT, padx=5)
-
-    def _fetch_events_from_webdav(self, dialog):
-        url = self.webdav_url_entry.get().strip()
-        username = self.webdav_username_entry.get().strip()
-        password = self.webdav_password_entry.get().strip()
-        path = self.webdav_path_entry.get().strip()
-
-        if not url:
-            messagebox.showerror("错误", "请输入服务器地址")
-            return
-
-        error_window = tk.Toplevel(dialog)
-        error_window.title("WebDAV日历导入")
-        error_window.geometry("700x500")
-        error_window.transient(dialog)
-        error_window.grab_set()
-
-        # 创建取消事件和线程锁
-        cancel_event = threading.Event()
-        import_lock = threading.Lock()
-        active_downloads = []
-
-        def safe_ui_update(func):
-            """安全更新UI的装饰器"""
-
-            def wrapper(*args, **kwargs):
-                if error_window.winfo_exists():
-                    try:
-                        return func(*args, **kwargs)
-                    except tk.TclError:
-                        pass
-
-            return wrapper
-
-        @safe_ui_update
-        def update_status(text):
-            status_var.set(text)
-
-        @safe_ui_update
-        def update_progress(value):
-            progress_var.set(value)
-
-        @safe_ui_update
-        def update_button(text, command):
-            cancel_button.config(text=text, command=command)
-
-        @safe_ui_update
-        def show_error_message(message):
-            messagebox.showerror("错误", message)
-
-        def on_window_close():
-            cancel_event.set()
-            with import_lock:
-                for temp_file in active_downloads[:]:
+            def on_import_complete(self, temp_files):
+                # 刷新事件列表
+                self.app.refresh_events()
+                # 删除临时文件
+                for temp_file in temp_files:
                     try:
                         if os.path.exists(temp_file): os.remove(temp_file)
-                        active_downloads.remove(temp_file)
                     except:
                         pass
-            log_to_ui("用户主动取消了导入操作", "info")
-            error_window.destroy()
 
-        error_window.protocol("WM_DELETE_WINDOW", on_window_close)
+        handler = EventsImportHandler()
+        handler.app = self  # 传递app引用
 
-        ttk.Label(error_window, text="WebDAV日历导入进度", font=("Arial", 12)).pack(pady=5)
-
-        status_var = tk.StringVar(value="正在初始化...")
-        status_label = ttk.Label(error_window, textvariable=status_var, font=("Arial", 10))
-        status_label.pack(pady=5)
-
-        progress_var = tk.DoubleVar()
-        progress_bar = ttk.Progressbar(error_window, variable=progress_var, maximum=100)
-        progress_bar.pack(fill=tk.X, padx=20, pady=5)
-
-        error_frame = ttk.LabelFrame(error_window, text="详细日志")
-        error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-        error_text = tk.Text(error_frame, wrap=tk.WORD)
-        scrollbar = ttk.Scrollbar(error_frame, command=error_text.yview)
-        error_text.configure(yscrollcommand=scrollbar.set)
-        error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        cancel_button = ttk.Button(error_window, text="取消", command=on_window_close)
-        cancel_button.pack(pady=10)
-
-        @safe_ui_update
-        def log_to_ui(message, level="info"):
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            formatted_msg = f"[{timestamp}] {message}"
-            error_text.insert(tk.END, formatted_msg + "\n")
-            error_text.see(tk.END)
-            if level == "error":
-                logger.error(formatted_msg)
-            elif level == "warning":
-                logger.warning(formatted_msg)
-            else:
-                logger.info(formatted_msg)
-
-        def import_task():
-            client = None
-            try:
-                if cancel_event.is_set(): return
-
-                update_status("正在验证服务器连接...")
-                log_to_ui(f"正在测试连接: {url}")
-
-                need_auth = bool(username or password)
-                log_to_ui(f"认证要求: {'需要' if need_auth else '不需要'}")
-
-                from webdav3.client import Client
-                options = {'webdav_hostname': url, 'webdav_timeout': 5, 'webdav_verbose': False}
-                if username: options['webdav_login'] = username
-                if password: options['webdav_password'] = password
-
-                client = Client(options)
-
-                if cancel_event.is_set(): return
-
-                update_status("正在获取文件列表...")
-                log_to_ui(f"正在列出路径: {path}")
-
-                try:
-                    files = client.list(path)
-                    log_to_ui(f"找到 {len(files)} 个文件/目录")
-                except Exception as e:
-                    if not cancel_event.is_set():
-                        error_msg = f"获取文件列表失败: {str(e)}"
-                        log_to_ui(error_msg, "error")
-                        update_status("导入失败")
-                        show_error_message(error_msg)
-                    return
-
-                ics_files = [f for f in files if f.lower().endswith('.ics')]
-                if not ics_files:
-                    error_msg = f"在 {path} 中没有找到.ics文件"
-                    log_to_ui(error_msg, "error")
-                    update_status("导入失败")
-                    show_error_message(error_msg)
-                    return
-
-                total_files = len(ics_files)
-                success_count = 0
-                failed_count = 0
-
-                for i, filename in enumerate(ics_files):
-                    if cancel_event.is_set():
-                        log_to_ui("导入被用户取消")
-                        update_status("已取消")
-                        return
-
-                    update_status(f"正在处理 {i + 1}/{total_files}: {filename}")
-                    update_progress((i / total_files) * 100)
-                    log_to_ui(f"正在处理日历文件: {filename}")
-
-                    temp_file = None
-                    try:
-                        temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}.ics")
-
-                        with import_lock:
-                            if cancel_event.is_set(): raise Exception("导入被用户取消")
-                            active_downloads.append(temp_file)
-
-                        def download_file():
-                            try:
-                                def progress_callback(current, total):
-                                    if cancel_event.is_set(): raise Exception("下载被用户取消")
-                                    return True
-
-                                client.download_sync(
-                                    remote_path=f"{path}{filename}",
-                                    local_path=temp_file,
-                                    callback=progress_callback
-                                )
-                                return True
-                            except Exception as e:
-                                if cancel_event.is_set() or "下载被用户取消" in str(e): return False
-                                raise Exception(str(e))
-
-                        download_success = False
-                        download_thread = threading.Thread(
-                            target=lambda: setattr(download_file, '_result', download_file()))
-                        download_thread.daemon = True
-                        download_thread.start()
-
-                        while download_thread.is_alive():
-                            if cancel_event.is_set():
-                                log_to_ui("正在取消下载...", "info")
-                                break
-                            time.sleep(0.1)
-
-                        download_thread.join(timeout=1)
-                        download_success = getattr(download_file, '_result', False) and not cancel_event.is_set()
-
-                        if not download_success: raise Exception("下载失败")
-
-                        with open(temp_file, 'r', encoding='utf-8') as f:
-                            content = f.read()
-
-                        if "BEGIN:VCALENDAR" not in content and "BEGIN:VEVENT" not in content:
-                            error_msg = f"文件 {filename} 不是有效的iCalendar格式"
-                            log_to_ui(error_msg, "error")
-                            failed_count += 1
-                            continue
-
-                        # 写入日历
-                        try:
-                            cal = vobject.readOne(content)
-                            events = [comp for comp in cal.components() if comp.name == 'VEVENT']
-                            if not events:
-                                error_msg = f"文件 {filename} 中没有找到日历事件"
-                                log_to_ui(error_msg, "warning")
-                                failed_count += 1
-                                continue
-                        except Exception as e:
-                            error_msg = f"解析日历文件失败: {str(e)}"
-                            log_to_ui(error_msg, "error")
-                            failed_count += 1
-                            continue
-
-                        for event in events:
-                            try:
-                                new_cal = vobject.iCalendar()
-                                new_cal.add(event)
-                                uid, operation = self.db.add_event(new_cal.serialize())
-                                summary = getattr(event, 'summary', None)
-                                event_name = summary.value if summary else "未命名事件"
-                                log_to_ui(f"成功{operation}事件: {event_name} ({uid})")
-                                success_count += 1
-                            except Exception as e:
-                                error_msg = f"导入事件失败: {str(e)}"
-                                log_to_ui(error_msg, "error")
-                                failed_count += 1
-
-                    except Exception as e:
-                        if not cancel_event.is_set():
-                            error_msg = f"处理文件 {filename} 失败: {str(e)}"
-                            log_to_ui(error_msg, "error")
-                        failed_count += 1
-                    finally:
-                        if temp_file:
-                            with import_lock:
-                                if temp_file in active_downloads: active_downloads.remove(temp_file)
-                            try:
-                                if os.path.exists(temp_file): os.remove(temp_file)
-                            except:
-                                pass
-
-                if not cancel_event.is_set():
-                    update_progress(100)
-                    result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
-                    log_to_ui(result_msg)
-                    update_status(result_msg)
-
-            except Exception as e:
-                if not cancel_event.is_set():
-                    error_msg = f"导入过程中发生错误: {str(e)}"
-                    log_to_ui(error_msg, "error")
-                    update_status("导入失败")
-                    show_error_message(error_msg)
-            finally:
-                if client:
-                    try:
-                        client.session.close()
-                    except:
-                        pass
-                update_button("关闭", error_window.destroy)
-
-        import_thread = threading.Thread(target=import_task)
-        import_thread.start()
-
-        def check_thread():
-            if import_thread.is_alive():
-                error_window.after(100, check_thread)
-            else:
-                if error_window.winfo_exists():
-                    error_window.protocol("WM_DELETE_WINDOW", error_window.destroy)
-                    update_button("关闭", error_window.destroy)
-
-        error_window.after(100, check_thread)
+        self.webdav_client.create_import_dialog(
+            self.root,
+            '从WebDAV导入日历事件',
+            on_complete=handler
+        )
 
     def _import_events_from_text(self, dialog=None):
         if dialog:
