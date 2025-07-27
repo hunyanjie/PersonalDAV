@@ -7,7 +7,6 @@ import quopri
 import sqlite3
 import tempfile  # 用于从WebDAV导入时生成临时文件
 import threading
-import tkinter as tk
 import traceback
 import uuid
 from datetime import datetime, timedelta
@@ -72,7 +71,7 @@ logger.addHandler(console_handler)
 
 software_name = "PrivateDAV"
 software_description = "私人 CardDAV/CalDAV 服务"
-software_version = "1.2"
+software_version = "1.3"
 software_author = "hunyanjie"
 
 
@@ -663,19 +662,23 @@ class WebDAVClient:
 
         ttk.Label(frame, text='服务器地址:').grid(row=0, column=0, sticky=tk.W, pady=5)
         self.url_entry = ttk.Entry(frame, width=40)
+        RightClickMenu(self.url_entry)
         self.url_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
 
         ttk.Label(frame, text='用户名:').grid(row=1, column=0, sticky=tk.W, pady=5)
         self.username_entry = ttk.Entry(frame, width=40)
+        RightClickMenu(self.username_entry)
         self.username_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
 
         ttk.Label(frame, text='密码:').grid(row=2, column=0, sticky=tk.W, pady=5)
         self.password_entry = ttk.Entry(frame, width=40, show='*')
+        RightClickMenu(self.password_entry)
         self.password_entry.grid(row=2, column=1, sticky=tk.W, pady=5)
 
         ttk.Label(frame, text='路径(可选):').grid(row=3, column=0, sticky=tk.W, pady=5)
         self.path_entry = ttk.Entry(frame, width=40)
         self.path_entry.insert(0, '/')
+        RightClickMenu(self.path_entry)
         self.path_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
 
         advanced_frame = ttk.Frame(notebook)
@@ -707,6 +710,7 @@ class WebDAVClient:
         ttk.Label(conn_frame, text='请求超时(秒):').grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.timeout_entry = ttk.Entry(conn_frame, width=10)
         self.timeout_entry.insert(0, str(self.default_options['webdav_timeout']))
+        RightClickMenu(self.timeout_entry)
         self.timeout_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(conn_frame, text='SSL验证:').grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
@@ -716,14 +720,17 @@ class WebDAVClient:
 
         ttk.Label(conn_frame, text='下载限速(KB/s):').grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
         self.recv_speed_entry = ttk.Entry(conn_frame, width=10)
+        RightClickMenu(self.recv_speed_entry)
         self.recv_speed_entry.grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(conn_frame, text='上传限速(KB/s):').grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
         self.send_speed_entry = ttk.Entry(conn_frame, width=10)
+        RightClickMenu(self.send_speed_entry)
         self.send_speed_entry.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(conn_frame, text='下载块大小(KB):').grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
         self.chunk_size_entry = ttk.Entry(conn_frame, width=10)
+        RightClickMenu(self.chunk_size_entry)
         self.chunk_size_entry.insert(0, str(self.default_options['chunk_size'] // 1024))
         self.chunk_size_entry.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
 
@@ -742,14 +749,17 @@ class WebDAVClient:
 
         ttk.Label(proxy_frame, text='代理地址:').grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.proxy_host_entry = ttk.Entry(proxy_frame, width=30)
+        RightClickMenu(self.proxy_host_entry)
         self.proxy_host_entry.grid(row=0, column=1, columnspan=2, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(proxy_frame, text='代理用户名:').grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
         self.proxy_user_entry = ttk.Entry(proxy_frame, width=30)
+        RightClickMenu(self.proxy_user_entry)
         self.proxy_user_entry.grid(row=1, column=1, columnspan=2, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(proxy_frame, text='代理密码:').grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
         self.proxy_pass_entry = ttk.Entry(proxy_frame, width=30, show='*')
+        RightClickMenu(self.proxy_pass_entry)
         self.proxy_pass_entry.grid(row=2, column=1, columnspan=2, sticky=tk.W, padx=5, pady=2)
 
         cert_frame = ttk.LabelFrame(main_frame, text='证书设置')
@@ -757,12 +767,14 @@ class WebDAVClient:
 
         ttk.Label(cert_frame, text='证书路径:').grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.cert_path_entry = ttk.Entry(cert_frame, width=30)
+        RightClickMenu(self.cert_path_entry)
         self.cert_path_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
         ttk.Button(cert_frame, text='浏览...',
                    command=lambda: self._browse_file(self.cert_path_entry)).grid(row=0, column=2, padx=5)
 
         ttk.Label(cert_frame, text='私钥路径:').grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
         self.key_path_entry = ttk.Entry(cert_frame, width=30)
+        RightClickMenu(self.key_path_entry)
         self.key_path_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
         ttk.Button(cert_frame, text='浏览...',
                    command=lambda: self._browse_file(self.key_path_entry)).grid(row=1, column=2, padx=5)
@@ -884,6 +896,7 @@ class WebDAVClient:
         error_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.log_text = tk.Text(error_frame, wrap=tk.WORD)
+        RightClickMenu(self.log_text, widget_type="log")
         scrollbar = ttk.Scrollbar(error_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -1063,6 +1076,111 @@ class WebDAVClient:
 
 
 # ======================
+# 右键菜单
+# ======================
+import tkinter as tk
+
+
+class RightClickMenu:
+    def __init__(self, widget, widget_type="normal"):
+        self.widget = widget
+        self.widget_type = widget_type
+        self.menu = tk.Menu(widget, tearoff=0)
+
+        # 添加菜单项（注意这里不再直接设置state）
+        self.menu.add_command(label="撤销 (Ctrl+Z)", command=self.undo)
+        self.menu.add_command(label="重做 (Ctrl+Y)", command=self.redo)
+        self.menu.add_separator()
+        self.menu.add_command(label="剪切 (Ctrl+X)", command=self.cut)
+        self.menu.add_command(label="复制 (Ctrl+C)", command=self.copy)
+        self.menu.add_command(label="粘贴 (Ctrl+V)", command=self.paste)
+        self.menu.add_separator()
+        self.menu.add_command(label="删除 (Del)", command=self.delete)
+        self.menu.add_command(label="全选 (Ctrl+A)", command=self.select_all)
+
+        # 绑定右键事件
+        if isinstance(widget, (tk.Entry, tk.Text)):
+            widget.bind('<Button-3>', self.show_menu)
+        elif isinstance(widget, ttk.Treeview):
+            widget.bind('<Button-3>', self.show_menu)
+        else:
+            logger.error(f"右键菜单注册失败: 类型 {type(widget)} 暂不支持注册右键菜单！")
+
+    def show_menu(self, event):
+        """显示右键菜单并更新状态"""
+        self.update_menu_state()
+        try:
+            self.menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.menu.grab_release()
+
+    def update_menu_state(self):
+        """更新菜单项状态"""
+        # 撤销和重做状态 - 仅Text控件支持
+        if isinstance(self.widget, tk.Text) and self.widget_type == "text":
+            # 检测是否可以撤销
+            try:
+                self.widget.edit_undo()
+                self.widget.edit_redo()
+                self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.NORMAL)
+            except tk.TclError:
+                self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.DISABLED)
+
+            # 检测是否可以重做
+            try:
+                self.widget.edit_redo()
+                self.widget.edit_undo()
+                self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.NORMAL)
+            except tk.TclError:
+                self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.DISABLED)
+        else:
+            # Entry等控件不支持撤销/重做
+            self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.DISABLED)
+            self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.DISABLED)
+
+        # 剪切/复制/删除状态（需要选中文本）
+        try:
+            has_selection = bool(self.widget.selection_get())
+        except tk.TclError:
+            has_selection = False
+
+        self.menu.entryconfigure("剪切 (Ctrl+X)", state=tk.NORMAL if (
+                    has_selection and (self.widget_type == "normal" or self.widget_type == "text")) else tk.DISABLED)
+        self.menu.entryconfigure("复制 (Ctrl+C)", state=tk.NORMAL if has_selection else tk.DISABLED)
+        self.menu.entryconfigure("删除 (Del)", state=tk.NORMAL if (
+                    has_selection and (self.widget_type == "normal" or self.widget_type == "text")) else tk.DISABLED)
+
+        # 粘贴状态（需要剪贴板有内容）
+        try:
+            clipboard_content = self.widget.clipboard_get()
+            self.menu.entryconfigure("粘贴 (Ctrl+V)", state=tk.NORMAL if (clipboard_content and (
+                        self.widget_type == "normal" or self.widget_type == 'text')) else tk.DISABLED)
+        except tk.TclError:
+            self.menu.entryconfigure("粘贴 (Ctrl+V)", state=tk.DISABLED)
+
+    def undo(self):
+        self.widget.edit_undo()
+
+    def redo(self):
+        self.widget.edit_redo()
+
+    def cut(self):
+        self.widget.event_generate("<<Cut>>")
+
+    def copy(self):
+        self.widget.event_generate("<<Copy>>")
+
+    def paste(self):
+        self.widget.event_generate("<<Paste>>")
+
+    def delete(self):
+        self.widget.event_generate("<Delete>")
+
+    def select_all(self):
+        self.widget.event_generate("<<SelectAll>>")
+
+
+# ======================
 # GUI 应用
 # ======================
 class DAVServerApp:
@@ -1231,6 +1349,7 @@ class DAVServerApp:
         ttk.Label(frame, text="端口号:").grid(row=0, column=0, padx=5, pady=5)
         self.port_entry = ttk.Entry(frame, width=10)
         self.port_entry.insert(0, "8000")
+        RightClickMenu(self.port_entry)
         self.port_entry.grid(row=0, column=1, padx=5, pady=5)
 
         self.start_btn = ttk.Button(frame, text="启动服务器", command=self.start_server)
@@ -1244,6 +1363,7 @@ class DAVServerApp:
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.log_text = tk.Text(log_frame, height=10)
+        RightClickMenu(self.log_text, widget_type="log")
         self.log_scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=self.log_scroll.set)
 
@@ -2303,6 +2423,8 @@ CalDAV 配置:
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.contact_text_editor = tk.Text(text_frame, height=20, wrap=tk.WORD)
+        self.contact_text_editor.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(self.contact_text_editor, "text")
         scrollbar = ttk.Scrollbar(text_frame, command=self.contact_text_editor.yview)
         self.contact_text_editor.config(yscrollcommand=scrollbar.set)
 
@@ -2647,6 +2769,8 @@ CalDAV 配置:
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.event_text_editor = tk.Text(text_frame, height=20, wrap=tk.WORD)
+        self.event_text_editor.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(self.event_text_editor, "text")
         scrollbar = ttk.Scrollbar(text_frame, command=self.event_text_editor.yview)
         self.event_text_editor.config(yscrollcommand=scrollbar.set)
 
@@ -3198,6 +3322,8 @@ CalDAV 配置:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         text_area = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        self.event_text_editor.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(text_area, widget_type="show")
         text_area.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=text_area.yview)
 
@@ -3296,22 +3422,26 @@ class ContactDialog(tk.Toplevel):
         # UID
         ttk.Label(main_frame, text="UID:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.uid_entry = ttk.Entry(main_frame, width=40)
+        RightClickMenu(self.uid_entry)
         self.uid_entry.grid(row=0, column=1, sticky=tk.W, pady=5)
 
         # 姓名
         ttk.Label(main_frame, text="姓名*:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.name_entry = ttk.Entry(main_frame, width=40)
+        RightClickMenu(self.name_entry)
         self.name_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
 
         # 邮箱输入 (支持多个)
         ttk.Label(main_frame, text="邮箱:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.email_entry = ttk.Entry(main_frame, width=40)
+        RightClickMenu(self.email_entry)
         self.email_entry.grid(row=2, column=1, sticky=tk.W, pady=5)
         ttk.Label(main_frame, text="(多个邮箱用逗号或分号分隔)", foreground="gray").grid(row=3, column=1, sticky=tk.W)
 
         # 电话输入 (支持多个)
         ttk.Label(main_frame, text="电话:").grid(row=4, column=0, sticky=tk.W, pady=5)
         self.phone_entry = ttk.Entry(main_frame, width=40)
+        RightClickMenu(self.phone_entry)
         self.phone_entry.grid(row=4, column=1, sticky=tk.W, pady=5)
         ttk.Label(main_frame, text="(多个电话用逗号或分号分隔)", foreground="gray").grid(row=5, column=1, sticky=tk.W)
 
@@ -3324,6 +3454,7 @@ class ContactDialog(tk.Toplevel):
         # 备注
         ttk.Label(main_frame, text="备注:").grid(row=7, column=0, sticky=tk.W, pady=5)
         self.note_entry = ttk.Entry(main_frame, width=40)
+        RightClickMenu(self.note_entry)
         self.note_entry.grid(row=7, column=1, sticky=tk.W, pady=5)
 
         # 其他字段 (带滚动条)
@@ -3332,6 +3463,8 @@ class ContactDialog(tk.Toplevel):
         frame.grid(row=8, column=1, sticky=tk.W + tk.E, pady=5)
 
         self.other_text = tk.Text(frame, width=40, height=5)
+        self.other_text.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(self.other_text, "text")
         scrollbar = ttk.Scrollbar(frame, command=self.other_text.yview)
         self.other_text.configure(yscrollcommand=scrollbar.set)
 
@@ -3361,6 +3494,7 @@ class ContactDialog(tk.Toplevel):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         text_area = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        RightClickMenu(text_area, widget_type="show")
         text_area.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=text_area.yview)
 
@@ -3516,21 +3650,26 @@ class EventDialog:
 
         ttk.Label(frame, text="事件ID:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.uid_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.uid_var, width=40).grid(row=0, column=1, columnspan=3, sticky="we", padx=5,
-                                                                   pady=5)
+        self.uid_entry = ttk.Entry(frame, textvariable=self.uid_var, width=40)
+        RightClickMenu(self.uid_entry)
+        self.uid_entry.grid(row=0, column=1, columnspan=3, sticky="we", padx=5, pady=5)
 
         ttk.Label(frame, text="事件标题*:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.summary_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.summary_var, width=40).grid(row=1, column=1, columnspan=3, sticky="we",
-                                                                       padx=5, pady=5)
+        self.summary_entry = ttk.Entry(frame, textvariable=self.summary_var, width=40)
+        RightClickMenu(self.summary_entry)
+        self.summary_entry.grid(row=1, column=1, columnspan=3, sticky="we", padx=5, pady=5)
 
         ttk.Label(frame, text="地点:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.location_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.location_var, width=40).grid(row=2, column=1, columnspan=3, sticky="we",
-                                                                        padx=5, pady=5)
+        self.location_entry = ttk.Entry(frame, textvariable=self.location_var, width=40)
+        RightClickMenu(self.location_entry)
+        self.location_entry.grid(row=2, column=1, columnspan=3, sticky="we", padx=5, pady=5)
 
         ttk.Label(frame, text="描述:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.description_text = tk.Text(frame, height=5, width=50)
+        self.description_text.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(self.description_text, "text")
         self.description_text.grid(row=3, column=1, columnspan=3, sticky="nsew", padx=5, pady=5)
         scrollbar = ttk.Scrollbar(frame, command=self.description_text.yview)
         scrollbar.grid(row=3, column=4, sticky="ns")
@@ -3851,6 +3990,7 @@ class EventDialog:
         # 显示提醒的描述框
         ttk.Label(self.display_frame, text="提醒描述:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.display_description = tk.Text(self.display_frame, height=3, width=40)
+        RightClickMenu(self.display_description, widget_type="show")
         self.display_description.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
         display_scrollbar = ttk.Scrollbar(self.display_frame, command=self.display_description.yview)
         display_scrollbar.grid(row=0, column=2, sticky="ns")
@@ -3859,23 +3999,27 @@ class EventDialog:
         # 声音提醒的附件框
         ttk.Label(self.audio_attach_frame, text="音频文件地址:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.audio_attach_var = tk.StringVar()
-        ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40).grid(row=0, column=1,
-                                                                                              sticky="ew", padx=5,
-                                                                                              pady=5)
+        self.audio_attach_entry = ttk.Entry(self.audio_attach_frame, textvariable=self.audio_attach_var, width=40)
+        RightClickMenu(self.audio_attach_entry)
+        self.audio_attach_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
 
         # 邮件提醒的多个字段
         ttk.Label(self.email_frame, text="收件人邮箱:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.email_attendee_var = tk.StringVar()
-        ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40).grid(row=0, column=1, sticky="ew",
-                                                                                         padx=5, pady=5)
+        self.email_attendee_entry = ttk.Entry(self.email_frame, textvariable=self.email_attendee_var, width=40)
+        RightClickMenu(self.email_attendee_entry)
+        self.email_attendee_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
 
         ttk.Label(self.email_frame, text="邮件主题:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.email_summary_var = tk.StringVar()
-        ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40).grid(row=1, column=1, sticky="ew",
-                                                                                        padx=5, pady=5)
+        self.email_summary_entry = ttk.Entry(self.email_frame, textvariable=self.email_summary_var, width=40)
+        RightClickMenu(self.email_summary_entry)
+        self.email_summary_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
         ttk.Label(self.email_frame, text="邮件正文:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.email_description = tk.Text(self.email_frame, height=3, width=40)
+        self.email_description.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(self.email_description, "text")
         self.email_description.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
         email_scrollbar = ttk.Scrollbar(self.email_frame, command=self.email_description.yview)
         email_scrollbar.grid(row=2, column=2, sticky="ns")
@@ -3883,8 +4027,9 @@ class EventDialog:
 
         ttk.Label(self.email_frame, text="邮件附件:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.email_attach_var = tk.StringVar()
-        ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40).grid(row=3, column=1, sticky="ew",
-                                                                                       padx=5, pady=5)
+        self.email_attach_entry = ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40)
+        RightClickMenu(self.email_attach_entry)
+        self.email_attach_entry.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
 
         # 初始化提醒类型相关控件的状态
         self.on_reminder_type_change()
@@ -3903,6 +4048,7 @@ class EventDialog:
         ttk.Label(frame, text="日程分类:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.categories_var = tk.StringVar()
         self.categories_entry = ttk.Entry(frame, textvariable=self.categories_var, width=30)
+        RightClickMenu(self.categories_entry)
         self.categories_entry.grid(row=0, column=1, sticky="we", padx=5, pady=5)
 
         # 优先级 - 使用Scale
@@ -3927,21 +4073,29 @@ class EventDialog:
         # 序列号
         ttk.Label(frame, text="序列号:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.sequence_var = tk.StringVar(value="0")
-        ttk.Entry(frame, textvariable=self.sequence_var, width=10).grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        self.sequence_entry = ttk.Entry(frame, textvariable=self.sequence_var, width=10)
+        RightClickMenu(self.sequence_entry)
+        self.sequence_entry.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
         # URL
         ttk.Label(frame, text="URL:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.url_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.url_var, width=30).grid(row=4, column=1, sticky="we", padx=5, pady=5)
+        self.url_entry = ttk.Entry(frame, textvariable=self.url_var, width=30)
+        RightClickMenu(self.url_entry)
+        self.url_entry.grid(row=4, column=1, sticky="we", padx=5, pady=5)
 
         # 组织者
         ttk.Label(frame, text="组织者:").grid(row=5, column=0, sticky="w", padx=5, pady=5)
         self.organizer_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.organizer_var, width=30).grid(row=5, column=1, sticky="we", padx=5, pady=5)
+        self.organizer_entry = ttk.Entry(frame, textvariable=self.organizer_var, width=30)
+        RightClickMenu(self.organizer_entry)
+        self.organizer_entry.grid(row=5, column=1, sticky="we", padx=5, pady=5)
 
         # 参与者
         ttk.Label(frame, text="参与者:").grid(row=6, column=0, sticky="nw", padx=5, pady=5)
         self.attendee_text = tk.Text(frame, height=3, width=40)
+        self.attendee_text.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        RightClickMenu(self.attendee_text, "text")
         self.attendee_text.grid(row=6, column=1, sticky="nsew", padx=5, pady=5)
 
         # 添加滚动条
@@ -4340,7 +4494,9 @@ class EventDialog:
         elif end_cond == "按次数结束":
             self.end_input_frame.grid()
             ttk.Label(self.end_input_frame, text="重复次数:").grid(row=0, column=0, padx=(0, 5))
-            ttk.Entry(self.end_input_frame, textvariable=self.end_count_var, width=5).grid(row=0, column=1)
+            self.end_count_entry = ttk.Entry(self.end_input_frame, textvariable=self.end_count_var, width=5)
+            RightClickMenu(self.end_count_entry)
+            self.end_count_entry.grid(row=0, column=1)
             ttk.Label(self.end_input_frame, text="次").grid(row=0, column=2, padx=(5, 0))
         else:
             self.end_input_frame.grid_remove()
@@ -4634,6 +4790,7 @@ class EventDialog:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         text_area = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        RightClickMenu(text_area, widget_type="show")
         text_area.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=text_area.yview)
 
