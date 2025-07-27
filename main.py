@@ -172,7 +172,7 @@ class Database:
                 if operation != "unchanged":
                     c.execute(
                         '''INSERT OR REPLACE INTO contacts (uid, full_name, email, phone, vcard) VALUES (?, ?, ?, ?, ?)''',
-                              (uid, full_name, ";".join(emails), ";".join(phones), vcard_data))
+                        (uid, full_name, ";".join(emails), ";".join(phones), vcard_data))
                     self.conn.commit()
 
                 return uid, operation
@@ -277,7 +277,7 @@ class Database:
             if operation != "unchanged":
                 c.execute(
                     '''INSERT OR REPLACE INTO contacts (uid, full_name, email, phone, vcard) VALUES (?, ?, ?, ?, ?)''',
-                          (uid, full_name, ";".join(emails), ";".join(phones), vcard_data))
+                    (uid, full_name, ";".join(emails), ";".join(phones), vcard_data))
                 self.conn.commit()
 
             return uid, operation
@@ -348,7 +348,7 @@ class Database:
                 if operation != "unchanged":
                     c.execute(
                         '''INSERT OR REPLACE INTO events (uid, summary, dtstart, dtend, ical) VALUES (?, ?, ?, ?, ?)''',
-                              (uid, summary, dtstart, dtend, ical_data))
+                        (uid, summary, dtstart, dtend, ical_data))
                     self.conn.commit()
 
                 return uid, operation
@@ -493,7 +493,7 @@ class SimpleDAVHandler(BaseHTTPRequestHandler):
                     # 生成包含所有事件的iCalendar集合
                     all_events = db.get_all_events()
                     self.wfile.write((
-                                                 "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
+                            "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//" + software_name + "//" + software_version + "ZH-CN\n").encode(
                         'utf-8'))
                     for event in all_events:
                         self.wfile.write(event.encode('utf-8'))
@@ -627,18 +627,38 @@ class WebDAVClient:
         self.cancel_event = threading.Event()
         self.import_lock = threading.Lock()
         self.active_downloads = []
+        self.default_options = {
+            'webdav_timeout': 30,
+            'webdav_verbose': False,
+            'disable_check': False,
+            'verify_ssl': True,
+            'recv_speed': None,
+            'send_speed': None,
+            'chunk_size': 65536,
+            'proxy_hostname': None,
+            'proxy_login': None,
+            'proxy_password': None,
+            'cert_path': None,
+            'key_path': None
+        }
 
     def create_import_dialog(self, parent, title, on_complete=None):
         """创建通用的WebDAV导入对话框"""
         dialog = tk.Toplevel(parent)
         dialog.title(title)
-        dialog.geometry('500x300')
+
         dialog.transient(parent)
         dialog.grab_set()
 
-        ttk.Label(dialog, text='WebDAV服务器配置', font=('Arial', 12)).pack(pady=10)
+        notebook = ttk.Notebook(dialog)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        frame = ttk.Frame(dialog)
+        basic_frame = ttk.Frame(notebook)
+        notebook.add(basic_frame, text='基本设置')
+
+        ttk.Label(basic_frame, text='WebDAV服务器配置', font=('Arial', 12)).pack(pady=10)
+
+        frame = ttk.Frame(basic_frame)
         frame.pack(fill=tk.BOTH, padx=10, pady=10, expand=True)
 
         ttk.Label(frame, text='服务器地址:').grid(row=0, column=0, sticky=tk.W, pady=5)
@@ -655,25 +675,177 @@ class WebDAVClient:
 
         ttk.Label(frame, text='路径(可选):').grid(row=3, column=0, sticky=tk.W, pady=5)
         self.path_entry = ttk.Entry(frame, width=40)
+        self.path_entry.insert(0, '/')
         self.path_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
 
-        button_frame = ttk.Frame(frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        advanced_frame = ttk.Frame(notebook)
+        notebook.add(advanced_frame, text='高级设置')
 
-        ttk.Button(button_frame, text='导入', command=lambda: self.start_import(
-            dialog, on_complete)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text='取消', command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        self._create_advanced_settings(advanced_frame)
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Button(button_frame, text='导入',
+                   command=lambda: self.start_import(dialog, on_complete)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text='测试连接',
+                   command=lambda: threading.Thread(target=self.test_connection, daemon=True).start()).pack(
+            side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text='取消',
+                   command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
 
         return dialog
 
+    def _create_advanced_settings(self, parent):
+        """创建高级设置界面"""
+        main_frame = ttk.Frame(parent)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        conn_frame = ttk.LabelFrame(main_frame, text='连接设置')
+        conn_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(conn_frame, text='请求超时(秒):').grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.timeout_entry = ttk.Entry(conn_frame, width=10)
+        self.timeout_entry.insert(0, str(self.default_options['webdav_timeout']))
+        self.timeout_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(conn_frame, text='SSL验证:').grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.ssl_verify_var = tk.BooleanVar(value=self.default_options['verify_ssl'])
+        ttk.Checkbutton(conn_frame, variable=self.ssl_verify_var,
+                        text='验证SSL证书').grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(conn_frame, text='下载限速(KB/s):').grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        self.recv_speed_entry = ttk.Entry(conn_frame, width=10)
+        self.recv_speed_entry.grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(conn_frame, text='上传限速(KB/s):').grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.send_speed_entry = ttk.Entry(conn_frame, width=10)
+        self.send_speed_entry.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(conn_frame, text='下载块大小(KB):').grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
+        self.chunk_size_entry = ttk.Entry(conn_frame, width=10)
+        self.chunk_size_entry.insert(0, str(self.default_options['chunk_size'] // 1024))
+        self.chunk_size_entry.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(conn_frame, text='详细模式:').grid(row=5, column=0, sticky=tk.W, padx=5, pady=2)
+        self.verbose_var = tk.BooleanVar(value=self.default_options['webdav_verbose'])
+        ttk.Checkbutton(conn_frame, variable=self.verbose_var,
+                        text='启用详细日志').grid(row=5, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(conn_frame, text='资源检查:').grid(row=6, column=0, sticky=tk.W, padx=5, pady=2)
+        self.disable_check_var = tk.BooleanVar(value=self.default_options['disable_check'])
+        ttk.Checkbutton(conn_frame, variable=self.disable_check_var,
+                        text='禁用远程资源检查').grid(row=6, column=1, sticky=tk.W, padx=5, pady=2)
+
+        proxy_frame = ttk.LabelFrame(main_frame, text='代理设置')
+        proxy_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(proxy_frame, text='代理地址:').grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.proxy_host_entry = ttk.Entry(proxy_frame, width=30)
+        self.proxy_host_entry.grid(row=0, column=1, columnspan=2, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(proxy_frame, text='代理用户名:').grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.proxy_user_entry = ttk.Entry(proxy_frame, width=30)
+        self.proxy_user_entry.grid(row=1, column=1, columnspan=2, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(proxy_frame, text='代理密码:').grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        self.proxy_pass_entry = ttk.Entry(proxy_frame, width=30, show='*')
+        self.proxy_pass_entry.grid(row=2, column=1, columnspan=2, sticky=tk.W, padx=5, pady=2)
+
+        cert_frame = ttk.LabelFrame(main_frame, text='证书设置')
+        cert_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(cert_frame, text='证书路径:').grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.cert_path_entry = ttk.Entry(cert_frame, width=30)
+        self.cert_path_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Button(cert_frame, text='浏览...',
+                   command=lambda: self._browse_file(self.cert_path_entry)).grid(row=0, column=2, padx=5)
+
+        ttk.Label(cert_frame, text='私钥路径:').grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.key_path_entry = ttk.Entry(cert_frame, width=30)
+        self.key_path_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Button(cert_frame, text='浏览...',
+                   command=lambda: self._browse_file(self.key_path_entry)).grid(row=1, column=2, padx=5)
+
+    def _browse_file(self, entry_widget):
+        """打开文件选择对话框"""
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, file_path)
+
+    def test_connection(self):
+        """测试连接设置"""
+        options = self._collect_options()
+        try:
+            self.log("正在测试连接...")
+            self.log("参数：" + str(options), level="debug")
+            client = Client(options)
+            # 简单的列表操作测试连接
+            client.list(options.get('webdav_root', '/'))
+            self.log("测试成功：成功连接到WebDAV服务器")
+            messagebox.showinfo("测试成功", "成功连接到WebDAV服务器", parent=self._get_top_level())
+        except Exception as e:
+            self.log("测试失败：" + str(e))
+            messagebox.showerror("测试失败", f"连接失败: {str(e)}", parent=self._get_top_level())
+
+    def _collect_options(self):
+        """收集所有设置选项"""
+        options = {
+            'webdav_hostname': self.url_entry.get().strip(),
+            'webdav_login': self.username_entry.get().strip(),
+            'webdav_password': self.password_entry.get().strip(),
+            'webdav_root': self.path_entry.get().strip() or '/',
+            'webdav_timeout': int(self.timeout_entry.get()),
+            'verify_ssl': self.ssl_verify_var.get(),
+            'webdav_verbose': self.verbose_var.get(),
+            'disable_check': self.disable_check_var.get(),
+            'chunk_size': int(self.chunk_size_entry.get()) * 1024
+        }
+
+        # 添加限速设置
+        recv_speed = self.recv_speed_entry.get()
+        if recv_speed:
+            options['recv_speed'] = int(recv_speed) * 1024
+
+        send_speed = self.send_speed_entry.get()
+        if send_speed:
+            options['send_speed'] = int(send_speed) * 1024
+
+        # 添加代理设置
+        proxy_host = self.proxy_host_entry.get()
+        if proxy_host:
+            options['proxy_hostname'] = proxy_host
+            proxy_user = self.proxy_user_entry.get()
+            if proxy_user:
+                options['proxy_login'] = proxy_user
+                options['proxy_password'] = self.proxy_pass_entry.get()
+
+        # 添加证书设置
+        cert_path = self.cert_path_entry.get()
+        if cert_path:
+            options['cert_path'] = cert_path
+            key_path = self.key_path_entry.get()
+            if key_path:
+                options['key_path'] = key_path
+
+        return options
+
+    def _get_top_level(self):
+        """获取最顶层的窗口"""
+        widget = self.url_entry  # 随便选一个控件
+        while widget.master:
+            widget = widget.master
+        return widget
+
     def start_import(self, dialog, on_complete):
         """开始导入流程"""
-        url = self.url_entry.get().strip()
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get().strip()
-        path = self.path_entry.get().strip()
+        options = self._collect_options()
 
-        if not url:
+        self.log("正在测试连接...")
+        self.log("参数：" + str(options), level="debug")
+
+        if not options['webdav_hostname']:
             messagebox.showerror('错误', '请输入服务器地址', parent=dialog)
             return
 
@@ -681,7 +853,7 @@ class WebDAVClient:
 
         import_thread = threading.Thread(
             target=self._import_task,
-            args=(url, username, password, path, progress_window, on_complete),
+            args=(options, progress_window, on_complete),
             daemon=True
         )
         import_thread.start()
@@ -724,26 +896,27 @@ class WebDAVClient:
         return window
 
     def cancel_import(self, window):
-        """取消导入操作"""
         self.cancel_event.set()
         with self.import_lock:
             for temp_file in self.active_downloads[:]:
                 try:
-                    if os.path.exists(temp_file): os.remove(temp_file)
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
                     self.active_downloads.remove(temp_file)
                 except:
                     pass
-        self.log("用户主动取消了导入操作", 'info')
+        self.log('用户主动取消了导入操作', 'info')
         window.destroy()
 
     def log(self, message, level='info'):
-        """记录日志"""
         timestamp = datetime.now().strftime('%H:%M:%S')
-
-        if hasattr(self, 'log_text'):
+        if hasattr(self, 'log_text') and self.log_text and self.log_text.winfo_exists():
             self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
             self.log_text.see(tk.END)
-        if level == 'error':
+
+        if level == 'debug':
+            logger.debug(f"{message}")
+        elif level == 'error':
             logger.error(f"{message}")
         elif level == 'warning':
             logger.warning(f"{message}")
@@ -765,37 +938,27 @@ class WebDAVClient:
         if thread.is_alive():
             window.after(100, lambda: self.monitor_import_thread(thread, window))
         elif window.winfo_exists():
-            window.protocol('WM_DELETE_WINDOW', window.destroy)
-            self.cancel_button.config(text='关闭', command=window.destroy)
+            window.protocol('WM_DELETE_WINDOW', lambda: [window.destroy()])
+            self.cancel_button.config(text='关闭', command=lambda: [window.destroy()])
 
-    def _import_task(self, url, username, password, path, progress_window, on_complete):
-        """执行实际的导入任务"""
+    def _import_task(self, options, progress_window, on_complete):
         client = None
         temp_files = []
-
         try:
-            if self.cancel_event.is_set(): return
+            if self.cancel_event.is_set():
+                return
 
             self.update_status('正在验证服务器连接...')
-            self.log(f"正在测试连接: {url}")
-
-            options = {
-                'webdav_hostname': url,
-                'webdav_timeout': 5,
-                'webdav_verbose': False
-            }
-            if username: options['webdav_login'] = username
-            if password: options['webdav_password'] = password
-
+            self.log(f"正在测试连接: {options['webdav_hostname']}")
             client = Client(options)
 
-            if self.cancel_event.is_set(): return
+            if self.cancel_event.is_set():
+                return
 
             self.update_status('正在获取文件列表...')
-            self.log(f"正在列出路径: {path}")
-
+            self.log(f"正在列出路径: {options['webdav_hostname'] + options['webdav_root']}")
             try:
-                files = client.list(path)
+                files = client.list(options['webdav_hostname'])
                 self.log(f"找到 {len(files)} 个文件/目录")
             except Exception as e:
                 if not self.cancel_event.is_set():
@@ -811,7 +974,7 @@ class WebDAVClient:
                 target_files = files
 
             if not target_files:
-                error_msg = f"在 {path} 中没有找到目标文件"
+                error_msg = f"在 {options['webdav_hostname']} 中没有找到目标文件"
                 self.log(error_msg, 'error')
                 self.update_status('导入失败')
                 messagebox.showerror('错误', error_msg, parent=progress_window)
@@ -830,31 +993,30 @@ class WebDAVClient:
                 self.update_status(f"正在处理 {i + 1}/{total_files}: {filename}")
                 self.update_progress(i / total_files * 100)
                 self.log(f"正在处理文件: {filename}")
-
                 temp_file = None
+
                 try:
                     temp_file = os.path.join(tempfile.gettempdir(), f"dav_import_{uuid.uuid4().hex}")
                     with self.import_lock:
-                        if self.cancel_event.is_set(): raise Exception('导入被用户取消')
+                        if self.cancel_event.is_set():
+                            raise Exception('导入被用户取消')
                         self.active_downloads.append(temp_file)
 
-                    self._download_file(client, f"{path}{filename}", temp_file)
+                    self._download_file(client, f"{options['webdav_hostname']}{filename}", temp_file)
 
                     if on_complete:
                         result = on_complete.process_file(temp_file, filename)
                         if result:
                             success_count += 1
-                            temp_files.append(temp_file)  # 跟踪成功处理的文件
+                            temp_files.append(temp_file)
                             self.log(f"成功处理文件: {filename}")
                         else:
                             failed_count += 1
-
                 except Exception as e:
                     failed_count += 1
                     if not self.cancel_event.is_set():
                         error_msg = f"处理文件 {filename} 失败: {str(e)}"
                         self.log(error_msg, 'error')
-                    # 如果处理失败，删除临时文件
                     if temp_file and os.path.exists(temp_file):
                         try:
                             os.remove(temp_file)
@@ -866,10 +1028,8 @@ class WebDAVClient:
                 result_msg = f"导入完成! 成功: {success_count}, 失败: {failed_count}"
                 self.log(result_msg)
                 self.update_status(result_msg)
-
                 if on_complete and hasattr(on_complete, 'on_import_complete'):
                     on_complete.on_import_complete(temp_files)
-
         except Exception as e:
             if not self.cancel_event.is_set():
                 error_msg = f"导入过程中发生错误: {str(e)}"
@@ -884,13 +1044,23 @@ class WebDAVClient:
                     pass
 
     def _download_file(self, client, remote_path, local_path):
-        """下载单个文件"""
-
         def progress_callback(current, total):
-            if self.cancel_event.is_set(): raise Exception('下载被用户取消')
+            if self.cancel_event.is_set():
+                raise Exception('下载被用户取消')
             return True
 
-        client.download_sync(remote_path=remote_path, local_path=local_path, callback=progress_callback)
+        try:
+            client.download_sync(
+                remote_path=remote_path,
+                local_path=local_path,
+                callback=progress_callback
+            )
+        except Exception as e:
+            if self.cancel_event.is_set():
+                raise Exception('下载被用户取消')
+            else:
+                raise Exception(f"下载文件 {remote_path} 失败: {str(e)}")
+
 
 # ======================
 # GUI 应用
@@ -3504,7 +3674,7 @@ class EventDialog:
             ttk.Radiobutton(self.end_cond_frame, text=option, variable=self.end_cond_var, value=option).grid(row=0,
                                                                                                              column=i,
                                                                                                              padx=(
-                                                                                                             0, 10),
+                                                                                                                 0, 10),
                                                                                                              sticky="w")
 
         # 结束日期/次数输入
