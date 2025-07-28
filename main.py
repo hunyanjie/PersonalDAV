@@ -1208,6 +1208,21 @@ class DAVServerApp:
         # 开始处理日志队列
         self.root.after(100, self.process_log_queue)
 
+        # 添加菜单栏
+        menubar = tk.Menu(root)
+
+        # 添加"文件"菜单
+        filemenu = tk.Menu(menubar, tearoff=0)
+        filemenu.add_command(label="退出", command=self.on_closing)
+        menubar.add_cascade(label="程序", menu=filemenu)
+
+        # 添加"帮助"菜单
+        helpmenu = tk.Menu(menubar, tearoff=0)
+        helpmenu.add_command(label="关于", command=self.show_about)
+        menubar.add_cascade(label="帮助", menu=helpmenu)
+
+        self.root.config(menu=menubar)
+
         # 创建标签页
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -1276,6 +1291,25 @@ class DAVServerApp:
         """记录日志消息"""
         # 只通过 logger 记录消息，由 GUIHandler 负责格式化并放入队列
         logger.info(message)
+
+    def show_about(self):
+        about_text = f"""{software_name} v{software_version}
+
+    {software_description}
+
+    作者: {software_author}
+
+    这是一个私人 CardDAV/CalDAV 服务程序，可以管理联系人和日历事件。
+
+    功能特点:
+    - 本地数据库存储
+    - 支持WebDAV协议
+    - 支持导入/导出vCard和iCalendar格式
+    - 提供图形用户界面
+    
+        (c) hunyanjie（魂魇桀） 2025
+    """
+        messagebox.showinfo("关于", about_text)
 
     def on_delete_key(self, event):
         """处理Delete键事件"""
