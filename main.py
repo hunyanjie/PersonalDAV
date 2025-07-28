@@ -3356,7 +3356,7 @@ CalDAV 配置:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         text_area = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
-        self.event_text_editor.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        text_area.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
         RightClickMenu(text_area, widget_type="show")
         text_area.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=text_area.yview)
@@ -4520,12 +4520,12 @@ class EventDialog:
         # 清除现有控件
         for widget in self.end_input_frame.winfo_children(): widget.destroy()
 
-        if end_cond == "按日期结束":
+        if end_cond == "按日期结束" and self.repeat_var.get() != "不重复":
             self.end_input_frame.grid()
             ttk.Label(self.end_input_frame, text="结束日期:").grid(row=0, column=0, padx=(0, 5))
             self.end_date_entry = DateEntry(self.end_input_frame, date_pattern='yyyy-mm-dd', width=12)
             self.end_date_entry.grid(row=0, column=1)
-        elif end_cond == "按次数结束":
+        elif end_cond == "按次数结束" and self.repeat_var.get() != "不重复":
             self.end_input_frame.grid()
             ttk.Label(self.end_input_frame, text="重复次数:").grid(row=0, column=0, padx=(0, 5))
             self.end_count_entry = ttk.Entry(self.end_input_frame, textvariable=self.end_count_var, width=5)
