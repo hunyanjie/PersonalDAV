@@ -7,6 +7,7 @@ import quopri
 import sqlite3
 import tempfile  # 用于从WebDAV导入时生成临时文件
 import threading
+import tkinter as tk
 import traceback
 import uuid
 from datetime import datetime, timedelta
@@ -50,24 +51,24 @@ class GUIHandler(logging.Handler):
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# 清除可能已有的处理器
-if logger.hasHandlers(): logger.handlers.clear()
-
-# 创建文件处理器
-file_handler = logging.FileHandler("dav_server.log", encoding='utf-8')
-file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(file_formatter)
-
-# 创建控制台处理器
-console_handler = logging.StreamHandler()
-console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(console_formatter)
-
-# 添加到记录器
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+# logger.setLevel(logging.INFO)
+#
+# # 清除可能已有的处理器
+# if logger.hasHandlers(): logger.handlers.clear()
+#
+# # 创建文件处理器
+# file_handler = logging.FileHandler("dav_server.log", encoding='utf-8')
+# file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# file_handler.setFormatter(file_formatter)
+#
+# # 创建控制台处理器
+# console_handler = logging.StreamHandler()
+# console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# console_handler.setFormatter(console_formatter)
+#
+# # 添加到记录器
+# logger.addHandler(file_handler)
+# logger.addHandler(console_handler)
 
 software_name = "PrivateDAV"
 software_description = "私人 CardDAV/CalDAV 服务"
@@ -98,12 +99,51 @@ class Database:
 
     def create_tables(self):
         c = self.conn.cursor()
-        # 联系人表
-        c.execute(
-            '''CREATE TABLE IF NOT EXISTS contacts (id INTEGER PRIMARY KEY, uid TEXT UNIQUE, full_name TEXT, email TEXT, phone TEXT, vcard TEXT)''')
-        # 日历事件表
-        c.execute(
-            '''CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, uid TEXT UNIQUE, summary TEXT, dtstart TEXT, dtend TEXT, ical TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS contacts
+                     (
+                         id
+                         INTEGER
+                         PRIMARY
+                         KEY,
+                         uid
+                         TEXT
+                         UNIQUE,
+                         full_name
+                         TEXT,
+                         email
+                         TEXT,
+                         phone
+                         TEXT,
+                         vcard
+                         TEXT
+                     )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS events
+                     (
+                         id
+                         INTEGER
+                         PRIMARY
+                         KEY,
+                         uid
+                         TEXT
+                         UNIQUE,
+                         summary
+                         TEXT,
+                         dtstart
+                         TEXT,
+                         dtend
+                         TEXT,
+                         ical
+                         TEXT
+                     )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS settings
+                     (
+                         key
+                         TEXT
+                         PRIMARY
+                         KEY,
+                         value
+                         TEXT
+                     )''')
         self.conn.commit()
 
     def add_contact(self, vcard_data):
@@ -422,6 +462,19 @@ class Database:
             c = self.conn.cursor()
             c.execute("SELECT COUNT(*) FROM events")
             return c.fetchone()[0]
+
+    def get_setting(self, key, default=None):
+        with self._lock:
+            c = self.conn.cursor()
+            c.execute('SELECT value FROM settings WHERE key=?', (key,))
+            result = c.fetchone()
+            return result[0] if result else default
+
+    def set_setting(self, key, value):
+        with self._lock:
+            c = self.conn.cursor()
+            c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
+            self.conn.commit()
 
     def close(self):
         if self.conn:
@@ -1078,9 +1131,6 @@ class WebDAVClient:
 # ======================
 # 右键菜单
 # ======================
-import tkinter as tk
-
-
 class RightClickMenu:
     def __init__(self, widget, widget_type="normal"):
         self.widget = widget
@@ -1181,6 +1231,555 @@ class RightClickMenu:
 
 
 # ======================
+# 设置
+# ======================
+class SettingsDialog(tk.Toplevel):
+    def __init__(self, parent, db, on_save_callback):
+        super().__init__(parent)
+        self.title("设置")
+        # self.geometry("800x600")
+        self.transient(parent)
+        self.grab_set()
+        self.db = db
+        self.on_save_callback = on_save_callback
+
+        # 主框架
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 笔记本控件
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        # 服务器设置标签页
+        server_frame = ttk.Frame(notebook)
+        notebook.add(server_frame, text="服务器设置")
+        self.create_server_settings(server_frame)
+
+        # 日历设置标签页
+        calendar_frame = ttk.Frame(notebook)
+        notebook.add(calendar_frame, text="日历设置")
+        self.create_calendar_settings(calendar_frame)
+
+        # 日志设置标签页
+        log_frame = ttk.Frame(notebook)
+        notebook.add(log_frame, text="日志设置")
+        self.create_log_settings(log_frame)
+
+        # 按钮框架
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Button(button_frame, text="保存", command=self.save_settings).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
+
+        # 加载设置
+        self.load_settings()
+
+    def create_server_settings(self, parent):
+        frame = ttk.LabelFrame(parent, text="服务器设置")
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 自动保存端口号
+        self.auto_save_port_var = tk.BooleanVar()
+        ttk.Checkbutton(frame, text="自动保存端口号", variable=self.auto_save_port_var).grid(
+            row=0, column=0, sticky=tk.W, padx=5, pady=5)
+
+        # 启动时自动启动服务器
+        self.auto_start_server_var = tk.BooleanVar()
+        ttk.Checkbutton(frame, text="启动时自动启动服务器", variable=self.auto_start_server_var).grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=5)
+
+        # 默认端口号
+        ttk.Label(frame, text="默认端口号:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_port_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.default_port_var, width=10).grid(
+            row=2, column=1, sticky=tk.W, padx=5, pady=5)
+
+    def create_calendar_settings(self, parent):
+        frame = ttk.LabelFrame(parent, text="日历与提醒设置")
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 使用Notebook创建选项卡
+        notebook = ttk.Notebook(frame)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 日历基本设置标签页
+        basic_frame = ttk.Frame(notebook)
+        notebook.add(basic_frame, text="基本设置")
+
+        # 提醒设置标签页
+        reminder_frame = ttk.Frame(notebook)
+        notebook.add(reminder_frame, text="提醒设置")
+
+        # -------- 基本设置 --------
+        # 默认事件状态
+        ttk.Label(basic_frame, text="默认事件状态:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_status_var = tk.StringVar()
+        ttk.Combobox(basic_frame, textvariable=self.default_status_var,
+                     values=["待定", "已确认", "已取消"], state="readonly").grid(
+            row=0, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认日历版本
+        ttk.Label(basic_frame, text="默认日历版本:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_version_var = tk.StringVar()
+        ttk.Combobox(basic_frame, textvariable=self.default_version_var,
+                     values=["1.0", "2.0", "2.1", "3.0"], state="readonly").grid(
+            row=1, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认时间间隔（小时）
+        ttk.Label(basic_frame, text="默认时间间隔（小时）:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_duration_var = tk.StringVar()
+        ttk.Spinbox(basic_frame, textvariable=self.default_duration_var, from_=1, to=24, width=5).grid(
+            row=2, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认使用相同时区
+        self.default_sync_timezone_var = tk.BooleanVar()
+        ttk.Checkbutton(basic_frame, text="默认勾选'结束时间使用相同时区'",
+                        variable=self.default_sync_timezone_var).grid(
+            row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        # 默认重复规则
+        ttk.Label(basic_frame, text="默认重复规则:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_repeat_var = tk.StringVar()
+        ttk.Combobox(basic_frame, textvariable=self.default_repeat_var,
+                     values=["不重复", "每天", "每周", "每两周", "每月", "每年", "自定义"], state="readonly").grid(
+            row=4, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认结束条件
+        ttk.Label(basic_frame, text="默认结束条件:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_end_cond_var = tk.StringVar()
+        ttk.Combobox(basic_frame, textvariable=self.default_end_cond_var,
+                     values=["永不结束", "按日期结束", "按次数结束"], state="readonly").grid(
+            row=5, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认结束次数
+        ttk.Label(basic_frame, text="默认结束次数:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_end_count_var = tk.StringVar()
+        ttk.Spinbox(basic_frame, textvariable=self.default_end_count_var, from_=1, to=999, width=5).grid(
+            row=6, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 在基本设置中添加优先级和透明度
+        ttk.Label(basic_frame, text="默认优先级:").grid(row=7, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_priority_var = tk.IntVar()
+        priority_frame = ttk.Frame(basic_frame)
+        priority_frame.grid(row=7, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Scale(priority_frame, from_=0, to=9, variable=self.default_priority_var,
+                  orient='horizontal', length=200).pack(side=tk.LEFT)
+        ttk.Label(priority_frame, textvariable=self.default_priority_var).pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(basic_frame, text="默认透明度:").grid(row=8, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_transparency_var = tk.StringVar()
+        ttk.Combobox(basic_frame, textvariable=self.default_transparency_var,
+                     values=["忙碌", "空闲"], state="readonly").grid(
+            row=8, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 增加全天事件默认勾选
+        self.default_allday_var = tk.BooleanVar()
+        ttk.Checkbutton(basic_frame, text="默认创建全天事件",
+                        variable=self.default_allday_var).grid(row=9, column=0, sticky='w', padx=5, pady=5)
+
+        # -------- 提醒设置 --------
+        # 默认提醒类型
+        ttk.Label(reminder_frame, text="默认提醒类型:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_reminder_type_var = tk.StringVar()
+        ttk.Combobox(reminder_frame, textvariable=self.default_reminder_type_var,
+                     values=["显示", "声音", "邮件"], state="readonly").grid(
+            row=0, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认触发方式
+        ttk.Label(reminder_frame, text="默认触发方式:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_trigger_type_var = tk.StringVar()
+        ttk.Combobox(reminder_frame, textvariable=self.default_trigger_type_var,
+                     values=["提前时间提醒", "指定时间提醒"], state="readonly").grid(
+            row=1, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 全天日程默认提醒时间
+        ttk.Label(reminder_frame, text="全天日程默认提醒时间:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_allday_reminder_time_var = tk.StringVar()
+        ttk.Entry(reminder_frame, textvariable=self.default_allday_reminder_time_var, width=10).grid(
+            row=2, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 其他日程默认提前天数
+        ttk.Label(reminder_frame, text="默认提前天数:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_reminder_days_var = tk.StringVar()
+        ttk.Spinbox(reminder_frame, textvariable=self.default_reminder_days_var, from_=0, to=365, width=5).grid(
+            row=3, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认提前小时数
+        ttk.Label(reminder_frame, text="默认提前小时数:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_reminder_hours_var = tk.StringVar()
+        ttk.Spinbox(reminder_frame, textvariable=self.default_reminder_hours_var, from_=0, to=23, width=5).grid(
+            row=4, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认提前分钟数
+        ttk.Label(reminder_frame, text="默认提前分钟数:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        self.default_reminder_minutes_var = tk.StringVar()
+        ttk.Spinbox(reminder_frame, textvariable=self.default_reminder_minutes_var, from_=0, to=59, width=5).grid(
+            row=5, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # 默认强制提醒
+        self.default_force_reminder_var = tk.BooleanVar()
+        ttk.Checkbutton(reminder_frame, text="默认勾选'强制提醒'", variable=self.default_force_reminder_var).grid(
+            row=6, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        # 增加提醒默认设置
+        reminder_defaults_frame = ttk.LabelFrame(reminder_frame, text="默认提醒设置")
+        reminder_defaults_frame.grid(row=7, column=0, columnspan=4, sticky='ew', padx=5, pady=5)
+
+        ttk.Label(reminder_frame, text='\n预设提醒设置（双击快速应用）:').grid(row=8, column=0, columnspan=4, sticky='w',
+                                                                             padx=5, pady=5)
+
+        # 预设提醒框架
+        preset_frame = ttk.LabelFrame(reminder_frame, text='预设提醒列表')
+        preset_frame.grid(row=9, column=0, columnspan=4, sticky='ew', padx=5, pady=5)
+
+        # 常规事件预设
+        ttk.Label(preset_frame, text='常规事件:').grid(row=0, column=0, sticky='w')
+        self.preset_reminders_listbox = tk.Listbox(preset_frame, selectmode='single', height=3)
+        self.preset_reminders_listbox.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
+        preset_reminders_scrollbar = ttk.Scrollbar(preset_frame, command=self.preset_reminders_listbox.yview)
+        preset_reminders_scrollbar.grid(row=1, column=1, sticky='ns')
+        self.preset_reminders_listbox.config(yscrollcommand=preset_reminders_scrollbar.set)
+
+        # 全天事件预设
+        ttk.Label(preset_frame, text='全天事件:').grid(row=0, column=2, sticky='w')
+        self.preset_allday_reminders_listbox = tk.Listbox(preset_frame, selectmode='single', height=3)
+        self.preset_allday_reminders_listbox.grid(row=1, column=2, sticky='ew', padx=5, pady=5)
+        preset_allday_scrollbar = ttk.Scrollbar(preset_frame, command=self.preset_allday_reminders_listbox.yview)
+        preset_allday_scrollbar.grid(row=1, column=3, sticky='ns')
+        self.preset_allday_reminders_listbox.config(yscrollcommand=preset_allday_scrollbar.set)
+
+        # 预设管理按钮
+        preset_btn_frame = ttk.Frame(preset_frame)
+        preset_btn_frame.grid(row=2, column=0, columnspan=4, sticky='ew', padx=5, pady=5)
+        ttk.Button(preset_btn_frame, text='添加预设', command=self.add_preset_reminder).pack(side='left', padx=2)
+        ttk.Button(preset_btn_frame, text='删除预设', command=self.delete_preset_reminder).pack(side='left', padx=2)
+        ttk.Button(preset_btn_frame, text='编辑预设', command=self.edit_preset_reminder).pack(side='left', padx=2)
+
+        # 非全天事件默认提醒
+        ttk.Label(reminder_defaults_frame, text="常规事件默认提醒:").grid(row=0, column=0, sticky='w')
+        self.default_reminders_var = tk.StringVar()
+        reminder_options = [
+            "日程发生时",
+            "5分钟前", "15分钟前", "30分钟前",
+            "1小时前", "2小时前",
+            "1天前", "2天前", "7天前"
+        ]
+        self.default_reminders_listbox = tk.Listbox(
+            reminder_defaults_frame,
+            selectmode='multiple',
+            height=5,
+            listvariable=self.default_reminders_var
+        )
+        self.default_reminders_listbox.grid(row=0, column=1, sticky='ew')
+
+        # 全天事件默认提醒
+        ttk.Label(reminder_defaults_frame, text="全天事件默认提醒:").grid(row=1, column=0, sticky='w')
+        self.default_allday_reminders_var = tk.StringVar()
+        allday_reminder_options = [
+            "当天上午9点",
+            "1天前上午9点", "2天前上午9点",
+            "3天前上午9点", "5天前上午9点", "7天前上午9点"
+        ]
+        self.default_allday_reminders_listbox = tk.Listbox(
+            reminder_defaults_frame,
+            selectmode='multiple',
+            height=5,
+            listvariable=self.default_allday_reminders_var
+        )
+        self.default_allday_reminders_listbox.grid(row=1, column=1, sticky='ew')
+
+        # 加载默认值
+        self.load_reminder_defaults()
+
+    def create_log_settings(self, parent):
+        frame = ttk.LabelFrame(parent, text="日志设置")
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 启用日志文件 - 默认关闭
+        self.enable_log_file_var = tk.BooleanVar()
+        ttk.Checkbutton(frame, text="启用日志文件", variable=self.enable_log_file_var).grid(
+            row=0, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+
+        # 日志文件路径
+        ttk.Label(frame, text="日志文件路径:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.log_file_path_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.log_file_path_var, width=40,
+                  state=tk.NORMAL if self.enable_log_file_var.get() else tk.DISABLED).grid(
+            row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Button(frame, text="浏览...", command=self.browse_log_file,
+                   state=tk.NORMAL if self.enable_log_file_var.get() else tk.DISABLED).grid(
+            row=1, column=2, sticky=tk.W, padx=5, pady=5)
+
+        # 日志级别
+        ttk.Label(frame, text="日志级别:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.log_level_var = tk.StringVar()
+        log_level_combo = ttk.Combobox(frame, textvariable=self.log_level_var,
+                                       values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], state="readonly")
+        log_level_combo.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
+        log_level_combo.config(state=tk.NORMAL if self.enable_log_file_var.get() else tk.DISABLED)
+
+        # 绑定启用/禁用事件
+        def toggle_log_settings(*args):
+            enabled = self.enable_log_file_var.get()
+            for widget in [frame.grid_slaves(row=1, column=1)[0],
+                           frame.grid_slaves(row=1, column=2)[0],
+                           log_level_combo]:
+                widget.config(state=tk.NORMAL if enabled else tk.DISABLED)
+
+        self.enable_log_file_var.trace('w', toggle_log_settings)
+
+    def add_preset_reminder(self):
+        dialog = tk.Toplevel(self)
+        dialog.title('添加预设提醒')
+        dialog.geometry('400x200')
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text='预设格式（可选）:').pack(anchor='w', padx=10, pady=5)
+        ttk.Label(dialog, text='- 提前提醒: "5分钟前", "1小时前", "2天前"', foreground='gray').pack(anchor='w', padx=10)
+        ttk.Label(dialog, text='- 指定时间: "09:30"', foreground='gray').pack(anchor='w', padx=10)
+        ttk.Label(dialog, text='- 全天事件: "当天上午9点"', foreground='gray').pack(anchor='w', padx=10)
+
+        frame = ttk.Frame(dialog)
+        frame.pack(fill='x', padx=10, pady=10)
+
+        ttk.Label(frame, text='预设内容:').grid(row=0, column=0, sticky='w')
+        entry = ttk.Entry(frame, width=30)
+        entry.grid(row=0, column=1, sticky='we', padx=5)
+
+        var = tk.StringVar(value='normal')
+        ttk.Radiobutton(frame, text='常规事件', variable=var, value='normal').grid(row=1, column=0, sticky='w', pady=5)
+        ttk.Radiobutton(frame, text='全天事件', variable=var, value='allday').grid(row=1, column=1, sticky='w')
+
+        def save():
+            value = entry.get().strip()
+            if not value:
+                messagebox.showwarning('警告', '请输入预设内容')
+                return
+
+            if var.get() == 'allday':
+                self.preset_allday_reminders_listbox.insert('end', value)
+            else:
+                self.preset_reminders_listbox.insert('end', value)
+            dialog.destroy()
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(side='bottom', pady=10)
+        ttk.Button(btn_frame, text='确定', command=save).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text='取消', command=dialog.destroy).pack(side='left', padx=5)
+
+    def delete_preset_reminder(self):
+        # 根据当前选中的列表框删除
+        normal_sel = self.preset_reminders_listbox.curselection()
+        allday_sel = self.preset_allday_reminders_listbox.curselection()
+
+        if normal_sel:
+            self.preset_reminders_listbox.delete(normal_sel[0])
+        elif allday_sel:
+            self.preset_allday_reminders_listbox.delete(allday_sel[0])
+        else:
+            messagebox.showinfo('提示', '请先选择一个预设')
+
+    def edit_preset_reminder(self):
+        # 根据当前选中的列表框编辑
+        normal_sel = self.preset_reminders_listbox.curselection()
+        allday_sel = self.preset_allday_reminders_listbox.curselection()
+
+        if not (normal_sel or allday_sel):
+            messagebox.showinfo('提示', '请先选择一个预设')
+            return
+
+        # 编辑逻辑类似 add_preset_reminder，先提取当前值，修改后更新
+        # 这里简化为删除后重新添加
+        if normal_sel:
+            current = self.preset_reminders_listbox.get(normal_sel[0])
+            self.preset_reminders_listbox.delete(normal_sel[0])
+        else:
+            current = self.preset_allday_reminders_listbox.get(allday_sel[0])
+            self.preset_allday_reminders_listbox.delete(allday_sel[0])
+
+        dialog = tk.Toplevel(self)
+        dialog.title('编辑预设提醒')
+        dialog.geometry('400x200')
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text='预设格式（可选）:').pack(anchor='w', padx=10, pady=5)
+        ttk.Label(dialog, text='- 提前提醒: "5分钟前", "1小时前"', foreground='gray').pack(anchor='w', padx=10)
+
+        frame = ttk.Frame(dialog)
+        frame.pack(fill='x', padx=10, pady=10)
+
+        ttk.Label(frame, text='预设内容:').grid(row=0, column=0, sticky='w')
+        entry = ttk.Entry(frame, width=30)
+        entry.insert(0, current)
+        entry.grid(row=0, column=1, sticky='we', padx=5)
+
+        var = tk.StringVar(value='normal')
+        if allday_sel:
+            var.set('allday')
+
+        ttk.Radiobutton(frame, text='常规事件', variable=var, value='normal').grid(row=1, column=0, sticky='w', pady=5)
+        ttk.Radiobutton(frame, text='全天事件', variable=var, value='allday').grid(row=1, column=1, sticky='w')
+
+        def save():
+            value = entry.get().strip()
+            if not value:
+                messagebox.showwarning('警告', '请输入预设内容')
+                return
+
+            if var.get() == 'allday':
+                self.preset_allday_reminders_listbox.insert('end', value)
+            else:
+                self.preset_reminders_listbox.insert('end', value)
+            dialog.destroy()
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(side='bottom', pady=10)
+        ttk.Button(btn_frame, text='确定', command=save).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text='取消', command=dialog.destroy).pack(side='left', padx=5)
+
+    def browse_log_file(self):
+        file_path = filedialog.asksaveasfilename(
+            title="选择日志文件",
+            filetypes=[("日志文件", "*.log"), ("所有文件", "*.*")],
+            defaultextension=".log")
+        if file_path:
+            self.log_file_path_var.set(file_path)
+
+    def load_settings(self):
+        # 服务器设置
+        self.auto_save_port_var.set(self.db.get_setting("auto_save_port", "True") == "True")
+        self.auto_start_server_var.set(self.db.get_setting("auto_start_server", "False") == "True")
+        self.default_port_var.set(self.db.get_setting("default_port", "8000"))
+
+        # 日志设置 - 默认关闭
+        self.enable_log_file_var.set(self.db.get_setting("enable_log_file", "False") == "True")
+        self.log_file_path_var.set(self.db.get_setting("log_file_path", "dav_server.log"))
+        self.log_level_var.set(self.db.get_setting("log_level", "INFO"))
+
+        # 日历设置
+        self.default_status_var.set(next((k for k, v in EventDialog.STATUS_MAPPING.items() if
+                                          v == self.db.get_setting("default_status", "CONFIRMED")), "已确认"))
+        self.default_version_var.set(self.db.get_setting("default_version", "2.0"))
+        self.default_duration_var.set(self.db.get_setting("default_duration", "1"))
+        self.default_sync_timezone_var.set(self.db.get_setting("default_sync_timezone", "True") == "True")
+        self.default_repeat_var.set(self.db.get_setting("default_repeat", "不重复"))
+        self.default_end_cond_var.set(self.db.get_setting("default_end_cond", "永不结束"))
+        self.default_end_count_var.set(self.db.get_setting("default_end_count", "5"))
+        self.default_priority_var.set(int(self.db.get_setting("default_priority", "5")))
+        self.default_transparency_var.set(next((k for k, v in EventDialog.TRANSPARENCY_MAPPING.items() if
+                                                v == self.db.get_setting("default_transparency", "OPAQUE")), "忙碌"))
+
+        # 提醒设置
+        self.default_reminder_type_var.set(self.db.get_setting("default_reminder_type", "显示"))
+        self.default_trigger_type_var.set(self.db.get_setting("default_trigger_type", "提前时间提醒"))
+        self.default_allday_reminder_time_var.set(self.db.get_setting("default_allday_reminder_time", "09:00"))
+        self.default_reminder_days_var.set(self.db.get_setting("default_reminder_days", "0"))
+        self.default_reminder_hours_var.set(self.db.get_setting("default_reminder_hours", "0"))
+        self.default_reminder_minutes_var.set(self.db.get_setting("default_reminder_minutes", "15"))
+        self.default_force_reminder_var.set(self.db.get_setting("default_force_reminder", "False") == "True")
+        preset_reminders = self.db.get_setting('preset_reminders', '').split(';')
+        for reminder in preset_reminders:
+            if reminder:
+                self.preset_reminders_listbox.insert('end', reminder)
+
+        preset_allday_reminders = self.db.get_setting('preset_allday_reminders', '').split(';')
+        for reminder in preset_allday_reminders:
+            if reminder:
+                self.preset_allday_reminders_listbox.insert('end', reminder)
+
+        # 日志设置
+        self.enable_log_file_var.set(self.db.get_setting("enable_log_file", "True") == "True")
+        self.log_file_path_var.set(self.db.get_setting("log_file_path", "dav_server.log"))
+        self.log_level_var.set(self.db.get_setting("log_level", "INFO"))
+
+    def save_settings(self):
+        # 服务器设置
+        self.db.set_setting("auto_save_port", str(self.auto_save_port_var.get()))
+        self.db.set_setting("auto_start_server", str(self.auto_start_server_var.get()))
+        self.db.set_setting("default_port", self.default_port_var.get())
+
+        # 日历设置
+        self.db.set_setting("default_status",
+                            EventDialog.STATUS_MAPPING.get(self.default_status_var.get(), "CONFIRMED"))
+        self.db.set_setting("default_version", self.default_version_var.get())
+        self.db.set_setting("default_duration", self.default_duration_var.get())
+        self.db.set_setting("default_sync_timezone", str(self.default_sync_timezone_var.get()))
+        self.db.set_setting("default_repeat", self.default_repeat_var.get())
+        self.db.set_setting("default_end_cond", self.default_end_cond_var.get())
+        self.db.set_setting("default_end_count", self.default_end_count_var.get())
+        self.db.set_setting("default_priority", str(self.default_priority_var.get()))
+        self.db.set_setting("default_transparency",
+                            EventDialog.STATUS_MAPPING.get(self.default_transparency_var.get(), "OPAQUE"))
+
+        # 提醒设置
+        self.db.set_setting("default_reminder_type", self.default_reminder_type_var.get())
+        self.db.set_setting("default_trigger_type", self.default_trigger_type_var.get())
+        self.db.set_setting("default_allday_reminder_time", self.default_allday_reminder_time_var.get())
+        self.db.set_setting("default_reminder_days", self.default_reminder_days_var.get())
+        self.db.set_setting("default_reminder_hours", self.default_reminder_hours_var.get())
+        self.db.set_setting("default_reminder_minutes", self.default_reminder_minutes_var.get())
+        self.db.set_setting("default_force_reminder", str(self.default_force_reminder_var.get()))
+        preset_reminders = [self.preset_reminders_listbox.get(i) for i in range(self.preset_reminders_listbox.size())]
+        self.db.set_setting('preset_reminders', ';'.join(preset_reminders))
+
+        preset_allday_reminders = [self.preset_allday_reminders_listbox.get(i) for i in
+                                   range(self.preset_allday_reminders_listbox.size())]
+        self.db.set_setting('preset_allday_reminders', ';'.join(preset_allday_reminders))
+
+        # 保存全天事件默认设置
+        self.db.set_setting('default_allday', str(self.default_allday_var.get()))
+
+        # 保存常规提醒默认设置
+        selected_reminders = [
+            self.default_reminders_listbox.get(i)
+            for i in self.default_reminders_listbox.curselection()
+        ]
+        self.db.set_setting('default_reminders', ';'.join(selected_reminders))
+
+        # 保存全天事件提醒默认设置
+        selected_allday_reminders = [
+            self.default_allday_reminders_listbox.get(i)
+            for i in self.default_allday_reminders_listbox.curselection()
+        ]
+        self.db.set_setting('default_allday_reminders', ';'.join(selected_allday_reminders))
+
+        # 日志设置
+        self.db.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
+        self.db.set_setting("log_file_path", self.log_file_path_var.get())
+        self.db.set_setting("log_level", self.log_level_var.get())
+
+        messagebox.showinfo("提示", "设置已保存")
+        self.destroy()
+        self.on_save_callback()  # 调用回调
+
+    def load_reminder_defaults(self):
+        # 加载全天事件默认设置
+        self.default_allday_var.set(self.db.get_setting('default_allday', 'False') == 'True')
+
+        # 加载常规提醒默认设置
+        default_reminders = self.db.get_setting('default_reminders', '').split(';')
+        for i, option in enumerate([
+            "日程发生时", "5分钟前", "15分钟前", "30分钟前",
+            "1小时前", "2小时前", "1天前", "2天前", "7天前"
+        ]):
+            if option in default_reminders:
+                self.default_reminders_listbox.selection_set(i)
+
+        # 加载全天事件提醒默认设置
+        default_allday_reminders = self.db.get_setting('default_allday_reminders', '').split(';')
+        for i, option in enumerate([
+            "当天上午9点", "1天前上午9点", "2天前上午9点",
+            "3天前上午9点", "5天前上午9点", "7天前上午9点"
+        ]):
+            if option in default_allday_reminders:
+                self.default_allday_reminders_listbox.selection_set(i)
+
+
+# ======================
 # GUI 应用
 # ======================
 class DAVServerApp:
@@ -1196,6 +1795,9 @@ class DAVServerApp:
         self.import_queue = queue.Queue()
         self.import_in_progress = False
         self.import_cancel_requested = False
+
+        # 初始化日志系统
+        self.setup_logging()
 
         # 创建日志队列
         self.log_queue = queue.Queue()
@@ -1213,6 +1815,8 @@ class DAVServerApp:
 
         # 添加"文件"菜单
         filemenu = tk.Menu(menubar, tearoff=0)
+        filemenu.add_command(label="设置", command=self.show_settings)
+        filemenu.add_separator()
         filemenu.add_command(label="退出", command=self.on_closing)
         menubar.add_cascade(label="程序", menu=filemenu)
 
@@ -1268,6 +1872,42 @@ class DAVServerApp:
         self.root.drop_target_register(DND_FILES)
         self.root.dnd_bind('<<Drop>>', self.handle_drop)
 
+        # 检查是否需要自动启动服务器
+        if self.db.get_setting("auto_start_server", "False") == "True":
+            port = self.db.get_setting("default_port", "8000")
+            self.port_entry.delete(0, tk.END)
+            self.port_entry.insert(0, port)
+            self.start_server()
+
+    def setup_logging(self):
+        # 设置日志级别
+        logger.setLevel(logging.INFO)
+
+        # 清除现有处理器
+        if logger.hasHandlers():
+            logger.handlers.clear()
+
+        # 总是添加控制台日志
+        console_handler = logging.StreamHandler()
+        console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
+
+        # 根据设置决定是否添加文件日志
+        if self.db.get_setting("enable_log_file", "False") == "True":
+            log_file = self.db.get_setting("log_file_path", "dav_server.log")
+            log_level = self.db.get_setting("log_level", "INFO")
+
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(file_formatter)
+            file_handler.setLevel(getattr(logging, log_level))
+            logger.addHandler(file_handler)
+
+            logger.info(f"日志文件已启用，路径: {log_file}，级别: {log_level}")
+        else:
+            logger.info("日志文件功能已禁用")
+
     def process_log_queue(self):
         """处理日志队列"""
         try:
@@ -1310,6 +1950,9 @@ class DAVServerApp:
         (c) hunyanjie（魂魇桀） 2025
     """
         messagebox.showinfo("关于", about_text)
+
+    def show_settings(self):
+        SettingsDialog(self.root, self.db, self.setup_logging)
 
     def on_delete_key(self, event):
         """处理Delete键事件"""
@@ -3119,7 +3762,98 @@ CalDAV 配置:
         self.root.after(500, self.process_import_queue)
 
     def add_event(self):
-        dialog = EventDialog(self.root)
+        # 获取所有默认设置
+        default_settings = {
+            'status': self.db.get_setting('default_status', '已确认'),
+            'version': self.db.get_setting('default_version', '2.0'),
+            'allday': self.db.get_setting('default_allday', 'False') == 'True',
+            'duration': int(self.db.get_setting('default_duration', '1')),
+            'repeat': self.db.get_setting('default_repeat', '不重复'),
+            'end_cond': self.db.get_setting('default_end_cond', '永不结束'),
+            'end_count': self.db.get_setting('default_end_count', '5'),
+            'priority': self.db.get_setting('default_priority', '5'),
+            'transparency': self.db.get_setting('default_transparency', 'OPAQUE'),
+            'sync_timezone': self.db.get_setting('default_sync_timezone', 'True') == 'True',
+            'reminder_type': self.db.get_setting('default_reminder_type', '显示'),
+            'reminder_days': int(self.db.get_setting('default_reminder_days', '0')),
+            'reminder_hours': int(self.db.get_setting('default_reminder_hours', '0')),
+            'reminder_minutes': int(self.db.get_setting('default_reminder_minutes', '15')),
+        }
+
+        # 计算时间
+        now = datetime.now()
+        if default_settings['allday']:
+            start = now.date()
+            end = start + timedelta(days=1)
+        else:
+            start = now
+            end = now + timedelta(hours=default_settings['duration'])
+
+        # 创建初始数据
+        initial = {
+            'uid': f"event-{uuid.uuid4().hex}",
+            'summary': '',
+            'start': start.isoformat() if not default_settings['allday'] else start.strftime('%Y-%m-%d'),
+            'end': end.isoformat() if not default_settings['allday'] else end.strftime('%Y-%m-%d'),
+            'allday': default_settings['allday'],
+            'status': default_settings['status'],
+            'version': default_settings['version'],
+            'repeat': default_settings['repeat'],
+            'end_cond': default_settings['end_cond'],
+            'end_count': default_settings['end_count'],
+            'priority': default_settings['priority'],
+            'transparency': default_settings['transparency'],
+            'sync_timezone': default_settings['sync_timezone'],
+        }
+
+        # 添加默认提醒
+        initial['alarms'] = []
+
+        # 添加常规事件默认提醒
+        if not default_settings['allday']:
+            default_reminders = self.db.get_setting('default_reminders', '').split(';')
+            for reminder in default_reminders:
+                if reminder == "日程发生时":
+                    initial['alarms'].append({
+                        'action': default_settings['reminder_type'].upper(),
+                        'trigger': timedelta(0)  # 正值表示绝对时间
+                    })
+                elif reminder.endswith("分钟前"):
+                    minutes = int(reminder[:-3])
+                    initial['alarms'].append({
+                        'action': default_settings['reminder_type'].upper(),
+                        'trigger': timedelta(minutes=-minutes)  # 负值表示提前
+                    })
+                elif reminder.endswith("小时前"):
+                    hours = int(reminder[:-3])
+                    initial['alarms'].append({
+                        'action': default_settings['reminder_type'].upper(),
+                        'trigger': timedelta(hours=-hours)
+                    })
+                elif reminder.endswith("天前"):
+                    days = int(reminder[:-2])
+                    initial['alarms'].append({
+                        'action': default_settings['reminder_type'].upper(),
+                        'trigger': timedelta(days=-days)
+                    })
+
+        # 添加全天事件默认提醒
+        else:
+            default_allday_reminders = self.db.get_setting('default_allday_reminders', '').split(';')
+            for reminder in default_allday_reminders:
+                if reminder == "当天上午9点":
+                    initial['alarms'].append({
+                        'action': default_settings['reminder_type'].upper(),
+                        'trigger': timedelta(hours=9)  # 当天9点 (正值)
+                    })
+                elif reminder.endswith("天前上午9点"):
+                    days = int(reminder[:-6])
+                    initial['alarms'].append({
+                        'action': default_settings['reminder_type'].upper(),
+                        'trigger': timedelta(days=-days, hours=15)  # 提前n天的9点 (负值)
+                    })
+
+        dialog = EventDialog(self.root, initial=initial, db=self.db)
         if dialog.result:
             # 直接获取对话框生成的原始iCalendar数据
             ical = dialog.get_raw_ical()
@@ -3136,51 +3870,46 @@ CalDAV 配置:
             messagebox.showinfo("提示", "请先选择一个事件")
             return
 
-        # 只编辑第一个选中的事件
         item = self.events_tree.item(selected[0])
-        values = [str(v) if v is not None else "" for v in item['values']]
-        _, uid, _, _, _ = values  # 只使用UID，其他字段从原始数据获取
-
-        # 从数据库获取完整事件数据
+        values = [str(v) if v is not None else '' for v in item["values"]]
+        _, uid, _, _, _ = values
         event_data = self.db.get_event(uid)
+
         if not event_data:
             messagebox.showerror("错误", "无法获取事件详情")
             return
 
-        # 解析iCalendar数据
         try:
             ical = vobject.readOne(event_data)
             vevent = ical.vevent
+            print(f"{vevent = }")
 
-            # 准备初始数据
             initial = {
                 'uid': uid,
-                'summary': self.decode_text(vevent.summary.value) if hasattr(vevent, 'summary') else "",
-                'location': self.decode_text(vevent.location.value) if hasattr(vevent, 'location') else "",
-                'description': self.decode_text(vevent.description.value) if hasattr(vevent, 'description') else "",
-                'status': vevent.status.value if hasattr(vevent, 'status') else "CONFIRMED",
-                'version': ical.version.value if hasattr(ical, 'version') else "2.0",
+                'summary': self.decode_text(vevent.summary.value) if hasattr(vevent, 'summary') else '',
+                'location': self.decode_text(vevent.location.value) if hasattr(vevent, 'location') else '',
+                'description': self.decode_text(vevent.description.value) if hasattr(vevent, 'description') else '',
+                'status': vevent.status.value if hasattr(vevent, 'status') else 'CONFIRMED',
+                'version': ical.version.value if hasattr(ical, 'version') else '2.0',
                 'allday': False,
-                'force_reminder': False,
-                'categories': "",
-                'priority': "5",
-                'transparency': "OPAQUE",
-                'sequence': "0",
-                'url': "",
-                'organizer': "",
+                'categories': '',
+                'priority': '5',
+                'transparency': 'OPAQUE',
+                'sequence': '0',
+                'url': '',
+                'organizer': '',
                 'attendees': [],
                 'alarms': [],
-                'rrule': ""
+                'rrule': ''
             }
 
-            # 处理日期时间
             if hasattr(vevent, 'dtstart'):
                 dtstart = vevent.dtstart.value
                 if isinstance(dtstart, datetime):
                     initial['start'] = dtstart.isoformat()
                     initial['allday'] = False
-                else:  # 全天事件
-                    initial['start'] = dtstart.strftime("%Y-%m-%d")
+                else:
+                    initial['start'] = dtstart.strftime('%Y-%m-%d')
                     initial['allday'] = True
 
             if hasattr(vevent, 'dtend'):
@@ -3188,9 +3917,8 @@ CalDAV 配置:
                 if isinstance(dtend, datetime):
                     initial['end'] = dtend.isoformat()
                 else:
-                    initial['end'] = dtend.strftime("%Y-%m-%d")
+                    initial['end'] = dtend.strftime('%Y-%m-%d')
 
-            # 处理重复规则
             if hasattr(vevent, 'rrule'):
                 rrule = vevent.rrule.value
                 initial['rrule'] = rrule
@@ -3264,7 +3992,7 @@ CalDAV 配置:
             messagebox.showerror("错误", f"解析事件失败: {str(e)}")
             return
 
-        dialog = EventDialog(self.root, initial=initial)
+        dialog = EventDialog(self.root, initial=initial, db=self.db)
 
         if dialog.result:
             # 直接获取对话框生成的原始iCalendar数据
@@ -3368,6 +4096,10 @@ CalDAV 配置:
 
     def start_server(self):
         port = int(self.port_entry.get())
+
+        # 如果启用了自动保存端口号，保存当前端口
+        if self.db.get_setting("auto_save_port", "True") == "True":
+            self.db.set_setting("default_port", str(port))
 
         # 创建自定义处理程序
         class CustomHandler(SimpleDAVHandler): pass
@@ -3588,7 +4320,7 @@ class EventDialog:
     # 结束条件选项
     END_CONDITIONS = ["永不结束", "按日期结束", "按次数结束"]
 
-    def __init__(self, parent, initial=None, software_name=software_name, software_version=software_version):
+    def __init__(self, parent, initial=None, software_name=software_name, software_version=software_version, db=None):
         self.root = tk.Toplevel(parent)
         self.root.title("添加/编辑日历事件")
         self.root.geometry("900x750")
@@ -3603,6 +4335,60 @@ class EventDialog:
         self.repeat_days = []
         self.end_count_var = tk.StringVar(value="5")
         self.raw_ical = None
+
+        self.db = db
+        self.default_duration = int(db.get_setting('default_duration', '1')) if db else 1
+
+        if self.db:
+            # 从数据库获取默认设置
+            if not initial:
+                initial = {}
+
+            # 确保这些设置不会被传入的initial覆盖
+            print(db.get_setting('default_status'))
+            initial.setdefault('status', db.get_setting('default_status', 'CONFIRMED'))
+            initial.setdefault('version', db.get_setting('default_version', '2.0'))
+            initial.setdefault('allday', False)
+            initial.setdefault('force_reminder', db.get_setting('default_force_reminder', 'False') == 'True')
+            initial.setdefault('priority', db.get_setting('default_priority', '5'))
+            initial.setdefault('transparency', db.get_setting('default_transparency', 'OPAQUE'))
+
+            # 计算默认结束时间
+            duration = int(db.get_setting('default_duration', '1'))
+            if 'start' in initial:
+                try:
+                    start_time = parser.parse(initial['start']) if isinstance(initial['start'], str) else initial[
+                        'start']
+                    end_time = start_time + timedelta(hours=duration)
+                    initial.setdefault('end',
+                                       end_time.isoformat() if isinstance(end_time, datetime) else end_time.strftime(
+                                           '%Y-%m-%d'))
+                except:
+                    end_time = datetime.now() + timedelta(hours=duration)
+                    initial.setdefault('end', end_time.isoformat())
+            else:
+                end_time = datetime.now() + timedelta(hours=duration)
+                initial.setdefault('end', end_time.isoformat())
+
+            initial.setdefault('repeat', db.get_setting('default_repeat', '不重复'))
+            initial.setdefault('end_cond', db.get_setting('default_end_cond', '永不结束'))
+            initial.setdefault('end_count', db.get_setting('default_end_count', '5'))
+
+            # 默认提醒设置
+            if 'alarms' not in initial:
+                initial['alarms'] = []
+                if db.get_setting('default_reminder_type', '显示') != '无':
+                    alarm = {
+                        'action': db.get_setting('default_reminder_type', '显示').upper(),
+                        'trigger': timedelta(
+                            days=int(db.get_setting('default_reminder_days', '0')),
+                            hours=int(db.get_setting('default_reminder_hours', '0')),
+                            minutes=int(db.get_setting('default_reminder_minutes', '15'))
+                        )
+                    }
+                    initial['alarms'].append(alarm)
+
+        self.initial['is_edit'] = bool(initial and initial.get('uid'))
 
         # 配置根窗口的网格权重
         self.root.grid_rowconfigure(0, weight=1)
@@ -3672,6 +4458,8 @@ class EventDialog:
 
         # 初始化表单
         self.set_initial_values()
+        # 添加持续时间调整按钮
+        self.add_duration_adjustment()
 
         self.root.protocol("WM_DELETE_WINDOW", self.cancel)
         self.root.wait_window(self.root)
@@ -3862,6 +4650,108 @@ class EventDialog:
 
     def create_reminder_tab(self):
         """创建提醒设置标签页"""
+
+        def parse_trigger(trigger_str):
+            if trigger_str.startswith('-P'):
+                # 处理提前时间 (负值)
+                duration_str = trigger_str[1:]
+                days = 0
+                hours = 0
+                minutes = 0
+
+                if 'T' in duration_str:
+                    date_part, time_part = duration_str.split('T')
+                else:
+                    date_part = duration_str
+                    time_part = ''
+
+                if 'D' in date_part:
+                    days = int(date_part.split('D')[0][1:])
+
+                if time_part:
+                    if 'H' in time_part:
+                        hours = int(time_part.split('H')[0])
+                        time_part = time_part.split('H')[1]
+                    if 'M' in time_part:
+                        minutes = int(time_part.split('M')[0])
+
+                return timedelta(days=days, hours=hours, minutes=minutes)
+            else:
+                # 处理绝对时间 (正值)
+                return parser.parse(trigger_str)
+
+        def format_trigger(delta):
+            if isinstance(delta, timedelta):
+                # 处理提前时间
+                if delta.total_seconds() < 0:
+                    delta = -delta
+                    prefix = '-'
+                else:
+                    prefix = ''
+
+                days = delta.days
+                seconds = delta.seconds
+                hours = seconds // 3600
+                minutes = (seconds % 3600) // 60
+
+                parts = []
+                if days > 0:
+                    parts.append(f"{days}D")
+                if hours > 0 or minutes > 0:
+                    time_part = "T"
+                    if hours > 0:
+                        time_part += f"{hours}H"
+                    if minutes > 0:
+                        time_part += f"{minutes}M"
+                    parts.append(time_part)
+
+                return f"{prefix}P{''.join(parts)}"
+            else:
+                # 处理绝对时间
+                return delta.isoformat()
+
+        # 修改提醒列表显示格式
+        def update_reminder_listbox():
+            self.reminder_listbox.delete(0, tk.END)
+            for alarm in self.alarms:
+                trigger = alarm['trigger']
+                action = alarm['action']
+
+                if isinstance(trigger, str):
+                    trigger = parse_trigger(trigger)
+
+                if isinstance(trigger, timedelta):
+                    if trigger.total_seconds() < 0:
+                        # 提前提醒
+                        days = abs(trigger.days)
+                        seconds = abs(trigger.seconds)
+                        hours = seconds // 3600
+                        minutes = seconds % 3600 // 60
+
+                        if self.allday_var.get():
+                            # 全天事件特殊显示
+                            if days == 0:
+                                desc = f"当天 {hours:02d}:{minutes:02d}"
+                            else:
+                                desc = f"提前{days}天 {hours:02d}:{minutes:02d}"
+                        else:
+                            desc = f"提前"
+                            if days > 0:
+                                desc += f"{days}天"
+                            if hours > 0:
+                                desc += f"{hours}小时"
+                            if minutes > 0:
+                                desc += f"{minutes}分钟"
+                    else:
+                        # 绝对时间提醒
+                        desc = str(trigger)
+                else:
+                    # 日期时间对象
+                    desc = trigger.strftime('%Y-%m-%d %H:%M')
+
+                display_text = f"{action} - {desc}"
+                self.reminder_listbox.insert('end', display_text)
+
         # 主框架
         frame = ttk.LabelFrame(self.reminder_frame, text="提醒设置")
         frame.pack(fill="both", expand=True, padx=10, pady=10)
@@ -3965,7 +4855,7 @@ class EventDialog:
         # 时区选择
         ttk.Label(self.absolute_trigger_frame, text="时区:").grid(row=0, column=6, padx=(10, 0))
         self.absolute_trigger_timezone = ttk.Combobox(self.absolute_trigger_frame, values=self.get_timezone_list(),
-                                                      width=30)
+                                                      width=60)
         self.absolute_trigger_timezone.grid(row=0, column=7, padx=5)
         self.absolute_trigger_timezone.set(self.get_local_timezone_str())
 
@@ -4064,6 +4954,24 @@ class EventDialog:
         self.email_attach_entry = ttk.Entry(self.email_frame, textvariable=self.email_attach_var, width=40)
         RightClickMenu(self.email_attach_entry)
         self.email_attach_entry.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
+
+        # 预设提醒
+        ttk.Label(frame, text='\n预设提醒（双击应用）:').grid(row=10, column=0, columnspan=4, sticky='w', padx=5, pady=5)
+
+        preset_frame = ttk.Frame(frame)
+        preset_frame.grid(row=11, column=0, columnspan=4, sticky='nsew', padx=5, pady=5)
+
+        # 常规预设列表
+        ttk.Label(preset_frame, text='常规事件:').grid(row=0, column=0, sticky='w')
+        self.preset_reminders_listbox = tk.Listbox(preset_frame, height=3, width=30)
+        self.preset_reminders_listbox.grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.preset_reminders_listbox.bind('<Double-1>', lambda e: self.apply_preset_reminder(False))
+
+        # 全天预设列表
+        ttk.Label(preset_frame, text='全天事件:').grid(row=0, column=1, sticky='w')
+        self.preset_allday_reminders_listbox = tk.Listbox(preset_frame, height=3, width=30)
+        self.preset_allday_reminders_listbox.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+        self.preset_allday_reminders_listbox.bind('<Double-1>', lambda e: self.apply_preset_reminder(True))
 
         # 初始化提醒类型相关控件的状态
         self.on_reminder_type_change()
@@ -4286,14 +5194,14 @@ class EventDialog:
                     text="全天事件只能使用指定时间提醒，默认设置为事件当天上午9点",
                     foreground="blue"
                 )
-                self.allday_reminder_hint.grid(row=10, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-            self.allday_reminder_hint.grid()
+                self.allday_reminder_hint.pack(fill="both", expand=True, padx=5, pady=5)
+            self.allday_reminder_hint.pack()
         else:
             # 启用相对时间提醒
             self.reminder_time_frame.grid()
 
             # 隐藏提示信息
-            if hasattr(self, 'allday_reminder_hint'): self.allday_reminder_hint.grid_remove()
+            if hasattr(self, 'allday_reminder_hint'): self.allday_reminder_hint.pack_forget()
 
     def parse_duration_for_display(self, duration_str):
         """解析持续时间用于显示"""
@@ -4318,6 +5226,222 @@ class EventDialog:
 
         return days, hours, minutes
 
+    def apply_duration_setting(self):
+        # 从数据库获取默认持续时间
+        duration = int(self.db.get_setting('default_duration', '1')) if hasattr(self, 'db') else 1
+
+        # 计算结束时间
+        try:
+            start_date = self.start_date.get_date()
+            start_hour = int(self.start_hour.get())
+            start_minute = int(self.start_minute.get())
+
+            if self.allday_var.get():
+                end_date = start_date + timedelta(days=1)
+                self.end_date.set_date(end_date)
+            else:
+                start_time = datetime(
+                    start_date.year, start_date.month, start_date.day,
+                    start_hour, start_minute
+                )
+                end_time = start_time + timedelta(hours=duration)
+
+                self.end_date.set_date(end_time.date())
+                self.end_hour.set(end_time.strftime('%H'))
+                self.end_minute.set(end_time.strftime('%M'))
+        except Exception as e:
+            logger.error(f"应用持续时间设置失败: {str(e)}")
+
+    def add_duration_adjustment(self):
+        # 在时间设置标签页添加一个调整持续时间的按钮
+        duration_frame = ttk.Frame(self.time_frame)
+        duration_frame.grid(row=9, column=0, columnspan=3, sticky='w', padx=5, pady=5)
+
+        ttk.Label(duration_frame, text="快速调整持续时间:").pack(side='left')
+
+        # 从数据库获取常用持续时间选项
+        duration_options = ["1小时", "2小时", self.db.get_setting('default_duration', '1') + "小时", "半天", "全天"]
+
+        for option in duration_options:
+            btn = ttk.Button(duration_frame, text=option,
+                             command=lambda o=option: self.apply_duration(o))
+            btn.pack(side='left', padx=2)
+
+    def apply_duration(self, duration_str):
+        """应用持续时间调整而不覆盖原始开始时间"""
+        try:
+            start_date = self.start_date.get_date()
+            start_hour = int(self.start_hour.get())
+            start_minute = int(self.start_minute.get())
+
+            if duration_str == "半天":
+                hours = 12
+            elif duration_str == "全天":
+                hours = 24
+            else:
+                hours = int(duration_str.replace("小时", ""))
+
+            start_time = datetime(
+                start_date.year, start_date.month, start_date.day,
+                start_hour, start_minute
+            )
+            end_time = start_time + timedelta(hours=hours)
+
+            self.end_date.set_date(end_time.date())
+            self.end_hour.set(end_time.strftime('%H'))
+            self.end_minute.set(end_time.strftime('%M'))
+
+            # 自动调整时区
+            if self.sync_timezone_var.get():
+                self.end_timezone_var.set(self.start_timezone_var.get())
+        except Exception as e:
+            logger.error(f"调整持续时间失败: {str(e)}")
+
+    def parse_preset_reminder(self, preset_str, is_allday=False):
+        """将预设提醒字符串解析为 alarm 字典"""
+        try:
+            # 处理提前时间格式: "5分钟前", "1小时前", "2天前"
+            if preset_str.endswith('前'):
+                time_part = preset_str[:-1].strip()
+                days, hours, minutes = 0, 0, 0
+
+                if '天' in time_part:
+                    days = int(time_part.split('天')[0])
+                elif '小时' in time_part:
+                    hours = int(time_part.split('小时')[0])
+                elif '分钟' in time_part:
+                    minutes = int(time_part.split('分钟')[0])
+
+                return {
+                    'action': 'DISPLAY',
+                    'trigger': timedelta(days=days, hours=hours, minutes=minutes)
+                }
+
+            # 处理全天事件指定时间格式: "当天上午9点"
+            elif is_allday and preset_str.startswith('当天上午'):
+                hour = int(preset_str[4:-1])  # 提取小时数字
+                return {
+                    'action': 'DISPLAY',
+                    'trigger': timedelta(hours=hour)
+                }
+
+            # 处理常规时间格式: "HH:MM"
+            elif ':' in preset_str:
+                hour, minute = map(int, preset_str.split(':'))
+                return {
+                    'action': 'DISPLAY',
+                    'trigger': timedelta(hours=hour, minutes=minute)
+                }
+
+        except Exception as e:
+            logger.error(f"解析预设提醒失败: {preset_str} - {str(e)}")
+
+        return None
+
+    def load_preset_reminders(self):
+        """加载预设提醒列表"""
+        # 清空现有列表
+        for widget in [self.preset_reminders_listbox, self.preset_allday_reminders_listbox]:
+            widget.delete(0, tk.END)
+
+        # 从数据库加载
+        db = self.db
+        if db:
+            # 常规事件预设
+            preset_reminders = db.get_setting('preset_reminders', '').split(';')
+            for reminder in preset_reminders:
+                if reminder:
+                    self.preset_reminders_listbox.insert('end', reminder)
+
+            # 全天事件预设
+            preset_allday_reminders = db.get_setting('preset_allday_reminders', '').split(';')
+            for reminder in preset_allday_reminders:
+                if reminder:
+                    self.preset_allday_reminders_listbox.insert('end', reminder)
+
+    def apply_preset_reminder(self, is_allday):
+        """将选中的预设应用到提醒编辑框"""
+        if is_allday:
+            selection = self.preset_allday_reminders_listbox.curselection()
+            if not selection:
+                return
+            preset = self.preset_allday_reminders_listbox.get(selection[0])
+        else:
+            selection = self.preset_reminders_listbox.curselection()
+            if not selection:
+                return
+            preset = self.preset_reminders_listbox.get(selection[0])
+
+        # 解析预设并填充到提醒设置控件
+        alarm = self.parse_preset_reminder(preset, is_allday)
+        if not alarm:
+            return
+
+        # 填充提醒类型
+        action_mapping = {'DISPLAY': '显示', 'AUDIO': '声音', 'EMAIL': '邮件'}
+        action = action_mapping.get(alarm['action'], '显示')
+        self.reminder_type_var.set(action)
+        self.on_reminder_type_change()
+
+        # 填充时间
+        trigger = alarm['trigger']
+        if isinstance(trigger, timedelta):
+            # 提前时间
+            self.reminder_trigger_type.set('relative')
+            self.toggle_reminder_trigger_type()
+
+            days = abs(trigger.days)
+            seconds = abs(trigger.seconds)
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+
+            self.reminder_days_var.set(str(days))
+            self.reminder_hours_var.set(str(hours))
+            self.reminder_minutes_var.set(str(minutes))
+        else:
+            # 指定时间（仅全天事件）
+            self.reminder_trigger_type.set('absolute')
+            self.toggle_reminder_trigger_type()
+
+            self.absolute_trigger_hour.set(f"{trigger.seconds // 3600:02d}")
+            self.absolute_trigger_minute.set(f"{(trigger.seconds % 3600) // 60:02d}")
+
+    def apply_default_reminders(self):
+        """应用设置中的默认提醒"""
+        if self.initial.get('is_edit', False):
+            return  # 编辑模式不自动添加默认提醒
+
+        db = self.db
+        if not db:
+            return
+
+        # 判断是否为全天事件
+        is_allday = self.allday_var.get()
+
+        if is_allday:
+            default_reminders = db.get_setting('default_allday_reminders', '').split(';')
+        else:
+            default_reminders = db.get_setting('default_reminders', '').split(';')
+
+        for reminder_str in default_reminders:
+            if not reminder_str:
+                continue
+
+            alarm = self.parse_preset_reminder(reminder_str, is_allday)
+            if alarm:
+                self.alarms.append(alarm)
+
+        self.update_reminder_listbox()
+
+    def get_timezone_name(self, tz_id):
+        try:
+            import babel.dates
+            from babel import Locale
+            locale_name = locale.getdefaultlocale()[0] if locale.getdefaultlocale()[0] else 'en_US'
+            return babel.dates.get_timezone_name(tz_id, locale=Locale.parse(locale_name))
+        except:
+            return tz_id
+
     def set_initial_values(self):
         # 设置默认时区
         local_tz_str = self.get_local_timezone_str()
@@ -4326,6 +5450,7 @@ class EventDialog:
 
         # 如果有初始数据，填充表单
         if self.initial:
+            logger.debug("有初始数据，填充表单")
             self.uid_var.set(self.initial.get('uid', f"event-{uuid.uuid4().hex}"))
             self.summary_var.set(self.decode_text(self.initial.get('summary', '')))
             self.location_var.set(self.decode_text(self.initial.get('location', '')))
@@ -4477,6 +5602,9 @@ class EventDialog:
 
             self.status_var.set("已确认")
             self.transparency_var.set("忙碌")
+
+        self.load_preset_reminders()
+        self.apply_default_reminders()
 
     def set_start_current_time(self):
         """设置开始时间为当前时间"""
