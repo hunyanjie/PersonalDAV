@@ -4080,14 +4080,21 @@ CalDAV 配置:
         text_frame = ttk.Frame(window)
         text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        text_area = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
-        text_area.configure(undo=True, autoseparators=True, maxundo=-1)  # 启用撤销功能
+        text_area = tk.Text(text_frame, autoseparators=True, wrap='none')
         RightClickMenu(text_area, widget_type="show")
+
+        # 纵向
+        y_scroll = ttk.Scrollbar(text_frame, orient='vertical',
+                                 command=text_area.yview)
+        # 横向
+        x_scroll = ttk.Scrollbar(text_frame, orient='horizontal',
+                                 command=text_area.xview)
+
+        y_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         text_area.pack(fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text_area.yview)
+        x_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        text_area.config(yscrollcommand=y_scroll.set,
+                         xscrollcommand=x_scroll.set)
 
         text_area.insert(tk.END, data)
         text_area.config(state=tk.DISABLED)
@@ -5936,20 +5943,21 @@ class EventDialog:
         raw_window.geometry("600x400")
 
         text_frame = ttk.Frame(raw_window)
-        text_frame.pack(fill=tk.BOTH, wrap='none', expand=True, padx=10, pady=10)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        text_area = tk.Text(text_frame, wrap=tk.WORD)
+        text_area = tk.Text(text_frame, wrap='none')
         RightClickMenu(text_area, widget_type="show")
-        text_area.pack(fill=tk.BOTH, expand=True)
 
         # 纵向
         y_scroll = ttk.Scrollbar(text_frame, orient='vertical',
                                  command=text_area.yview)
-        y_scroll.grid(row=0, column=1, sticky='ns')
         # 横向
         x_scroll = ttk.Scrollbar(text_frame, orient='horizontal',
                                  command=text_area.xview)
-        x_scroll.grid(row=1, column=0, sticky='ew')
+
+        y_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        text_area.pack(fill=tk.BOTH, expand=True)
+        x_scroll.pack(side=tk.BOTTOM, fill=tk.X)
         text_area.config(yscrollcommand=y_scroll.set,
                          xscrollcommand=x_scroll.set)
 
