@@ -4456,10 +4456,10 @@ class EventDialog:
 
         ttk.Button(button_frame, text="查看原始数据", command=self.show_raw_data).pack(side="right", padx=5)
 
-        # 初始化表单
-        self.set_initial_values()
         # 添加持续时间调整按钮
         self.add_duration_adjustment()
+        # 初始化表单
+        self.set_initial_values()
 
         self.root.protocol("WM_DELETE_WINDOW", self.cancel)
         self.root.wait_window(self.root)
@@ -5155,53 +5155,43 @@ class EventDialog:
             self.absolute_trigger_frame.grid()
 
     def toggle_allday_event(self):
-        """切换全天事件状态"""
         is_allday = self.allday_var.get()
 
-        # 启用/禁用时间选择控件
-        state = "disabled" if is_allday else "readonly"
+        # 原有逻辑
+        state = 'disabled' if is_allday else 'readonly'
         self.start_hour.config(state=state)
         self.start_minute.config(state=state)
         self.end_hour.config(state=state)
         self.end_minute.config(state=state)
-
-        # 启用/禁用时区选择
         self.start_timezone_combo.config(state=state)
         self.end_timezone_combo.config(state=state)
+        self.sync_timezone_check.config(state='disabled' if is_allday else 'normal')
 
-        # 禁用时区同步选项
-        self.sync_timezone_check.config(state="disabled" if is_allday else "normal")
+        # 新增：禁用/启用“快速调整持续时间”按钮
+        for child in self.duration_frame.winfo_children():
+            if isinstance(child, ttk.Button):
+                child.config(state='disabled' if is_allday else 'normal')
 
-        # 如果是全天事件，强制使用绝对时间提醒
+        # 以下保持原有代码不变
         if is_allday:
-            self.reminder_trigger_type.set("absolute")
+            self.reminder_trigger_type.set('absolute')
             self.toggle_reminder_trigger_type()
-
-            # 设置默认提醒时间为当天上午9点
             start_date = self.start_date.get_date()
             self.absolute_trigger_date.set_date(start_date)
-            self.absolute_trigger_hour.set("09")
-            self.absolute_trigger_minute.set("00")
+            self.absolute_trigger_hour.set('09')
+            self.absolute_trigger_minute.set('00')
             self.absolute_trigger_timezone.set(self.start_timezone_var.get())
-
-            # 禁用相对时间提醒控件
             self.reminder_time_frame.grid_remove()
-
-            # 显示提示信息
             if not hasattr(self, 'allday_reminder_hint'):
                 self.allday_reminder_hint = ttk.Label(
                     self.reminder_frame,
-                    text="全天事件只能使用指定时间提醒，默认设置为事件当天上午9点",
-                    foreground="blue"
-                )
-                self.allday_reminder_hint.pack(fill="both", expand=True, padx=5, pady=5)
+                    text='全天事件只能使用指定时间提醒，默认设置为事件当天上午9点',
+                    foreground='blue')
             self.allday_reminder_hint.pack()
         else:
-            # 启用相对时间提醒
             self.reminder_time_frame.grid()
-
-            # 隐藏提示信息
-            if hasattr(self, 'allday_reminder_hint'): self.allday_reminder_hint.pack_forget()
+            if hasattr(self, 'allday_reminder_hint'):
+                self.allday_reminder_hint.pack_forget()
 
     def parse_duration_for_display(self, duration_str):
         """解析持续时间用于显示"""
@@ -5254,16 +5244,16 @@ class EventDialog:
 
     def add_duration_adjustment(self):
         # 在时间设置标签页添加一个调整持续时间的按钮
-        duration_frame = ttk.Frame(self.time_frame)
-        duration_frame.grid(row=9, column=0, columnspan=3, sticky='w', padx=5, pady=5)
+        self.duration_frame = ttk.Frame(self.time_frame)
+        self.duration_frame.grid(row=9, column=0, columnspan=3, sticky='w', padx=5, pady=5)
 
-        ttk.Label(duration_frame, text="快速调整持续时间:").pack(side='left')
+        ttk.Label(self.duration_frame, text="快速调整持续时间:").pack(side='left')
 
         # 从数据库获取常用持续时间选项
         duration_options = ["1小时", "2小时", self.db.get_setting('default_duration', '1') + "小时", "半天", "全天"]
 
         for option in duration_options:
-            btn = ttk.Button(duration_frame, text=option,
+            btn = ttk.Button(self.duration_frame, text=option,
                              command=lambda o=option: self.apply_duration(o))
             btn.pack(side='left', padx=2)
 
@@ -5946,15 +5936,22 @@ class EventDialog:
         raw_window.geometry("600x400")
 
         text_frame = ttk.Frame(raw_window)
-        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        text_frame.pack(fill=tk.BOTH, wrap='none', expand=True, padx=10, pady=10)
 
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        text_area = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        text_area = tk.Text(text_frame, wrap=tk.WORD)
         RightClickMenu(text_area, widget_type="show")
         text_area.pack(fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text_area.yview)
+
+        # 纵向
+        y_scroll = ttk.Scrollbar(text_frame, orient='vertical',
+                                 command=text_area.yview)
+        y_scroll.grid(row=0, column=1, sticky='ns')
+        # 横向
+        x_scroll = ttk.Scrollbar(text_frame, orient='horizontal',
+                                 command=text_area.xview)
+        x_scroll.grid(row=1, column=0, sticky='ew')
+        text_area.config(yscrollcommand=y_scroll.set,
+                         xscrollcommand=x_scroll.set)
 
         text_area.insert(tk.END, ical)
         text_area.config(state=tk.DISABLED)
