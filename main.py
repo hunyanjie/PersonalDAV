@@ -2072,6 +2072,9 @@ CalDAV 配置:
         ttk.Label(info_frame, text=info_text, justify=tk.LEFT).pack(padx=5, pady=5)
 
     def setup_contacts_tab(self):
+        self.contact_sort_col = ''  # 当前排序列
+        self.contact_sort_rev = False  # 是否降序
+
         # 联系人列表
         list_frame = ttk.LabelFrame(self.contacts_tab, text="联系人列表")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -2121,6 +2124,11 @@ CalDAV 配置:
         self.contacts_tree.bind('<Double-1>', self.on_contact_double_click)
         self.contacts_tree.bind("<Control-a>", lambda e: self.select_all(e, self.contacts_tree))
 
+        # 给每一列绑定点击事件
+        for col in columns:
+            if col != "selected":
+                self.contacts_tree.heading(col, text=col, command=lambda c=col: self.sort_contacts_tree(c))
+
         # 添加自动滚动绑定
         self.contacts_tree.bind("<Motion>", self.on_contact_tree_motion)
 
@@ -2151,6 +2159,9 @@ CalDAV 配置:
         ttk.Button(btn_frame, text="刷新列表", command=self.refresh_contacts).pack(side=tk.LEFT, padx=5)
 
     def setup_calendar_tab(self):
+        self.event_sort_col = ''  # 当前排序列
+        self.event_sort_rev = False  # 是否降序
+
         # 事件列表
         list_frame = ttk.LabelFrame(self.calendar_tab, text="日历事件")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -2191,7 +2202,7 @@ CalDAV 配置:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # 添加全选复选框到表头
-        self.events_tree.heading("selected", command=self.toggle_all_events_selection)
+        self.events_tree.heading("selected", text="selected", command=self.toggle_all_events_selection)
 
         # 添加事件绑定
         self.events_tree.bind('<ButtonPress-1>', self.on_event_tree_click)
@@ -2199,6 +2210,11 @@ CalDAV 配置:
         self.events_tree.bind('<ButtonRelease-1>', self.on_event_tree_release)
         self.events_tree.bind('<Double-1>', self.on_event_double_click)
         self.events_tree.bind("<Control-a>", lambda e: self.select_all(e, self.events_tree))
+
+        # 给每一列绑定点击事件
+        for col in columns:
+            if col != "selected":
+                self.events_tree.heading(col, text=col, command=lambda c=col: self.sort_events_tree(c))
 
         # 添加自动滚动绑定
         self.events_tree.bind("<Motion>", self.on_event_tree_motion)
@@ -2227,6 +2243,88 @@ CalDAV 配置:
         ttk.Button(import_export_frame, text="导出选中", command=self.export_selected_events).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.LEFT, padx=5)
+
+    def sort_contacts_tree(self, col):
+        """排序事件列表"""
+
+        # 切换升/降序
+        if self.contact_sort_col == col:
+            self.contact_sort_rev = not self.contact_sort_rev
+        else:
+            self.contact_sort_col = col
+            self.contact_sort_rev = False
+
+        # 取出所有行数据
+        data = [(self.contacts_tree.set(k, col), k)
+                for k in self.contacts_tree.get_children('')]
+
+        # 对日期时间列做特殊处理，其余按字符串排序
+        if col in ('start', 'end'):
+            def try_parse(dt_str):
+                try:
+                    return datetime.fromisoformat(dt_str)
+                except Exception:
+                    return datetime.min
+
+            data.sort(key=lambda x: try_parse(x[0]),
+                      reverse=self.contact_sort_rev)
+        else:
+            data.sort(reverse=self.contact_sort_rev)
+
+        # 重新排列
+        for idx, (_, k) in enumerate(data):
+            self.contacts_tree.move(k, '', idx)
+
+        # 更新表头箭头
+        columns = ("selected", "uid", "name", "email", "phone")
+        for c in columns:
+            arrow = ''
+            if c == col:
+                arrow = ' ↓' if self.event_sort_rev else ' ↑'
+            text = {'selected': '✓', 'uid': 'ID', 'name': '姓名',
+                    'email': '邮箱', 'phone': '电话'}[c]
+            self.contacts_tree.heading(c, text=text + arrow)
+
+    def sort_events_tree(self, col):
+        """排序事件列表"""
+
+        # 切换升/降序
+        if self.event_sort_col == col:
+            self.event_sort_rev = not self.event_sort_rev
+        else:
+            self.event_sort_col = col
+            self.event_sort_rev = False
+
+        # 取出所有行数据
+        data = [(self.events_tree.set(k, col), k)
+                for k in self.events_tree.get_children('')]
+
+        # 对日期时间列做特殊处理，其余按字符串排序
+        if col in ('start', 'end'):
+            def try_parse(dt_str):
+                try:
+                    return datetime.fromisoformat(dt_str)
+                except Exception:
+                    return datetime.min
+
+            data.sort(key=lambda x: try_parse(x[0]),
+                      reverse=self.event_sort_rev)
+        else:
+            data.sort(reverse=self.event_sort_rev)
+
+        # 重新排列
+        for idx, (_, k) in enumerate(data):
+            self.events_tree.move(k, '', idx)
+
+        # 更新表头箭头
+        columns = ("selected", "uid", "summary", "start", "end")
+        for c in columns:
+            arrow = ''
+            if c == col:
+                arrow = ' ↓' if self.event_sort_rev else ' ↑'
+            text = {'selected': '✓', 'uid': 'ID', 'summary': '事件',
+                    'start': '开始时间', 'end': '结束时间'}[c]
+            self.events_tree.heading(c, text=text + arrow)
 
     def toggle_all_contacts_selection(self):
         """切换所有联系人的选择状态"""
@@ -2276,6 +2374,10 @@ CalDAV 配置:
         self.contact_drag_start = (event.x, event.y)
         self.contact_drag_item = item  # 保存起始行
         self.contact_dragging = False
+
+        # 如果点击的是表头且不是复选框列，不拦截事件，让排序命令生效
+        if region == "heading" and column != "#1":
+            return
 
         if region == "heading" and column == "#1":
             # 点击了表头复选框
@@ -2451,7 +2553,6 @@ CalDAV 配置:
         self.contact_drag_start = None
         self.contact_drag_item = None
         self.contact_dragging = False
-        return "break"
 
     def on_contact_tree_motion(self, event):
         """处理联系人列表鼠标移动事件 - 实现自动滚动"""
@@ -2481,6 +2582,10 @@ CalDAV 配置:
         self.event_drag_start = (event.x, event.y)
         self.event_drag_item = item  # 保存起始行
         self.event_dragging = False
+
+        # 如果点击的是表头且不是复选框列，不拦截事件，让排序命令生效
+        if region == "heading" and column != "#1":
+            return
 
         if region == "heading" and column == "#1":
             # 点击了表头复选框
@@ -2655,7 +2760,6 @@ CalDAV 配置:
         self.event_drag_start = None
         self.event_drag_item = None
         self.event_dragging = False
-        return "break"
 
     def on_event_tree_motion(self, event):
         """处理事件列表鼠标移动事件 - 实现自动滚动"""
@@ -2765,10 +2869,20 @@ CalDAV 配置:
 
     def on_contact_double_click(self, event):
         """双击联系人列表项时触发编辑"""
+        region = self.contacts_tree.identify("region", event.x, event.y)
+        column = self.contacts_tree.identify_column(event.x)
+        # 如果点击的是表头且不是复选框列，不拦截事件，让排序命令生效
+        if region == "heading" and column != "#1":
+            return
         self.edit_contact()
 
     def on_event_double_click(self, event):
         """双击事件列表项时触发编辑"""
+        region = self.events_tree.identify("region", event.x, event.y)
+        column = self.events_tree.identify_column(event.x)
+        # 如果点击的是表头且不是复选框列，不拦截事件，让排序命令生效
+        if region == "heading" and column != "#1":
+            return
         self.edit_event()
 
     def update_status_bar(self):
