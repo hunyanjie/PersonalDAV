@@ -1258,9 +1258,9 @@ class SettingsDialog(tk.Toplevel):
         self.create_server_settings(server_frame)
 
         # 日历设置标签页
-        calendar_frame = ttk.Frame(notebook)
-        notebook.add(calendar_frame, text="日历设置")
-        self.create_calendar_settings(calendar_frame)
+        # calendar_frame = ttk.Frame(notebook)
+        # notebook.add(calendar_frame, text="日历设置")
+        # self.create_calendar_settings(calendar_frame)
 
         # 日志设置标签页
         log_frame = ttk.Frame(notebook)
@@ -1973,46 +1973,46 @@ class SettingsDialog(tk.Toplevel):
         self.log_level_var.set(self.db.get_setting("log_level", "INFO"))
 
         # 日历设置
-        self.default_status_var.set(next((k for k, v in EventDialog.STATUS_MAPPING.items() if
-                                          v == self.db.get_setting("default_status", "CONFIRMED")), "已确认"))
-        self.default_version_var.set(self.db.get_setting("default_version", "2.0"))
-        self.default_duration_var.set(self.db.get_setting("default_duration", "1"))
-        self.default_sync_timezone_var.set(self.db.get_setting("default_sync_timezone", "True") == "True")
-        self.default_repeat_var.set(self.db.get_setting("default_repeat", "不重复"))
-        self.default_end_cond_var.set(self.db.get_setting("default_end_cond", "永不结束"))
-        self.default_end_count_var.set(self.db.get_setting("default_end_count", "5"))
-        self.default_priority_var.set(int(self.db.get_setting("default_priority", "5")))
-        self.default_transparency_var.set(next((k for k, v in EventDialog.TRANSPARENCY_MAPPING.items() if
-                                                v == self.db.get_setting("default_transparency", "OPAQUE")), "忙碌"))
-
-        # 提醒设置
-        self.default_reminder_type_var.set(self.db.get_setting("default_reminder_type", "显示"))
-        self.default_trigger_type_var.set(self.db.get_setting("default_trigger_type", "提前时间提醒"))
-        self.default_allday_reminder_time_var.set(self.db.get_setting("default_allday_reminder_time", "09:00"))
-        self.default_reminder_days_var.set(self.db.get_setting("default_reminder_days", "0"))
-        self.default_reminder_hours_var.set(self.db.get_setting("default_reminder_hours", "0"))
-        self.default_reminder_minutes_var.set(self.db.get_setting("default_reminder_minutes", "15"))
-        self.default_force_reminder_var.set(self.db.get_setting("default_force_reminder", "False") == "True")
-        preset_reminders = self.db.get_setting('preset_reminders', '').split(';')
-        for reminder in preset_reminders:
-            if reminder:
-                self.preset_reminders_listbox.insert('end', reminder)
-
-        preset_allday_reminders = self.db.get_setting('preset_allday_reminders', '').split(';')
-        for reminder in preset_allday_reminders:
-            if reminder:
-                self.preset_allday_reminders_listbox.insert('end', reminder)
-
-        # 加载自定义默认提醒
-        custom_reminders = self.db.get_setting('custom_default_reminders', '').split(';')
-        for reminder in custom_reminders:
-            if reminder:
-                self.custom_default_reminders_listbox.insert('end', reminder)
-
-        custom_allday_reminders = self.db.get_setting('custom_default_allday_reminders', '').split(';')
-        for reminder in custom_allday_reminders:
-            if reminder:
-                self.custom_allday_default_reminders_listbox.insert('end', reminder)
+        # self.default_status_var.set(next((k for k, v in EventDialog.STATUS_MAPPING.items() if
+        #                                   v == self.db.get_setting("default_status", "CONFIRMED")), "已确认"))
+        # self.default_version_var.set(self.db.get_setting("default_version", "2.0"))
+        # self.default_duration_var.set(self.db.get_setting("default_duration", "1"))
+        # self.default_sync_timezone_var.set(self.db.get_setting("default_sync_timezone", "True") == "True")
+        # self.default_repeat_var.set(self.db.get_setting("default_repeat", "不重复"))
+        # self.default_end_cond_var.set(self.db.get_setting("default_end_cond", "永不结束"))
+        # self.default_end_count_var.set(self.db.get_setting("default_end_count", "5"))
+        # self.default_priority_var.set(int(self.db.get_setting("default_priority", "5")))
+        # self.default_transparency_var.set(next((k for k, v in EventDialog.TRANSPARENCY_MAPPING.items() if
+        #                                         v == self.db.get_setting("default_transparency", "OPAQUE")), "忙碌"))
+        #
+        # # 提醒设置
+        # self.default_reminder_type_var.set(self.db.get_setting("default_reminder_type", "显示"))
+        # self.default_trigger_type_var.set(self.db.get_setting("default_trigger_type", "提前时间提醒"))
+        # self.default_allday_reminder_time_var.set(self.db.get_setting("default_allday_reminder_time", "09:00"))
+        # self.default_reminder_days_var.set(self.db.get_setting("default_reminder_days", "0"))
+        # self.default_reminder_hours_var.set(self.db.get_setting("default_reminder_hours", "0"))
+        # self.default_reminder_minutes_var.set(self.db.get_setting("default_reminder_minutes", "15"))
+        # self.default_force_reminder_var.set(self.db.get_setting("default_force_reminder", "False") == "True")
+        # preset_reminders = self.db.get_setting('preset_reminders', '').split(';')
+        # for reminder in preset_reminders:
+        #     if reminder:
+        #         self.preset_reminders_listbox.insert('end', reminder)
+        #
+        # preset_allday_reminders = self.db.get_setting('preset_allday_reminders', '').split(';')
+        # for reminder in preset_allday_reminders:
+        #     if reminder:
+        #         self.preset_allday_reminders_listbox.insert('end', reminder)
+        #
+        # # 加载自定义默认提醒
+        # custom_reminders = self.db.get_setting('custom_default_reminders', '').split(';')
+        # for reminder in custom_reminders:
+        #     if reminder:
+        #         self.custom_default_reminders_listbox.insert('end', reminder)
+        #
+        # custom_allday_reminders = self.db.get_setting('custom_default_allday_reminders', '').split(';')
+        # for reminder in custom_allday_reminders:
+        #     if reminder:
+        #         self.custom_allday_default_reminders_listbox.insert('end', reminder)
 
         # 日志设置
         self.enable_log_file_var.set(self.db.get_setting("enable_log_file", "True") == "True")
@@ -2026,58 +2026,58 @@ class SettingsDialog(tk.Toplevel):
         self.db.set_setting("default_port", self.default_port_var.get())
 
         # 日历设置
-        self.db.set_setting("default_status",
-                            EventDialog.STATUS_MAPPING.get(self.default_status_var.get(), "CONFIRMED"))
-        self.db.set_setting("default_version", self.default_version_var.get())
-        self.db.set_setting("default_duration", self.default_duration_var.get())
-        self.db.set_setting("default_sync_timezone", str(self.default_sync_timezone_var.get()))
-        self.db.set_setting("default_repeat", self.default_repeat_var.get())
-        self.db.set_setting("default_end_cond", self.default_end_cond_var.get())
-        self.db.set_setting("default_end_count", self.default_end_count_var.get())
-        self.db.set_setting("default_priority", str(self.default_priority_var.get()))
-        self.db.set_setting("default_transparency",
-                            EventDialog.STATUS_MAPPING.get(self.default_transparency_var.get(), "OPAQUE"))
-
+        # self.db.set_setting("default_status",
+        #                     EventDialog.STATUS_MAPPING.get(self.default_status_var.get(), "CONFIRMED"))
+        # self.db.set_setting("default_version", self.default_version_var.get())
+        # self.db.set_setting("default_duration", self.default_duration_var.get())
+        # self.db.set_setting("default_sync_timezone", str(self.default_sync_timezone_var.get()))
+        # self.db.set_setting("default_repeat", self.default_repeat_var.get())
+        # self.db.set_setting("default_end_cond", self.default_end_cond_var.get())
+        # self.db.set_setting("default_end_count", self.default_end_count_var.get())
+        # self.db.set_setting("default_priority", str(self.default_priority_var.get()))
+        # self.db.set_setting("default_transparency",
+        #                     EventDialog.STATUS_MAPPING.get(self.default_transparency_var.get(), "OPAQUE"))
+        #
         # 提醒设置
-        self.db.set_setting("default_reminder_type", self.default_reminder_type_var.get())
-        self.db.set_setting("default_trigger_type", self.default_trigger_type_var.get())
-        self.db.set_setting("default_allday_reminder_time", self.default_allday_reminder_time_var.get())
-        self.db.set_setting("default_reminder_days", self.default_reminder_days_var.get())
-        self.db.set_setting("default_reminder_hours", self.default_reminder_hours_var.get())
-        self.db.set_setting("default_reminder_minutes", self.default_reminder_minutes_var.get())
-        self.db.set_setting("default_force_reminder", str(self.default_force_reminder_var.get()))
-        preset_reminders = [self.preset_reminders_listbox.get(i) for i in range(self.preset_reminders_listbox.size())]
-        self.db.set_setting('preset_reminders', ';'.join(preset_reminders))
-
-        preset_allday_reminders = [self.preset_allday_reminders_listbox.get(i) for i in
-                                   range(self.preset_allday_reminders_listbox.size())]
-        self.db.set_setting('preset_allday_reminders', ';'.join(preset_allday_reminders))
-
+        # self.db.set_setting("default_reminder_type", self.default_reminder_type_var.get())
+        # self.db.set_setting("default_trigger_type", self.default_trigger_type_var.get())
+        # self.db.set_setting("default_allday_reminder_time", self.default_allday_reminder_time_var.get())
+        # self.db.set_setting("default_reminder_days", self.default_reminder_days_var.get())
+        # self.db.set_setting("default_reminder_hours", self.default_reminder_hours_var.get())
+        # self.db.set_setting("default_reminder_minutes", self.default_reminder_minutes_var.get())
+        # self.db.set_setting("default_force_reminder", str(self.default_force_reminder_var.get()))
+        # preset_reminders = [self.preset_reminders_listbox.get(i) for i in range(self.preset_reminders_listbox.size())]
+        # self.db.set_setting('preset_reminders', ';'.join(preset_reminders))
+        #
+        # preset_allday_reminders = [self.preset_allday_reminders_listbox.get(i) for i in
+        #                            range(self.preset_allday_reminders_listbox.size())]
+        # self.db.set_setting('preset_allday_reminders', ';'.join(preset_allday_reminders))
+        #
         # 保存全天事件默认设置
-        self.db.set_setting('default_allday', str(self.default_allday_var.get()))
-
+        # self.db.set_setting('default_allday', str(self.default_allday_var.get()))
+        #
         # 保存常规提醒默认设置
-        selected_reminders = [
-            self.default_reminders_listbox.get(i)
-            for i in self.default_reminders_listbox.curselection()
-        ]
-        self.db.set_setting('default_reminders', ';'.join(selected_reminders))
-
+        # selected_reminders = [
+        #     self.default_reminders_listbox.get(i)
+        #     for i in self.default_reminders_listbox.curselection()
+        # ]
+        # self.db.set_setting('default_reminders', ';'.join(selected_reminders))
+        #
         # 保存全天事件提醒默认设置
-        selected_allday_reminders = [
-            self.default_allday_reminders_listbox.get(i)
-            for i in self.default_allday_reminders_listbox.curselection()
-        ]
-        self.db.set_setting('default_allday_reminders', ';'.join(selected_allday_reminders))
-
+        # selected_allday_reminders = [
+        #     self.default_allday_reminders_listbox.get(i)
+        #     for i in self.default_allday_reminders_listbox.curselection()
+        # ]
+        # self.db.set_setting('default_allday_reminders', ';'.join(selected_allday_reminders))
+        #
         # 保存自定义默认提醒
-        custom_reminders = ';'.join(
-            [self.custom_default_reminders_listbox.get(i) for i in range(self.custom_default_reminders_listbox.size())])
-        self.db.set_setting('custom_default_reminders', custom_reminders)
-
-        custom_allday_reminders = ';'.join([self.custom_allday_default_reminders_listbox.get(i) for i in
-                                            range(self.custom_allday_default_reminders_listbox.size())])
-        self.db.set_setting('custom_default_allday_reminders', custom_allday_reminders)
+        # custom_reminders = ';'.join(
+        #     [self.custom_default_reminders_listbox.get(i) for i in range(self.custom_default_reminders_listbox.size())])
+        # self.db.set_setting('custom_default_reminders', custom_reminders)
+        #
+        # custom_allday_reminders = ';'.join([self.custom_allday_default_reminders_listbox.get(i) for i in
+        #                                     range(self.custom_allday_default_reminders_listbox.size())])
+        # self.db.set_setting('custom_default_allday_reminders', custom_allday_reminders)
 
         # 日志设置
         self.db.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
