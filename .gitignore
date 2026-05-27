@@ -196,3 +196,6 @@ cython_debug/
 # Other
 .idea/
 docs/
+
+dav_data.db
+dav_server.log

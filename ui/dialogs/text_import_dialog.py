@@ -28,6 +28,9 @@ class TextImportDialog(tk.Toplevel):
         sb_y.pack(side=tk.RIGHT, fill=tk.Y)
         self.text_area.config(yscrollcommand=sb_y.set)
 
+        sb_x = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=self.text_area.xview)
+        self.text_area.config(xscrollcommand=sb_x.set)
+
         btn_f = ttk.Frame(self); btn_f.pack(fill=tk.X, padx=10, pady=10)
         ttk.Button(btn_f, text="开始导入", command=self.ok).pack(side=tk.RIGHT, padx=5)
         ttk.Button(btn_f, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
@@ -40,8 +43,23 @@ class TextImportDialog(tk.Toplevel):
         self.destroy()
 
 def show_about(parent):
-    """1:1 还原关于对话框"""
+    """关于对话框"""
     from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_AUTHOR, SOFTWARE_DESCRIPTION
-    about_text = f"{SOFTWARE_NAME}\n版本: {SOFTWARE_VERSION}\n作者: {SOFTWARE_AUTHOR}\n\n{SOFTWARE_DESCRIPTION}\n\n基于 Python, Tkinter, vobject 构建。"
+    about_text = f"""{SOFTWARE_NAME} v{SOFTWARE_VERSION}
+
+{SOFTWARE_DESCRIPTION}
+
+作者: {SOFTWARE_AUTHOR}
+
+这是一个私人 CardDAV/CalDAV 服务程序，可以管理联系人和日历事件。
+
+功能特点:
+- 本地数据库存储
+- 支持 WebDAV 协议
+- 支持导入/导出 vCard 和 iCalendar 格式
+- 提供图形用户界面
+- 支持拖拽导入
+
+(c) hunyanjie 2024-2025"""
     from tkinter import messagebox
     messagebox.showinfo("关于", about_text, parent=parent)

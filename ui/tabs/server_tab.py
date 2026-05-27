@@ -44,14 +44,34 @@ class ServerTab(ttk.Frame):
         # 日志显示
         log_frame = ttk.LabelFrame(self, text="运行日志")
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
+
         self.log_text = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD)
         RightClickMenu(self.log_text, "text")
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
+
         scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_text.config(yscrollcommand=scrollbar.set)
+
+        # 客户端配置信息
+        info_frame = ttk.LabelFrame(self, text="客户端配置信息")
+        info_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        info_text = """CardDAV 配置:
+  服务器地址: http://localhost:8000/contacts/
+  用户名: (任意)
+  密码: (任意)
+
+CalDAV 配置:
+  服务器地址: http://localhost:8000/events/
+  用户名: (任意)
+  密码: (任意)
+
+在浏览器中测试:
+  http://localhost:8000/ - 查看服务信息
+  http://localhost:8000/contacts/ - 所有联系人
+  http://localhost:8000/events/ - 所有日历事件"""
+        ttk.Label(info_frame, text=info_text, justify=tk.LEFT, font=('Consolas', 9)).pack(padx=5, pady=5)
 
     def start_server(self):
         port = int(self.port_entry.get())

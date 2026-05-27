@@ -24,15 +24,18 @@ class GUIHandler(logging.Handler):
 def setup_logger(name=__name__, level=None, log_file=None):
     """配置日志记录器，支持文件滚动"""
     logger = logging.getLogger(name)
-    
+
     if level is None:
         level = DEFAULT_LOG_LEVEL
-    
+
     logger.setLevel(level)
 
     # 清除可能已有的处理器
     if logger.hasHandlers():
         logger.handlers.clear()
+
+    # 禁用向上传播到根日志器，防止重复输出
+    logger.propagate = False
 
     # 创建滚动文件处理器 (每个 10MB，保留 5 个)
     if log_file:

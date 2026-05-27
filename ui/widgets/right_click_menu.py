@@ -3,7 +3,7 @@ from tkinter import ttk
 from utils.logger import logger
 
 class RightClickMenu:
-    """通用的右键菜单封装 - 支持上下文感知"""
+    """通用的右键菜单封装 - 支持上下文感知，1:1 还原 main_old.py:1135-1231"""
     def __init__(self, widget, widget_type="normal"):
         self.widget = widget
         self.widget_type = widget_type
@@ -17,14 +17,16 @@ class RightClickMenu:
             logger.error(f"右键菜单注册失败: 类型 {type(widget)} 暂不支持")
 
     def create_base_menu(self):
-        """创建基础菜单项"""
+        """创建基础菜单项 - 1:1 还原"""
         self.menu.delete(0, tk.END)
         if isinstance(self.widget, ttk.Treeview):
-            # Treeview 上下文菜单
-            self.menu.add_command(label="编辑选中", command=lambda: self.widget.event_generate("<<TreeviewEdit>>"))
-            self.menu.add_command(label="删除选中", command=lambda: self.widget.event_generate("<<TreeviewDelete>>"))
+            # Treeview 上下文菜单 (main_old.py:1155-1159)
+            self.menu.add_command(label="编辑选中", command=self._handle_edit)
+            self.menu.add_command(label="删除选中", command=self._handle_delete)
             self.menu.add_separator()
-            self.menu.add_command(label="查看原始数据", command=lambda: self.widget.event_generate("<<TreeviewShowRaw>>"))
+            self.menu.add_command(label="导出选中", command=self._handle_export)
+            self.menu.add_separator()
+            self.menu.add_command(label="查看原始数据", command=self._handle_show_raw)
             self.menu.add_separator()
             self.menu.add_command(label="全选 (Ctrl+A)", command=self.select_all)
         else:
@@ -38,6 +40,22 @@ class RightClickMenu:
             self.menu.add_separator()
             self.menu.add_command(label="删除 (Del)", command=self.delete)
             self.menu.add_command(label="全选 (Ctrl+A)", command=self.select_all)
+
+    def _handle_edit(self):
+        """处理 Treeview 编辑选中"""
+        self.widget.event_generate("<<TreeviewEdit>>")
+
+    def _handle_delete(self):
+        """处理 Treeview 删除选中"""
+        self.widget.event_generate("<<TreeviewDelete>>")
+
+    def _handle_export(self):
+        """处理 Treeview 导出选中"""
+        self.widget.event_generate("<<TreeviewExport>>")
+
+    def _handle_show_raw(self):
+        """处理 Treeview 查看原始数据"""
+        self.widget.event_generate("<<TreeviewShowRaw>>")
 
     def show_menu(self, event):
         """显示右键菜单"""
@@ -54,18 +72,19 @@ class RightClickMenu:
             self.menu.grab_release()
 
     def update_menu_state(self):
-        """更新菜单项状态"""
+        """更新菜单项状态 - 1:1 还原 main_old.py:1168-1210"""
         if isinstance(self.widget, ttk.Treeview):
             has_sel = bool(self.widget.selection())
             state = tk.NORMAL if has_sel else tk.DISABLED
             try:
                 self.menu.entryconfigure("编辑选中", state=state)
                 self.menu.entryconfigure("删除选中", state=state)
+                self.menu.entryconfigure("导出选中", state=state)
                 self.menu.entryconfigure("查看原始数据", state=state)
             except: pass
             return
 
-        # 标准控件状态逻辑 (同前...)
+        # 标准控件状态逻辑 (main_old.py:1168-1210)
         if isinstance(self.widget, tk.Text) and self.widget_type == "text":
             # 检测是否可以撤销
             try:

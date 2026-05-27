@@ -2,13 +2,15 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import uuid
 import vobject
-from tkcalendar import DateEntry, Calendar
+from tkcalendar import Calendar
 from ui.widgets.right_click_menu import RightClickMenu
-from utils.encoding_helper import smart_quoted_printable_encode, should_encode
+from utils.encoding_helper import should_encode
+import quopri
+
 
 class ContactDialog(tk.Toplevel):
-    """添加/编辑联系人对话框 - 1:1 深度还原 vCard 逻辑与 UX 优化"""
-    
+    """添加/编辑联系人对话框 - 完整功能实现"""
+
     FIELD_MAP = {
         'ORG': '组织/公司',
         'TITLE': '职位',
@@ -22,7 +24,7 @@ class ContactDialog(tk.Toplevel):
     def __init__(self, parent, initial=None, vcard=None):
         super().__init__(parent)
         self.title("添加/编辑联系人")
-        self.geometry("600x650")
+        self.geometry("650x750")
         self.transient(parent)
         self.grab_set()
 
@@ -40,42 +42,73 @@ class ContactDialog(tk.Toplevel):
         f = ttk.Frame(self); f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # 基础字段
-        ttk.Label(f, text="UID:").grid(row=0, column=0, sticky="w")
-        self.uid_entry = ttk.Entry(f, width=40); self.uid_entry.grid(row=0, column=1, pady=5, sticky="we")
+        ttk.Label(f, text="UID:").grid(row=0, column=0, sticky="w", pady=3)
+        self.uid_entry = ttk.Entry(f, width=40); self.uid_entry.grid(row=0, column=1, columnspan=2, pady=3, sticky="we")
         RightClickMenu(self.uid_entry)
 
-        ttk.Label(f, text="姓名*:").grid(row=1, column=0, sticky="w")
-        self.name_entry = ttk.Entry(f, width=40); self.name_entry.grid(row=1, column=1, pady=5, sticky="we")
+        ttk.Label(f, text="姓名*:").grid(row=1, column=0, sticky="w", pady=3)
+        self.name_entry = ttk.Entry(f, width=40); self.name_entry.grid(row=1, column=1, columnspan=2, pady=3, sticky="we")
         RightClickMenu(self.name_entry)
 
-        ttk.Label(f, text="邮箱:").grid(row=2, column=0, sticky="w")
-        self.email_entry = ttk.Entry(f, width=40); self.email_entry.grid(row=2, column=1, pady=5, sticky="we")
-        ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=2, column=2, padx=5)
+        # 拼音字段
+        ttk.Label(f, text="名字拼音:").grid(row=2, column=0, sticky="w", pady=3)
+        self.first_phonetic_entry = ttk.Entry(f, width=20); self.first_phonetic_entry.grid(row=2, column=1, sticky="w", pady=3)
+        RightClickMenu(self.first_phonetic_entry)
+
+        ttk.Label(f, text="姓氏拼音:").grid(row=2, column=2, sticky="w", padx=(10,0), pady=3)
+        self.last_phonetic_entry = ttk.Entry(f, width=20); self.last_phonetic_entry.grid(row=2, column=3, sticky="we", pady=3)
+        RightClickMenu(self.last_phonetic_entry)
+
+        ttk.Label(f, text="邮箱:").grid(row=3, column=0, sticky="w", pady=3)
+        self.email_entry = ttk.Entry(f, width=40); self.email_entry.grid(row=3, column=1, columnspan=3, pady=3, sticky="we")
+        ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=4, column=1, sticky="w")
         RightClickMenu(self.email_entry)
 
-        ttk.Label(f, text="电话:").grid(row=3, column=0, sticky="w")
-        self.phone_entry = ttk.Entry(f, width=40); self.phone_entry.grid(row=3, column=1, pady=5, sticky="we")
-        ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=3, column=2, padx=5)
+        ttk.Label(f, text="电话:").grid(row=5, column=0, sticky="w", pady=3)
+        self.phone_entry = ttk.Entry(f, width=40); self.phone_entry.grid(row=5, column=1, columnspan=3, pady=3, sticky="we")
+        ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=6, column=1, sticky="w")
         RightClickMenu(self.phone_entry)
 
-        # 生日字段 UX 优化：支持留空
-        ttk.Label(f, text="生日:").grid(row=4, column=0, sticky="w")
-        b_f = ttk.Frame(f); b_f.grid(row=4, column=1, sticky="w", pady=5)
+        # 组织/公司
+        ttk.Label(f, text="组织/公司:").grid(row=7, column=0, sticky="w", pady=3)
+        self.org_entry = ttk.Entry(f, width=40); self.org_entry.grid(row=7, column=1, columnspan=3, pady=3, sticky="we")
+        RightClickMenu(self.org_entry)
+
+        # 职位
+        ttk.Label(f, text="职位:").grid(row=8, column=0, sticky="w", pady=3)
+        self.title_entry = ttk.Entry(f, width=40); self.title_entry.grid(row=8, column=1, columnspan=3, pady=3, sticky="we")
+        RightClickMenu(self.title_entry)
+
+        # 网址
+        ttk.Label(f, text="网址:").grid(row=9, column=0, sticky="w", pady=3)
+        self.url_entry = ttk.Entry(f, width=40); self.url_entry.grid(row=9, column=1, columnspan=3, pady=3, sticky="we")
+        RightClickMenu(self.url_entry)
+
+        # 地址
+        ttk.Label(f, text="地址:").grid(row=10, column=0, sticky="nw", pady=3)
+        self.adr_text = tk.Text(f, height=3, width=40); self.adr_text.grid(row=10, column=1, columnspan=3, pady=3, sticky="nsew")
+        RightClickMenu(self.adr_text, "text")
+
+        # 生日
+        ttk.Label(f, text="生日:").grid(row=11, column=0, sticky="w", pady=3)
+        b_f = ttk.Frame(f); b_f.grid(row=11, column=1, columnspan=2, sticky="w", pady=3)
         self.birthday_var = tk.StringVar()
         self.birthday_entry = ttk.Entry(b_f, textvariable=self.birthday_var, width=15)
         self.birthday_entry.pack(side=tk.LEFT)
-        ttk.Button(b_f, text="📅", width=3, command=self.pick_date).pack(side=tk.LEFT, padx=5)
-        ttk.Button(b_f, text="清除", width=5, command=lambda: self.birthday_var.set("")).pack(side=tk.LEFT)
+        ttk.Button(b_f, text="选择", width=6, command=self.pick_date).pack(side=tk.LEFT, padx=5)
+        ttk.Button(b_f, text="清除", width=6, command=lambda: self.birthday_var.set("")).pack(side=tk.LEFT)
 
-        ttk.Label(f, text="备注:").grid(row=5, column=0, sticky="w")
-        self.note_entry = ttk.Entry(f, width=40); self.note_entry.grid(row=5, column=1, pady=5, sticky="we")
-        RightClickMenu(self.note_entry)
+        # 备注
+        ttk.Label(f, text="备注:").grid(row=12, column=0, sticky="nw", pady=3)
+        self.note_text = tk.Text(f, height=4, width=40); self.note_text.grid(row=12, column=1, columnspan=3, pady=3, sticky="nsew")
+        RightClickMenu(self.note_text, "text")
 
-        # 扩展字段
-        ttk.Label(f, text="其他 vCard 字段:").grid(row=6, column=0, sticky="nw")
-        self.other_text = tk.Text(f, height=12, width=50); self.other_text.grid(row=6, column=1, pady=5, sticky="nsew")
+        # 其他 vCard 字段
+        sep = ttk.Separator(f, orient='horizontal'); sep.grid(row=13, column=0, columnspan=4, sticky='ew', pady=10)
+        ttk.Label(f, text="其他 vCard 字段:").grid(row=14, column=0, sticky="nw", pady=3)
+        self.other_text = tk.Text(f, height=6, width=40); self.other_text.grid(row=14, column=1, columnspan=3, pady=3, sticky="nsew")
         RightClickMenu(self.other_text, "text")
-        ttk.Label(f, text="(格式: 标签: 内容)", foreground="gray").grid(row=7, column=1, sticky="w")
+        ttk.Label(f, text="(格式: 标签: 内容，如: X-CUSTOM: value)", foreground="gray").grid(row=15, column=1, columnspan=3, sticky="w")
 
         btn_f = ttk.Frame(self); btn_f.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
         ttk.Button(btn_f, text="确定", command=self.ok).pack(side=tk.RIGHT, padx=5)
@@ -93,57 +126,102 @@ class ContactDialog(tk.Toplevel):
         self.name_entry.insert(0, self.initial.get('name', ''))
         self.email_entry.insert(0, self.initial.get('email', ''))
         self.phone_entry.insert(0, self.initial.get('phone', ''))
-        
+
         if self.vcard:
             others = []
-            standard = ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'VERSION', 'PHOTO', 'BDAY', 'NOTE']
+            standard = ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'VERSION', 'PHOTO', 'BDAY', 'NOTE', 'ORG', 'TITLE', 'URL', 'ADR']
+
             for child in self.vcard.getChildren():
                 name = child.name.upper()
-                if name not in standard:
+
+                # 处理标准字段
+                if name == 'ORG':
+                    self.org_entry.insert(0, child.value)
+                elif name == 'TITLE':
+                    self.title_entry.insert(0, child.value)
+                elif name == 'URL':
+                    self.url_entry.insert(0, child.value)
+                elif name == 'ADR':
+                    self.adr_text.insert("1.0", child.value)
+                elif name == 'X-PHONETIC-FIRST-NAME':
+                    self.first_phonetic_entry.insert(0, child.value)
+                elif name == 'X-PHONETIC-LAST-NAME':
+                    self.last_phonetic_entry.insert(0, child.value)
+                elif name == 'NOTE':
+                    self.note_text.insert("1.0", child.value)
+                elif name == 'BDAY':
+                    self.birthday_var.set(child.value)
+                elif name not in standard:
                     label = self.FIELD_MAP.get(name, name)
                     others.append(f"{label}: {child.value}")
-                if name == 'NOTE':
-                    self.note_entry.delete(0, tk.END)
-                    self.note_entry.insert(0, child.value)
-                if name == 'BDAY':
-                    self.birthday_var.set(child.value)
+
             self.other_text.insert(tk.END, "\n".join(others))
 
     def show_raw(self):
         if not self.vcard: return
         w = tk.Toplevel(self); w.title("vCard 源码")
-        t = tk.Text(w); t.pack(fill=tk.BOTH, expand=True)
+        t = tk.Text(w, wrap=tk.NONE)
+        t.pack(fill=tk.BOTH, expand=True)
+        scroll_h = ttk.Scrollbar(w, orient=tk.HORIZONTAL, command=t.xview)
+        scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL, command=t.yview)
+        t.config(xscrollcommand=scroll_h.set, yscrollcommand=scroll_v.set)
+        scroll_h.pack(side=tk.BOTTOM, fill=tk.X)
+        scroll_v.pack(side=tk.RIGHT, fill=tk.Y)
         t.insert(tk.END, self.vcard.serialize()); t.config(state=tk.DISABLED)
 
     def encode_text(self, text):
         if not text: return ""
         if not should_encode(text): return text
-        import quopri
         return f"ENCODING=QUOTED-PRINTABLE;CHARSET=UTF-8:{quopri.encodestring(text.encode('utf-8')).decode('utf-8')}"
 
     def ok(self):
         if not self.name_entry.get(): messagebox.showerror("错误", "姓名不能为空"); return
-        
+
         v = vobject.vCard()
         v.add('fn').value = self.name_entry.get()
         v.add('uid').value = self.uid_entry.get()
-        
-        # 1:1 还原多项处理
+
+        # 处理姓名各部分
+        n = v.add('n')
+        parts = self.name_entry.get().split()
+        n.value = vobject.vcard.Name(given=' '.join(parts[1:]) if len(parts) > 1 else '',
+                                       family=parts[0] if parts else '')
+
+        # 处理多邮箱
         for e in self.email_entry.get().split(';'):
             if e.strip(): v.add('email').value = e.strip()
+        # 处理多电话
         for p in self.phone_entry.get().split(';'):
             if p.strip(): v.add('tel').value = p.strip()
-            
-        if self.note_entry.get(): v.add('note').value = self.note_entry.get()
+
+        # 组织/公司
+        if self.org_entry.get(): v.add('org').value = [self.org_entry.get()]
+        # 职位
+        if self.title_entry.get(): v.add('title').value = self.title_entry.get()
+        # 网址
+        if self.url_entry.get(): v.add('url').value = self.url_entry.get()
+        # 地址
+        if self.adr_text.get("1.0", "end-1c").strip():
+            adr = v.add('adr')
+            adr.value = vobject.vcard.Address(self.adr_text.get("1.0", "end-1c").strip())
+        # 拼音
+        if self.first_phonetic_entry.get():
+            v.add('x-phonetic-first-name').value = self.first_phonetic_entry.get()
+        if self.last_phonetic_entry.get():
+            v.add('x-phonetic-last-name').value = self.last_phonetic_entry.get()
+        # 备注
+        if self.note_text.get("1.0", "end-1c").strip():
+            v.add('note').value = self.note_text.get("1.0", "end-1c").strip()
+        # 生日
         if self.birthday_var.get(): v.add('bday').value = self.birthday_var.get()
-        
-        # 处理扩展字段回写
+
+        # 处理其他扩展字段
         others = self.other_text.get("1.0", "end-1c").strip().splitlines()
         for line in others:
             if ":" in line:
                 label, val = line.split(":", 1)
                 key = self.REV_FIELD_MAP.get(label.strip(), label.strip().upper())
-                if key not in ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'BDAY', 'NOTE']:
+                if key not in ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'BDAY', 'NOTE', 'ORG', 'TITLE', 'URL', 'ADR', 'X-PHONETIC-FIRST-NAME', 'X-PHONETIC-LAST-NAME']:
                     try: v.add(key.lower()).value = val.strip()
                     except: pass
 

@@ -4,7 +4,7 @@ from datetime import datetime
 from ui.widgets.right_click_menu import RightClickMenu
 
 class ProgressWindow(tk.Toplevel):
-    """通用的进度显示窗口"""
+    """通用的进度显示窗口 - 1:1 还原统计看板"""
     def __init__(self, parent, title, cancel_callback=None):
         super().__init__(parent)
         self.title(title)
@@ -28,13 +28,15 @@ class ProgressWindow(tk.Toplevel):
         self.progress_bar = ttk.Progressbar(self, variable=self.progress_var, maximum=100)
         self.progress_bar.pack(fill=tk.X, padx=20, pady=5)
 
-        # 1:1 还原统计看板
+        # 1:1 还原统计看板 (main_old.py:929-963)
         stats_frame = ttk.Frame(self)
         stats_frame.pack(fill=tk.X, padx=20, pady=5)
         
         self.stat_vars = {
-            'new': tk.IntVar(value=0), 'updated': tk.IntVar(value=0),
-            'unchanged': tk.IntVar(value=0), 'failed': tk.IntVar(value=0)
+            'new': tk.IntVar(value=0),
+            'updated': tk.IntVar(value=0),
+            'unchanged': tk.IntVar(value=0),
+            'failed': tk.IntVar(value=0)
         }
         
         colors = {'new': 'green', 'updated': 'blue', 'unchanged': 'gray', 'failed': 'red'}

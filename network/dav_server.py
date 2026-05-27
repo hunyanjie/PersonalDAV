@@ -129,6 +129,92 @@ class DAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_error(500, str(e))
 
+    def do_HEAD(self):
+        """处理 HEAD 请求 - 1:1 还原 main_old.py 缺失方法"""
+        try:
+            self.log_message(f"处理HEAD请求: {self.path}")
+            
+            if self.path.startswith("/contacts/") and self.path.endswith(".vcf"):
+                uid = os.path.basename(self.path).replace(".vcf", "")
+                vcard = self.contact_service.get_contact(uid)
+                if vcard:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/vcard')
+                    self.send_header('Content-Length', str(len(vcard.encode('utf-8'))))
+                    self.end_headers()
+                else:
+                    self._send_error(404, "Contact not found")
+            elif self.path.startswith("/events/") and self.path.endswith(".ics"):
+                uid = os.path.basename(self.path).replace(".ics", "")
+                event = self.event_service.get_event(uid)
+                if event:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/calendar')
+                    self.send_header('Content-Length', str(len(event.encode('utf-8'))))
+                    self.end_headers()
+                else:
+                    self._send_error(404, "Event not found")
+            else:
+                self._send_error(404)
+        except Exception as e:
+            self._send_error(500, str(e))
+
+    def do_DELETE(self):
+        """处理 DELETE 请求 - 1:1 还原 main_old.py 缺失方法"""
+        try:
+            self.log_message(f"处理DELETE请求: {self.path}")
+            
+            if self.path.startswith("/contacts/"):
+                uid = os.path.basename(self.path).replace(".vcf", "")
+                # 删除联系人
+                from database.repositories.contact_repository import ContactRepository
+                repo = ContactRepository()
+                if repo.delete(uid):
+                    self.send_response(204)
+                    self.end_headers()
+                else:
+                    self._send_error(404, "Contact not found")
+            elif self.path.startswith("/events/"):
+                uid = os.path.basename(self.path).replace(".ics", "")
+                # 删除事件
+                from database.repositories.event_repository import EventRepository
+                repo = EventRepository()
+                if repo.delete(uid):
+                    self.send_response(204)
+                    self.end_headers()
+                else:
+                    self._send_error(404, "Event not found")
+            else:
+                self._send_error(404)
+        except Exception as e:
+            self._send_error(500, str(e))
+
+    def do_POST(self):
+        """处理 POST 请求 - 用于表单提交"""
+        try:
+            self.log_message(f"处理POST请求: {self.path}")
+            content_length = int(self.headers.get('Content-Length', 0))
+            data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ""
+            
+            # 处理联系人创建
+            if self.path.startswith("/contacts/"):
+                uid = os.path.basename(self.path).replace(".vcf", "")
+                self.contact_service.add_contact(data)
+                self.send_response(201)
+                self.end_headers()
+                self.wfile.write(f"Contact {uid} created".encode())
+            # 处理事件创建
+            elif self.path.startswith("/events/"):
+                uid = os.path.basename(self.path).replace(".ics", "")
+                self.event_service.add_event(data)
+                self.send_response(201)
+                self.end_headers()
+                self.wfile.write(f"Event {uid} created".encode())
+            else:
+                self._send_error(404)
+        except Exception as e:
+            self._send_error(500, str(e))
+
     def _send_error(self, code, message=None):
         self.send_response(code)
         self.end_headers()

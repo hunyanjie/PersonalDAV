@@ -28,11 +28,23 @@ class WebDAVImportLogic:
         """获取文件列表"""
         return self.client.list(self.options.get('webdav_root', '/'))
 
-    def download_file(self, remote_path, local_path):
-        """下载单个文件"""
-        def progress_callback(current, total):
+    def download_file(self, remote_path, local_path, progress_callback=None):
+        """下载单个文件 - 支持进度回调
+        
+        Args:
+            remote_path: 远程文件路径
+            local_path: 本地保存路径
+            progress_callback: 可选的进度回调函数(current, total) -> bool
+        """
+        def internal_callback(current, total):
             if self.cancel_event.is_set():
                 raise Exception('下载被用户取消')
+            # 调用外部进度回调
+            if progress_callback:
+                try:
+                    progress_callback(current, total)
+                except Exception as e:
+                    logger.warning(f"进度回调错误: {e}")
             return True
 
         with self.lock:
@@ -44,7 +56,7 @@ class WebDAVImportLogic:
             self.client.download_sync(
                 remote_path=remote_path,
                 local_path=local_path,
-                callback=progress_callback
+                callback=internal_callback
             )
             return True
         except Exception as e:

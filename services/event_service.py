@@ -65,9 +65,8 @@ class EventService:
         except: return False
 
     def generate_calendar_wrapper(self, vevents_str_list: list) -> str:
-        header = [
-            "BEGIN:VCALENDAR",
-            "VERSION:2.0",
-            f"PRODID:-//{SOFTWARE_NAME}//{SOFTWARE_VERSION}ZH-CN"
-        ]
-        return "\n".join(header + vevents_str_list + ["END:VCALENDAR"])
+        """将 VEVENT 字符串列表包装成完整的 iCalendar 文件"""
+        header = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//PrivateDAV//1.2//ZH-CN\n"
+        # 直接拼接，纯 VEVENT 数据已包含 \r\n，统一转为 \n 避免 Windows 双换行
+        events = "".join(vevent.strip() for vevent in vevents_str_list if vevent.strip()).replace("\r\n", "\n")
+        return f"{header}{events}END:VCALENDAR\n"
