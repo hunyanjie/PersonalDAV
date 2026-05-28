@@ -43,8 +43,8 @@ class BaseTreeTab(ttk.Frame):
         self.tree.bind("<<TreeviewExport>>", lambda e: self.export_selected())
         self.tree.bind("<<TreeviewShowRaw>>", lambda e: self.show_raw())
         self.tree.bind("<<TreeviewDelete>>", lambda e: self._on_delete())
-        self.tree.bind("<Control-a>", self._select_all)
-        self.tree.bind("<Delete>", lambda e: self._on_delete())
+        self.tree.bind("<Control-a>", self.select_all)
+        self.tree.bind("<Delete>", lambda e: self.delete_selected())
         
         # 保存编辑和删除回调
         self._edit_callback = on_edit_callback
@@ -129,12 +129,16 @@ class BaseTreeTab(ttk.Frame):
     #     """处理鼠标移动事件（备用）"""
     #     TreeviewScroller.handle_drag_scroll(self.tree, event)
 
-    def _select_all(self, event):
+    def select_all(self, event=None):
         """全选"""
         items = self.tree.get_children()
         self.tree.selection_set(items)
         self._update_checkboxes(items)
         return "break"
+
+    def delete_selected(self):
+        """执行删除逻辑的外部入口"""
+        self._on_delete()
 
     def toggle_all_selection(self):
         """切换全选状态"""

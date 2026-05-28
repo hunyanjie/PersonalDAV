@@ -701,9 +701,14 @@ class EventDialog:
         time_frame = ttk.Frame(main_frame)
         time_frame.grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=10)
 
-        days_var = tk.StringVar(value="0")
-        hours_var = tk.StringVar(value="0")
-        minutes_var = tk.StringVar(value="15")
+        # 从数据库加载默认偏移量
+        def_days = self.db.get_setting('default_reminder_days', '0') if self.db else "0"
+        def_hours = self.db.get_setting('default_reminder_hours', '0') if self.db else "0"
+        def_mins = self.db.get_setting('default_reminder_minutes', '15') if self.db else "15"
+
+        days_var = tk.StringVar(value=def_days)
+        hours_var = tk.StringVar(value=def_hours)
+        minutes_var = tk.StringVar(value=def_mins)
 
         ttk.Label(time_frame, text="天:").grid(row=0, column=0)
         ttk.Spinbox(time_frame, from_=0, to=365, textvariable=days_var, width=3).grid(row=0, column=1, padx=2)
@@ -748,6 +753,26 @@ class EventDialog:
                 abs_frame.grid()
         trigger_type.trace("w", lambda *args: toggle_trigger())
 
+        # 添加额外字段到对话框
+        extra_frame = ttk.LabelFrame(dialog, text="扩展设置")
+        extra_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        audio_attach_entry = ttk.Entry(extra_frame, width=40)
+        ttk.Label(extra_frame, text="音频文件:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        audio_attach_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+
+        email_attendee_entry = ttk.Entry(extra_frame, width=40)
+        ttk.Label(extra_frame, text="收件人:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        email_attendee_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+
+        email_summary_entry = ttk.Entry(extra_frame, width=40)
+        ttk.Label(extra_frame, text="邮件主题:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        email_summary_entry.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+
+        email_description = tk.Text(extra_frame, height=3, width=40)
+        ttk.Label(extra_frame, text="邮件正文:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
+        email_description.grid(row=3, column=1, sticky="nsew", padx=5, pady=5)
+
         # 填充现有数据
         if index >= 0:
             alarm = self.alarms[index]
@@ -783,26 +808,6 @@ class EventDialog:
                 email_summary_entry.insert(0, decode_ical_value(alarm.get('summary')))
             if alarm.get('description'):
                 email_description.insert("1.0", decode_ical_value(alarm.get('description')))
-
-        # 添加额外字段到对话框
-        extra_frame = ttk.LabelFrame(dialog, text="扩展设置")
-        extra_frame.pack(fill=tk.X, padx=10, pady=5)
-
-        audio_attach_entry = ttk.Entry(extra_frame, width=40)
-        ttk.Label(extra_frame, text="音频文件:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        audio_attach_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-
-        email_attendee_entry = ttk.Entry(extra_frame, width=40)
-        ttk.Label(extra_frame, text="收件人:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        email_attendee_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-
-        email_summary_entry = ttk.Entry(extra_frame, width=40)
-        ttk.Label(extra_frame, text="邮件主题:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        email_summary_entry.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
-
-        email_description = tk.Text(extra_frame, height=3, width=40)
-        ttk.Label(extra_frame, text="邮件正文:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
-        email_description.grid(row=3, column=1, sticky="nsew", padx=5, pady=5)
 
         def save():
             action_map_rev = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}

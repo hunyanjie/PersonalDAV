@@ -166,20 +166,14 @@ class DAVHandler(BaseHTTPRequestHandler):
             
             if self.path.startswith("/contacts/"):
                 uid = os.path.basename(self.path).replace(".vcf", "")
-                # 删除联系人
-                from database.repositories.contact_repository import ContactRepository
-                repo = ContactRepository()
-                if repo.delete(uid):
+                if self.contact_service.delete_contact(uid):
                     self.send_response(204)
                     self.end_headers()
                 else:
                     self._send_error(404, "Contact not found")
             elif self.path.startswith("/events/"):
                 uid = os.path.basename(self.path).replace(".ics", "")
-                # 删除事件
-                from database.repositories.event_repository import EventRepository
-                repo = EventRepository()
-                if repo.delete(uid):
+                if self.event_service.delete_event(uid):
                     self.send_response(204)
                     self.end_headers()
                 else:

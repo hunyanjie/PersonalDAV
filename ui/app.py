@@ -3,7 +3,7 @@ from tkinter import ttk, messagebox
 import queue
 import logging
 import webbrowser
-from tkinterdnd2 import TkinterDnD
+from tkinterdnd2 import TkinterDnD, DND_FILES
 from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
@@ -57,19 +57,15 @@ class DAVServerApp:
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
-        tab_index = self.notebook.index("current")
-        if tab_index == 1: # 联系人
-            self.contacts_tab.delete_contact()
-        elif tab_index == 2: # 日历
-            self.calendar_tab.delete_event()
+        current_tab = self.notebook.nametowidget(self.notebook.select())
+        if hasattr(current_tab, 'delete_selected'):
+            current_tab.delete_selected()
 
     def on_global_select_all(self, event):
         """全局全选快捷键"""
-        tab_index = self.notebook.index("current")
-        if tab_index == 1:
-            self.contacts_tab.select_all(event)
-        elif tab_index == 2:
-            self.calendar_tab.select_all(event)
+        current_tab = self.notebook.nametowidget(self.notebook.select())
+        if hasattr(current_tab, 'select_all'):
+            current_tab.select_all(event)
 
     def setup_global_dnd(self):
         """设置全局文件拖拽支持 - 1:1 还原 main_old.py"""

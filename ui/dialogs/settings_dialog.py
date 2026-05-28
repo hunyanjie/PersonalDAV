@@ -50,7 +50,7 @@ class SettingsDialog(tk.Toplevel):
         r_t = ttk.Frame(nb); nb.add(r_t, text="提醒设置")
         p_t = ttk.Frame(nb); nb.add(p_t, text="预设提醒")
 
-        # ==================== 基本设置 ====================
+        # ==================== 基本设置 (b_t) ====================
         ttk.Label(b_t, text="默认事件状态:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.default_status_var = tk.StringVar()
         ttk.Combobox(b_t, textvariable=self.default_status_var, values=list(EventDialog.STATUS_MAPPING.keys()), state="readonly").grid(row=0, column=1, sticky="w")
@@ -99,36 +99,64 @@ class SettingsDialog(tk.Toplevel):
         self.default_force_reminder_var = tk.BooleanVar()
         ttk.Checkbutton(b_t, text="默认勾选强制提醒", variable=self.default_force_reminder_var).grid(row=11, column=0, columnspan=2, sticky="w", pady=5)
 
-        # ==================== 提醒设置 ====================
-        ttk.Label(r_t, text="提醒说明:").grid(row=0, column=0, columnspan=2, padx=5, pady=10, sticky="w")
-        ttk.Label(r_t, text="详细提醒设置请在新建事件时通过\"添加提醒\"按钮配置", foreground="gray").grid(row=1, column=0, columnspan=2, padx=5, sticky="w")
+        # ==================== 提醒设置 (r_t) ====================
+        config_f = ttk.LabelFrame(r_t, text="全局默认提醒参数")
+        config_f.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
 
-        # 预设提醒列表 - 常规
-        ttk.Label(r_t, text="预设提醒列表 (常规事件):").grid(row=2, column=0, padx=5, pady=(15,0), sticky="w")
+        ttk.Label(config_f, text="默认提醒类型:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.default_reminder_type_var = tk.StringVar()
+        ttk.Combobox(config_f, textvariable=self.default_reminder_type_var, values=["显示", "声音", "邮件"], state="readonly", width=10).grid(row=0, column=1, sticky="w")
+
+        ttk.Label(config_f, text="默认触发方式:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.default_trigger_type_var = tk.StringVar()
+        ttk.Combobox(config_f, textvariable=self.default_trigger_type_var, values=["提前时间提醒", "指定时间提醒"], state="readonly", width=12).grid(row=1, column=1, sticky="w")
+
+        ttk.Label(config_f, text="全天日程默认提醒时间:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.default_allday_reminder_time_var = tk.StringVar()
+        ttk.Entry(config_f, textvariable=self.default_allday_reminder_time_var, width=10).grid(row=2, column=1, sticky="w")
+        ttk.Label(config_f, text="(格式: HH:MM, 如 09:00)", foreground="gray").grid(row=2, column=2, sticky="w")
+
+        sep_rem = ttk.Separator(r_t, orient='horizontal'); sep_rem.grid(row=1, column=0, columnspan=2, sticky='ew', pady=10)
+
+        detail_f = ttk.LabelFrame(r_t, text="常规事件默认偏移量")
+        detail_f.grid(row=2, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
+
+        ttk.Label(detail_f, text="天:").grid(row=0, column=0, padx=5, pady=5)
+        self.default_reminder_days_var = tk.StringVar()
+        ttk.Spinbox(detail_f, from_=0, to=365, textvariable=self.default_reminder_days_var, width=5).grid(row=0, column=1, sticky='w')
+
+        ttk.Label(detail_f, text="小时:").grid(row=0, column=2, padx=5, pady=5)
+        self.default_reminder_hours_var = tk.StringVar()
+        ttk.Spinbox(detail_f, from_=0, to=23, textvariable=self.default_reminder_hours_var, width=5).grid(row=0, column=3, sticky='w')
+
+        ttk.Label(detail_f, text="分钟:").grid(row=0, column=4, padx=5, pady=5)
+        self.default_reminder_minutes_var = tk.StringVar()
+        ttk.Spinbox(detail_f, from_=0, to=59, textvariable=self.default_reminder_minutes_var, width=5).grid(row=0, column=5, sticky='w')
+
+        ttk.Label(r_t, text="预设提醒列表 (常规事件):").grid(row=3, column=0, padx=5, pady=(15,0), sticky="w")
         preset_normal_frame = ttk.Frame(r_t)
-        preset_normal_frame.grid(row=3, column=0, padx=5, sticky="nsew")
+        preset_normal_frame.grid(row=4, column=0, padx=5, sticky="nsew")
         self.preset_reminders_listbox = tk.Listbox(preset_normal_frame, height=4)
         self.preset_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         preset_normal_scroll = ttk.Scrollbar(preset_normal_frame, orient=tk.VERTICAL, command=self.preset_reminders_listbox.yview)
         preset_normal_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.preset_reminders_listbox.config(yscrollcommand=preset_normal_scroll.set)
 
-        # 预设提醒列表 - 全天
-        ttk.Label(r_t, text="预设提醒列表 (全天事件):").grid(row=2, column=1, padx=5, pady=(15,0), sticky="w")
+        ttk.Label(r_t, text="预设提醒列表 (全天事件):").grid(row=3, column=1, padx=5, pady=(15,0), sticky="w")
         preset_allday_frame = ttk.Frame(r_t)
-        preset_allday_frame.grid(row=3, column=1, padx=5, sticky="nsew")
+        preset_allday_frame.grid(row=4, column=1, padx=5, sticky="nsew")
         self.preset_allday_reminders_listbox = tk.Listbox(preset_allday_frame, height=4)
         self.preset_allday_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         preset_allday_scroll = ttk.Scrollbar(preset_allday_frame, orient=tk.VERTICAL, command=self.preset_allday_reminders_listbox.yview)
         preset_allday_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.preset_allday_reminders_listbox.config(yscrollcommand=preset_allday_scroll.set)
 
-        p_btn = ttk.Frame(r_t); p_btn.grid(row=4, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        p_btn = ttk.Frame(r_t); p_btn.grid(row=5, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
         ttk.Button(p_btn, text="添加预设", command=self.add_preset_reminder).pack(side=tk.LEFT, padx=2)
         ttk.Button(p_btn, text="编辑预设", command=self.edit_preset_reminder).pack(side=tk.LEFT, padx=2)
         ttk.Button(p_btn, text="删除预设", command=self.delete_preset_reminder).pack(side=tk.LEFT, padx=2)
 
-        # ==================== 默认勾选项 ====================
+        # ==================== 测试/自定义选项 (p_t) ====================
         ttk.Label(p_t, text="新建常规事件自动勾选的提醒:").pack(anchor="w", padx=5, pady=5)
         default_normal_frame = ttk.Frame(p_t)
         default_normal_frame.pack(fill=tk.BOTH, expand=True, padx=5)
@@ -549,6 +577,14 @@ class SettingsDialog(tk.Toplevel):
                 for item in val.split(';'):
                     if item: lb.insert(tk.END, item)
 
+        # 提醒基础参数加载
+        self.default_reminder_type_var.set(s.get_setting("default_reminder_type", "显示"))
+        self.default_trigger_type_var.set(s.get_setting("default_trigger_type", "提前时间提醒"))
+        self.default_allday_reminder_time_var.set(s.get_setting("default_allday_reminder_time", "09:00"))
+        self.default_reminder_days_var.set(s.get_setting("default_reminder_days", "0"))
+        self.default_reminder_hours_var.set(s.get_setting("default_reminder_hours", "0"))
+        self.default_reminder_minutes_var.set(s.get_setting("default_reminder_minutes", "15"))
+
         # 日志设置
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
         self.log_path_var.set(s.get_setting("log_file_path", "dav_server.log"))
@@ -585,6 +621,14 @@ class SettingsDialog(tk.Toplevel):
         # 保存自定义默认提醒
         s.set_setting('custom_default_reminders', ';'.join([self.custom_default_reminders_listbox.get(i) for i in range(self.custom_default_reminders_listbox.size())]))
         s.set_setting('custom_default_allday_reminders', ';'.join([self.custom_allday_default_reminders_listbox.get(i) for i in range(self.custom_allday_default_reminders_listbox.size())]))
+
+        # 提醒基础参数保存
+        s.set_setting("default_reminder_type", self.default_reminder_type_var.get())
+        s.set_setting("default_trigger_type", self.default_trigger_type_var.get())
+        s.set_setting("default_allday_reminder_time", self.default_allday_reminder_time_var.get())
+        s.set_setting("default_reminder_days", self.default_reminder_days_var.get())
+        s.set_setting("default_reminder_hours", self.default_reminder_hours_var.get())
+        s.set_setting("default_reminder_minutes", self.default_reminder_minutes_var.get())
 
         # 日志设置
         s.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
