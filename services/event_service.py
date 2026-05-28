@@ -6,8 +6,16 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
 
 class EventService:
-    """日历事件业务逻辑 - 引入 Repository 模式、事件总线"""
-    def __init__(self):
+    """日历事件业务逻辑 - 单例模式"""
+    _instance = None
+
+    def __new__(cls):
+        if not cls._instance:
+            cls._instance = super(EventService, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def _initialize(self):
         self.repo = EventRepository()
 
     def add_event(self, ical_data: str):
@@ -39,7 +47,7 @@ class EventService:
             logger.error(f"Service 添加事件失败: {str(e)}")
             return None, f"Error: {str(e)}"
 
-    def get_event(self, uid: str):
+    def get_event(self, uid: str) -> str | None:
         event = self.repo.get_by_uid(uid)
         return event.ical if event else None
 
@@ -54,7 +62,10 @@ class EventService:
         return [e.ical for uid in uids if (e := self.repo.get_by_uid(uid))]
 
     def delete_event(self, uid: str):
-        return self.repo.delete(uid)
+        res = self.repo.delete(uid)
+        if res:
+            event_bus.publish(EVENT_EVENTS_CHANGED)
+        return res
 
     def validate_rrule(self, rrule_str: str) -> bool:
         """验证 RRULE 字符串是否合法"""
@@ -66,7 +77,7 @@ class EventService:
 
     def generate_calendar_wrapper(self, vevents_str_list: list) -> str:
         """将 VEVENT 字符串列表包装成完整的 iCalendar 文件"""
-        header = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//PrivateDAV//1.2//ZH-CN\n"
+        header = f"BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//{SOFTWARE_NAME}//{SOFTWARE_VERSION}//ZH-CN\n"
         # 直接拼接，纯 VEVENT 数据已包含 \r\n，统一转为 \n 避免 Windows 双换行
         events = "".join(vevent.strip() for vevent in vevents_str_list if vevent.strip()).replace("\r\n", "\n")
         return f"{header}{events}END:VCALENDAR\n"

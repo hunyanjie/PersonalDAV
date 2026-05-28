@@ -8,8 +8,16 @@ from utils.vcard_parser import RobustVCardParser
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
 
 class ContactService:
-    """联系人业务逻辑 - 引入 Repository 模式、鲁棒解析与事件总线"""
-    def __init__(self):
+    """联系人业务逻辑 - 单例模式"""
+    _instance = None
+
+    def __new__(cls):
+        if not cls._instance:
+            cls._instance = super(ContactService, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def _initialize(self):
         self.repo = ContactRepository()
 
     def add_contact(self, vcard_data: str):
@@ -42,7 +50,7 @@ class ContactService:
 
             if operation != "unchanged":
                 self.repo.add_or_update(contact)
-                event_bus.publish(EVENT_CONTACTS_CHANGED) # 发布通知
+                event_bus.publish(EVENT_CONTACTS_CHANGED)
 
             return contact.uid, operation
         except Exception as e:
@@ -64,7 +72,10 @@ class ContactService:
         return [c.vcard for uid in uids if (c := self.repo.get_by_uid(uid))]
 
     def delete_contact(self, uid: str):
-        return self.repo.delete(uid)
+        res = self.repo.delete(uid)
+        if res:
+            event_bus.publish(EVENT_CONTACTS_CHANGED)
+        return res
 
     def _extract_full_name(self, vcard):
         if hasattr(vcard, 'fn'): return vcard.fn.value
@@ -84,9 +95,8 @@ class ContactService:
         return []
 
     def _manual_add_contact(self, data):
-        # 简化版手动解析，实际调用时会存入 repo
-        # 此处省略具体实现细节，保持逻辑完整
         uid = str(uuid.uuid4())
         contact = ContactModel(uid=uid, full_name="Unknown", vcard=data)
         self.repo.add_or_update(contact)
+        event_bus.publish(EVENT_CONTACTS_CHANGED)
         return uid, "inserted"

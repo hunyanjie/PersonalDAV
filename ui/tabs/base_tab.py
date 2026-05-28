@@ -19,6 +19,32 @@ class BaseTreeTab(ttk.Frame):
         self._last_selected = None
         self._sort_col = ''
         self._sort_rev = False
+        self._all_data = [] # 存储完整数据用于过滤
+
+    def setup_search_ui(self, parent):
+        """创建统一的搜索栏"""
+        search_f = ttk.Frame(parent)
+        search_f.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_f, textvariable=self.search_var)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        self.search_var.trace("w", self._on_search_change)
+        
+        ttk.Button(search_f, text="清空", width=5, 
+                   command=lambda: self.search_var.set("")).pack(side=tk.LEFT, padx=2)
+        return search_f
+
+    def _on_search_change(self, *args):
+        """搜索框内容变更回调"""
+        query = self.search_var.get().lower().strip()
+        self.apply_filter(query)
+
+    def apply_filter(self, query):
+        """执行过滤显示"""
+        # 子类需覆盖此方法以实现具体的过滤逻辑
+        pass
 
     def setup_treeview(self, list_frame, on_edit_callback):
         """初始化 Treeview"""

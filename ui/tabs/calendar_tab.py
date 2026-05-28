@@ -31,7 +31,6 @@ class CalendarTab(BaseTreeTab):
         super().__init__(parent)
 
         self.create_widgets()
-        self.setup_dnd()
         self.refresh_events()
 
         # 订阅数据变更事件
@@ -42,6 +41,9 @@ class CalendarTab(BaseTreeTab):
         return widths.get(col, 100)
 
     def create_widgets(self):
+        # 搜索栏
+        self.setup_search_ui(self)
+
         # 列表框架
         list_frame = ttk.LabelFrame(self, text="日历事件列表")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -79,31 +81,31 @@ class CalendarTab(BaseTreeTab):
         ttk.Button(btn_frame, text="导出选中", command=self.export_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.RIGHT, padx=10)
 
-    def setup_dnd(self):
-        self.drop_target_register(DND_FILES)
-        self.dnd_bind('<<Drop>>', self.on_drop)
-
-    def on_drop(self, event):
-        files = self.tk.splitlist(event.data)
-        for f in files:
-            if f.lower().endswith('.ics'):
-                with open(f, 'r', encoding='utf-8') as file:
-                    self.db.add_event(file.read())
-        self.refresh_events()
-
     def refresh_events(self):
+        """刷新事件列表"""
+        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
+        self._all_data = self.db.get_events_list()
+        self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
+
+    def apply_filter(self, query):
+        """执行过滤显示"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         for item in self.tree.get_children(): self.tree.delete(item)
-        for event in self.db.get_events_list():
-            uid = event[0]
-            sel = "✓" if uid in selected_uids else " "
-            # 解码事件名称
-            summary = event[1]
-            if summary:
-                from utils.encoding_helper import decode_ical_value
-                summary = decode_ical_value(summary)
-            item_id = self.tree.insert("", tk.END, values=(sel, uid, summary, event[2], event[3]))
-            if sel == "✓": self.tree.selection_add(item_id)
+
+        for event in self._all_data:
+            uid, summary, start, end = event
+            match = not query or any(query in str(v).lower() for v in event)
+            
+            if match:
+                sel = "✓" if uid in selected_uids else " "
+                # 解码事件名称
+                disp_summary = summary
+                if disp_summary:
+                    from utils.encoding_helper import decode_ical_value
+                    disp_summary = decode_ical_value(disp_summary)
+                
+                item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end))
+                if sel == "✓": self.tree.selection_add(item_id)
 
     def sort_tree(self, col):
         """排序树形列表 - 时间列特殊处理"""

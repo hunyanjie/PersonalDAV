@@ -30,7 +30,6 @@ class ContactsTab(BaseTreeTab):
         super().__init__(parent)
 
         self.create_widgets()
-        self.setup_dnd()
         self.refresh_contacts()
 
         # 订阅数据变更事件
@@ -41,6 +40,9 @@ class ContactsTab(BaseTreeTab):
         return widths.get(col, 100)
 
     def create_widgets(self):
+        # 搜索栏 (放在列表框架上方)
+        self.setup_search_ui(self)
+
         # 列表框架
         list_frame = ttk.LabelFrame(self, text="联系人列表")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -78,31 +80,28 @@ class ContactsTab(BaseTreeTab):
         ttk.Button(btn_frame, text="导出选中", command=self.export_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="刷新列表", command=self.refresh_contacts).pack(side=tk.RIGHT, padx=10)
 
-    def setup_dnd(self):
-        self.drop_target_register(DND_FILES)
-        self.dnd_bind('<<Drop>>', self.on_drop)
-
-    def on_drop(self, event):
-        files = self.tk.splitlist(event.data)
-        for f in files:
-            if f.lower().endswith('.vcf'):
-                with open(f, 'r', encoding='utf-8') as file:
-                    self.db.add_contact(file.read())
-        self.refresh_contacts()
-
     def refresh_contacts(self):
         """刷新联系人列表"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
+        self._all_data = self.db.get_contacts_list()
+        self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
+
+    def apply_filter(self, query):
+        """执行过滤显示"""
+        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         for item in self.tree.get_children(): self.tree.delete(item)
 
-        for contact in self.db.get_contacts_list():
+        for contact in self._all_data:
             uid, name, emails, phones = contact
-            sel = "✓" if uid in selected_uids else " "
-            disp_emails = emails.replace(";", "; ") if emails else ""
-            disp_phones = phones.replace(";", "; ") if phones else ""
+            match = not query or any(query in str(v).lower() for v in contact)
+            
+            if match:
+                sel = "✓" if uid in selected_uids else " "
+                disp_emails = emails.replace(";", "; ") if emails else ""
+                disp_phones = phones.replace(";", "; ") if phones else ""
 
-            item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones))
-            if sel == "✓": self.tree.selection_add(item_id)
+                item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones))
+                if sel == "✓": self.tree.selection_add(item_id)
 
     def add_contact(self):
         dialog = ContactDialog(self.app_root)
