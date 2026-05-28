@@ -5,7 +5,7 @@ from network.dav_server import DAVServer
 from ui.widgets.right_click_menu import RightClickMenu
 from utils.logger import logger, GUIHandler
 
-from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
+from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 
 class ServerTab(ttk.Frame):
     """服务器控制标签页"""
@@ -85,6 +85,7 @@ CalDAV 配置:
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.log_message(f"服务器已启动在端口 {port}")
+        event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def stop_server(self):
         if self.server_instance:
@@ -93,9 +94,13 @@ CalDAV 配置:
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.log_message("服务器已停止")
+            event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def log_message(self, message):
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n")
+        self.log_text.see(tk.END)
+        self.log_text.config(state=tk.DISABLED)
+
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)

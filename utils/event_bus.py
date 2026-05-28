@@ -2,7 +2,7 @@ import weakref
 import logging
 
 class EventBus:
-    """全局事件总线 - 实现观察者模式 (Observer Pattern) - 支持弱引用"""
+    """全局事件总线 - 实现观察者模式 (Observer Pattern) - 支持弱引用且兼容绑定方法"""
     _instance = None
     _subscribers = {}
 
@@ -12,30 +12,41 @@ class EventBus:
         return cls._instance
 
     def subscribe(self, event_type, callback):
-        """订阅事件 - 使用弱引用防止内存泄漏"""
+        """订阅事件 - 自动识别普通函数与绑定方法"""
         if event_type not in self._subscribers:
-            self._subscribers[event_type] = weakref.WeakSet()
+            self._subscribers[event_type] = set()
         
-        # 如果是普通方法，WeakSet 会自动处理其生命周期
-        try:
-            self._subscribers[event_type].add(callback)
-        except Exception as e:
-            logging.getLogger("PrivateDAV").error(f"EventBus 订阅失败: {str(e)}")
+        # 针对绑定方法（如 self.update_status_bar）使用 WeakMethod
+        if hasattr(callback, '__self__') and hasattr(callback, '__func__'):
+            ref = weakref.WeakMethod(callback)
+        else:
+            ref = weakref.ref(callback)
+            
+        self._subscribers[event_type].add(ref)
 
     def publish(self, event_type, *args, **kwargs):
-        """发布事件"""
+        """发布事件 - 自动清理已失效的引用"""
         if event_type in self._subscribers:
-            # WeakSet 迭代时会自动跳过已被销毁的对象
-            for callback in list(self._subscribers[event_type]):
-                try:
-                    callback(*args, **kwargs)
-                except Exception as e:
-                    logging.getLogger("PrivateDAV").error(f"EventBus 回调执行失败: {str(e)}")
+            dead_refs = set()
+            # 复制一份以防迭代时修改
+            for ref in list(self._subscribers[event_type]):
+                callback = ref()
+                if callback is not None:
+                    try:
+                        callback(*args, **kwargs)
+                    except Exception as e:
+                        logging.getLogger("PrivateDAV").error(f"EventBus 回调执行失败: {str(e)}")
+                else:
+                    dead_refs.add(ref)
+            
+            # 清理失效的弱引用
+            self._subscribers[event_type] -= dead_refs
 
 # 定义事件常量
 EVENT_CONTACTS_CHANGED = "contacts_changed"
 EVENT_EVENTS_CHANGED = "events_changed"
 EVENT_SETTINGS_CHANGED = "settings_changed"
+EVENT_SERVER_STATE_CHANGED = "server_state_changed"
 
 # 全局单例
 event_bus = EventBus()

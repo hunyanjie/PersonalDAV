@@ -4,7 +4,7 @@ from datetime import datetime
 from ui.widgets.right_click_menu import RightClickMenu
 
 class ProgressWindow(tk.Toplevel):
-    """通用的进度显示窗口 - 1:1 还原统计看板"""
+    """通用的进度显示窗口"""
     def __init__(self, parent, title, cancel_callback=None):
         super().__init__(parent)
         self.title(title)

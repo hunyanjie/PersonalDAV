@@ -34,6 +34,7 @@ class EventDialog:
         self.root.transient(parent)
         self.root.grab_set()
 
+        self._loading = True # 标记正在加载数据，防止 Trace 干扰
         self.initial = initial or {}
         self.db = db
         self.result = None
@@ -54,6 +55,14 @@ class EventDialog:
         self.setup_initial_defaults()
         self.create_widgets()
         self.set_initial_values()
+        
+        self._loading = False # 加载完成
+        
+        # 强制触发一次最终的 UI 状态同步
+        self.toggle_allday()
+        self.toggle_sync_tz()
+        self.on_status_changed()
+        self.update_reminder_listbox()
 
         self.root.protocol("WM_DELETE_WINDOW", self.cancel)
         self.root.wait_window(self.root)
@@ -184,16 +193,25 @@ class EventDialog:
         tz_list = TimezoneHelper.get_localized_timezones()
         ttk.Label(frame, text="开始时区:").grid(row=3, column=0, sticky="w", padx=5)
         self.start_tz_var = tk.StringVar()
-        self.start_tz_combo = ttk.Combobox(frame, textvariable=self.start_tz_var, values=tz_list, width=45, state="readonly")
+        self.start_tz_combo = ttk.Combobox(frame, textvariable=self.start_tz_var, values=tz_list, width=60, state="readonly")
         self.start_tz_combo.grid(row=3, column=1, sticky="we", padx=5, pady=2)
+        
+        # 增加追踪和绑定：确保鼠标滚轮、键盘选择、点击选择都能同步 (1:1 还原旧版卓越体验)
+        self.start_tz_var.trace_add("write", self._on_start_tz_change)
+        self.start_tz_combo.bind("<<ComboboxSelected>>", self._on_start_tz_change)
+        self.start_tz_combo.bind("<MouseWheel>", self._on_tz_wheel)
+        self.start_tz_combo.bind("<Button-4>", self._on_tz_wheel)
+        self.start_tz_combo.bind("<Button-5>", self._on_tz_wheel)
 
         ttk.Label(frame, text="结束时区:").grid(row=4, column=0, sticky="w", padx=5)
         self.end_tz_var = tk.StringVar()
-        self.end_tz_combo = ttk.Combobox(frame, textvariable=self.end_tz_var, values=tz_list, width=45, state="readonly")
+        self.end_tz_combo = ttk.Combobox(frame, textvariable=self.end_tz_var, values=tz_list, width=60, state="readonly")
         self.end_tz_combo.grid(row=4, column=1, sticky="we", padx=5, pady=2)
+        self.end_tz_combo.bind("<MouseWheel>", self._on_tz_wheel)
 
         self.sync_tz_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="结束时间使用相同时区", variable=self.sync_tz_var, command=self.toggle_sync_tz).grid(row=5, column=1, sticky="w")
+        self.sync_tz_check = ttk.Checkbutton(frame, text="结束时间使用相同时区", variable=self.sync_tz_var, command=self.toggle_sync_tz)
+        self.sync_tz_check.grid(row=5, column=1, sticky="w")
         self.end_tz_combo.config(state="disabled")  # 默认勾选相同时区，初始化时禁用结束时时区
 
         # 快速调整持续时间框架 (1:1 还原旧版)
@@ -226,7 +244,7 @@ class EventDialog:
         update_end_ui()
 
     def apply_duration(self, dur_str):
-        """1:1 还原旧版快速调整逻辑"""
+        """快速调整逻辑"""
         try:
             start_dt = datetime.combine(self.start_date.get_date(), 
                                         datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M").time())
@@ -440,8 +458,13 @@ class EventDialog:
         self.priority_var = tk.IntVar(value=5)
         priority_frame = ttk.Frame(frame)
         priority_frame.grid(row=1, column=1, sticky="w", padx=5)
-        ttk.Scale(priority_frame, from_=0, to=9, variable=self.priority_var, orient=tk.HORIZONTAL,
-                  command=lambda v: self.priority_label.config(text=f" {int(float(v))} ")).grid(row=0, column=0, sticky="w")
+        
+        # 使用 tk.Scale 替代 ttk.Scale 以获得更好的整数控制和回显 (1:1 还原)
+        self.priority_scale = tk.Scale(priority_frame, from_=0, to=9, variable=self.priority_var, 
+                                      orient=tk.HORIZONTAL, length=150, showvalue=0,
+                                      command=lambda v: self.priority_label.config(text=f" {int(float(v))} "))
+        self.priority_scale.grid(row=0, column=0, sticky="w")
+        
         self.priority_label = ttk.Label(priority_frame, text=" 5 ", width=3, relief=tk.RIDGE, anchor="center")
         self.priority_label.grid(row=0, column=1, padx=5)
         ttk.Label(priority_frame, text="(0=最低, 9=最高)").grid(row=0, column=2, padx=5)
@@ -470,27 +493,37 @@ class EventDialog:
 
         ttk.Label(frame, text="参与者:").grid(row=6, column=0, sticky="nw", padx=5, pady=5)
         self.attendee_text = tk.Text(frame, height=3, width=40)
-        self.attendee_text.grid(row=6, column=1, sticky="nsew", padx=5)
+        self.attendee_text.grid(row=6, column=1, sticky="nsew", padx=5, pady=5)
         RightClickMenu(self.attendee_text, "text")
         attendee_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.attendee_text.yview)
         attendee_scrollbar.grid(row=6, column=2, sticky="ns")
         self.attendee_text.config(yscrollcommand=attendee_scrollbar.set)
 
+        # 其他 iCalendar 字段 (防止数据丢失)
+        ttk.Label(frame, text="其他字段:").grid(row=7, column=0, sticky="nw", padx=5, pady=5)
+        self.other_text = tk.Text(frame, height=4, width=40)
+        self.other_text.grid(row=7, column=1, sticky="nsew", padx=5, pady=5)
+        RightClickMenu(self.other_text, "text")
+        other_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.other_text.yview)
+        other_scrollbar.grid(row=7, column=2, sticky="ns")
+        self.other_text.config(yscrollcommand=other_scrollbar.set)
+
     def get_local_tz_str(self):
-        return str(get_localzone())
+        return TimezoneHelper.get_local_timezone_id()
 
     def set_initial_values(self):
         """1:1 还原数据回显逻辑，支持 DTO 模型"""
         m = self.model
         self.uid_var.set(m.uid)
         self.summary_var.set(m.summary)
-        local_tz = self.get_local_tz_str()
-
-        # 寻找本地化名称
-        match_tz = local_tz
-        for opt in self.start_tz_combo['values']:
-            if opt.startswith(local_tz): match_tz = opt; break
-        self.start_tz_var.set(match_tz); self.end_tz_var.set(match_tz)
+        
+        # 寻找本地化名称并自动选择 (1:1 还原旧版)
+        local_tz_id = self.get_local_tz_str()
+        local_display = TimezoneHelper.get_timezone_display_name(local_tz_id)
+        
+        # 优先匹配带 [本地] 标签的项
+        self.start_tz_var.set(local_display)
+        self.end_tz_var.set(local_display)
 
         v = self.initial
         is_edit_mode = 'ical' in v and v['ical']
@@ -503,13 +536,14 @@ class EventDialog:
             if v.get('status'):
                 self.status_var.set(self.STATUS_REV_MAPPING.get(v.get('status'), "已确认"))
             if v.get('priority') is not None:
-                self.priority_var.set(v.get('priority'))
+                p = int(v.get('priority'))
+                self.priority_var.set(p)
+                self.priority_label.config(text=f" {p} ")
             if v.get('transparency'):
                 trans_map = {"OPAQUE": "忙碌", "TRANSPARENT": "空闲"}
                 self.transparency_var.set(trans_map.get(v.get('transparency'), "忙碌"))
             if v.get('allday'):
                 self.allday_var.set(True)
-                self.toggle_allday()
             if v.get('force_reminder'):
                 self.force_reminder_var.set(True)
             if v.get('repeat'):
@@ -518,7 +552,6 @@ class EventDialog:
                 self.version_var.set(v.get('version'))
             if v.get('sync_timezone') is not None:
                 self.sync_tz_var.set(v.get('sync_timezone'))
-                self.toggle_sync_tz()
 
         if is_edit_mode:
             try:
@@ -528,12 +561,49 @@ class EventDialog:
                 if hasattr(ev, 'location'): self.location_var.set(decode_ical_value(ev.location.value))
                 if hasattr(ev, 'description'): self.description_text.insert("1.0", decode_ical_value(ev.description.value))
                 if hasattr(ev, 'categories'): self.categories_var.set(decode_ical_value(",".join(ev.categories.value) if hasattr(ev.categories, 'value') else ev.categories.value))
-                if hasattr(ev, 'priority'): self.priority_var.set(int(ev.priority.value))
+                if hasattr(ev, 'priority'):
+                    p = int(ev.priority.value)
+                    self.priority_var.set(p)
+                    self.priority_label.config(text=f" {p} ")
                 if hasattr(ev, 'organizer'): self.organizer_var.set(decode_ical_value(ev.organizer.value))
 
-                # 状态转换补全
                 if hasattr(ev, 'status'):
                     self.status_var.set(self.STATUS_REV_MAPPING.get(ev.status.value, "已确认"))
+
+                if hasattr(ev, 'url'):
+                    self.url_var.set(decode_ical_value(ev.url.value))
+                
+                if hasattr(ev, 'sequence'):
+                    self.sequence_var.set(str(ev.sequence.value))
+                
+                # 填充参与者 (优化去重逻辑)
+                self.attendee_text.delete("1.0", tk.END)
+                attendee_values = set()
+                if hasattr(ev, 'attendee_list'):
+                    for a in ev.attendee_list:
+                        val = decode_ical_value(a.value)
+                        if val not in attendee_values:
+                            attendee_values.add(val)
+                elif hasattr(ev, 'attendee'):
+                    val = decode_ical_value(ev.attendee.value)
+                    attendee_values.add(val)
+                
+                if attendee_values:
+                    self.attendee_text.insert("1.0", "\n".join(sorted(list(attendee_values))))
+
+                # 处理其他扩展字段 (防止数据丢失)
+                others = []
+                standard = ['UID', 'SUMMARY', 'LOCATION', 'DESCRIPTION', 'STATUS', 'DTSTART', 'DTEND', 'RRULE', 
+                            'VALARM', 'CATEGORIES', 'PRIORITY', 'TRANSP', 'ORGANIZER', 'SEQUENCE', 'URL', 'ATTENDEE', 
+                            'VERSION', 'PRODID', 'X-ALLDAY']
+
+                for child in ev.contents.values():
+                    for item in child:
+                        name = item.name.upper()
+                        if name not in standard:
+                            others.append(f"{name}: {item.value}")
+
+                self.other_text.insert(tk.END, "\n".join(others))
 
                 # 时间解析还原
                 if hasattr(ev, 'dtstart'):
@@ -544,8 +614,8 @@ class EventDialog:
                         self.start_minute.set(f"{dt.minute:02d}")
                         if 'TZID' in ev.dtstart.params:
                             tzid = ev.dtstart.params['TZID'][0]
-                            for opt in self.start_tz_combo['values']:
-                                if opt.startswith(tzid): self.start_tz_var.set(opt); break
+                            display = TimezoneHelper.get_timezone_display_name(tzid)
+                            self.start_tz_var.set(display)
                     else:
                         self.start_date.set_date(dt)
                         self.allday_var.set(True)
@@ -558,61 +628,130 @@ class EventDialog:
                         self.end_minute.set(f"{dt.minute:02d}")
                         if 'TZID' in ev.dtend.params:
                             tzid = ev.dtend.params['TZID'][0]
-                            for opt in self.end_tz_combo['values']:
-                                if opt.startswith(tzid): self.end_tz_var.set(opt); break
+                            display = TimezoneHelper.get_timezone_display_name(tzid)
+                            self.end_tz_var.set(display)
                     else:
+                        # 全天事件结束时间通常是非包含的，需减去一天回显
                         self.end_date.set_date(dt - timedelta(days=1))
 
-                # 恢复时区同步状态：如果开始和结束时区不同，取消勾选同步
-                start_tz = self.start_tz_var.get()
-                end_tz = self.end_tz_var.get()
-                if start_tz and end_tz and start_tz != end_tz:
-                    self.sync_tz_var.set(False)
-                    self.toggle_sync_tz()
+                # 解析重复规则
+                if hasattr(ev, 'rrule'):
+                    rrule_str = ev.rrule.value
+                    parts = dict(item.split('=') for item in rrule_str.split(';') if '=' in item)
+                    freq = parts.get('FREQ')
+                    interval = parts.get('INTERVAL', '1')
+                    
+                    if freq == 'DAILY' and interval == '1': self.repeat_var.set('每天')
+                    elif freq == 'WEEKLY' and interval == '1': self.repeat_var.set('每周')
+                    elif freq == 'WEEKLY' and interval == '2': self.repeat_var.set('每两周')
+                    elif freq == 'MONTHLY' and interval == '1': self.repeat_var.set('每月')
+                    elif freq == 'YEARLY' and interval == '1': self.repeat_var.set('每年')
+                    else:
+                        self.repeat_var.set('自定义')
+                        self.custom_repeat_data = {'freq': freq, 'interval': interval}
+                    
+                    if 'UNTIL' in parts:
+                        self.end_cond_var.set('按日期结束')
+                        try:
+                            until_dt = parser.parse(parts['UNTIL'])
+                            self.end_date_entry.set_date(until_dt.date())
+                        except: pass
+                    elif 'COUNT' in parts:
+                        self.end_cond_var.set('按次数结束')
+                        self.end_count_var.set(parts['COUNT'])
+                    else:
+                        self.end_cond_var.set('永不结束')
 
-                # 解析 VALARM 组件
-                for alarm in ev.vevent_list:
-                    if alarm.name == 'valarm':
-                        alarm_data = {'action': alarm.action.value if hasattr(alarm, 'action') else 'DISPLAY'}
-                        trigger = alarm.trigger.value if hasattr(alarm, 'trigger') else None
-                        if trigger:
-                            alarm_data['trigger'] = trigger
-                        # 解析声音/邮件提醒的额外属性
-                        if hasattr(alarm, 'attach'):
-                            alarm_data['attach'] = alarm.attach.value
-                        if hasattr(alarm, 'summary'):
-                            alarm_data['summary'] = alarm.summary.value
-                        if hasattr(alarm, 'description'):
-                            alarm_data['description'] = alarm.description.value
-                        if hasattr(alarm, 'attendee'):
-                            alarm_data['attendee'] = alarm.attendee.value
-                        self.alarms.append(alarm_data)
-            except: pass
-        self.update_reminder_listbox()
+                # 解析 VALARM 组件 - 1:1 还原旧版鲁棒遍历逻辑
+                self.alarms = []
+                # 尝试两种方式以确保最大兼容性
+                # 方式 1: 直接遍历 contents
+                valarms = ev.contents.get('valarm', [])
+                # 方式 2: 使用 getChildrenFallback (针对某些旧版 vobject)
+                if not valarms:
+                    valarms = [c for c in ev.getChildren() if c.name.upper() == 'VALARM']
+                
+                for alarm in valarms:
+                    alarm_data = {'action': alarm.action.value if hasattr(alarm, 'action') else 'DISPLAY'}
+                    trigger = alarm.trigger.value if hasattr(alarm, 'trigger') else None
+                    if trigger:
+                        alarm_data['trigger'] = trigger
+                    # 解析声音/邮件提醒的额外属性
+                    if hasattr(alarm, 'attach'):
+                        alarm_data['attach'] = alarm.attach.value
+                    if hasattr(alarm, 'summary'):
+                        alarm_data['summary'] = alarm.summary.value
+                    if hasattr(alarm, 'description'):
+                        alarm_data['description'] = alarm.description.value
+                    if hasattr(alarm, 'attendee'):
+                        alarm_data['attendee'] = alarm.attendee.value
+                    self.alarms.append(alarm_data)
+            except Exception as e:
+                logger.error(f"解析 iCalendar 数据失败: {e}")
 
     def toggle_allday(self):
         """切换全天事件模式"""
         is_allday = self.allday_var.get()
         state = "disabled" if is_allday else "readonly"
-        for w in [self.start_hour, self.start_minute, self.end_hour, self.end_minute]: w.config(state=state)
-        # 全天事件不需要时区，禁用时区选择器
+        for w in [self.start_hour, self.start_minute, self.end_hour, self.end_minute]: 
+            w.config(state=state)
+        
+        # 全天事件不需要时区，禁用时区选择器和同步勾选框 (1:1 还原旧版加固)
         if is_allday:
             self.start_tz_combo.config(state="disabled")
             self.end_tz_combo.config(state="disabled")
+            self.sync_tz_check.config(state="disabled")
+            self.toggle_sync_tz()
         else:
             self.start_tz_combo.config(state="readonly")
-            # 结束时区根据同步状态决定
+            self.sync_tz_check.config(state="normal")
             self.toggle_sync_tz()
 
     def toggle_sync_tz(self):
+        """切换时区同步状态"""
+        is_allday = self.allday_var.get()
+        if is_allday:
+            # 如果是全天事件，强制禁用所有时区控件，无视同步勾选
+            self.start_tz_combo.config(state="disabled")
+            self.end_tz_combo.config(state="disabled")
+            return
+
         if self.sync_tz_var.get():
-            self.end_tz_var.set(self.start_tz_var.get()); self.end_tz_combo.config(state="disabled")
+            self.end_tz_var.set(self.start_tz_var.get())
+            self.end_tz_combo.config(state="disabled")
         else:
             self.end_tz_combo.config(state="readonly")
 
+    def _on_start_tz_change(self, *args):
+        """当开始时区改变时同步结束时区 - 支持滚轮和点击"""
+        if getattr(self, '_loading', False): return
+        if not self.allday_var.get() and self.sync_tz_var.get():
+            val = self.start_tz_var.get()
+            if val != self.end_tz_var.get():
+                self.end_tz_var.set(val)
+
+    def _on_tz_wheel(self, event):
+        """鼠标滚轮调整时区时，延迟一小段时间确保值已写入变量再同步"""
+        if getattr(self, '_loading', False): return
+        self.root.after(10, self._on_start_tz_change)
+
     def on_status_changed(self, *args):
-        """状态变更监听 - 已取消禁用时间/提醒，待定只禁用提醒"""
+        """状态变更监听 - 已取消禁用时间/提醒，待定只禁用提醒，支持快照恢复"""
+        if getattr(self, '_loading', False): return
         status = self.status_var.get()
+        
+        # 保存快照以供恢复 (1:1 还原旧版逻辑)
+        if not hasattr(self, 'original_settings'):
+            self.original_settings = {
+                'start_date': self.start_date.get_date(),
+                'start_hour': self.start_hour.get(),
+                'start_minute': self.start_minute.get(),
+                'end_date': self.end_date.get_date(),
+                'end_hour': self.end_hour.get(),
+                'end_minute': self.end_minute.get(),
+                'alarms': self.alarms.copy()
+            }
+
         if status == "已取消":
             self.notebook.tab(self.time_tab, state="disabled")
             self.notebook.tab(self.reminder_tab, state="disabled")
@@ -620,10 +759,23 @@ class EventDialog:
             self.notebook.tab(self.time_tab, state="normal")
             self.notebook.tab(self.reminder_tab, state="disabled")
         else:
+            # 切回正常状态时恢复快照
+            if hasattr(self, 'original_settings'):
+                s = self.original_settings
+                self.start_date.set_date(s['start_date'])
+                self.start_hour.set(s['start_hour'])
+                self.start_minute.set(s['start_minute'])
+                self.end_date.set_date(s['end_date'])
+                self.end_hour.set(s['end_hour'])
+                self.end_minute.set(s['end_minute'])
+                self.alarms = s['alarms'].copy()
+                self.update_reminder_listbox()
+            
             self.notebook.tab(self.time_tab, state="normal")
             self.notebook.tab(self.reminder_tab, state="normal")
 
     def on_repeat_changed(self, *args):
+        if getattr(self, '_loading', False): return
         if self.repeat_var.get() == "自定义":
             self.custom_repeat_settings()
         elif self.repeat_var.get() == "不重复":
@@ -679,7 +831,7 @@ class EventDialog:
         """编辑或添加提醒的内部方法"""
         dialog = tk.Toplevel(self.root)
         dialog.title("编辑提醒" if index >= 0 else "添加提醒")
-        dialog.geometry("400x300")
+        # dialog.geometry("400x300")
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -986,6 +1138,9 @@ class EventDialog:
         # 序列号
         try:
             seq = int(self.sequence_var.get() or "0")
+            # 如果是编辑现有事件，则增加序列号 (iCalendar 标准做法)
+            if self.initial.get('ical'):
+                seq += 1
             ev.add('sequence').value = str(seq)
         except: pass
 
@@ -994,12 +1149,27 @@ class EventDialog:
         if url_val: ev.add('url').value = url_val
 
         # 参与者
-        attendee_text = self.attendee_text.get("1.0", "end-1c").strip()
-        if attendee_text:
-            for line in attendee_text.split('\n'):
-                line = line.strip()
-                if line:
-                    ev.add('attendee').value = str(line)
+        if hasattr(self, 'attendee_text'):
+            attendee_text = self.attendee_text.get("1.0", "end-1c").strip()
+            if attendee_text:
+                for line in attendee_text.split('\n'):
+                    line = line.strip()
+                    if line:
+                        ev.add('attendee').value = str(line)
+
+        # 处理其他扩展字段 (从 text 框读取)
+        if hasattr(self, 'other_text'):
+            others = self.other_text.get("1.0", "end-1c").strip().splitlines()
+            for line in others:
+                if ":" in line:
+                    label, val = line.split(":", 1)
+                    name = label.strip().lower()
+                    # 排除已手动处理的字段
+                    if name.upper() not in ['UID', 'SUMMARY', 'LOCATION', 'DESCRIPTION', 'STATUS', 'DTSTART', 'DTEND', 'RRULE', 
+                                          'VALARM', 'CATEGORIES', 'PRIORITY', 'TRANSP', 'ORGANIZER', 'SEQUENCE', 'URL', 'ATTENDEE']:
+                        try:
+                            ev.add(name).value = val.strip()
+                        except: pass
 
         return cal.serialize()
 
@@ -1016,21 +1186,23 @@ class EventDialog:
             messagebox.showwarning("提示", "请填写事件标题", parent=self.root)
             return
         
-        start_h = self.start_hour.get().strip()
-        start_m = self.start_minute.get().strip()
-        end_h = self.end_hour.get().strip()
-        end_m = self.end_minute.get().strip()
-        
-        if not start_h or not start_m or not end_h or not end_m:
-            messagebox.showwarning("提示", "请填写完整的时间", parent=self.root)
-            return
-        
-        try:
-            datetime.strptime(f"{start_h}:{start_m}", "%H:%M")
-            datetime.strptime(f"{end_h}:{end_m}", "%H:%M")
-        except ValueError:
-            messagebox.showwarning("提示", "时间格式不正确", parent=self.root)
-            return
+        # 仅在非全天事件时验证时间
+        if not self.allday_var.get():
+            start_h = self.start_hour.get().strip()
+            start_m = self.start_minute.get().strip()
+            end_h = self.end_hour.get().strip()
+            end_m = self.end_minute.get().strip()
+            
+            if not start_h or not start_m or not end_h or not end_m:
+                messagebox.showwarning("提示", "请填写完整的时间", parent=self.root)
+                return
+            
+            try:
+                datetime.strptime(f"{start_h}:{start_m}", "%H:%M")
+                datetime.strptime(f"{end_h}:{end_m}", "%H:%M")
+            except ValueError:
+                messagebox.showwarning("提示", "时间格式不正确", parent=self.root)
+                return
 
         self.raw_ical = self.generate_ical()
         self.result = {'summary': summary}

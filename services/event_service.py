@@ -25,11 +25,16 @@ class EventService:
             ev = ical.vevent
             uid = ev.uid.value
             
+            def to_str(val):
+                if hasattr(val, 'isoformat'):
+                    return val.isoformat()
+                return str(val)
+
             event = EventModel(
                 uid=uid,
                 summary=ev.summary.value if hasattr(ev, 'summary') else "",
-                dtstart=str(ev.dtstart.value) if hasattr(ev, 'dtstart') else "",
-                dtend=str(ev.dtend.value) if hasattr(ev, 'dtend') else "",
+                dtstart=to_str(ev.dtstart.value) if hasattr(ev, 'dtstart') else "",
+                dtend=to_str(ev.dtend.value) if hasattr(ev, 'dtend') else "",
                 ical=ical_data
             )
 

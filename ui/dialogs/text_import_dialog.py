@@ -3,7 +3,7 @@ from tkinter import ttk
 from ui.widgets.right_click_menu import RightClickMenu
 
 class TextImportDialog(tk.Toplevel):
-    """文本粘贴导入对话框 - 1:1 还原带撤销功能的编辑器"""
+    """文本粘贴导入对话框"""
     def __init__(self, parent, title, on_import_callback):
         super().__init__(parent)
         self.title(title)

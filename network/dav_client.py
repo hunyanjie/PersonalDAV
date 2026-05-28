@@ -29,16 +29,34 @@ class WebDAVImportLogic:
         return self.client.list(self.options.get('webdav_root', '/'))
 
     def download_file(self, remote_path, local_path, progress_callback=None):
-        """下载单个文件 - 支持进度回调
+        """下载单个文件 - 支持进度回调与限速
         
         Args:
             remote_path: 远程文件路径
             local_path: 本地保存路径
             progress_callback: 可选的进度回调函数(current, total) -> bool
         """
+        import time
+        last_time = time.time()
+        last_bytes = 0
+        recv_speed = self.options.get('recv_speed') # bytes/s
+
         def internal_callback(current, total):
+            nonlocal last_time, last_bytes
             if self.cancel_event.is_set():
                 raise Exception('下载被用户取消')
+            
+            # 速率限制逻辑 (1:1 还原旧版缺失功能)
+            if recv_speed and recv_speed > 0:
+                elapsed = time.time() - last_time
+                if elapsed > 0:
+                    current_bytes = current - last_bytes
+                    expected_time = current_bytes / recv_speed
+                    if elapsed < expected_time:
+                        time.sleep(expected_time - elapsed)
+                last_time = time.time()
+                last_bytes = current
+
             # 调用外部进度回调
             if progress_callback:
                 try:

@@ -56,7 +56,36 @@ class TimezoneHelper:
             from tzlocal import get_localzone
             return str(get_localzone())
         except:
-            return 'UTC'
+            return 'Asia/Shanghai' # 默认中国时区
+
+    @staticmethod
+    def get_timezone_display_name(tz_id: str):
+        """根据时区ID获取完整的显示名称，用于回显匹配"""
+        try:
+            sys_locale = locale.getdefaultlocale()[0]
+            loc = Locale.parse(sys_locale) if sys_locale else Locale.parse('zh_CN')
+            
+            tz = pytz.timezone(tz_id)
+            now = datetime.utcnow()
+            offset = tz.utcoffset(now)
+            total_seconds = offset.total_seconds()
+            hours = int(total_seconds // 3600)
+            minutes = int((total_seconds % 3600) // 60)
+            sign = '+' if hours >= 0 else '-'
+            offset_str = f"UTC{sign}{abs(hours):02d}:{minutes:02d}"
+
+            city_name = tz_id.split('/')[-1].replace('_', ' ') if '/' in tz_id else tz_id
+            try:
+                localized_name = babel.dates.get_timezone_name(tz_id, locale=loc)
+            except:
+                localized_name = tz_id
+
+            display = f"{offset_str} - {city_name} ({tz_id}) {localized_name}"
+            if tz_id == TimezoneHelper.get_local_timezone_id():
+                display += " [本地]"
+            return display
+        except:
+            return tz_id
 
     @staticmethod
     def extract_tz_id(localized_name: str) -> str:

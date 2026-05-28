@@ -21,6 +21,8 @@ class Database:
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA busy_timeout = 5000;")
+        self.conn.execute("PRAGMA journal_mode = WAL;")  # 开启 WAL 模式提高并发性能
+        self.conn.execute("PRAGMA synchronous = NORMAL;") # 配合 WAL 提高写入速度
         self.create_tables()
 
     @contextmanager

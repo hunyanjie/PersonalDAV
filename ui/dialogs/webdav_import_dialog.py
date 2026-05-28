@@ -9,7 +9,7 @@ from ui.widgets.progress_window import ProgressWindow
 from ui.widgets.right_click_menu import RightClickMenu
 
 class WebDAVImportDialog(tk.Toplevel):
-    """WebDAV 导入配置对话框 - 1:1 还原原版高级设置"""
+    """WebDAV 导入配置对话框"""
     def __init__(self, parent, title, on_import_callback):
         super().__init__(parent)
         self.title(title)
@@ -70,7 +70,7 @@ class WebDAVImportDialog(tk.Toplevel):
     def _create_advanced_settings(self, parent):
         main_f = ttk.Frame(parent); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 连接设置 - 1:1 还原 main_old.py:756-835
+        # 连接设置
         conn_f = ttk.LabelFrame(main_f, text='连接与限速')
         conn_f.pack(fill=tk.X, pady=5)
         

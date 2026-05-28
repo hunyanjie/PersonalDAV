@@ -7,7 +7,7 @@ import re
 
 
 class SettingsDialog(tk.Toplevel):
-    """系统设置对话框 - 完整功能实现"""
+    """系统设置对话框"""
     def __init__(self, parent, db_service, on_save_callback):
         super().__init__(parent)
         self.title("设置")
@@ -267,7 +267,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_frame, text='取消', command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
     def edit_preset_reminder(self):
-        """编辑预设提醒 - 1:1 还原 main_old.py:1648-1695"""
+        """编辑预设提醒"""
         normal_sel = self.preset_reminders_listbox.curselection()
         allday_sel = self.preset_allday_reminders_listbox.curselection()
         if not (normal_sel or allday_sel):
@@ -637,5 +637,4 @@ class SettingsDialog(tk.Toplevel):
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback: self.on_save_callback()
-        messagebox.showinfo("成功", "设置已保存")
         self.destroy()

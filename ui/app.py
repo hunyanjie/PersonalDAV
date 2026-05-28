@@ -12,7 +12,7 @@ from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
 from utils.logger import GUIHandler, logger
-from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED
+from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 
 class DAVServerApp:
@@ -68,7 +68,7 @@ class DAVServerApp:
             current_tab.select_all(event)
 
     def setup_global_dnd(self):
-        """设置全局文件拖拽支持 - 1:1 还原 main_old.py"""
+        """设置全局文件拖拽支持"""
         try:
             self.root.drop_target_register(DND_FILES)
             self.root.dnd_bind('<<Drop>>', self.handle_drop)
@@ -120,7 +120,7 @@ class DAVServerApp:
             for i, f in enumerate(files):
                 if not progress_win.winfo_exists(): break # 窗口关闭则停止
                 
-                ext = f.lower().suffix if hasattr(f, 'suffix') else os.path.splitext(f)[1].lower()
+                ext = os.path.splitext(f)[1].lower()
                 target_ext = '.vcf' if tab_text == "联系人" else '.ics'
                 
                 if ext == target_ext:
@@ -145,7 +145,7 @@ class DAVServerApp:
         threading.Thread(target=run_import, daemon=True).start()
 
     def on_tab_changed(self, event):
-        """标签页切换时自动刷新列表 - 1:1 还原 main_old.py:2322-2330"""
+        """标签页切换时自动刷新列表"""
         current_tab = self.notebook.select()
         tab_text = self.notebook.tab(current_tab, "text")
 
@@ -248,6 +248,7 @@ class DAVServerApp:
         # 订阅事件以更新状态栏
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.update_status_bar)
+        event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.update_status_bar)
 
     def update_status_bar(self, *args):
         c_count = self.contact_service.repo.db.count_contacts()
@@ -272,7 +273,7 @@ class DAVServerApp:
         self.root.after(100, self.process_log_queue)
 
     def process_import_queue(self):
-        """处理导入队列 - 1:1 还原 main_old.py"""
+        """处理导入队列"""
         if self.import_in_progress or self.import_cancel_requested:
             self.root.after(100, self.process_import_queue)
             return

@@ -81,7 +81,9 @@ class ContactService:
         if hasattr(vcard, 'fn'): return vcard.fn.value
         if hasattr(vcard, 'n'):
             n = vcard.n.value
-            return " ".join(filter(None, [getattr(n, k, "") for k in ['prefix', 'given', 'additional', 'family', 'suffix']]))
+            # vCard N field components: family, given, additional, prefix, suffix
+            parts = [getattr(n, k, "") for k in ['prefix', 'given', 'additional', 'family', 'suffix']]
+            return " ".join(filter(None, parts))
         return ""
 
     def _extract_emails(self, vcard):

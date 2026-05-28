@@ -9,7 +9,7 @@ import quopri
 
 
 class ContactDialog(tk.Toplevel):
-    """添加/编辑联系人对话框 - 完整功能实现"""
+    """添加/编辑联系人对话框"""
 
     FIELD_MAP = {
         'ORG': '组织/公司',
@@ -124,10 +124,15 @@ class ContactDialog(tk.Toplevel):
     def set_initial_values(self):
         self.uid_entry.insert(0, self.initial.get('uid', f"contact-{uuid.uuid4().hex}"))
         self.name_entry.insert(0, self.initial.get('name', ''))
-        self.email_entry.insert(0, self.initial.get('email', ''))
-        self.phone_entry.insert(0, self.initial.get('phone', ''))
+        self.preserved_photo = None
 
         if self.vcard:
+            # 清除 initial 填充的简化值，从 vcard 重新读取完整数据
+            self.email_entry.delete(0, tk.END)
+            self.phone_entry.delete(0, tk.END)
+            
+            emails = []
+            phones = []
             others = []
             standard = ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'VERSION', 'PHOTO', 'BDAY', 'NOTE', 'ORG', 'TITLE', 'URL', 'ADR']
 
@@ -135,14 +140,23 @@ class ContactDialog(tk.Toplevel):
                 name = child.name.upper()
 
                 # 处理标准字段
-                if name == 'ORG':
-                    self.org_entry.insert(0, child.value)
+                if name == 'PHOTO':
+                    self.preserved_photo = child
+                elif name == 'EMAIL':
+                    emails.append(child.value)
+                elif name == 'TEL':
+                    phones.append(child.value)
+                elif name == 'ORG':
+                    # ORG 提供一个列表
+                    val = child.value[0] if isinstance(child.value, list) else child.value
+                    self.org_entry.insert(0, val)
                 elif name == 'TITLE':
                     self.title_entry.insert(0, child.value)
                 elif name == 'URL':
                     self.url_entry.insert(0, child.value)
                 elif name == 'ADR':
-                    self.adr_text.insert("1.0", child.value)
+                    # 地址对象字符串表示
+                    self.adr_text.insert("1.0", str(child.value))
                 elif name == 'X-PHONETIC-FIRST-NAME':
                     self.first_phonetic_entry.insert(0, child.value)
                 elif name == 'X-PHONETIC-LAST-NAME':
@@ -155,7 +169,13 @@ class ContactDialog(tk.Toplevel):
                     label = self.FIELD_MAP.get(name, name)
                     others.append(f"{label}: {child.value}")
 
+            self.email_entry.insert(0, ";".join(emails))
+            self.phone_entry.insert(0, ";".join(phones))
             self.other_text.insert(tk.END, "\n".join(others))
+        else:
+            # 仅在非 vcard 模式下使用简化 initial 数据
+            self.email_entry.insert(0, self.initial.get('email', ''))
+            self.phone_entry.insert(0, self.initial.get('phone', ''))
 
     def show_raw(self):
         if not self.vcard: return
@@ -214,6 +234,10 @@ class ContactDialog(tk.Toplevel):
             v.add('note').value = self.note_text.get("1.0", "end-1c").strip()
         # 生日
         if self.birthday_var.get(): v.add('bday').value = self.birthday_var.get()
+        
+        # 恢复保留的照片
+        if self.preserved_photo:
+            v.add(self.preserved_photo)
 
         # 处理其他扩展字段
         others = self.other_text.get("1.0", "end-1c").strip().splitlines()
