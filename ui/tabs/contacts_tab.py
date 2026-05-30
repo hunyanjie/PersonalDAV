@@ -160,8 +160,9 @@ class ContactsTab(BaseTreeTab):
     def show_raw(self):
         sel = self.tree.selection()
         if not sel: return
-        uid = self.tree.item(sel[0])['values'][1]
-        data = self.db.get_by_uid(uid)
+        uids = [self.tree.item(i)['values'][1] for i in sel]
+        raws = self.db.get_selected_raw(uids)
+        data = ''.join(raws) if len(sel) > 1 else raws[0]
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
             sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
