@@ -380,6 +380,22 @@ class EventDialog:
         self.version_var = tk.StringVar(value="2.0")
         ttk.Combobox(frame, textvariable=self.version_var, values=["1.0", "2.0", "2.1", "3.0"], state="readonly", width=5).grid(row=4, column=3, sticky="w", padx=5)
 
+    def _compute_snapped_start(self):
+        mode = (self.db.get_setting("start_time_snap", "current")
+                if self.db else "current")
+        if mode == "current":
+            return datetime.now()
+        step = int(mode)
+        now = datetime.now()
+        minute = (now.minute // step + 1) * step
+        hour = now.hour
+        if minute >= 60:
+            hour += 1
+            minute = 0
+        if hour >= 24:
+            hour = 0
+        return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
     def create_time_tab(self):
         frame = ttk.LabelFrame(self.time_tab, text="时间设置")
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -401,14 +417,15 @@ class EventDialog:
         self.end_minute = ttk.Combobox(e_frame, width=3, values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly"); self.end_minute.pack(side=tk.LEFT)
         ttk.Button(e_frame, text="当前时间", command=self.set_end_now).pack(side=tk.LEFT, padx=10)
 
-        # 初始化默认值
-        now = datetime.now()
-        self.start_hour.set(f"{now.hour:02d}")
-        self.start_minute.set("00")
-        end = now + timedelta(hours=1)
+        # 初始化默认值（根据吸附设置自动计算开始时间）
+        start = self._compute_snapped_start()
+        self.start_hour.set(f"{start.hour:02d}")
+        self.start_minute.set(f"{start.minute:02d}")
+        dur = int(self.db.get_setting("default_duration", "1")) if self.db else 1
+        end = start + timedelta(hours=dur)
         self.end_date.set_date(end)
         self.end_hour.set(f"{end.hour:02d}")
-        self.end_minute.set("00")
+        self.end_minute.set(f"{end.minute:02d}")
 
         tz_list = TimezoneHelper.get_localized_timezones()
         ttk.Label(frame, text="开始时区:").grid(row=3, column=0, sticky="w", padx=5)
