@@ -43,70 +43,70 @@ class ContactDialog(tk.Toplevel):
 
         # 基础字段
         ttk.Label(f, text="UID:").grid(row=0, column=0, sticky="w", pady=3)
-        self.uid_entry = ttk.Entry(f, width=40); self.uid_entry.grid(row=0, column=1, columnspan=2, pady=3, sticky="we")
+        self.uid_entry = ttk.Entry(f, width=40, exportselection=False); self.uid_entry.grid(row=0, column=1, columnspan=2, pady=3, sticky="we")
         RightClickMenu(self.uid_entry)
 
         ttk.Label(f, text="姓名*:").grid(row=1, column=0, sticky="w", pady=3)
-        self.name_entry = ttk.Entry(f, width=40); self.name_entry.grid(row=1, column=1, columnspan=2, pady=3, sticky="we")
+        self.name_entry = ttk.Entry(f, width=40, exportselection=False); self.name_entry.grid(row=1, column=1, columnspan=2, pady=3, sticky="we")
         RightClickMenu(self.name_entry)
 
         # 拼音字段
         ttk.Label(f, text="名字拼音:").grid(row=2, column=0, sticky="w", pady=3)
-        self.first_phonetic_entry = ttk.Entry(f, width=20); self.first_phonetic_entry.grid(row=2, column=1, sticky="w", pady=3)
+        self.first_phonetic_entry = ttk.Entry(f, width=20, exportselection=False); self.first_phonetic_entry.grid(row=2, column=1, sticky="w", pady=3)
         RightClickMenu(self.first_phonetic_entry)
 
         ttk.Label(f, text="姓氏拼音:").grid(row=2, column=2, sticky="w", padx=(10,0), pady=3)
-        self.last_phonetic_entry = ttk.Entry(f, width=20); self.last_phonetic_entry.grid(row=2, column=3, sticky="we", pady=3)
+        self.last_phonetic_entry = ttk.Entry(f, width=20, exportselection=False); self.last_phonetic_entry.grid(row=2, column=3, sticky="we", pady=3)
         RightClickMenu(self.last_phonetic_entry)
 
         ttk.Label(f, text="邮箱:").grid(row=3, column=0, sticky="w", pady=3)
-        self.email_entry = ttk.Entry(f, width=40); self.email_entry.grid(row=3, column=1, columnspan=3, pady=3, sticky="we")
+        self.email_entry = ttk.Entry(f, width=40, exportselection=False); self.email_entry.grid(row=3, column=1, columnspan=3, pady=3, sticky="we")
         ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=4, column=1, sticky="w")
         RightClickMenu(self.email_entry)
 
         ttk.Label(f, text="电话:").grid(row=5, column=0, sticky="w", pady=3)
-        self.phone_entry = ttk.Entry(f, width=40); self.phone_entry.grid(row=5, column=1, columnspan=3, pady=3, sticky="we")
+        self.phone_entry = ttk.Entry(f, width=40, exportselection=False); self.phone_entry.grid(row=5, column=1, columnspan=3, pady=3, sticky="we")
         ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=6, column=1, sticky="w")
         RightClickMenu(self.phone_entry)
 
         # 组织/公司
         ttk.Label(f, text="组织/公司:").grid(row=7, column=0, sticky="w", pady=3)
-        self.org_entry = ttk.Entry(f, width=40); self.org_entry.grid(row=7, column=1, columnspan=3, pady=3, sticky="we")
+        self.org_entry = ttk.Entry(f, width=40, exportselection=False); self.org_entry.grid(row=7, column=1, columnspan=3, pady=3, sticky="we")
         RightClickMenu(self.org_entry)
 
         # 职位
         ttk.Label(f, text="职位:").grid(row=8, column=0, sticky="w", pady=3)
-        self.title_entry = ttk.Entry(f, width=40); self.title_entry.grid(row=8, column=1, columnspan=3, pady=3, sticky="we")
+        self.title_entry = ttk.Entry(f, width=40, exportselection=False); self.title_entry.grid(row=8, column=1, columnspan=3, pady=3, sticky="we")
         RightClickMenu(self.title_entry)
 
         # 网址
         ttk.Label(f, text="网址:").grid(row=9, column=0, sticky="w", pady=3)
-        self.url_entry = ttk.Entry(f, width=40); self.url_entry.grid(row=9, column=1, columnspan=3, pady=3, sticky="we")
+        self.url_entry = ttk.Entry(f, width=40, exportselection=False); self.url_entry.grid(row=9, column=1, columnspan=3, pady=3, sticky="we")
         RightClickMenu(self.url_entry)
 
         # 地址
         ttk.Label(f, text="地址:").grid(row=10, column=0, sticky="nw", pady=3)
-        self.adr_text = tk.Text(f, height=3, width=40); self.adr_text.grid(row=10, column=1, columnspan=3, pady=3, sticky="nsew")
+        self.adr_text = tk.Text(f, height=3, width=40, exportselection=False); self.adr_text.grid(row=10, column=1, columnspan=3, pady=3, sticky="nsew")
         RightClickMenu(self.adr_text, "text")
 
         # 生日
         ttk.Label(f, text="生日:").grid(row=11, column=0, sticky="w", pady=3)
         b_f = ttk.Frame(f); b_f.grid(row=11, column=1, columnspan=2, sticky="w", pady=3)
         self.birthday_var = tk.StringVar()
-        self.birthday_entry = ttk.Entry(b_f, textvariable=self.birthday_var, width=15)
+        self.birthday_entry = ttk.Entry(b_f, textvariable=self.birthday_var, width=15, exportselection=False)
         self.birthday_entry.pack(side=tk.LEFT)
         ttk.Button(b_f, text="选择", width=6, command=self.pick_date).pack(side=tk.LEFT, padx=5)
         ttk.Button(b_f, text="清除", width=6, command=lambda: self.birthday_var.set("")).pack(side=tk.LEFT)
 
         # 备注
         ttk.Label(f, text="备注:").grid(row=12, column=0, sticky="nw", pady=3)
-        self.note_text = tk.Text(f, height=4, width=40); self.note_text.grid(row=12, column=1, columnspan=3, pady=3, sticky="nsew")
+        self.note_text = tk.Text(f, height=4, width=40, exportselection=False); self.note_text.grid(row=12, column=1, columnspan=3, pady=3, sticky="nsew")
         RightClickMenu(self.note_text, "text")
 
         # 其他 vCard 字段
         sep = ttk.Separator(f, orient='horizontal'); sep.grid(row=13, column=0, columnspan=4, sticky='ew', pady=10)
         ttk.Label(f, text="其他 vCard 字段:").grid(row=14, column=0, sticky="nw", pady=3)
-        self.other_text = tk.Text(f, height=6, width=40); self.other_text.grid(row=14, column=1, columnspan=3, pady=3, sticky="nsew")
+        self.other_text = tk.Text(f, height=6, width=40, exportselection=False); self.other_text.grid(row=14, column=1, columnspan=3, pady=3, sticky="nsew")
         RightClickMenu(self.other_text, "text")
         ttk.Label(f, text="(格式: 标签: 内容，如: X-CUSTOM: value)", foreground="gray").grid(row=15, column=1, columnspan=3, sticky="w")
 

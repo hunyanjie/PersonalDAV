@@ -86,23 +86,11 @@ class RightClickMenu:
 
         # 标准控件状态逻辑
         if isinstance(self.widget, tk.Text) and self.widget_type == "text":
-            # 检测是否可以撤销
-            try:
-                self.widget.edit_undo()
-                self.widget.edit_redo()
-                self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.NORMAL)
-            except tk.TclError:
-                self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.DISABLED)
-
-            # 检测是否可以重做
-            try:
-                self.widget.edit_redo()
-                self.widget.edit_undo()
-                self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.NORMAL)
-            except tk.TclError:
-                self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.DISABLED)
+            # 由于 Tkinter 无法在不改变内容的情况下探测是否可撤销，
+            # 默认保持开启，由 undo() 方法内部处理具体逻辑。
+            self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.NORMAL)
+            self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.NORMAL)
         else:
-            # Entry等控件不支持撤销/重做
             self.menu.entryconfigure("撤销 (Ctrl+Z)", state=tk.DISABLED)
             self.menu.entryconfigure("重做 (Ctrl+Y)", state=tk.DISABLED)
 

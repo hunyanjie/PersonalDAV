@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+import json
 from contextlib import contextmanager
 from utils.logger import logger
 from config import DEFAULT_DB_PATH
@@ -60,6 +61,32 @@ class Database:
         c.execute('''CREATE TABLE IF NOT EXISTS settings
                      (key TEXT PRIMARY KEY,
                       value TEXT)''')
+        
+        # 初始数据填充 (仅在表为空时)
+        c.execute("SELECT COUNT(*) FROM settings")
+        if c.fetchone()[0] == 0:
+            initial_settings = [
+                ('preset_reminders', "5分钟前;15分钟前;30分钟前;1小时前;2小时前;1天前"),
+                ('preset_allday_reminders', "日程发生时;1天前;2天前;7天前"),
+                ('default_reminders', "15分钟前"),
+                ('default_allday_reminders', "当天上午9点"),
+                # 示例自定义详情 (JSON 格式)
+                ('custom_default_reminders', json.dumps({'action': 'AUDIO', 'trigger': {'type': 'td', 'seconds': -1800}, 'description': '半小时前提示音', 'attach': 'default_alarm.wav'}, ensure_ascii=False)),
+                ('auto_save_port', "True"),
+                ('default_port', "8000"),
+                ('default_status', "CONFIRMED"),
+                ('default_version', "2.0"),
+                ('default_duration', "1"),
+                ('default_priority', "5"),
+                ('default_transparency', "OPAQUE"),
+                ('default_sync_timezone', "True"),
+                ('default_repeat', "不重复"),
+                ('default_end_cond', "永不结束"),
+                ('default_end_count', "5")
+            ]
+
+            c.executemany("INSERT INTO settings (key, value) VALUES (?, ?)", initial_settings)
+            
         self.conn.commit()
 
     def execute(self, query, params=None):

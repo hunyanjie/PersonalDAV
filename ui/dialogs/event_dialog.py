@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import uuid
 import pytz
 import vobject
+import re
 from datetime import datetime, timedelta
 from dateutil import parser
 from babel.dates import get_timezone_name
@@ -16,6 +17,140 @@ from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
 from utils.encoding_helper import smart_quoted_printable_encode, should_encode, decode_ical_value
+import json
+
+class DetailedReminderEditor(tk.Toplevel):
+    """精细化提醒编辑器 (独立窗口)"""
+    def __init__(self, parent, initial_alarm=None, callback=None):
+        super().__init__(parent)
+        self.title("编辑提醒" if initial_alarm else "添加提醒")
+        self.geometry("500x550") # 设置固定大小
+        self.transient(parent); self.grab_set()
+        self.callback = callback
+        self.initial_alarm = initial_alarm
+        self.create_widgets()
+        if initial_alarm: self.load_data(initial_alarm)
+
+    def create_widgets(self):
+        main_f = ttk.Frame(self); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 1. 基础设置
+        basic_f = ttk.LabelFrame(main_f, text="提醒基本设置"); basic_f.pack(fill=tk.X, pady=5)
+        ttk.Label(basic_f, text="提醒类型:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.rem_type_var = tk.StringVar(value="显示")
+        ttk.Combobox(basic_f, textvariable=self.rem_type_var, values=["显示", "声音", "邮件"], state="readonly", width=10).grid(row=0, column=1, sticky="w", padx=5)
+        
+        ttk.Label(basic_f, text="触发方式:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.trig_type_var = tk.StringVar(value="relative")
+        ttk.Radiobutton(basic_f, text="提前时间", variable=self.trig_type_var, value="relative").grid(row=1, column=1, sticky="w", padx=5)
+        ttk.Radiobutton(basic_f, text="指定时间", variable=self.trig_type_var, value="absolute").grid(row=1, column=2, sticky="w", padx=5)
+        
+        # 提前时间 Frame
+        self.rel_f = ttk.Frame(basic_f); self.rel_f.grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+        self.days_v = tk.StringVar(value="0"); self.hours_v = tk.StringVar(value="0"); self.mins_v = tk.StringVar(value="15")
+        ttk.Label(self.rel_f, text="天:").pack(side=tk.LEFT)
+        ttk.Spinbox(self.rel_f, from_=0, to=365, textvariable=self.days_v, width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.rel_f, text="时:").pack(side=tk.LEFT)
+        ttk.Spinbox(self.rel_f, from_=0, to=23, textvariable=self.hours_v, width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Label(self.rel_f, text="分:").pack(side=tk.LEFT)
+        ttk.Spinbox(self.rel_f, from_=0, to=59, textvariable=self.mins_v, width=3).pack(side=tk.LEFT, padx=2)
+        
+        # 指定时间 Frame
+        self.abs_f = ttk.Frame(basic_f); self.abs_f.grid(row=3, column=0, columnspan=3, sticky="w", padx=5, pady=5); self.abs_f.grid_remove()
+        self.abs_d = DateEntry(self.abs_f, date_pattern='yyyy-mm-dd', width=12); self.abs_d.pack(side=tk.LEFT, padx=2)
+        self.abs_h = ttk.Combobox(self.abs_f, width=3, values=[f"{h:02d}" for h in range(24)], state="readonly"); self.abs_h.pack(side=tk.LEFT, padx=2); self.abs_h.set("09")
+        ttk.Label(self.abs_f, text=":").pack(side=tk.LEFT)
+        self.abs_m = ttk.Combobox(self.abs_f, width=3, values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly"); self.abs_m.pack(side=tk.LEFT, padx=2); self.abs_m.set("00")
+        tz_list = TimezoneHelper.get_localized_timezones()
+        self.abs_tz_v = tk.StringVar(value=TimezoneHelper.get_timezone_display_name(TimezoneHelper.get_local_timezone_id()))
+        ttk.Combobox(self.abs_f, textvariable=self.abs_tz_v, values=tz_list, width=25, state="readonly").pack(side=tk.LEFT, padx=2)
+
+        def toggle_t(*args):
+            if self.trig_type_var.get() == "relative": self.rel_f.grid(); self.abs_f.grid_remove()
+            else: self.rel_f.grid_remove(); self.abs_f.grid()
+        self.trig_type_var.trace("w", toggle_t)
+
+        rep_f = ttk.Frame(basic_f); rep_f.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+        self.rep_v = tk.StringVar(value="0"); self.dur_v = tk.StringVar(value="15")
+        ttk.Label(rep_f, text="重复次数:").pack(side=tk.LEFT)
+        ttk.Spinbox(rep_f, from_=0, to=99, textvariable=self.rep_v, width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rep_f, text="间隔(分):").pack(side=tk.LEFT, padx=(10,0))
+        ttk.Spinbox(rep_f, from_=1, to=1440, textvariable=self.dur_v, width=5).pack(side=tk.LEFT, padx=2)
+
+        # 2. 详情设置
+        ext_f = ttk.LabelFrame(main_f, text="提醒内容详情"); ext_f.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        disp_f = ttk.Frame(ext_f); disp_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(disp_f, text="描述:").pack(side=tk.LEFT)
+        self.desc_t = tk.Text(disp_f, height=3, width=40); self.desc_t.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5); RightClickMenu(self.desc_t, "text")
+        
+        self.audio_f = ttk.Frame(ext_f); self.audio_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(self.audio_f, text="音频:").pack(side=tk.LEFT)
+        self.attach_v = tk.StringVar(); ttk.Entry(self.audio_f, textvariable=self.attach_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        self.mail_f = ttk.Frame(ext_f); self.mail_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(self.mail_f, text="收件人:").pack(side=tk.LEFT)
+        self.mail_to_v = tk.StringVar(); ttk.Entry(self.mail_f, textvariable=self.mail_to_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        ttk.Label(self.mail_f, text="主题:").pack(side=tk.LEFT)
+        self.mail_sub_v = tk.StringVar(); ttk.Entry(self.mail_f, textvariable=self.mail_sub_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
+        def update_ext_ui(*args):
+            t = self.rem_type_var.get()
+            for f, target in [(self.audio_f, "声音"), (self.mail_f, "邮件")]:
+                if t == target: f.pack(fill=tk.X, padx=5, pady=2)
+                else: f.pack_forget()
+        self.rem_type_var.trace("w", update_ext_ui); update_ext_ui()
+        
+        ttk.Button(main_f, text="保存提醒", command=self.save).pack(pady=10)
+
+    def load_data(self, a):
+        self.rem_type_var.set({"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}.get(a.get('action'), "显示"))
+        tr = a.get('trigger')
+        if isinstance(tr, datetime):
+            self.trig_type_var.set("absolute")
+            try:
+                local_dt = tr.astimezone(pytz.timezone(TimezoneHelper.get_local_timezone_id()))
+                self.abs_d.set_date(local_dt.date()); self.abs_h.set(local_dt.strftime("%H")); self.abs_m.set(local_dt.strftime("%M"))
+            except: pass
+        elif isinstance(tr, timedelta):
+            self.trig_type_var.set("relative")
+            sec = abs(tr.total_seconds())
+            self.days_v.set(int(sec // 86400)); self.hours_v.set(int((sec % 86400) // 3600)); self.mins_v.set(int((sec % 3600) // 60))
+        if 'description' in a: self.desc_t.insert("1.0", a['description'])
+        if 'attach' in a: self.attach_v.set(a['attach'])
+        if 'attendee' in a: self.mail_to_v.set(a['attendee'])
+        if 'summary' in a: self.mail_sub_v.set(a['summary'])
+        if 'repeat' in a: self.rep_v.set(a['repeat'])
+        if 'duration' in a:
+            d = a['duration']
+            if isinstance(d, timedelta): self.dur_v.set(str(int(d.total_seconds() // 60)))
+            elif isinstance(d, str) and 'PT' in d: self.dur_v.set(d.replace('PT', '').replace('M', ''))
+
+    def save(self):
+        try:
+            act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(self.rem_type_var.get(), "DISPLAY")
+            if self.trig_type_var.get() == "relative":
+                d, h, m = int(self.days_v.get() or 0), int(self.hours_v.get() or 0), int(self.mins_v.get() or 0)
+                trig = -timedelta(days=d, hours=h, minutes=m)
+            else:
+                try: 
+                    tz_id = TimezoneHelper.extract_tz_id(self.abs_tz_v.get())
+                    dt_naive = datetime.combine(self.abs_d.get_date(), datetime.strptime(f"{self.abs_h.get()}:{self.abs_m.get()}", "%H:%M").time())
+                    trig = pytz.timezone(tz_id).localize(dt_naive).astimezone(pytz.UTC)
+                except: messagebox.showerror("错误", "时间格式非法", parent=self); return
+            
+            new_a = {'action': act, 'trigger': trig, 'description': self.desc_t.get("1.0", "end-1c").strip()}
+            if self.attach_v.get(): new_a['attach'] = self.attach_v.get()
+            if self.mail_to_v.get(): new_a['attendee'] = self.mail_to_v.get()
+            if self.mail_sub_v.get(): new_a['summary'] = self.mail_sub_v.get()
+            try:
+                rc = int(self.rep_v.get() or 0)
+                if rc > 0: new_a['repeat'] = rc; new_a['duration'] = timedelta(minutes=int(self.dur_v.get() or 15))
+            except: pass
+            
+            if self.callback: self.callback(new_a)
+            self.destroy()
+        except Exception as e: messagebox.showerror("保存失败", f"数据验证未通过: {e}", parent=self)
 
 class EventDialog:
     """日历事件编辑对话框 - 1:1 深度还原，Flawless 架构演进版"""
@@ -30,7 +165,7 @@ class EventDialog:
     def __init__(self, parent, initial=None, db=None):
         self.root = tk.Toplevel(parent)
         self.root.title("添加/编辑日历事件")
-        # self.root.geometry("900x800")
+        self.root.geometry("900x800")
         self.root.transient(parent)
         self.root.grab_set()
 
@@ -55,9 +190,13 @@ class EventDialog:
         self.setup_initial_defaults()
         self.create_widgets()
         self.set_initial_values()
-        
+
         self._loading = False # 加载完成
-        
+
+        # 增加全天状态监听，以便动态切换默认提醒
+        if not self.initial.get('ical'):
+            self.allday_var.trace("w", self._on_allday_toggled)
+
         # 强制触发一次最终的 UI 状态同步
         self.toggle_allday()
         self.toggle_sync_tz()
@@ -66,6 +205,14 @@ class EventDialog:
 
         self.root.protocol("WM_DELETE_WINDOW", self.cancel)
         self.root.wait_window(self.root)
+
+    def _on_allday_toggled(self, *args):
+        """当用户切换全天状态时，如果是新建模式且提醒列表为空，重新应用默认提醒"""
+        if not self._loading and not self.initial.get('ical'):
+            # 如果当前提醒列表是空的，或者用户还没手动改过（这里简单判断是否为空）
+            if not self.alarms:
+                self.apply_default_reminders(self.allday_var.get())
+                self.update_reminder_listbox()
 
     def setup_initial_defaults(self):
         if self.db:
@@ -79,26 +226,98 @@ class EventDialog:
             self.initial.setdefault('end_cond', self.db.get_setting('default_end_cond', '永不结束'))
             self.initial.setdefault('end_count', self.db.get_setting('default_end_count', '5'))
             self.initial.setdefault('duration', self.db.get_setting('default_duration', '1'))
-            # 加载时区同步设置
             self.initial.setdefault('sync_timezone', self.db.get_setting('default_sync_timezone', 'True') == 'True')
-            
+
             if not self.initial.get('ical'):
                 is_allday = self.initial.get('allday')
-                key = 'default_allday_reminders' if is_allday else 'default_reminders'
-                def_rem_str = self.db.get_setting(key, '')
-                if def_rem_str:
-                    mapping = {
-                        "日程发生时": timedelta(seconds=0), "5分钟前": timedelta(minutes=-5),
-                        "15分钟前": timedelta(minutes=-15), "30分钟前": timedelta(minutes=-30),
-                        "1小时前": timedelta(hours=-1), "2小时前": timedelta(hours=-2),
-                        "1天前": timedelta(days=-1), "2天前": timedelta(days=-2), "7天前": timedelta(days=-7)
-                    }
-                    for r_text in def_rem_str.split(';'):
-                        if r_text in mapping:
-                            self.alarms.append({'action': 'DISPLAY', 'trigger': mapping[r_text]})
-        
+                self.apply_default_reminders(is_allday)
+
         self.initial.setdefault('uid', f"event-{uuid.uuid4().hex}")
         self.initial.setdefault('is_edit', bool(self.initial.get('uid') and 'ical' in self.initial))
+
+    def apply_default_reminders(self, is_allday):
+        """从数据库读取并应用默认提醒"""
+        if not self.db: return
+        
+        # 1. 处理“新建日程时自动勾选”
+        key = 'default_allday_reminders' if is_allday else 'default_reminders'
+        def_rem_str = self.db.get_setting(key, '')
+        if def_rem_str:
+            for r_text in def_rem_str.split(';'):
+                if not r_text: continue
+                trigger = self.parse_reminder_string(r_text)
+                if trigger is not None:
+                    # 确保不会重复添加相同的提醒
+                    if not any(a['trigger'] == trigger and a['action'] == 'DISPLAY' for a in self.alarms):
+                        self.alarms.append({'action': 'DISPLAY', 'trigger': trigger, 'description': f"默认提醒: {r_text}"})
+
+        # 2. 处理“自定义默认提醒 (自动添加详情)”
+        custom_key = 'custom_default_allday_reminders' if is_allday else 'custom_default_reminders'
+        custom_rem_str = self.db.get_setting(custom_key, '')
+        if custom_rem_str:
+            for item in custom_rem_str.split(';'):
+                if not item: continue
+                try:
+                    if item.startswith('{'):
+                        alarm_data = json.loads(item)
+                        # 还原 trigger
+                        t_data = alarm_data.get('trigger')
+                        if isinstance(t_data, dict):
+                            if t_data.get('type') == 'td':
+                                alarm_data['trigger'] = timedelta(seconds=t_data['seconds'])
+                            elif t_data.get('type') == 'dt':
+                                alarm_data['trigger'] = datetime.fromisoformat(t_data['iso'])
+                        # 还原 duration
+                        if 'duration' in alarm_data and isinstance(alarm_data['duration'], (int, float)):
+                            alarm_data['duration'] = timedelta(seconds=alarm_data['duration'])
+                        
+                        if not any(a['trigger'] == alarm_data['trigger'] and a['action'] == alarm_data['action'] for a in self.alarms):
+                            self.alarms.append(alarm_data)
+                    else:
+                        # 旧版格式兼容
+                        parts = item.split(':', 3)
+                        if len(parts) >= 3:
+                            act_en = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(parts[0], "DISPLAY")
+                            trig_mode, time_val, desc = parts[1], parts[2], parts[3] if len(parts) > 3 else ""
+                            trigger = None
+                            if trig_mode == "提前": trigger = self.parse_reminder_string(time_val)
+                            elif trig_mode == "指定时间" and ":" in time_val:
+                                h, m = map(int, time_val.split(':'))
+                                trigger = timedelta(hours=h, minutes=m)
+                            if trigger is not None:
+                                if not any(a['trigger'] == trigger and a['action'] == act_en for a in self.alarms):
+                                    self.alarms.append({'action': act_en, 'trigger': trigger, 'description': desc})
+                except Exception as e:
+                    logger.error(f"应用自定义默认提醒失败: {e}")
+
+    def parse_reminder_string(self, text):
+        """解析提醒字符串为 timedelta"""
+        if not text: return None
+        mapping = {
+            "日程发生时": timedelta(0), "发生时": timedelta(0),
+            "5分钟前": timedelta(minutes=-5), "15分钟前": timedelta(minutes=-15),
+            "30分钟前": timedelta(minutes=-30), "1小时前": timedelta(hours=-1),
+            "2小时前": timedelta(hours=-2), "1天前": timedelta(days=-1),
+            "2天前": timedelta(days=-2), "7天前": timedelta(days=-7),
+            "当天上午9点": timedelta(hours=9), "1天前上午9点": timedelta(days=-1, hours=9),
+            "2天前上午9点": timedelta(days=-2, hours=9), "3天前上午9点": timedelta(days=-3, hours=9),
+            "5天前上午9点": timedelta(days=-5, hours=9), "7天前上午9点": timedelta(days=-7, hours=9)
+        }
+        if text in mapping: return mapping[text]
+        
+        # 尝试正则解析 "X天Y小时Z分钟前"
+        try:
+            days, hours, mins = 0, 0, 0
+            d_m = re.search(r'(\d+)天', text)
+            h_m = re.search(r'(\d+)小时', text)
+            m_m = re.search(r'(\d+)分钟', text)
+            if d_m: days = int(d_m.group(1))
+            if h_m: hours = int(h_m.group(1))
+            if m_m: mins = int(m_m.group(1))
+            if days or hours or mins:
+                return -timedelta(days=days, hours=hours, minutes=mins)
+        except: pass
+        return None
 
     def create_widgets(self):
         main_frame = ttk.Frame(self.root)
@@ -262,7 +481,7 @@ class EventDialog:
         list_frame = ttk.LabelFrame(main_frame, text="提醒列表")
         list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         list_inner = ttk.Frame(list_frame); list_inner.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.reminder_listbox = tk.Listbox(list_inner, height=10); self.reminder_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.reminder_listbox = tk.Listbox(list_inner, height=10, exportselection=False); self.reminder_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar = ttk.Scrollbar(list_inner, command=self.reminder_listbox.yview); scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.reminder_listbox.config(yscrollcommand=scrollbar.set)
         btn_frame = ttk.Frame(list_frame); btn_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -276,10 +495,10 @@ class EventDialog:
         preset_section = ttk.LabelFrame(main_frame, text="预设提醒（双击添加）"); preset_section.pack(fill=tk.X, padx=5, pady=5)
         preset_frame = ttk.Frame(preset_section); preset_frame.pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(preset_frame, text="常规事件:").grid(row=0, column=0, sticky="w")
-        self.preset_reminders_listbox = tk.Listbox(preset_frame, height=5, width=35); self.preset_reminders_listbox.grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.preset_reminders_listbox = tk.Listbox(preset_frame, height=5, width=35, exportselection=False); self.preset_reminders_listbox.grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.preset_reminders_listbox.bind("<Double-1>", lambda e: self.apply_preset_reminder(False))
         ttk.Label(preset_frame, text="全天事件:").grid(row=0, column=1, sticky="w")
-        self.preset_allday_reminders_listbox = tk.Listbox(preset_frame, height=5, width=35); self.preset_allday_reminders_listbox.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        self.preset_allday_reminders_listbox = tk.Listbox(preset_frame, height=5, width=35, exportselection=False); self.preset_allday_reminders_listbox.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         self.preset_allday_reminders_listbox.bind("<Double-1>", lambda e: self.apply_preset_reminder(True))
         self.load_preset_reminders()
 
@@ -347,9 +566,9 @@ class EventDialog:
                 if hasattr(ev, 'sequence'): self.sequence_var.set(str(ev.sequence.value))
                 
                 # 恢复自定义扩展状态 (使用 contents[key][0] 安全读取带连字符的属性)
-                if hasattr(ev, 'x-force-reminder'): self.force_reminder_var.set(getattr(ev, 'x-force-reminder').value == "1")
-                if hasattr(ev, 'x-sync-tz'): self.sync_tz_var.set(getattr(ev, 'x-sync-tz').value == "1")
-                if hasattr(ev, 'x-allday'): self.allday_var.set(getattr(ev, 'x-allday').value == "1")
+                if 'x-force-reminder' in ev.contents: self.force_reminder_var.set(ev.contents['x-force-reminder'][0].value == "1")
+                if 'x-sync-tz' in ev.contents: self.sync_tz_var.set(ev.contents['x-sync-tz'][0].value == "1")
+                if 'x-allday' in ev.contents: self.allday_var.set(ev.contents['x-allday'][0].value == "1")
                 
                 self.attendee_text.delete("1.0", tk.END); attendee_values = set()
                 if hasattr(ev, 'attendee_list'):
@@ -488,81 +707,41 @@ class EventDialog:
         if s: self._edit_reminder(s[0])
         else: messagebox.showwarning("提示", "请先选择要编辑的提醒", parent=self.root)
 
+    def _open_reminder_editor(self, initial_alarm=None, callback=None):
+        """打开提醒编辑器对话框 (精细化)"""
+        DetailedReminderEditor(self.root, initial_alarm, callback)
+
     def _edit_reminder(self, index):
-        dialog = tk.Toplevel(self.root); dialog.title("编辑提醒" if index >= 0 else "添加提醒"); dialog.transient(self.root); dialog.grab_set()
-        main_f = ttk.Frame(dialog); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        basic_f = ttk.LabelFrame(main_f, text="提醒基本设置"); basic_f.pack(fill=tk.X, pady=5)
-        ttk.Label(basic_f, text="提醒类型:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        rem_type_var = tk.StringVar(value="显示"); rem_type_combo = ttk.Combobox(basic_f, textvariable=rem_type_var, values=["显示", "声音", "邮件"], state="readonly", width=10); rem_type_combo.grid(row=0, column=1, sticky="w", padx=5)
-        ttk.Label(basic_f, text="触发方式:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        trig_type_var = tk.StringVar(value="relative"); ttk.Radiobutton(basic_f, text="提前时间", variable=trig_type_var, value="relative").grid(row=1, column=1, sticky="w", padx=5); ttk.Radiobutton(basic_f, text="指定时间", variable=trig_type_var, value="absolute").grid(row=1, column=2, sticky="w", padx=5)
-        rel_f = ttk.Frame(basic_f); rel_f.grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-        days_v = tk.StringVar(value="0"); hours_v = tk.StringVar(value="0"); mins_v = tk.StringVar(value="15")
-        ttk.Label(rel_f, text="天:").pack(side=tk.LEFT); ttk.Spinbox(rel_f, from_=0, to=365, textvariable=days_v, width=3).pack(side=tk.LEFT, padx=2); ttk.Label(rel_f, text="时:").pack(side=tk.LEFT); ttk.Spinbox(rel_f, from_=0, to=23, textvariable=hours_v, width=3).pack(side=tk.LEFT, padx=2); ttk.Label(rel_f, text="分:").pack(side=tk.LEFT); ttk.Spinbox(rel_f, from_=0, to=59, textvariable=mins_v, width=3).pack(side=tk.LEFT, padx=2)
-        abs_f = ttk.Frame(basic_f); abs_f.grid(row=3, column=0, columnspan=3, sticky="w", padx=5, pady=5); abs_f.grid_remove()
-        abs_d = DateEntry(abs_f, date_pattern='yyyy-mm-dd', width=12); abs_d.pack(side=tk.LEFT, padx=2); abs_h = ttk.Combobox(abs_f, width=3, values=[f"{h:02d}" for h in range(24)], state="readonly"); abs_h.pack(side=tk.LEFT, padx=2); abs_h.set("09"); ttk.Label(abs_f, text=":").pack(side=tk.LEFT); abs_m = ttk.Combobox(abs_f, width=3, values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly"); abs_m.pack(side=tk.LEFT, padx=2); abs_m.set("00"); tz_list = TimezoneHelper.get_localized_timezones(); abs_tz_v = tk.StringVar(value=TimezoneHelper.get_timezone_display_name(TimezoneHelper.get_local_timezone_id())); ttk.Combobox(abs_f, textvariable=abs_tz_v, values=tz_list, width=25, state="readonly").pack(side=tk.LEFT, padx=2)
-        def toggle_t(*args):
-            if trig_type_var.get() == "relative": rel_f.grid(); abs_f.grid_remove()
-            else: rel_f.grid_remove(); abs_f.grid()
-        trig_type_var.trace("w", toggle_t); rep_f = ttk.Frame(basic_f); rep_f.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-        rep_v = tk.StringVar(value="0"); dur_v = tk.StringVar(value="15")
-        ttk.Label(rep_f, text="重复次数:").pack(side=tk.LEFT); ttk.Spinbox(rep_f, from_=0, to=99, textvariable=rep_v, width=3).pack(side=tk.LEFT, padx=2); ttk.Label(rep_f, text="间隔(分):").pack(side=tk.LEFT, padx=(10,0)); ttk.Spinbox(rep_f, from_=1, to=1440, textvariable=dur_v, width=5).pack(side=tk.LEFT, padx=2)
-        ext_f = ttk.LabelFrame(main_f, text="提醒内容详情"); ext_f.pack(fill=tk.BOTH, expand=True, pady=5)
-        disp_f = ttk.Frame(ext_f); disp_f.pack(fill=tk.X, padx=5, pady=2); ttk.Label(disp_f, text="描述:").pack(side=tk.LEFT); desc_t = tk.Text(disp_f, height=3, width=40); desc_t.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5); RightClickMenu(desc_t, "text")
-        audio_f = ttk.Frame(ext_f); audio_f.pack(fill=tk.X, padx=5, pady=2); ttk.Label(audio_f, text="音频:").pack(side=tk.LEFT); attach_v = tk.StringVar(); ttk.Entry(audio_f, textvariable=attach_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        mail_f = ttk.Frame(ext_f); mail_f.pack(fill=tk.X, padx=5, pady=2); ttk.Label(mail_f, text="收件人:").pack(side=tk.LEFT); mail_to_v = tk.StringVar(); ttk.Entry(mail_f, textvariable=mail_to_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5); ttk.Label(mail_f, text="主题:").pack(side=tk.LEFT); mail_sub_v = tk.StringVar(); ttk.Entry(mail_f, textvariable=mail_sub_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        def update_ext_ui(*args):
-            t = rem_type_var.get(); audio_f.pack_forget() if t != "声音" else audio_f.pack(fill=tk.X, padx=5, pady=2); mail_f.pack_forget() if t != "邮件" else mail_f.pack(fill=tk.X, padx=5, pady=2)
-        rem_type_var.trace("w", update_ext_ui); update_ext_ui()
-        if index >= 0:
-            a = self.alarms[index]; rem_type_var.set({"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}.get(a.get('action'), "显示")); tr = a.get('trigger')
-            if isinstance(tr, datetime):
-                trig_type_var.set("absolute"); local_dt = tr.astimezone(pytz.timezone(TimezoneHelper.get_local_timezone_id())); abs_d.set_date(local_dt.date()); abs_h.set(local_dt.strftime("%H")); abs_m.set(local_dt.strftime("%M"))
-            elif isinstance(tr, timedelta):
-                trig_type_var.set("relative"); sec = abs(tr.total_seconds()); days_v.set(int(sec // 86400)); hours_v.set(int((sec % 86400) // 3600)); mins_v.set(int((sec % 3600) // 60))
-            if 'description' in a: desc_t.insert("1.0", a['description'])
-            if 'attach' in a: attach_v.set(a['attach'])
-            if 'attendee' in a: mail_to_v.set(a['attendee'])
-            if 'summary' in a: mail_sub_v.set(a['summary'])
-            if 'repeat' in a: rep_v.set(a['repeat'])
-            if 'duration' in a:
-                d = a['duration']
-                if isinstance(d, timedelta): dur_v.set(str(int(d.total_seconds() // 60)))
-                elif isinstance(d, str) and 'M' in d: dur_v.set(d.split('M')[0].replace('PT', ''))
-        def save():
-            try:
-                act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(rem_type_var.get(), "DISPLAY")
-                if trig_type_var.get() == "relative":
-                    d, h, m = int(days_v.get() or 0), int(hours_v.get() or 0), int(mins_v.get() or 0)
-                    trig = timedelta(days=d, hours=h, minutes=m)
-                    if trig.total_seconds() > 0: trig = -trig
-                else:
-                    try: trig = pytz.timezone(TimezoneHelper.extract_tz_id(abs_tz_v.get())).localize(datetime.combine(abs_d.get_date(), datetime.strptime(f"{abs_h.get()}:{abs_m.get()}", "%H:%M").time())).astimezone(pytz.UTC)
-                    except: messagebox.showerror("错误", "时间格式非法"); return
-                new_a = {'action': act, 'trigger': trig, 'description': desc_t.get("1.0", "end-1c").strip()}
-                if attach_v.get(): new_a['attach'] = attach_v.get()
-                if mail_to_v.get(): new_a['attendee'] = mail_to_v.get()
-                if mail_sub_v.get(): new_a['summary'] = mail_sub_v.get()
-                try:
-                    rc = int(rep_v.get() or 0)
-                    if rc > 0: new_a['repeat'] = rc; new_a['duration'] = timedelta(minutes=int(dur_v.get() or 15))
-                except: pass
-                if new_a.get('trigger') is None: raise ValueError("触发时间不能为空")
-                if index >= 0: self.alarms[index] = new_a
-                else: self.alarms.append(new_a)
-                self.update_reminder_listbox(); dialog.destroy()
-            except Exception as e: messagebox.showerror("保存失败", f"数据验证未通过: {e}", parent=dialog)
-        ttk.Button(main_f, text="保存提醒", command=save).pack(pady=10)
+        initial = self.alarms[index] if index >= 0 else None
+        def on_save(new_a):
+            if index >= 0: self.alarms[index] = new_a
+            else: self.alarms.append(new_a)
+            self.update_reminder_listbox()
+        self._open_reminder_editor(initial, on_save)
 
     def apply_preset_reminder(self, is_allday=False):
         lb = self.preset_allday_reminders_listbox if is_allday else self.preset_reminders_listbox; s = lb.curselection()
         if not s: return
-        p_text = lb.get(s[0]); mapping = {"日程发生时": timedelta(0), "5分钟前": timedelta(minutes=-5), "15分钟前": timedelta(minutes=-15), "30分钟前": timedelta(minutes=-30), "1小时前": timedelta(hours=-1), "2小时前": timedelta(hours=-2), "1天前": timedelta(days=-1), "2天前": timedelta(days=-2), "7天前": timedelta(days=-7), "当天上午9点": timedelta(hours=9)}
-        if p_text in mapping: self.alarms.append({'action': 'DISPLAY', 'trigger': mapping[p_text], 'description': f"事件提醒: {p_text}"}); self.update_reminder_listbox()
+        p_text = lb.get(s[0])
+        trigger = self.parse_reminder_string(p_text)
+        if trigger is not None:
+            self.alarms.append({'action': 'DISPLAY', 'trigger': trigger, 'description': f"事件提醒: {p_text}"})
+            self.update_reminder_listbox()
 
     def load_preset_reminders(self):
-        presets = ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前"]; allday_presets = ["日程发生时", "1天前", "2天前", "7天前"]
+        if not self.db:
+            # 备选默认值
+            presets = ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前"]
+            allday_presets = ["日程发生时", "1天前", "2天前", "7天前"]
+        else:
+            p_val = self.db.get_setting('preset_reminders', "5分钟前;15分钟前;30分钟前;1小时前;2小时前;1天前")
+            a_val = self.db.get_setting('preset_allday_reminders', "日程发生时;1天前;2天前;7天前")
+            presets = [x for x in p_val.split(';') if x]
+            allday_presets = [x for x in a_val.split(';') if x]
+            
+        self.preset_reminders_listbox.delete(0, tk.END)
         for p in presets: self.preset_reminders_listbox.insert(tk.END, p)
+        self.preset_allday_reminders_listbox.delete(0, tk.END)
         for p in allday_presets: self.preset_allday_reminders_listbox.insert(tk.END, p)
 
     def generate_ical(self):
@@ -633,3 +812,14 @@ class EventDialog:
     def set_start_now(self): self.start_date.set_date(datetime.now())
     def set_end_now(self):
         n = datetime.now() + timedelta(hours=1); self.end_date.set_date(n); self.end_hour.set(f"{n.hour:02d}"); self.end_minute.set("00")
+
+def save_alarm_trigger(trig):
+    if isinstance(trig, timedelta): return {'type': 'td', 'seconds': trig.total_seconds()}
+    if isinstance(trig, datetime): return {'type': 'dt', 'iso': trig.isoformat()}
+    return trig
+
+def load_alarm_trigger(trig_data):
+    if isinstance(trig_data, dict):
+        if trig_data.get('type') == 'td': return timedelta(seconds=trig_data['seconds'])
+        if trig_data.get('type') == 'dt': return datetime.fromisoformat(trig_data['iso'])
+    return trig_data
