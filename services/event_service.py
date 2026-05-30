@@ -73,5 +73,5 @@ class EventService(BaseService):
     def generate_calendar_wrapper(self, vevents_str_list: list) -> str:
         """将 VEVENT 字符串列表包装成完整的 iCalendar 文件"""
         header = f"BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//{SOFTWARE_NAME}//{SOFTWARE_VERSION}//ZH-CN\n"
-        events = "".join(vevent.strip() for vevent in vevents_str_list if vevent.strip()).replace("\r\n", "\n")
-        return f"{header}{events}END:VCALENDAR\n"
+        events = "\n".join(v.strip() for v in vevents_str_list if v.strip()).replace("\r\n", "\n")
+        return f"{header}{events}\nEND:VCALENDAR\n"

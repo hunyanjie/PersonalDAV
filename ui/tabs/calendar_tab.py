@@ -143,8 +143,22 @@ class CalendarTab(BaseTreeTab):
     def show_raw(self):
         sel = self.tree.selection()
         if not sel: return
-        uid = self.tree.item(sel[0])['values'][1]
-        data = self.db.get_by_uid(uid)
+        uids = [self.tree.item(i)['values'][1] for i in sel]
+        events = self.db.get_selected_raw(uids)
+        if len(sel) == 1:
+            data = events[0]
+        else:
+            inner = []
+            for e in events:
+                lines = e.strip().splitlines()
+                lines = [l for l in lines
+                         if l.strip() and 'BEGIN:VCALENDAR' not in l
+                         and 'END:VCALENDAR' not in l
+                         and not l.startswith('VERSION:')
+                         and not l.startswith('PRODID:')]
+                chunk = '\n'.join(lines)
+                if chunk.strip(): inner.append(chunk)
+            data = self.db.generate_calendar_wrapper(inner)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
             sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
