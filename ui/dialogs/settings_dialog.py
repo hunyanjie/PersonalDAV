@@ -212,34 +212,67 @@ class SettingsDialog(tk.Toplevel):
             self.log_path_entry.config(state=st); self.log_browse_btn.config(state=st); self.log_level_combo.config(state=st)
         self.enable_log_file_var.trace("w", on_toggle)
 
+    def _make_preset_quick_buttons(self, parent, entry):
+        common = ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"]
+        allday_common = ["日程发生时", "当天上午9点", "1天前上午9点", "2天前上午9点", "7天前上午9点"]
+        qf = ttk.LabelFrame(parent, text="常用预设 (点击快速填入)")
+        qf.pack(fill=tk.X, padx=10, pady=5)
+        nf = ttk.Frame(qf); nf.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(nf, text="常规:", font=('', 9)).pack(side=tk.LEFT)
+        for t in common:
+            ttk.Button(nf, text=t, width=10,
+                       command=lambda v=t: [entry.delete(0, tk.END), entry.insert(0, v)]).pack(side=tk.LEFT, padx=1)
+        af = ttk.Frame(qf); af.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(af, text="全天:", font=('', 9)).pack(side=tk.LEFT)
+        for t in allday_common:
+            ttk.Button(af, text=t, width=14,
+                       command=lambda v=t: [entry.delete(0, tk.END), entry.insert(0, v)]).pack(side=tk.LEFT, padx=1)
+
     def add_preset_reminder(self):
-        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set()
-        ttk.Label(dialog, text='预设内容:').pack(anchor='w', padx=10, pady=5)
-        entry = ttk.Entry(dialog, width=30); entry.pack(padx=10, pady=5)
+        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set(); dialog.geometry("520x300")
+        ttk.Label(dialog, text="添加预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
+        ttk.Label(dialog, text="输入提醒触发时间，新建日程时可双击预设快速添加。", foreground="gray").pack(anchor='w', padx=10)
+        ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
+        entry = ttk.Entry(dialog, width=40); entry.pack(padx=10, pady=5, fill=tk.X)
+        entry.focus_set()
+        self._make_preset_quick_buttons(dialog, entry)
         var = tk.StringVar(value='normal')
-        ttk.Radiobutton(dialog, text='常规事件', variable=var, value='normal').pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(dialog, text='全天事件', variable=var, value='allday').pack(side=tk.LEFT, padx=10)
-        def save():
-            v = entry.get().strip()
-            if not v: return
+        rf = ttk.Frame(dialog); rf.pack(padx=10, pady=5, anchor='w')
+        ttk.Radiobutton(rf, text='常规事件', variable=var, value='normal').pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(rf, text='全天事件', variable=var, value='allday').pack(side=tk.LEFT, padx=2)
+        bf = ttk.Frame(dialog); bf.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(bf, text='确定', command=lambda: [
+            setattr(self, '_tmp_preset_val', entry.get().strip()) if entry.get().strip() else None,
+            dialog.destroy() if entry.get().strip() else None
+        ][-1]).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(bf, text='取消', command=dialog.destroy).pack(side=tk.RIGHT, padx=2)
+        dialog.wait_window()
+        v = getattr(self, '_tmp_preset_val', None)
+        if v:
             lb = self.preset_allday_reminders_listbox if var.get() == 'allday' else self.preset_reminders_listbox
-            lb.insert('end', v); dialog.destroy()
-        ttk.Button(dialog, text='确定', command=save).pack(side=tk.BOTTOM, pady=10)
+            lb.insert('end', v)
 
     def edit_preset_reminder(self):
         n_sel = self.preset_reminders_listbox.curselection()
         a_sel = self.preset_allday_reminders_listbox.curselection()
-        if not (n_sel or a_sel): return
+        if not (n_sel or a_sel):
+            messagebox.showinfo("提示", "请先选中要编辑的预设项")
+            return
         lb = self.preset_reminders_listbox if n_sel else self.preset_allday_reminders_listbox
         idx = n_sel[0] if n_sel else a_sel[0]
         cur = lb.get(idx)
-        dialog = tk.Toplevel(self); dialog.title('编辑预设'); dialog.grab_set()
-        entry = ttk.Entry(dialog, width=30); entry.insert(0, cur); entry.pack(padx=10, pady=10)
-        def save():
-            v = entry.get().strip()
-            if v: lb.delete(idx); lb.insert(idx, v)
-            dialog.destroy()
-        ttk.Button(dialog, text='确定', command=save).pack(pady=10)
+        dialog = tk.Toplevel(self); dialog.title('编辑预设提醒'); dialog.transient(self); dialog.grab_set(); dialog.geometry("520x300")
+        ttk.Label(dialog, text="编辑预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
+        ttk.Label(dialog, text="修改提醒触发时间。", foreground="gray").pack(anchor='w', padx=10)
+        ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
+        entry = ttk.Entry(dialog, width=40); entry.insert(0, cur); entry.pack(padx=10, pady=5, fill=tk.X)
+        entry.focus_set(); entry.selection_range(0, tk.END)
+        self._make_preset_quick_buttons(dialog, entry)
+        bf = ttk.Frame(dialog); bf.pack(fill=tk.X, padx=10, pady=10)
+        ttk.Button(bf, text='确定', command=lambda: [
+            lb.delete(idx), lb.insert(idx, entry.get().strip()), dialog.destroy()
+        ] if entry.get().strip() else None).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(bf, text='取消', command=dialog.destroy).pack(side=tk.RIGHT, padx=2)
 
     def delete_preset_reminder(self):
         for lb in [self.preset_reminders_listbox, self.preset_allday_reminders_listbox]:
