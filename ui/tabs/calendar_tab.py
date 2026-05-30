@@ -13,13 +13,15 @@ from services.import_service import TextImportManager, FileSource, UrlSource, Cl
 
 class CalendarTab(BaseTreeTab):
     """日历管理标签页"""
-    COLUMNS = ("selected", "uid", "summary", "start", "end")
+    COLUMNS = ("selected", "uid", "summary", "start", "end", "created_at", "updated_at")
     HEADINGS = {
         "selected": "✓",
         "uid": "ID",
         "summary": "事件",
         "start": "开始时间",
-        "end": "结束时间"
+        "end": "结束时间",
+        "created_at": "添加时间",
+        "updated_at": "修改时间"
     }
 
     def __init__(self, parent, event_service, settings_service, app_root):
@@ -37,7 +39,7 @@ class CalendarTab(BaseTreeTab):
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.refresh_events)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 150, "summary": 300, "start": 200, "end": 200}
+        widths = {"selected": 30, "uid": 150, "summary": 300, "start": 200, "end": 200, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
@@ -93,7 +95,7 @@ class CalendarTab(BaseTreeTab):
         for item in self.tree.get_children(): self.tree.delete(item)
 
         for event in self._all_data:
-            uid, summary, start, end = event
+            uid, summary, start, end, created_at, updated_at = event
             match = not query or any(query in str(v).lower() for v in event)
             
             if match:
@@ -104,7 +106,7 @@ class CalendarTab(BaseTreeTab):
                     from utils.encoding_helper import decode_ical_value
                     disp_summary = decode_ical_value(disp_summary)
                 
-                item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end))
+                item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end, created_at, updated_at))
                 if sel == "✓": self.tree.selection_add(item_id)
 
     def sort_tree(self, col):

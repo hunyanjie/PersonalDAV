@@ -10,6 +10,8 @@ class EventModel:
     dtend: str
     ical: str = ""
     id: Optional[int] = None
+    created_at: str = ""
+    updated_at: str = ""
 
     def to_dict(self):
         return {
@@ -18,5 +20,7 @@ class EventModel:
             "summary": self.summary,
             "dtstart": self.dtstart,
             "dtend": self.dtend,
-            "ical": self.ical
+            "ical": self.ical,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }

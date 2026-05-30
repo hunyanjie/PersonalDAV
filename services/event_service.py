@@ -1,4 +1,5 @@
 import vobject
+from datetime import datetime
 from database.repositories.event_repository import EventRepository
 from models.event import EventModel
 from services.base_service import BaseService
@@ -17,7 +18,7 @@ class EventService(BaseService):
                 repo=EventRepository(),
                 changed_event=EVENT_EVENTS_CHANGED,
                 raw_field='ical',
-                list_fields=['uid', 'summary', 'dtstart', 'dtend']
+                list_fields=['uid', 'summary', 'dtstart', 'dtend', 'created_at', 'updated_at']
             )
         return cls._instance
 
@@ -43,8 +44,14 @@ class EventService(BaseService):
 
             existing = self.repo.get_by_uid(uid)
             operation = "inserted"
+            now = datetime.now().isoformat()
             if existing:
                 operation = "unchanged" if existing.ical == ical_data else "updated"
+                event.created_at = existing.created_at
+                event.updated_at = now
+            else:
+                event.created_at = now
+                event.updated_at = now
 
             if operation != "unchanged":
                 self.repo.add_or_update(event)

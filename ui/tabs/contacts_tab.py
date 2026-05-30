@@ -14,13 +14,15 @@ from services.import_service import TextImportManager, FileSource, UrlSource, Cl
 
 class ContactsTab(BaseTreeTab):
     """联系人管理标签页"""
-    COLUMNS = ("selected", "uid", "name", "email", "phone")
+    COLUMNS = ("selected", "uid", "name", "email", "phone", "created_at", "updated_at")
     HEADINGS = {
         "selected": "✓",
         "uid": "ID",
         "name": "姓名",
         "email": "邮箱",
-        "phone": "电话"
+        "phone": "电话",
+        "created_at": "添加时间",
+        "updated_at": "修改时间"
     }
 
     def __init__(self, parent, contact_service, app_root):
@@ -37,7 +39,7 @@ class ContactsTab(BaseTreeTab):
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.refresh_contacts)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 100, "name": 150, "email": 200, "phone": 150}
+        widths = {"selected": 30, "uid": 100, "name": 150, "email": 200, "phone": 150, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
@@ -93,7 +95,7 @@ class ContactsTab(BaseTreeTab):
         for item in self.tree.get_children(): self.tree.delete(item)
 
         for contact in self._all_data:
-            uid, name, emails, phones = contact
+            uid, name, emails, phones, created_at, updated_at = contact
             match = not query or any(query in str(v).lower() for v in contact)
             
             if match:
@@ -101,7 +103,7 @@ class ContactsTab(BaseTreeTab):
                 disp_emails = emails.replace(";", "; ") if emails else ""
                 disp_phones = phones.replace(";", "; ") if phones else ""
 
-                item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones))
+                item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones, created_at, updated_at))
                 if sel == "✓": self.tree.selection_add(item_id)
 
     def add_contact(self):

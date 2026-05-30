@@ -7,6 +7,6 @@ class ContactRepository(BaseRepository[ContactModel]):
         super().__init__(
             table='contacts',
             model_cls=ContactModel,
-            columns=['uid', 'full_name', 'email', 'phone', 'vcard', 'id'],
-            insert_columns=['uid', 'full_name', 'email', 'phone', 'vcard']
+            columns=['uid', 'full_name', 'email', 'phone', 'vcard', 'id', 'created_at', 'updated_at'],
+            insert_columns=['uid', 'full_name', 'email', 'phone', 'vcard', 'created_at', 'updated_at']
         )

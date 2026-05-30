@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 import vobject
 from database.repositories.contact_repository import ContactRepository
 from models.contact import ContactModel
@@ -18,7 +19,7 @@ class ContactService(BaseService):
                 repo=ContactRepository(),
                 changed_event=EVENT_CONTACTS_CHANGED,
                 raw_field='vcard',
-                list_fields=['uid', 'full_name', 'email', 'phone']
+                list_fields=['uid', 'full_name', 'email', 'phone', 'created_at', 'updated_at']
             )
         return cls._instance
 
@@ -44,11 +45,17 @@ class ContactService(BaseService):
             if not parsed_data:
                 return None, "Parse Error"
 
+            now = datetime.now().isoformat()
             contact = ContactModel(**parsed_data)
             existing = self.repo.get_by_uid(contact.uid)
             operation = "inserted"
             if existing:
                 operation = "unchanged" if existing.vcard == vcard_data else "updated"
+                contact.created_at = existing.created_at
+                contact.updated_at = now
+            else:
+                contact.created_at = now
+                contact.updated_at = now
 
             if operation != "unchanged":
                 self.repo.add_or_update(contact)

@@ -10,6 +10,8 @@ class ContactModel:
     phone: str = ""
     vcard: str = ""
     id: Optional[int] = None
+    created_at: str = ""
+    updated_at: str = ""
 
     def to_dict(self):
         return {
@@ -18,5 +20,7 @@ class ContactModel:
             "full_name": self.full_name,
             "email": self.email,
             "phone": self.phone,
-            "vcard": self.vcard
+            "vcard": self.vcard,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
         }

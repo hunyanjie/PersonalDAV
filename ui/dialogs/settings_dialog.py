@@ -9,6 +9,10 @@ from datetime import datetime, timedelta
 
 
 SIMPLE_SETTINGS = [
+    # 新增设置只需在此列表添加一行 SettingDef。
+    # 参数: (key, label, widget_type, section, default, [db_default], [options], [width], [spin_from/to], [columnspan], [display_map])
+    # widget_type: "check" 复选框 | "entry" 输入框 | "combo" 下拉框 | "spin" 数字框 | "scale" 滑块 | "sep" 分隔线
+    # display_map: {显示值: 数据库值}，用于 combo 中显示中文、存储英文的场景
     # ========== 服务器控制 ==========
     SettingDef("auto_save_port", "自动保存端口号", "check", "服务器控制", default=True, db_default="True"),
     SettingDef("auto_start_server", "启动时自动启动服务器", "check", "服务器控制", default=False, db_default="False"),

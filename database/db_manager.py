@@ -50,7 +50,9 @@ class Database:
                       full_name TEXT,
                       email TEXT,
                       phone TEXT,
-                      vcard TEXT)''')
+                      vcard TEXT,
+                      created_at TEXT,
+                      updated_at TEXT)''')
         # 事件表
         c.execute('''CREATE TABLE IF NOT EXISTS events
                      (id INTEGER PRIMARY KEY,
@@ -58,12 +60,20 @@ class Database:
                       summary TEXT,
                       dtstart TEXT,
                       dtend TEXT,
-                      ical TEXT)''')
+                      ical TEXT,
+                      created_at TEXT,
+                      updated_at TEXT)''')
         # 设置表
         c.execute('''CREATE TABLE IF NOT EXISTS settings
                      (key TEXT PRIMARY KEY,
                       value TEXT)''')
         
+        # 迁移: 为已有数据库添加时间戳列
+        for table in ['contacts', 'events']:
+            for col in ['created_at', 'updated_at']:
+                try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+                except: pass
+
         # 初始数据填充 (仅在表为空时)
         c.execute("SELECT COUNT(*) FROM settings")
         if c.fetchone()[0] == 0:
@@ -87,6 +97,8 @@ class Database:
             ]
 
             c.executemany("INSERT INTO settings (key, value) VALUES (?, ?)", initial_settings)
+            
+        self.conn.commit()
             
         self.conn.commit()
 
