@@ -1,17 +1,52 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
+from tkinter import ttk, messagebox, filedialog
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.dialogs.event_dialog import EventDialog, DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
-import re
+from models.setting_defs import SettingDef
 import json
 from datetime import datetime, timedelta
-import pytz
-from utils.timezone_helper import TimezoneHelper
+
+
+SIMPLE_SETTINGS = [
+    # ========== 服务器控制 ==========
+    SettingDef("auto_save_port", "自动保存端口号", "check", "服务器控制", default=True, db_default="True"),
+    SettingDef("auto_start_server", "启动时自动启动服务器", "check", "服务器控制", default=False, db_default="False"),
+    SettingDef("default_port", "默认端口号:", "entry", "服务器控制", default="8000", width=10),
+
+    # ========== 基本设置 ==========
+    SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
+               default="已确认", db_default="CONFIRMED",
+               options=list(EventDialog.STATUS_MAPPING.keys()),
+               display_map=EventDialog.STATUS_MAPPING),
+    SettingDef("default_version", "默认日历版本:", "combo", "基本设置",
+               default="2.0", options=["1.0", "2.0", "2.1", "3.0"], width=10),
+    SettingDef("default_duration", "默认持续时间 (小时):", "spin", "基本设置",
+               default="1", spin_from=1, spin_to=24, width=5),
+    SettingDef("default_priority", "默认优先级 (0-9):", "scale", "基本设置",
+               default=5, db_default="5", spin_from=0, spin_to=9),
+    SettingDef("default_transparency", "默认透明度:", "combo", "基本设置",
+               default="忙碌", db_default="OPAQUE",
+               options=list(EventDialog.TRANSPARENCY_MAPPING.keys()),
+               display_map=EventDialog.TRANSPARENCY_MAPPING, width=10),
+    SettingDef("default_sync_timezone", "结束时间使用相同时区", "check", "基本设置",
+               default=True, db_default="True", columnspan=2),
+    SettingDef("_sep1", "", "sep", "基本设置"),
+    SettingDef("default_repeat", "默认重复规则:", "combo", "基本设置",
+               default="不重复", options=EventDialog.REPEAT_OPTIONS, width=12),
+    SettingDef("default_end_cond", "默认结束条件:", "combo", "基本设置",
+               default="永不结束", options=EventDialog.END_CONDITIONS, width=12),
+    SettingDef("default_end_count", "默认结束次数:", "spin", "基本设置",
+               default="5", spin_from=1, spin_to=999, width=5),
+    SettingDef("default_allday", "默认创建全天事件", "check", "基本设置",
+               default=False, db_default="False", columnspan=2),
+    SettingDef("default_force_reminder", "默认勾选强制提醒", "check", "基本设置",
+               default=False, db_default="False", columnspan=2),
+]
 
 
 class SettingsDialog(tk.Toplevel):
-    """系统设置对话框 - 完整功能实现"""
+    """系统设置对话框 - 声明式设置管理"""
     def __init__(self, parent, db_service, on_save_callback):
         super().__init__(parent)
         self.title("设置")
@@ -36,83 +71,125 @@ class SettingsDialog(tk.Toplevel):
 
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=10)
+        ttk.Button(btn_frame, text="重置设置", command=self.reset_settings).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="保存", command=self.save_settings).pack(side=tk.RIGHT, padx=5)
         ttk.Button(btn_frame, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
 
         self.load_settings()
 
+    # ── 声明式引擎 ──────────────────────────────────────────────
+
+    def _build_simple(self, parent, section, start_row=0):
+        row = start_row
+        for d in SIMPLE_SETTINGS:
+            if d.section != section:
+                continue
+            if d.widget_type == "check":
+                var = tk.BooleanVar()
+                ttk.Checkbutton(parent, text=d.label, variable=var).grid(
+                    row=row, column=0, columnspan=max(1, d.columnspan), sticky="w", padx=5, pady=5)
+                setattr(self, f"{d.key}_var", var)
+            elif d.widget_type == "entry":
+                ttk.Label(parent, text=d.label).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+                var = tk.StringVar()
+                ttk.Entry(parent, textvariable=var, width=d.width or 20).grid(row=row, column=1, sticky="w")
+                setattr(self, f"{d.key}_var", var)
+            elif d.widget_type == "combo":
+                ttk.Label(parent, text=d.label).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+                var = tk.StringVar()
+                ttk.Combobox(parent, textvariable=var, values=d.options, state="readonly",
+                             width=d.width or 12).grid(row=row, column=1, sticky="w")
+                setattr(self, f"{d.key}_var", var)
+            elif d.widget_type == "spin":
+                ttk.Label(parent, text=d.label).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+                var = tk.StringVar()
+                ttk.Spinbox(parent, textvariable=var, from_=d.spin_from or 1, to=d.spin_to or 99,
+                            width=d.width or 5).grid(row=row, column=1, sticky="w")
+                setattr(self, f"{d.key}_var", var)
+            elif d.widget_type == "scale":
+                ttk.Label(parent, text=d.label).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+                var = tk.IntVar()
+                frame = ttk.Frame(parent)
+                frame.grid(row=row, column=1, sticky="w")
+                label = ttk.Label(frame, text=f" {d.default} ", width=3, relief=tk.RIDGE, anchor="center")
+                ttk.Scale(frame, from_=d.spin_from or 0, to=d.spin_to or 9, variable=var,
+                          orient='horizontal', length=150,
+                          command=lambda v, lb=label: lb.config(text=f" {int(float(v))} ")).pack(side=tk.LEFT)
+                label.pack(side=tk.LEFT, padx=5)
+                setattr(self, f"{d.key}_var", var)
+                setattr(self, f"{d.key}_label", label)
+            elif d.widget_type == "sep":
+                ttk.Separator(parent, orient='horizontal').grid(
+                    row=row, column=0, columnspan=2, sticky='ew', pady=5)
+            row += 1
+        return row
+
+    def _load_simple(self):
+        s = self.db
+        for d in SIMPLE_SETTINGS:
+            if d.widget_type == "sep":
+                continue
+            var = getattr(self, f"{d.key}_var")
+            if d.widget_type == "check":
+                var.set(s.get_setting(d.key, d.db_default) == "True")
+            elif d.display_map:
+                rev = {v: k for k, v in d.display_map.items()}
+                var.set(rev.get(s.get_setting(d.key, d.db_default), d.default))
+            elif d.widget_type == "scale":
+                val = int(s.get_setting(d.key, d.db_default))
+                var.set(val)
+                label = getattr(self, f"{d.key}_label", None)
+                if label: label.config(text=f" {val} ")
+            else:
+                var.set(s.get_setting(d.key, d.db_default))
+
+    def _save_simple(self):
+        s = self.db
+        for d in SIMPLE_SETTINGS:
+            if d.widget_type == "sep":
+                continue
+            var = getattr(self, f"{d.key}_var")
+            if d.widget_type == "check":
+                s.set_setting(d.key, str(var.get()))
+            elif d.display_map:
+                s.set_setting(d.key, d.display_map.get(var.get(), d.db_default))
+            elif d.widget_type == "scale":
+                s.set_setting(d.key, str(var.get()))
+            else:
+                s.set_setting(d.key, str(var.get()))
+
+    def _reset_simple(self):
+        for d in SIMPLE_SETTINGS:
+            if d.widget_type == "sep":
+                continue
+            var = getattr(self, f"{d.key}_var")
+            if d.widget_type == "scale":
+                var.set(d.default)
+                label = getattr(self, f"{d.key}_label", None)
+                if label: label.config(text=f" {d.default} ")
+            else:
+                var.set(d.default)
+
+    # ── 服务器设置 ──────────────────────────────────────────────
+
     def create_server_settings(self, parent):
-        f = ttk.LabelFrame(parent, text="服务器控制"); f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.auto_save_port_var = tk.BooleanVar()
-        ttk.Checkbutton(f, text="自动保存端口号", variable=self.auto_save_port_var).grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        self.auto_start_server_var = tk.BooleanVar()
-        ttk.Checkbutton(f, text="启动时自动启动服务器", variable=self.auto_start_server_var).grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        ttk.Label(f, text="默认端口号:").grid(row=2, column=0, sticky="w", padx=5)
-        self.default_port_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.default_port_var, width=10).grid(row=2, column=1, sticky="w")
+        f = ttk.LabelFrame(parent, text="服务器控制")
+        f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self._build_simple(f, "服务器控制")
+
+    # ── 日历设置 ────────────────────────────────────────────────
 
     def create_calendar_settings(self, parent):
         nb = ttk.Notebook(parent); nb.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         b_t = ttk.Frame(nb); nb.add(b_t, text="基本设置")
         p_t = ttk.Frame(nb); nb.add(p_t, text="预设提醒")
 
-        # ==================== 基本设置 (b_t) ====================
-        ttk.Label(b_t, text="默认事件状态:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.default_status_var = tk.StringVar()
-        ttk.Combobox(b_t, textvariable=self.default_status_var, values=list(EventDialog.STATUS_MAPPING.keys()), state="readonly").grid(row=0, column=1, sticky="w")
-
-        ttk.Label(b_t, text="默认日历版本:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.default_version_var = tk.StringVar()
-        ttk.Combobox(b_t, textvariable=self.default_version_var, values=["1.0", "2.0", "2.1", "3.0"], state="readonly", width=10).grid(row=1, column=1, sticky="w")
-
-        ttk.Label(b_t, text="默认持续时间 (小时):").grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        self.default_duration_var = tk.StringVar()
-        ttk.Spinbox(b_t, textvariable=self.default_duration_var, from_=1, to=24, width=5).grid(row=2, column=1, sticky="w")
-
-        ttk.Label(b_t, text="默认优先级 (0-9):").grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        self.default_priority_var = tk.IntVar()
-        priority_frame = ttk.Frame(b_t)
-        priority_frame.grid(row=3, column=1, sticky="w")
-        ttk.Scale(priority_frame, from_=0, to=9, variable=self.default_priority_var, orient='horizontal', length=150,
-                  command=lambda v: self.default_priority_label.config(text=f" {int(float(v))} ")).pack(side=tk.LEFT)
-        self.default_priority_label = ttk.Label(priority_frame, text=" 5 ", width=3, relief=tk.RIDGE, anchor="center")
-        self.default_priority_label.pack(side=tk.LEFT, padx=5)
-
-        ttk.Label(b_t, text="默认透明度:").grid(row=4, column=0, padx=5, pady=5, sticky="w")
-        self.default_transparency_var = tk.StringVar()
-        ttk.Combobox(b_t, textvariable=self.default_transparency_var, values=list(EventDialog.TRANSPARENCY_MAPPING.keys()), state="readonly", width=10).grid(row=4, column=1, sticky="w")
-
-        self.default_sync_timezone_var = tk.BooleanVar()
-        ttk.Checkbutton(b_t, text="结束时间使用相同时区", variable=self.default_sync_timezone_var).grid(row=5, column=0, columnspan=2, sticky="w", pady=5)
-
-        # 重复规则设置
-        sep = ttk.Separator(b_t, orient='horizontal'); sep.grid(row=6, column=0, columnspan=2, sticky='ew', pady=5)
-        ttk.Label(b_t, text="默认重复规则:").grid(row=7, column=0, padx=5, pady=5, sticky="w")
-        self.default_repeat_var = tk.StringVar()
-        ttk.Combobox(b_t, textvariable=self.default_repeat_var, values=EventDialog.REPEAT_OPTIONS, state="readonly", width=12).grid(row=7, column=1, sticky="w")
-
-        ttk.Label(b_t, text="默认结束条件:").grid(row=8, column=0, padx=5, pady=5, sticky="w")
-        self.default_end_cond_var = tk.StringVar()
-        ttk.Combobox(b_t, textvariable=self.default_end_cond_var, values=EventDialog.END_CONDITIONS, state="readonly", width=12).grid(row=8, column=1, sticky="w")
-
-        ttk.Label(b_t, text="默认结束次数:").grid(row=9, column=0, padx=5, pady=5, sticky="w")
-        self.default_end_count_var = tk.StringVar()
-        ttk.Spinbox(b_t, textvariable=self.default_end_count_var, from_=1, to=999, width=5).grid(row=9, column=1, sticky="w")
-
-        self.default_allday_var = tk.BooleanVar()
-        ttk.Checkbutton(b_t, text="默认创建全天事件", variable=self.default_allday_var).grid(row=10, column=0, columnspan=2, sticky="w", pady=5)
-
-        self.default_force_reminder_var = tk.BooleanVar()
-        ttk.Checkbutton(b_t, text="默认勾选强制提醒", variable=self.default_force_reminder_var).grid(row=11, column=0, columnspan=2, sticky="w", pady=5)
-
-        # ==================== 预设提醒 (p_t) ====================
+        self._build_simple(b_t, "基本设置")
         self.create_preset_settings(p_t)
 
     def create_preset_settings(self, parent):
-        # 1. 预设列表管理
         p_m_f = ttk.LabelFrame(parent, text="管理预设项 (右键菜单内容)")
         p_m_f.pack(fill=tk.X, padx=5, pady=5)
-        
         ttk.Label(p_m_f, text="常规预设:").grid(row=0, column=0, sticky="w", padx=5)
         p_r_f = ttk.Frame(p_m_f); p_r_f.grid(row=1, column=0, padx=5, sticky="nsew")
         self.preset_reminders_listbox = tk.Listbox(p_r_f, height=4, exportselection=False)
@@ -136,10 +213,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(p_btn, text="编辑预设", command=self.edit_preset_reminder).pack(side=tk.LEFT, padx=2)
         ttk.Button(p_btn, text="删除预设", command=self.delete_preset_reminder).pack(side=tk.LEFT, padx=2)
 
-        # 2. 自动勾选项
         a_c_f = ttk.LabelFrame(parent, text="新建日程时自动勾选")
         a_c_f.pack(fill=tk.X, padx=5, pady=5)
-        
         ttk.Label(a_c_f, text="常规自动勾选:").grid(row=0, column=0, sticky="w", padx=5)
         d_r_f = ttk.Frame(a_c_f); d_r_f.grid(row=1, column=0, padx=5, sticky="nsew")
         self.default_reminders_listbox = tk.Listbox(d_r_f, selectmode='multiple', height=4, exportselection=False)
@@ -147,8 +222,8 @@ class SettingsDialog(tk.Toplevel):
         d_r_sb = ttk.Scrollbar(d_r_f, orient=tk.VERTICAL, command=self.default_reminders_listbox.yview)
         d_r_sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.default_reminders_listbox.config(yscrollcommand=d_r_sb.set)
-        opts = ["日程发生时", "5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"]
-        for opt in opts: self.default_reminders_listbox.insert(tk.END, opt)
+        for opt in ["日程发生时", "5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"]:
+            self.default_reminders_listbox.insert(tk.END, opt)
 
         ttk.Label(a_c_f, text="全天自动勾选:").grid(row=0, column=1, sticky="w", padx=5)
         d_a_f = ttk.Frame(a_c_f); d_a_f.grid(row=1, column=1, padx=5, sticky="nsew")
@@ -157,13 +232,11 @@ class SettingsDialog(tk.Toplevel):
         d_a_sb = ttk.Scrollbar(d_a_f, orient=tk.VERTICAL, command=self.default_allday_reminders_listbox.yview)
         d_a_sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.default_allday_reminders_listbox.config(yscrollcommand=d_a_sb.set)
-        allday_opts = ["当天上午9点", "1天前上午9点", "2天前上午9点", "3天前上午9点", "5天前上午9点", "7天前上午9点"]
-        for opt in allday_opts: self.default_allday_reminders_listbox.insert(tk.END, opt)
+        for opt in ["当天上午9点", "1天前上午9点", "2天前上午9点", "3天前上午9点", "5天前上午9点", "7天前上午9点"]:
+            self.default_allday_reminders_listbox.insert(tk.END, opt)
 
-        # 3. 自定义默认提醒
         c_d_f = ttk.LabelFrame(parent, text="自定义默认提醒 (新建日程时自动添加详情)")
         c_d_f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
         ttk.Label(c_d_f, text="常规自定义:").grid(row=0, column=0, sticky="w", padx=5)
         c_r_f = ttk.Frame(c_d_f); c_r_f.grid(row=1, column=0, padx=5, sticky="nsew")
         self.custom_default_reminders_listbox = tk.Listbox(c_r_f, height=3, exportselection=False)
@@ -190,27 +263,32 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(c_btn, text="编辑全天", command=lambda: self.edit_custom_default_reminder(True)).pack(side=tk.LEFT, padx=2)
         ttk.Button(c_btn, text="删除全天", command=lambda: self.delete_custom_default_reminder(True)).pack(side=tk.LEFT, padx=2)
 
+    # ── 日志设置 ────────────────────────────────────────────────
+
     def create_log_settings(self, parent):
         f = ttk.LabelFrame(parent, text="日志记录"); f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.enable_log_file_var = tk.BooleanVar()
-        ttk.Checkbutton(f, text="启用日志文件", variable=self.enable_log_file_var).grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=10)
-
+        ttk.Checkbutton(f, text="启用日志文件", variable=self.enable_log_file_var).grid(
+            row=0, column=0, columnspan=3, sticky="w", padx=5, pady=10)
         ttk.Label(f, text="日志文件路径:").grid(row=1, column=0, padx=5)
         self.log_path_var = tk.StringVar()
         self.log_path_entry = ttk.Entry(f, textvariable=self.log_path_var, width=35)
         self.log_path_entry.grid(row=1, column=1)
         self.log_browse_btn = ttk.Button(f, text="浏览...", command=self.browse_log_file)
         self.log_browse_btn.grid(row=1, column=2, padx=5)
-
         ttk.Label(f, text="日志级别:").grid(row=2, column=0, padx=5, pady=10)
         self.log_level_var = tk.StringVar()
-        self.log_level_combo = ttk.Combobox(f, textvariable=self.log_level_var, values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], state="readonly")
+        self.log_level_combo = ttk.Combobox(f, textvariable=self.log_level_var,
+                                            values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], state="readonly")
         self.log_level_combo.grid(row=2, column=1, sticky="w")
-
         def on_toggle(*args):
             st = tk.NORMAL if self.enable_log_file_var.get() else tk.DISABLED
-            self.log_path_entry.config(state=st); self.log_browse_btn.config(state=st); self.log_level_combo.config(state=st)
+            self.log_path_entry.config(state=st)
+            self.log_browse_btn.config(state=st)
+            self.log_level_combo.config(state=st)
         self.enable_log_file_var.trace("w", on_toggle)
+
+    # ── 预设提醒增删改 ──────────────────────────────────────────
 
     def _make_preset_quick_buttons(self, parent, entry):
         common = ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"]
@@ -282,7 +360,6 @@ class SettingsDialog(tk.Toplevel):
     def add_custom_default_reminder(self, is_allday):
         data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
         listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-
         def on_save(new_alarm):
             save_data = new_alarm.copy()
             save_data['trigger'] = save_alarm_trigger(save_data['trigger'])
@@ -290,7 +367,6 @@ class SettingsDialog(tk.Toplevel):
                 save_data['duration'] = save_data['duration'].total_seconds()
             data_list.append(save_data)
             self._refresh_custom_listbox(listbox, data_list)
-
         DetailedReminderEditor(self, callback=on_save)
 
     def edit_custom_default_reminder(self, is_allday):
@@ -298,7 +374,6 @@ class SettingsDialog(tk.Toplevel):
         listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
         sel = listbox.curselection()
         if not sel: return
-
         idx = sel[0]
         try:
             initial_data = data_list[idx].copy()
@@ -307,7 +382,6 @@ class SettingsDialog(tk.Toplevel):
                 initial_data['duration'] = timedelta(seconds=initial_data['duration'])
         except:
             initial_data = None
-
         def on_save(new_alarm):
             save_data = new_alarm.copy()
             save_data['trigger'] = save_alarm_trigger(save_data['trigger'])
@@ -315,7 +389,6 @@ class SettingsDialog(tk.Toplevel):
                 save_data['duration'] = save_data['duration'].total_seconds()
             data_list[idx] = save_data
             self._refresh_custom_listbox(listbox, data_list)
-
         DetailedReminderEditor(self, initial_alarm=initial_data, callback=on_save)
 
     def delete_custom_default_reminder(self, is_allday):
@@ -329,6 +402,8 @@ class SettingsDialog(tk.Toplevel):
     def browse_log_file(self):
         p = filedialog.asksaveasfilename(title="选择日志文件", filetypes=[("日志文件", "*.log"), ("所有文件", "*.*")], defaultextension=".log")
         if p: self.log_path_var.set(p)
+
+    # ── 显示格式 ────────────────────────────────────────────────
 
     @staticmethod
     def _format_alarm_display(alarm_data):
@@ -359,8 +434,7 @@ class SettingsDialog(tk.Toplevel):
             trigger_str = str(trigger)
         desc = alarm_data.get('description', '')
         result = f"{action} - {trigger_str}"
-        if desc:
-            result += f" | 描述: {desc}"
+        if desc: result += f" | 描述: {desc}"
         return result
 
     def _refresh_custom_listbox(self, listbox, data_list):
@@ -368,29 +442,19 @@ class SettingsDialog(tk.Toplevel):
         for alarm_data in data_list:
             listbox.insert(tk.END, self._format_alarm_display(alarm_data))
 
+    # ── 加载 ────────────────────────────────────────────────────
+
     def load_settings(self):
         s = self.db
-        self.auto_save_port_var.set(s.get_setting("auto_save_port", "True") == "True")
-        self.auto_start_server_var.set(s.get_setting("auto_start_server", "False") == "True")
-        self.default_port_var.set(s.get_setting("default_port", "8000"))
-        self.default_status_var.set(next((k for k, v in EventDialog.STATUS_MAPPING.items() if v == s.get_setting("default_status", "CONFIRMED")), "已确认"))
-        self.default_version_var.set(s.get_setting("default_version", "2.0"))
-        self.default_duration_var.set(s.get_setting("default_duration", "1"))
-        p = int(s.get_setting("default_priority", "5")); self.default_priority_var.set(p); self.default_priority_label.config(text=f" {p} ")
-        self.default_transparency_var.set(next((k for k, v in EventDialog.TRANSPARENCY_MAPPING.items() if v == s.get_setting("default_transparency", "OPAQUE")), "忙碌"))
-        self.default_sync_timezone_var.set(s.get_setting("default_sync_timezone", "True") == "True")
-        self.default_repeat_var.set(s.get_setting("default_repeat", "不重复"))
-        self.default_end_cond_var.set(s.get_setting("default_end_cond", "永不结束"))
-        self.default_end_count_var.set(s.get_setting("default_end_count", "5"))
-        self.default_allday_var.set(s.get_setting("default_allday", "False") == "True")
-        self.default_force_reminder_var.set(s.get_setting("default_force_reminder", "False") == "True")
-        for key, lb in [('preset_reminders', self.preset_reminders_listbox), ('preset_allday_reminders', self.preset_allday_reminders_listbox)]:
+        self._load_simple()
+
+        for key, lb in [('preset_reminders', self.preset_reminders_listbox),
+                        ('preset_allday_reminders', self.preset_allday_reminders_listbox)]:
             val = s.get_setting(key, '')
             if val:
                 for item in val.split(';'):
                     if item: lb.insert(tk.END, item)
-        
-        # 加载自定义 JSON 格式提醒
+
         self._custom_reminders_data = []
         self._custom_allday_reminders_data = []
         for key, data_list, lb in [
@@ -400,9 +464,7 @@ class SettingsDialog(tk.Toplevel):
             val = s.get_setting(key, '')
             if val:
                 for item_str in val.split(';'):
-                    if not item_str:
-                        continue
-                    # 尝试转换旧格式到新 JSON 格式 (平滑迁移)
+                    if not item_str: continue
                     if not item_str.startswith('{'):
                         parts = item_str.split(':', 3)
                         if len(parts) >= 3:
@@ -421,39 +483,60 @@ class SettingsDialog(tk.Toplevel):
                         data_list.append({'action': 'DISPLAY', 'trigger': {'type': 'td', 'seconds': -900}, 'description': item_str})
             self._refresh_custom_listbox(lb, data_list)
 
-        for key, lb in [('default_reminders', self.default_reminders_listbox), ('default_allday_reminders', self.default_allday_reminders_listbox)]:
-            sel_str = s.get_setting(key, ''); sel_list = sel_str.split(';')
+        for key, lb in [('default_reminders', self.default_reminders_listbox),
+                        ('default_allday_reminders', self.default_allday_reminders_listbox)]:
+            sel_str = s.get_setting(key, '')
             for i in range(lb.size()):
-                if lb.get(i) in sel_list: lb.selection_set(i)
+                if lb.get(i) in sel_str.split(';'): lb.selection_set(i)
+
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
         self.log_path_var.set(s.get_setting("log_file_path", "dav_server.log"))
         self.log_level_var.set(s.get_setting("log_level", "INFO"))
 
+    # ── 重置 ────────────────────────────────────────────────────
+
+    def reset_settings(self):
+        if not messagebox.askyesno("确认重置", "确定要重置所有设置吗？\n此操作无法撤销。", parent=self):
+            return
+        self.db.reset_all()
+        self._reset_simple()
+
+        self.preset_reminders_listbox.delete(0, tk.END)
+        for p in ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前"]:
+            self.preset_reminders_listbox.insert(tk.END, p)
+        self.preset_allday_reminders_listbox.delete(0, tk.END)
+        for p in ["日程发生时", "1天前", "2天前", "7天前"]:
+            self.preset_allday_reminders_listbox.insert(tk.END, p)
+        self.default_reminders_listbox.selection_clear(0, tk.END)
+        self.default_allday_reminders_listbox.selection_clear(0, tk.END)
+        self._custom_reminders_data.clear()
+        self._custom_allday_reminders_data.clear()
+        self.custom_default_reminders_listbox.delete(0, tk.END)
+        self.custom_default_allday_reminders_listbox.delete(0, tk.END)
+
+        self.enable_log_file_var.set(False)
+        self.log_path_var.set("dav_server.log")
+        self.log_level_var.set("INFO")
+
+        messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
+
+    # ── 保存 ────────────────────────────────────────────────────
+
     def save_settings(self):
         s = self.db
-        s.set_setting("auto_save_port", str(self.auto_save_port_var.get()))
-        s.set_setting("auto_start_server", str(self.auto_start_server_var.get()))
-        s.set_setting("default_port", self.default_port_var.get())
-        s.set_setting("default_status", EventDialog.STATUS_MAPPING.get(self.default_status_var.get(), "CONFIRMED"))
-        s.set_setting("default_version", self.default_version_var.get())
-        s.set_setting("default_duration", self.default_duration_var.get())
-        s.set_setting("default_priority", str(self.default_priority_var.get()))
-        s.set_setting("default_transparency", EventDialog.TRANSPARENCY_MAPPING.get(self.default_transparency_var.get(), "OPAQUE"))
-        s.set_setting("default_sync_timezone", str(self.default_sync_timezone_var.get()))
-        s.set_setting("default_repeat", self.default_repeat_var.get())
-        s.set_setting("default_end_cond", self.default_end_cond_var.get())
-        s.set_setting("default_end_count", self.default_end_count_var.get())
-        s.set_setting("default_allday", str(self.default_allday_var.get()))
-        s.set_setting("default_force_reminder", str(self.default_force_reminder_var.get()))
+        self._save_simple()
+
         s.set_setting('preset_reminders', ';'.join([self.preset_reminders_listbox.get(i) for i in range(self.preset_reminders_listbox.size())]))
         s.set_setting('preset_allday_reminders', ';'.join([self.preset_allday_reminders_listbox.get(i) for i in range(self.preset_allday_reminders_listbox.size())]))
         s.set_setting('default_reminders', ';'.join([self.default_reminders_listbox.get(i) for i in self.default_reminders_listbox.curselection()]))
         s.set_setting('default_allday_reminders', ';'.join([self.default_allday_reminders_listbox.get(i) for i in self.default_allday_reminders_listbox.curselection()]))
         s.set_setting('custom_default_reminders', ';'.join([json.dumps(item, ensure_ascii=False) for item in self._custom_reminders_data]))
         s.set_setting('custom_default_allday_reminders', ';'.join([json.dumps(item, ensure_ascii=False) for item in self._custom_allday_reminders_data]))
+
         s.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
         s.set_setting("log_file_path", self.log_path_var.get())
         s.set_setting("log_level", self.log_level_var.get())
+
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
             self.on_save_callback()

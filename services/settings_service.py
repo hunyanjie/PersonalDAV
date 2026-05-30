@@ -18,3 +18,6 @@ class SettingsService:
 
     def get_all_settings(self):
         return self._repo.get_all()
+
+    def reset_all(self):
+        self._repo.delete_all()

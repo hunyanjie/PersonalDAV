@@ -702,7 +702,8 @@ class EventDialog:
                 elif total_min < 60: trigger_str = f"{total_min}分钟前"
                 elif total_min < 1440: trigger_str = f"{total_min//60}小时前"
                 else: trigger_str = f"{total_min//1440}天前"
-            self.reminder_listbox.insert(tk.END, f"{a.get('action', 'DISPLAY')} - {trigger_str}")
+            act_display = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}.get(a.get('action', 'DISPLAY'))
+            self.reminder_listbox.insert(tk.END, f"{act_display} - {trigger_str}")
 
     def delete_reminder(self):
         s = self.reminder_listbox.curselection()

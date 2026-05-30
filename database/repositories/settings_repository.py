@@ -14,3 +14,6 @@ class SettingsRepository:
 
     def get_all(self) -> Dict[str, str]:
         return dict(self.db.query("SELECT key, value FROM settings"))
+
+    def delete_all(self):
+        self.db.execute("DELETE FROM settings")
