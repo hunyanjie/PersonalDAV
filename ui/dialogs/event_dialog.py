@@ -804,7 +804,15 @@ class EventDialog:
         return cal.serialize()
 
     def show_raw_data(self):
-        win = tk.Toplevel(self.root); win.title("原始数据"); txt = tk.Text(win); txt.pack(fill=tk.BOTH, expand=True); txt.insert(tk.END, self.generate_ical()); txt.config(state=tk.DISABLED)
+        win = tk.Toplevel(self.root); win.title("原始数据")
+        sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
+        sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
+        txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+        sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
+        sb_h.pack(side=tk.BOTTOM, fill=tk.X)
+        sb_v.pack(side=tk.RIGHT, fill=tk.Y)
+        txt.pack(fill=tk.BOTH, expand=True)
+        txt.insert(tk.END, self.generate_ical()); txt.config(state=tk.DISABLED)
 
     def ok(self):
         summary = self.summary_var.get().strip()

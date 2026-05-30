@@ -8,6 +8,7 @@ from tkinterdnd2 import DND_FILES
 import vobject
 
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
+from utils.logger import logger
 from services.import_service import TextImportManager, FileSource, UrlSource, ClipboardSource
 
 
@@ -115,14 +116,29 @@ class ContactsTab(BaseTreeTab):
         uid = self.tree.item(sel[0])['values'][1]
         data = self.db.get_by_uid(uid)
         if data:
-            v = vobject.readOne(data)
-            init = {
-                'uid': uid,
-                'name': v.fn.value if hasattr(v, 'fn') else '',
-                'email': getattr(v, 'email', None).value if hasattr(v, 'email') else '',
-                'phone': getattr(v, 'tel', None).value if hasattr(v, 'tel') else ''
-            }
-            dialog = ContactDialog(self.app_root, initial=init, vcard=v)
+            try:
+                v = vobject.readOne(data)
+                init = {
+                    'uid': uid,
+                    'name': v.fn.value if hasattr(v, 'fn') else '',
+                    'email': getattr(v, 'email', None).value if hasattr(v, 'email') else '',
+                    'phone': getattr(v, 'tel', None).value if hasattr(v, 'tel') else ''
+                }
+                dialog = ContactDialog(self.app_root, initial=init, vcard=v)
+            except Exception:
+                logger.warning(f"vCard 解析失败，尝试手动恢复字段: {uid}")
+                from utils.vcard_parser import RobustVCardParser
+                parsed = RobustVCardParser.manual_parse(data)
+                if parsed:
+                    init = {
+                        'uid': parsed.get('uid', uid),
+                        'name': parsed.get('full_name', ''),
+                        'email': parsed.get('email', ''),
+                        'phone': parsed.get('phone', '')
+                    }
+                else:
+                    init = {'uid': uid}
+                dialog = ContactDialog(self.app_root, initial=init, raw_vcard=data)
             if dialog.result:
                 self.db.add_contact(dialog.result['vcard'])
                 self.refresh_contacts()
@@ -145,7 +161,13 @@ class ContactsTab(BaseTreeTab):
         data = self.db.get_by_uid(uid)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
-            txt = tk.Text(win); txt.pack(fill=tk.BOTH, expand=True)
+            sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
+            sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
+            txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+            sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
+            sb_h.pack(side=tk.BOTTOM, fill=tk.X)
+            sb_v.pack(side=tk.RIGHT, fill=tk.Y)
+            txt.pack(fill=tk.BOTH, expand=True)
             txt.insert(tk.END, data); txt.config(state=tk.DISABLED)
 
     def import_webdav(self):

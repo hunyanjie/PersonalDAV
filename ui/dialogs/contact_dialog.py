@@ -22,7 +22,7 @@ class ContactDialog(tk.Toplevel):
     }
     REV_FIELD_MAP = {v: k for k, v in FIELD_MAP.items()}
 
-    def __init__(self, parent, initial=None, vcard=None):
+    def __init__(self, parent, initial=None, vcard=None, raw_vcard=None):
         super().__init__(parent)
         self.title("添加/编辑联系人")
         self.geometry("650x750")
@@ -32,6 +32,7 @@ class ContactDialog(tk.Toplevel):
         self.result = None
         self.initial = initial or {}
         self.vcard = vcard
+        self.raw_vcard_data = raw_vcard
 
         self.create_widgets()
         self.set_initial_values()
@@ -179,16 +180,17 @@ class ContactDialog(tk.Toplevel):
             self.phone_entry.insert(0, self.initial.get('phone', ''))
 
     def show_raw(self):
-        if not self.vcard: return
+        if not self.vcard and not self.raw_vcard_data: return
         w = tk.Toplevel(self); w.title("vCard 源码")
-        t = tk.Text(w, wrap=tk.NONE)
-        t.pack(fill=tk.BOTH, expand=True)
-        scroll_h = ttk.Scrollbar(w, orient=tk.HORIZONTAL, command=t.xview)
-        scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL, command=t.yview)
-        t.config(xscrollcommand=scroll_h.set, yscrollcommand=scroll_v.set)
+        scroll_h = ttk.Scrollbar(w, orient=tk.HORIZONTAL)
+        scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL)
+        t = tk.Text(w, wrap=tk.NONE, xscrollcommand=scroll_h.set, yscrollcommand=scroll_v.set)
+        scroll_h.config(command=t.xview); scroll_v.config(command=t.yview)
         scroll_h.pack(side=tk.BOTTOM, fill=tk.X)
         scroll_v.pack(side=tk.RIGHT, fill=tk.Y)
-        t.insert(tk.END, self.vcard.serialize()); t.config(state=tk.DISABLED)
+        t.pack(fill=tk.BOTH, expand=True)
+        content = self.vcard.serialize() if self.vcard else self.raw_vcard_data
+        t.insert(tk.END, content); t.config(state=tk.DISABLED)
 
     def encode_text(self, text):
         if not text: return ""
