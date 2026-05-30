@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.dialogs.event_dialog import EventDialog, DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
+from utils.timezone_helper import TimezoneHelper
 from models.setting_defs import SettingDef
 import json
 from datetime import datetime, timedelta
@@ -189,7 +190,52 @@ class SettingsDialog(tk.Toplevel):
         p_t = ttk.Frame(nb); nb.add(p_t, text="预设提醒")
 
         self._build_simple(b_t, "基本设置")
+        self._create_timezone_format_ui(b_t)
         self.create_preset_settings(p_t)
+
+    def _create_timezone_format_ui(self, parent):
+        sep = ttk.Separator(parent, orient='horizontal')
+        sep.grid(row=100, column=0, columnspan=2, sticky='ew', pady=5)
+
+        ttk.Label(parent, text="时区显示格式:", font=('', 9, 'bold')).grid(row=101, column=0, sticky="w", padx=5)
+        ttk.Label(parent, text="{offset} {city} {tz_id} {localized} {local_tag} 等占位符可自由组合",
+                  foreground="gray").grid(row=102, column=0, columnspan=2, sticky="w", padx=5)
+
+        self.tz_fmt_var = tk.StringVar()
+        entry = ttk.Entry(parent, textvariable=self.tz_fmt_var, width=70)
+        entry.grid(row=103, column=0, columnspan=2, sticky="ew", padx=5, pady=(2, 0))
+
+        # 实时预览
+        self._tz_preview_label = ttk.Label(parent, text="", foreground="gray", font=('', 8))
+        self._tz_preview_label.grid(row=104, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 2))
+
+        def _update_preview(*_):
+            fmt = self.tz_fmt_var.get()
+            tz_id = TimezoneHelper.get_local_timezone_id()
+            try:
+                preview = TimezoneHelper._format_one(
+                    tz_id, fmt, tz_id, TimezoneHelper._build_sys_locale()
+                )
+            except:
+                preview = "(格式无效)"
+            self._tz_preview_label.config(text=f"预览: {preview}")
+
+        self.tz_fmt_var.trace("w", _update_preview)
+        self.after(100, _update_preview)
+
+        pf = ttk.Frame(parent); pf.grid(row=105, column=0, columnspan=2, sticky="w", padx=5, pady=2)
+        presets = [
+            ("完整", "{offset} - {city} ({tz_id}) {localized}{local_tag}"),
+            ("城市+ID+名称", "{city} ({tz_id}) {localized}{local_tag}"),
+            ("城市+名称+偏移", "{city} {localized} ({offset}){local_tag}"),
+            ("名称+城市+ID", "{localized} - {city} ({tz_id}){local_tag}"),
+            ("ID+城市", "{tz_id} ({city})"),
+            ("仅城市+名称", "{city} {localized}{local_tag}"),
+            ("仅ID", "{tz_id}"),
+        ]
+        for label, fmt in presets:
+            ttk.Button(pf, text=label, width=14,
+                       command=lambda v=fmt: self.tz_fmt_var.set(v)).pack(side=tk.LEFT, padx=1)
 
     def create_preset_settings(self, parent):
         p_m_f = ttk.LabelFrame(parent, text="管理预设项 (右键菜单内容)")
@@ -496,6 +542,9 @@ class SettingsDialog(tk.Toplevel):
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
         self.log_path_var.set(s.get_setting("log_file_path", "dav_server.log"))
         self.log_level_var.set(s.get_setting("log_level", "INFO"))
+        self.tz_fmt_var.set(s.get_setting("timezone_format",
+            "{offset} - {city} ({tz_id}) {localized}{local_tag}"))
+        TimezoneHelper.set_format(self.tz_fmt_var.get())
 
     # ── 重置 ────────────────────────────────────────────────────
 
@@ -521,6 +570,8 @@ class SettingsDialog(tk.Toplevel):
         self.enable_log_file_var.set(False)
         self.log_path_var.set("dav_server.log")
         self.log_level_var.set("INFO")
+        self.tz_fmt_var.set("{offset} - {city} ({tz_id}) {localized}{local_tag}")
+        TimezoneHelper.set_format(self.tz_fmt_var.get())
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
@@ -540,6 +591,8 @@ class SettingsDialog(tk.Toplevel):
         s.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
         s.set_setting("log_file_path", self.log_path_var.get())
         s.set_setting("log_level", self.log_level_var.get())
+        s.set_setting("timezone_format", self.tz_fmt_var.get())
+        TimezoneHelper.set_format(self.tz_fmt_var.get())
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:

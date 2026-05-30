@@ -24,6 +24,10 @@ class DAVServerApp:
         
         # 初始化服务
         self.settings_service = SettingsService()
+        fmt = self.settings_service.get_setting("timezone_format",
+            "{offset} - {city} ({tz_id}) {localized}{local_tag}")
+        from utils.timezone_helper import TimezoneHelper
+        TimezoneHelper.set_format(fmt)
         self.contact_service = ContactService()
         self.event_service = EventService()
         
