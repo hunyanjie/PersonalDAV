@@ -17,6 +17,7 @@ from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
 from utils.encoding_helper import smart_quoted_printable_encode, should_encode, decode_ical_value
+from models.constants import STANDARD_ICAL_FIELDS
 import json
 
 class DetailedReminderEditor(tk.Toplevel):
@@ -583,7 +584,7 @@ class EventDialog:
                 elif hasattr(ev, 'attendee'):
                     val = decode_ical_value(ev.attendee.value); attendee_values.add(val)
                 if attendee_values: self.attendee_text.insert("1.0", "\n".join(sorted(list(attendee_values))))
-                others = []; standard = ['UID', 'SUMMARY', 'LOCATION', 'DESCRIPTION', 'STATUS', 'DTSTART', 'DTEND', 'RRULE', 'VALARM', 'CATEGORIES', 'PRIORITY', 'TRANSP', 'ORGANIZER', 'SEQUENCE', 'URL', 'ATTENDEE', 'VERSION', 'PRODID', 'X-ALLDAY', 'CREATED', 'DTSTAMP', 'LAST-MODIFIED', 'COMPLETED', 'DUE', 'X-FORCE-REMINDER', 'X-SYNC-TZ']
+                others = []; standard = STANDARD_ICAL_FIELDS
                 for child in ev.contents.values():
                     for item in child:
                         name = item.name.upper()
@@ -797,7 +798,7 @@ class EventDialog:
             for line in self.other_text.get("1.0", "end-1c").splitlines():
                 if ":" in line:
                     k, v = line.split(":", 1)
-                    if k.strip().upper() not in ['UID', 'SUMMARY', 'LOCATION', 'DESCRIPTION', 'STATUS', 'DTSTART', 'DTEND', 'RRULE', 'VALARM', 'CATEGORIES', 'PRIORITY', 'TRANSP', 'ORGANIZER', 'SEQUENCE', 'URL', 'ATTENDEE', 'VERSION', 'PRODID', 'X-ALLDAY', 'CREATED', 'DTSTAMP', 'LAST-MODIFIED', 'COMPLETED', 'DUE']:
+                    if k.strip().upper() not in STANDARD_ICAL_FIELDS:
                         try: ev.add(k.strip().lower()).value = v.strip()
                         except: pass
         return cal.serialize()

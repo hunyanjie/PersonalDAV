@@ -83,7 +83,7 @@ class ContactsTab(BaseTreeTab):
     def refresh_contacts(self):
         """刷新联系人列表"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        self._all_data = self.db.get_contacts_list()
+        self._all_data = self.db.get_list_data()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
 
     def apply_filter(self, query):
@@ -113,7 +113,7 @@ class ContactsTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         uid = self.tree.item(sel[0])['values'][1]
-        data = self.db.get_contact(uid)
+        data = self.db.get_by_uid(uid)
         if data:
             v = vobject.readOne(data)
             init = {
@@ -131,7 +131,7 @@ class ContactsTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         if messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个联系人吗？"):
-            for i in sel: self.db.delete_contact(self.tree.item(i)['values'][1])
+            for i in sel: self.db.delete(self.tree.item(i)['values'][1])
             self.refresh_contacts()
     
     def _on_delete(self):
@@ -142,7 +142,7 @@ class ContactsTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         uid = self.tree.item(sel[0])['values'][1]
-        data = self.db.get_contact(uid)
+        data = self.db.get_by_uid(uid)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
             txt = tk.Text(win); txt.pack(fill=tk.BOTH, expand=True)
@@ -161,7 +161,7 @@ class ContactsTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         uids = [self.tree.item(i)['values'][1] for i in sel]
-        vcards = self.db.get_selected_vcards(uids)
+        vcards = self.db.get_selected_raw(uids)
 
         # 单选时预填文件名
         initial = ""

@@ -1,24 +1,26 @@
 import uuid
 import vobject
-from typing import Optional, List
 from database.repositories.contact_repository import ContactRepository
 from models.contact import ContactModel
+from services.base_service import BaseService
 from utils.logger import logger
 from utils.vcard_parser import RobustVCardParser
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
 
-class ContactService:
+class ContactService(BaseService):
     """联系人业务逻辑 - 单例模式"""
     _instance = None
 
     def __new__(cls):
         if not cls._instance:
             cls._instance = super(ContactService, cls).__new__(cls)
-            cls._instance._initialize()
+            cls._instance.__init__(
+                repo=ContactRepository(),
+                changed_event=EVENT_CONTACTS_CHANGED,
+                raw_field='vcard',
+                list_fields=['uid', 'full_name', 'email', 'phone']
+            )
         return cls._instance
-
-    def _initialize(self):
-        self.repo = ContactRepository()
 
     def add_contact(self, vcard_data: str):
         """添加或更新联系人"""
@@ -57,31 +59,10 @@ class ContactService:
             logger.error(f"Service 添加联系人失败: {str(e)}")
             return None, f"Error: {str(e)}"
 
-    def get_contact(self, uid: str) -> str | None:
-        contact = self.repo.get_by_uid(uid)
-        return contact.vcard if contact else None
-
-    def get_contacts_list(self):
-        """返回元组列表以兼容 Treeview"""
-        return [(c.uid, c.full_name, c.email, c.phone) for c in self.repo.get_all()]
-
-    def get_all_vcards(self):
-        return [c.vcard for c in self.repo.get_all()]
-
-    def get_selected_vcards(self, uids: list):
-        return [c.vcard for uid in uids if (c := self.repo.get_by_uid(uid))]
-
-    def delete_contact(self, uid: str):
-        res = self.repo.delete(uid)
-        if res:
-            event_bus.publish(EVENT_CONTACTS_CHANGED)
-        return res
-
     def _extract_full_name(self, vcard):
         if hasattr(vcard, 'fn'): return vcard.fn.value
         if hasattr(vcard, 'n'):
             n = vcard.n.value
-            # vCard N field components: family, given, additional, prefix, suffix
             parts = [getattr(n, k, "") for k in ['prefix', 'given', 'additional', 'family', 'suffix']]
             return " ".join(filter(None, parts))
         return ""
@@ -95,10 +76,3 @@ class ContactService:
         if hasattr(vcard, 'tel_list'): return [t.value for t in vcard.tel_list]
         if hasattr(vcard, 'tel'): return [vcard.tel.value]
         return []
-
-    def _manual_add_contact(self, data):
-        uid = str(uuid.uuid4())
-        contact = ContactModel(uid=uid, full_name="Unknown", vcard=data)
-        self.repo.add_or_update(contact)
-        event_bus.publish(EVENT_CONTACTS_CHANGED)
-        return uid, "inserted"

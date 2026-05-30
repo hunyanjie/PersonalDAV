@@ -27,11 +27,8 @@ class DAVServerApp:
         self.contact_service = ContactService()
         self.event_service = EventService()
         
-        # 初始化队列用于日志和导入
+        # 初始化队列用于日志
         self.log_queue = queue.Queue()
-        self.import_queue = queue.Queue()
-        self.import_in_progress = False
-        self.import_cancel_requested = False
         self.file_handler = None
         self.setup_logging()
 
@@ -39,8 +36,6 @@ class DAVServerApp:
 
         # 启动日志处理循环
         self.root.after(100, self.process_log_queue)
-        # 启动导入队列处理循环
-        self.root.after(100, self.process_import_queue)
 
         # 注册全局快捷键
         self.root.bind("<Delete>", self.on_global_delete)
@@ -251,8 +246,8 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.update_status_bar)
 
     def update_status_bar(self, *args):
-        c_count = self.contact_service.repo.db.count_contacts()
-        e_count = self.event_service.repo.db.count_events()
+        c_count = self.contact_service.count()
+        e_count = self.event_service.count()
         self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | 服务器状态: {'运行中' if self.server_tab.server_instance else '已停止'}")
 
     def show_settings(self):
@@ -271,71 +266,6 @@ class DAVServerApp:
         except queue.Empty:
             pass
         self.root.after(100, self.process_log_queue)
-
-    def process_import_queue(self):
-        """处理导入队列"""
-        if self.import_in_progress or self.import_cancel_requested:
-            self.root.after(100, self.process_import_queue)
-            return
-        
-        try:
-            while not self.import_queue.empty() and not self.import_cancel_requested:
-                task = self.import_queue.get_nowait()
-                self._execute_import_task(task)
-        except queue.Empty:
-            pass
-        
-        self.root.after(100, self.process_import_queue)
-    
-    def _execute_import_task(self, task):
-        """执行单个导入任务"""
-        self.import_in_progress = True
-        try:
-            import_type = task.get('type')
-            data = task.get('data')
-            source = task.get('source', '未知')
-            
-            if import_type == 'contacts':
-                if isinstance(data, list):
-                    for item in data:
-                        if self.import_cancel_requested:
-                            break
-                        self.contact_service.add_contact(item)
-                else:
-                    self.contact_service.add_contact(data)
-                event_bus.publish(EVENT_CONTACTS_CHANGED)
-                logger.info(f"联系人导入完成: 从 {source} 导入")
-            elif import_type == 'events':
-                if isinstance(data, list):
-                    for item in data:
-                        if self.import_cancel_requested:
-                            break
-                        self.event_service.add_event(item)
-                else:
-                    self.event_service.add_event(data)
-                event_bus.publish(EVENT_EVENTS_CHANGED)
-                logger.info(f"事件导入完成: 从 {source} 导入")
-        except Exception as e:
-            logger.error(f"导入任务失败: {str(e)}")
-        finally:
-            self.import_in_progress = False
-    
-    def queue_import(self, import_type, data, source="未知"):
-        """将导入任务加入队列"""
-        self.import_queue.put({'type': import_type, 'data': data, 'source': source})
-    
-    def cancel_import(self):
-        """取消当前导入操作"""
-        self.import_cancel_requested = True
-        logger.info("用户请求取消导入操作")
-        # 清空队列
-        while not self.import_queue.empty():
-            try:
-                self.import_queue.get_nowait()
-            except queue.Empty:
-                break
-        self.import_cancel_requested = False
-        self.import_in_progress = False
 
     def on_closing(self):
         if messagebox.askokcancel("退出", "确定要退出吗？"):

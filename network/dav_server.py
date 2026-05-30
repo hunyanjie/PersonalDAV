@@ -7,10 +7,14 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION
 
 class DAVHandler(BaseHTTPRequestHandler):
     """WebDAV 请求处理器"""
-    
+    contact_service = None
+    event_service = None
+
     def __init__(self, *args, **kwargs):
-        self.contact_service = ContactService()
-        self.event_service = EventService()
+        if DAVHandler.contact_service is None:
+            DAVHandler.contact_service = ContactService()
+        if DAVHandler.event_service is None:
+            DAVHandler.event_service = EventService()
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
@@ -21,7 +25,7 @@ class DAVHandler(BaseHTTPRequestHandler):
             if self.path.startswith("/contacts/"):
                 if self.path.endswith(".vcf"):
                     uid = os.path.basename(self.path).replace(".vcf", "")
-                    vcard = self.contact_service.get_contact(uid)
+                    vcard = self.contact_service.get_by_uid(uid)
                     if vcard:
                         self.send_response(200)
                         self.send_header('Content-type', 'text/vcard')
@@ -33,7 +37,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header('Content-type', 'text/directory')
                     self.end_headers()
-                    all_vcards = self.contact_service.get_all_vcards()
+                    all_vcards = self.contact_service.get_all_raw()
                     for vcard in all_vcards:
                         self.wfile.write(vcard.encode('utf-8'))
                         self.wfile.write(b"\n")
@@ -44,7 +48,7 @@ class DAVHandler(BaseHTTPRequestHandler):
             elif self.path.startswith("/events/"):
                 if self.path.endswith(".ics"):
                     uid = os.path.basename(self.path).replace(".ics", "")
-                    event = self.event_service.get_event(uid)
+                    event = self.event_service.get_by_uid(uid)
                     if event:
                         self.send_response(200)
                         self.send_header('Content-type', 'text/calendar')
@@ -56,7 +60,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header('Content-type', 'text/calendar')
                     self.end_headers()
-                    all_events = self.event_service.get_all_ical_events()
+                    all_events = self.event_service.get_all_raw()
                     calendar_data = self.event_service.generate_calendar_wrapper(all_events)
                     self.wfile.write(calendar_data.encode('utf-8'))
                 else:
@@ -166,14 +170,14 @@ class DAVHandler(BaseHTTPRequestHandler):
             
             if self.path.startswith("/contacts/"):
                 uid = os.path.basename(self.path).replace(".vcf", "")
-                if self.contact_service.delete_contact(uid):
+                if self.contact_service.delete(uid):
                     self.send_response(204)
                     self.end_headers()
                 else:
                     self._send_error(404, "Contact not found")
             elif self.path.startswith("/events/"):
                 uid = os.path.basename(self.path).replace(".ics", "")
-                if self.event_service.delete_event(uid):
+                if self.event_service.delete(uid):
                     self.send_response(204)
                     self.end_headers()
                 else:

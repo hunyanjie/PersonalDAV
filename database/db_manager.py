@@ -15,10 +15,12 @@ class Database:
             with cls._lock:
                 if not cls._instance:
                     cls._instance = super(Database, cls).__new__(cls)
-                    cls._instance._initialize(db_path)
         return cls._instance
 
-    def _initialize(self, db_path):
+    def __init__(self, db_path=DEFAULT_DB_PATH):
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA busy_timeout = 5000;")
@@ -70,7 +72,6 @@ class Database:
                 ('preset_allday_reminders', "日程发生时;1天前;2天前;7天前"),
                 ('default_reminders', "15分钟前"),
                 ('default_allday_reminders', "当天上午9点"),
-                # 示例自定义详情 (JSON 格式)
                 ('custom_default_reminders', json.dumps({'action': 'AUDIO', 'trigger': {'type': 'td', 'seconds': -1800}, 'description': '半小时前提示音', 'attach': 'default_alarm.wav'}, ensure_ascii=False)),
                 ('auto_save_port', "True"),
                 ('default_port', "8000"),
@@ -124,16 +125,6 @@ class Database:
             else:
                 c.execute(query)
             return c.fetchone()
-
-    def count_contacts(self):
-        """统计联系人数量"""
-        res = self.query_one("SELECT COUNT(*) FROM contacts")
-        return res[0] if res else 0
-
-    def count_events(self):
-        """统计事件数量"""
-        res = self.query_one("SELECT COUNT(*) FROM events")
-        return res[0] if res else 0
 
     def close(self):
         """关闭数据库连接"""

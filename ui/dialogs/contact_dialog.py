@@ -5,6 +5,7 @@ import vobject
 from tkcalendar import Calendar
 from ui.widgets.right_click_menu import RightClickMenu
 from utils.encoding_helper import should_encode
+from models.constants import STANDARD_VCARD_FIELDS
 import quopri
 
 
@@ -134,7 +135,7 @@ class ContactDialog(tk.Toplevel):
             emails = []
             phones = []
             others = []
-            standard = ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'VERSION', 'PHOTO', 'BDAY', 'NOTE', 'ORG', 'TITLE', 'URL', 'ADR']
+            standard = STANDARD_VCARD_FIELDS
 
             for child in self.vcard.getChildren():
                 name = child.name.upper()
@@ -245,7 +246,7 @@ class ContactDialog(tk.Toplevel):
             if ":" in line:
                 label, val = line.split(":", 1)
                 key = self.REV_FIELD_MAP.get(label.strip(), label.strip().upper())
-                if key not in ['UID', 'FN', 'N', 'EMAIL', 'TEL', 'BDAY', 'NOTE', 'ORG', 'TITLE', 'URL', 'ADR', 'X-PHONETIC-FIRST-NAME', 'X-PHONETIC-LAST-NAME']:
+                if key not in STANDARD_VCARD_FIELDS + ['X-PHONETIC-FIRST-NAME', 'X-PHONETIC-LAST-NAME']:
                     try: v.add(key.lower()).value = val.strip()
                     except: pass
 

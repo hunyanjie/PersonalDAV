@@ -1,22 +1,25 @@
 import vobject
 from database.repositories.event_repository import EventRepository
 from models.event import EventModel
+from services.base_service import BaseService
 from utils.logger import logger
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
 
-class EventService:
+class EventService(BaseService):
     """日历事件业务逻辑 - 单例模式"""
     _instance = None
 
     def __new__(cls):
         if not cls._instance:
             cls._instance = super(EventService, cls).__new__(cls)
-            cls._instance._initialize()
+            cls._instance.__init__(
+                repo=EventRepository(),
+                changed_event=EVENT_EVENTS_CHANGED,
+                raw_field='ical',
+                list_fields=['uid', 'summary', 'dtstart', 'dtend']
+            )
         return cls._instance
-
-    def _initialize(self):
-        self.repo = EventRepository()
 
     def add_event(self, ical_data: str):
         """添加或更新事件"""
@@ -24,7 +27,7 @@ class EventService:
             ical = vobject.readOne(ical_data)
             ev = ical.vevent
             uid = ev.uid.value
-            
+
             def to_str(val):
                 if hasattr(val, 'isoformat'):
                     return val.isoformat()
@@ -52,26 +55,6 @@ class EventService:
             logger.error(f"Service 添加事件失败: {str(e)}")
             return None, f"Error: {str(e)}"
 
-    def get_event(self, uid: str) -> str | None:
-        event = self.repo.get_by_uid(uid)
-        return event.ical if event else None
-
-    def get_events_list(self):
-        """返回元组列表以兼容 Treeview"""
-        return [(e.uid, e.summary, e.dtstart, e.dtend) for e in self.repo.get_all()]
-
-    def get_all_ical_events(self):
-        return [e.ical for e in self.repo.get_all()]
-
-    def get_selected_ical_events(self, uids: list):
-        return [e.ical for uid in uids if (e := self.repo.get_by_uid(uid))]
-
-    def delete_event(self, uid: str):
-        res = self.repo.delete(uid)
-        if res:
-            event_bus.publish(EVENT_EVENTS_CHANGED)
-        return res
-
     def validate_rrule(self, rrule_str: str) -> bool:
         """验证 RRULE 字符串是否合法"""
         if not rrule_str: return True
@@ -83,6 +66,5 @@ class EventService:
     def generate_calendar_wrapper(self, vevents_str_list: list) -> str:
         """将 VEVENT 字符串列表包装成完整的 iCalendar 文件"""
         header = f"BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//{SOFTWARE_NAME}//{SOFTWARE_VERSION}//ZH-CN\n"
-        # 直接拼接，纯 VEVENT 数据已包含 \r\n，统一转为 \n 避免 Windows 双换行
         events = "".join(vevent.strip() for vevent in vevents_str_list if vevent.strip()).replace("\r\n", "\n")
         return f"{header}{events}END:VCALENDAR\n"

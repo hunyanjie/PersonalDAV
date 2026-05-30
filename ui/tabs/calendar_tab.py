@@ -84,7 +84,7 @@ class CalendarTab(BaseTreeTab):
     def refresh_events(self):
         """刷新事件列表"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        self._all_data = self.db.get_events_list()
+        self._all_data = self.db.get_list_data()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
 
     def apply_filter(self, query):
@@ -141,7 +141,7 @@ class CalendarTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         uid = self.tree.item(sel[0])['values'][1]
-        data = self.db.get_event(uid)
+        data = self.db.get_by_uid(uid)
         if data:
             init = {'uid': uid, 'ical': data}
             dialog = EventDialog(self.app_root, initial=init, db=self.settings)
@@ -153,7 +153,7 @@ class CalendarTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         if messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个事件吗？"):
-            for i in sel: self.db.delete_event(self.tree.item(i)['values'][1])
+            for i in sel: self.db.delete(self.tree.item(i)['values'][1])
             self.refresh_events()
     
     def _on_delete(self):
@@ -164,7 +164,7 @@ class CalendarTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         uid = self.tree.item(sel[0])['values'][1]
-        data = self.db.get_event(uid)
+        data = self.db.get_by_uid(uid)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
             txt = tk.Text(win); txt.pack(fill=tk.BOTH, expand=True)
@@ -183,7 +183,7 @@ class CalendarTab(BaseTreeTab):
         sel = self.tree.selection()
         if not sel: return
         uids = [self.tree.item(i)['values'][1] for i in sel]
-        events = self.db.get_selected_ical_events(uids)
+        events = self.db.get_selected_raw(uids)
 
         # 单选时预填文件名
         initial = ""

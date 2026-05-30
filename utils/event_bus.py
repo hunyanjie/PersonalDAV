@@ -4,11 +4,11 @@ import logging
 class EventBus:
     """全局事件总线 - 实现观察者模式 (Observer Pattern) - 支持弱引用且兼容绑定方法"""
     _instance = None
-    _subscribers = {}
 
     def __new__(cls):
         if not cls._instance:
             cls._instance = super(EventBus, cls).__new__(cls)
+            cls._instance._subscribers = {}
         return cls._instance
 
     def subscribe(self, event_type, callback):
