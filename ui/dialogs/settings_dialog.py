@@ -20,6 +20,8 @@ class SettingsDialog(tk.Toplevel):
         self.grab_set()
         self.db = db_service
         self.on_save_callback = on_save_callback
+        self._custom_reminders_data = []
+        self._custom_allday_reminders_data = []
 
         main_frame = ttk.Frame(self); main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         notebook = ttk.Notebook(main_frame); notebook.pack(fill=tk.BOTH, expand=True)
@@ -112,12 +114,22 @@ class SettingsDialog(tk.Toplevel):
         p_m_f.pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Label(p_m_f, text="常规预设:").grid(row=0, column=0, sticky="w", padx=5)
-        self.preset_reminders_listbox = tk.Listbox(p_m_f, height=4, exportselection=False)
-        self.preset_reminders_listbox.grid(row=1, column=0, padx=5, sticky="nsew")
-        
+        p_r_f = ttk.Frame(p_m_f); p_r_f.grid(row=1, column=0, padx=5, sticky="nsew")
+        self.preset_reminders_listbox = tk.Listbox(p_r_f, height=4, exportselection=False)
+        self.preset_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        p_r_sb = ttk.Scrollbar(p_r_f, orient=tk.VERTICAL, command=self.preset_reminders_listbox.yview)
+        p_r_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.preset_reminders_listbox.config(yscrollcommand=p_r_sb.set)
+        self.preset_reminders_listbox.bind("<Double-1>", lambda e: self.edit_preset_reminder())
+
         ttk.Label(p_m_f, text="全天预设:").grid(row=0, column=1, sticky="w", padx=5)
-        self.preset_allday_reminders_listbox = tk.Listbox(p_m_f, height=4, exportselection=False)
-        self.preset_allday_reminders_listbox.grid(row=1, column=1, padx=5, sticky="nsew")
+        p_a_f = ttk.Frame(p_m_f); p_a_f.grid(row=1, column=1, padx=5, sticky="nsew")
+        self.preset_allday_reminders_listbox = tk.Listbox(p_a_f, height=4, exportselection=False)
+        self.preset_allday_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        p_a_sb = ttk.Scrollbar(p_a_f, orient=tk.VERTICAL, command=self.preset_allday_reminders_listbox.yview)
+        p_a_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.preset_allday_reminders_listbox.config(yscrollcommand=p_a_sb.set)
+        self.preset_allday_reminders_listbox.bind("<Double-1>", lambda e: self.edit_preset_reminder())
 
         p_btn = ttk.Frame(p_m_f); p_btn.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
         ttk.Button(p_btn, text="添加预设", command=self.add_preset_reminder).pack(side=tk.LEFT, padx=2)
@@ -129,14 +141,22 @@ class SettingsDialog(tk.Toplevel):
         a_c_f.pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Label(a_c_f, text="常规自动勾选:").grid(row=0, column=0, sticky="w", padx=5)
-        self.default_reminders_listbox = tk.Listbox(a_c_f, selectmode='multiple', height=4, exportselection=False)
-        self.default_reminders_listbox.grid(row=1, column=0, padx=5, sticky="nsew")
+        d_r_f = ttk.Frame(a_c_f); d_r_f.grid(row=1, column=0, padx=5, sticky="nsew")
+        self.default_reminders_listbox = tk.Listbox(d_r_f, selectmode='multiple', height=4, exportselection=False)
+        self.default_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        d_r_sb = ttk.Scrollbar(d_r_f, orient=tk.VERTICAL, command=self.default_reminders_listbox.yview)
+        d_r_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.default_reminders_listbox.config(yscrollcommand=d_r_sb.set)
         opts = ["日程发生时", "5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"]
         for opt in opts: self.default_reminders_listbox.insert(tk.END, opt)
 
         ttk.Label(a_c_f, text="全天自动勾选:").grid(row=0, column=1, sticky="w", padx=5)
-        self.default_allday_reminders_listbox = tk.Listbox(a_c_f, selectmode='multiple', height=4, exportselection=False)
-        self.default_allday_reminders_listbox.grid(row=1, column=1, padx=5, sticky="nsew")
+        d_a_f = ttk.Frame(a_c_f); d_a_f.grid(row=1, column=1, padx=5, sticky="nsew")
+        self.default_allday_reminders_listbox = tk.Listbox(d_a_f, selectmode='multiple', height=4, exportselection=False)
+        self.default_allday_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        d_a_sb = ttk.Scrollbar(d_a_f, orient=tk.VERTICAL, command=self.default_allday_reminders_listbox.yview)
+        d_a_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.default_allday_reminders_listbox.config(yscrollcommand=d_a_sb.set)
         allday_opts = ["当天上午9点", "1天前上午9点", "2天前上午9点", "3天前上午9点", "5天前上午9点", "7天前上午9点"]
         for opt in allday_opts: self.default_allday_reminders_listbox.insert(tk.END, opt)
 
@@ -145,12 +165,22 @@ class SettingsDialog(tk.Toplevel):
         c_d_f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         ttk.Label(c_d_f, text="常规自定义:").grid(row=0, column=0, sticky="w", padx=5)
-        self.custom_default_reminders_listbox = tk.Listbox(c_d_f, height=3, exportselection=False)
-        self.custom_default_reminders_listbox.grid(row=1, column=0, padx=5, sticky="nsew")
+        c_r_f = ttk.Frame(c_d_f); c_r_f.grid(row=1, column=0, padx=5, sticky="nsew")
+        self.custom_default_reminders_listbox = tk.Listbox(c_r_f, height=3, exportselection=False)
+        self.custom_default_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        c_r_sb = ttk.Scrollbar(c_r_f, orient=tk.VERTICAL, command=self.custom_default_reminders_listbox.yview)
+        c_r_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.custom_default_reminders_listbox.config(yscrollcommand=c_r_sb.set)
+        self.custom_default_reminders_listbox.bind("<Double-1>", lambda e: self.edit_custom_default_reminder(False))
 
         ttk.Label(c_d_f, text="全天自定义:").grid(row=0, column=1, sticky="w", padx=5)
-        self.custom_default_allday_reminders_listbox = tk.Listbox(c_d_f, height=3, exportselection=False)
-        self.custom_default_allday_reminders_listbox.grid(row=1, column=1, padx=5, sticky="nsew")
+        c_a_f = ttk.Frame(c_d_f); c_a_f.grid(row=1, column=1, padx=5, sticky="nsew")
+        self.custom_default_allday_reminders_listbox = tk.Listbox(c_a_f, height=3, exportselection=False)
+        self.custom_default_allday_reminders_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        c_a_sb = ttk.Scrollbar(c_a_f, orient=tk.VERTICAL, command=self.custom_default_allday_reminders_listbox.yview)
+        c_a_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.custom_default_allday_reminders_listbox.config(yscrollcommand=c_a_sb.set)
+        self.custom_default_allday_reminders_listbox.bind("<Double-1>", lambda e: self.edit_custom_default_reminder(True))
 
         c_btn = ttk.Frame(c_d_f); c_btn.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
         ttk.Button(c_btn, text="添加常规", command=lambda: self.add_custom_default_reminder(False)).pack(side=tk.LEFT, padx=2)
@@ -217,52 +247,93 @@ class SettingsDialog(tk.Toplevel):
             if sel: lb.delete(sel[0]); return
 
     def add_custom_default_reminder(self, is_allday):
+        data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
+        listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
+
         def on_save(new_alarm):
             save_data = new_alarm.copy()
             save_data['trigger'] = save_alarm_trigger(save_data['trigger'])
             if 'duration' in save_data and isinstance(save_data['duration'], timedelta):
                 save_data['duration'] = save_data['duration'].total_seconds()
-            
-            json_str = json.dumps(save_data, ensure_ascii=False)
-            lb = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-            lb.insert('end', json_str)
-        
+            data_list.append(save_data)
+            self._refresh_custom_listbox(listbox, data_list)
+
         DetailedReminderEditor(self, callback=on_save)
 
     def edit_custom_default_reminder(self, is_allday):
-        lb = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-        sel = lb.curselection()
+        data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
+        listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
+        sel = listbox.curselection()
         if not sel: return
-        
+
         idx = sel[0]
-        json_str = lb.get(idx)
         try:
-            initial_data = json.loads(json_str)
-            initial_data['trigger'] = load_alarm_trigger(initial_data['trigger'])
+            initial_data = data_list[idx].copy()
+            initial_data['trigger'] = load_alarm_trigger(initial_data.get('trigger'))
             if 'duration' in initial_data and isinstance(initial_data['duration'], (int, float)):
                 initial_data['duration'] = timedelta(seconds=initial_data['duration'])
-        except: initial_data = None
+        except:
+            initial_data = None
 
         def on_save(new_alarm):
             save_data = new_alarm.copy()
             save_data['trigger'] = save_alarm_trigger(save_data['trigger'])
             if 'duration' in save_data and isinstance(save_data['duration'], timedelta):
                 save_data['duration'] = save_data['duration'].total_seconds()
-            
-            new_json = json.dumps(save_data, ensure_ascii=False)
-            lb.delete(idx)
-            lb.insert(idx, new_json)
-            
+            data_list[idx] = save_data
+            self._refresh_custom_listbox(listbox, data_list)
+
         DetailedReminderEditor(self, initial_alarm=initial_data, callback=on_save)
 
     def delete_custom_default_reminder(self, is_allday):
-        lb = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-        sel = lb.curselection()
-        if sel: lb.delete(sel[0])
+        data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
+        listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
+        sel = listbox.curselection()
+        if sel:
+            del data_list[sel[0]]
+            self._refresh_custom_listbox(listbox, data_list)
 
     def browse_log_file(self):
         p = filedialog.asksaveasfilename(title="选择日志文件", filetypes=[("日志文件", "*.log"), ("所有文件", "*.*")], defaultextension=".log")
         if p: self.log_path_var.set(p)
+
+    @staticmethod
+    def _format_alarm_display(alarm_data):
+        action_map = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
+        action = action_map.get(alarm_data.get('action', ''), alarm_data.get('action', ''))
+        trigger = alarm_data.get('trigger', {})
+        if isinstance(trigger, dict):
+            t_type = trigger.get('type')
+            if t_type == 'td':
+                seconds = trigger.get('seconds', 0)
+                prefix = "前" if seconds < 0 else ""
+                seconds = abs(seconds)
+                days = int(seconds // 86400)
+                hours = int((seconds % 86400) // 3600)
+                mins = int((seconds % 3600) // 60)
+                parts = []
+                if days: parts.append(f"{days}天")
+                if hours: parts.append(f"{hours}小时")
+                if mins: parts.append(f"{mins}分钟")
+                trigger_str = "".join(parts) + prefix if parts else ("发生时" if prefix else str(seconds))
+            elif t_type == 'dt':
+                trigger_str = trigger.get('iso', '')
+            else:
+                trigger_str = str(trigger)
+        elif isinstance(trigger, str):
+            trigger_str = trigger
+        else:
+            trigger_str = str(trigger)
+        desc = alarm_data.get('description', '')
+        result = f"{action} - {trigger_str}"
+        if desc:
+            result += f" | 描述: {desc}"
+        return result
+
+    def _refresh_custom_listbox(self, listbox, data_list):
+        listbox.delete(0, tk.END)
+        for alarm_data in data_list:
+            listbox.insert(tk.END, self._format_alarm_display(alarm_data))
 
     def load_settings(self):
         s = self.db
@@ -287,24 +358,35 @@ class SettingsDialog(tk.Toplevel):
                     if item: lb.insert(tk.END, item)
         
         # 加载自定义 JSON 格式提醒
-        for key, lb in [('custom_default_reminders', self.custom_default_reminders_listbox), ('custom_default_allday_reminders', self.custom_default_allday_reminders_listbox)]:
+        self._custom_reminders_data = []
+        self._custom_allday_reminders_data = []
+        for key, data_list, lb in [
+            ('custom_default_reminders', self._custom_reminders_data, self.custom_default_reminders_listbox),
+            ('custom_default_allday_reminders', self._custom_allday_reminders_data, self.custom_default_allday_reminders_listbox)
+        ]:
             val = s.get_setting(key, '')
             if val:
-                for item in val.split(';'):
-                    if item:
-                        # 尝试转换旧格式到新 JSON 格式 (平滑迁移)
-                        if not item.startswith('{'):
-                            parts = item.split(':', 3)
-                            if len(parts) >= 3:
-                                act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(parts[0], "DISPLAY")
-                                trig_str = parts[2]
-                                if ":" in trig_str: # HH:MM
-                                    h, m = map(int, trig_str.split(':'))
-                                    t_val = {'type': 'td', 'seconds': h*3600 + m*60}
-                                else:
-                                    t_val = {'type': 'td', 'seconds': -900} 
-                                item = json.dumps({'action': act, 'trigger': t_val, 'description': parts[3] if len(parts)>3 else ""}, ensure_ascii=False)
-                        lb.insert(tk.END, item)
+                for item_str in val.split(';'):
+                    if not item_str:
+                        continue
+                    # 尝试转换旧格式到新 JSON 格式 (平滑迁移)
+                    if not item_str.startswith('{'):
+                        parts = item_str.split(':', 3)
+                        if len(parts) >= 3:
+                            act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(parts[0], "DISPLAY")
+                            trig_str = parts[2]
+                            if ":" in trig_str:
+                                h, m = map(int, trig_str.split(':'))
+                                t_val = {'type': 'td', 'seconds': h*3600 + m*60}
+                            else:
+                                t_val = {'type': 'td', 'seconds': -900}
+                            item_str = json.dumps({'action': act, 'trigger': t_val, 'description': parts[3] if len(parts)>3 else ""}, ensure_ascii=False)
+                    try:
+                        alarm_data = json.loads(item_str)
+                        data_list.append(alarm_data)
+                    except:
+                        data_list.append({'action': 'DISPLAY', 'trigger': {'type': 'td', 'seconds': -900}, 'description': item_str})
+            self._refresh_custom_listbox(lb, data_list)
 
         for key, lb in [('default_reminders', self.default_reminders_listbox), ('default_allday_reminders', self.default_allday_reminders_listbox)]:
             sel_str = s.get_setting(key, ''); sel_list = sel_str.split(';')
@@ -334,8 +416,8 @@ class SettingsDialog(tk.Toplevel):
         s.set_setting('preset_allday_reminders', ';'.join([self.preset_allday_reminders_listbox.get(i) for i in range(self.preset_allday_reminders_listbox.size())]))
         s.set_setting('default_reminders', ';'.join([self.default_reminders_listbox.get(i) for i in self.default_reminders_listbox.curselection()]))
         s.set_setting('default_allday_reminders', ';'.join([self.default_allday_reminders_listbox.get(i) for i in self.default_allday_reminders_listbox.curselection()]))
-        s.set_setting('custom_default_reminders', ';'.join([self.custom_default_reminders_listbox.get(i) for i in range(self.custom_default_reminders_listbox.size())]))
-        s.set_setting('custom_default_allday_reminders', ';'.join([self.custom_default_allday_reminders_listbox.get(i) for i in range(self.custom_default_allday_reminders_listbox.size())]))
+        s.set_setting('custom_default_reminders', ';'.join([json.dumps(item, ensure_ascii=False) for item in self._custom_reminders_data]))
+        s.set_setting('custom_default_allday_reminders', ';'.join([json.dumps(item, ensure_ascii=False) for item in self._custom_allday_reminders_data]))
         s.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
         s.set_setting("log_file_path", self.log_path_var.get())
         s.set_setting("log_level", self.log_level_var.get())
