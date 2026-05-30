@@ -185,6 +185,7 @@ class ContactDialog(tk.Toplevel):
         scroll_h = ttk.Scrollbar(w, orient=tk.HORIZONTAL)
         scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL)
         t = tk.Text(w, wrap=tk.NONE, xscrollcommand=scroll_h.set, yscrollcommand=scroll_v.set)
+        RightClickMenu(t, "text")
         scroll_h.config(command=t.xview); scroll_v.config(command=t.yview)
         scroll_h.pack(side=tk.BOTTOM, fill=tk.X)
         scroll_v.pack(side=tk.RIGHT, fill=tk.Y)

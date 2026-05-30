@@ -170,6 +170,7 @@ class CalendarTab(BaseTreeTab):
             sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
             sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
             txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+            RightClickMenu(txt, "text")
             sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
             sb_h.pack(side=tk.BOTTOM, fill=tk.X)
             sb_v.pack(side=tk.RIGHT, fill=tk.Y)
