@@ -5,7 +5,6 @@ from ui.dialogs.webdav_import_dialog import WebDAVImportDialog
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.tabs.base_tab import BaseTreeTab
 from tkinterdnd2 import DND_FILES
-from datetime import datetime
 
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
 from services.import_service import TextImportManager, FileSource, UrlSource, ClipboardSource
@@ -23,6 +22,8 @@ class CalendarTab(BaseTreeTab):
         "created_at": "添加时间",
         "updated_at": "修改时间"
     }
+    DEFAULT_SORT_COL = ""
+    DEFAULT_SORT_REV = False
 
     def __init__(self, parent, event_service, settings_service, app_root):
         self.db = event_service
@@ -88,6 +89,7 @@ class CalendarTab(BaseTreeTab):
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         self._all_data = self.db.get_list_data()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
+        self._after_refresh()
 
     def apply_filter(self, query):
         """执行过滤显示"""
@@ -108,30 +110,6 @@ class CalendarTab(BaseTreeTab):
                 
                 item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end, created_at, updated_at))
                 if sel == "✓": self.tree.selection_add(item_id)
-
-    def sort_tree(self, col):
-        """排序树形列表 - 时间列特殊处理"""
-        if self._sort_col == col:
-            self._sort_rev = not self._sort_rev
-        else:
-            self._sort_col = col
-            self._sort_rev = False
-
-        data = [(self.tree.set(k, col), k) for k in self.tree.get_children('')]
-
-        # 对时间列做特殊处理
-        if col in ('start', 'end'):
-            def try_parse(dt_str):
-                try:
-                    return datetime.fromisoformat(dt_str)
-                except Exception:
-                    return datetime.min
-            data.sort(key=lambda x: try_parse(x[0]), reverse=self._sort_rev)
-        else:
-            data.sort(reverse=self._sort_rev)
-
-        for idx, (_, k) in enumerate(data):
-            self.tree.move(k, '', idx)
 
     def add_event(self):
         dialog = EventDialog(self.app_root, db=self.settings)

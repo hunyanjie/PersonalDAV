@@ -88,6 +88,7 @@ class ContactsTab(BaseTreeTab):
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         self._all_data = self.db.get_list_data()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
+        self._after_refresh()
 
     def apply_filter(self, query):
         """执行过滤显示"""

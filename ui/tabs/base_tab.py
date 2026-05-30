@@ -1,6 +1,7 @@
 """Treeview 通用操作基类 - 遵循 DRY 原则"""
 import tkinter as tk
 from tkinter import ttk
+from datetime import datetime
 from ui.widgets.treeview_scroller import TreeviewScroller
 
 
@@ -9,6 +10,8 @@ class BaseTreeTab(ttk.Frame):
 
     COLUMNS = []  # 子类覆盖
     HEADINGS = {}  # 子类覆盖: {'col1': '标题1', ...}
+    DEFAULT_SORT_COL = ''    # 默认排序列（子类可覆盖）
+    DEFAULT_SORT_REV = False  # 默认排序方向
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -19,7 +22,8 @@ class BaseTreeTab(ttk.Frame):
         self._last_selected = None
         self._sort_col = ''
         self._sort_rev = False
-        self._all_data = [] # 存储完整数据用于过滤
+        self._user_sort = False   # True = 用户主动排序, False = 使用默认排序
+        self._all_data = []       # 存储完整数据用于过滤
 
     def setup_search_ui(self, parent):
         """创建统一的搜索栏"""
@@ -190,29 +194,76 @@ class BaseTreeTab(ttk.Frame):
         self.tree.item(item, values=vals)
 
     def sort_tree(self, col):
-        """排序树形列表 - 带排序方向箭头指示"""
-        if self._sort_col == col:
-            self._sort_rev = not self._sort_rev
+        """三态排序: asc -> desc -> 取消(默认排序)"""
+        if col in ('selected', '#0', ''):
+            return
+
+        if self._user_sort and self._sort_col == col:
+            if self._sort_rev:
+                self._restore_default()
+            else:
+                self._sort_rev = True
+                self._sort_tree_exec()
         else:
             self._sort_col = col
             self._sort_rev = False
+            self._user_sort = True
+            self._sort_tree_exec()
 
-        data = [(self.tree.set(k, col), k) for k in self.tree.get_children('')]
-        data.sort(reverse=self._sort_rev)
+    def _sort_tree_exec(self):
+        """执行当前排序"""
+        rev = self._sort_rev
+        col = self._sort_col
+        items = self.tree.get_children('')
+        if not items:
+            return
+        data = [(self._sort_key(col, self.tree.set(k, col)), k) for k in items]
+        data.sort(key=lambda x: x[0], reverse=rev)
         for idx, (_, k) in enumerate(data):
             self.tree.move(k, '', idx)
-        
-        # 更新表头显示排序方向箭头
         self._update_sort_arrows()
-    
+
+    def _sort_key(self, col, value):
+        """排序键 - 时间列用 datetime 解析，其他列用字符串"""
+        if col in ('start', 'end', 'created_at', 'updated_at'):
+            try: return datetime.fromisoformat(value.replace('Z', '+00:00')).replace(tzinfo=None)
+            except: return datetime.min
+        return (value or '').lower()
+
+    def _restore_default(self):
+        """取消用户排序，恢复默认排序"""
+        self._user_sort = False
+        query = getattr(self, 'search_var', None) and self.search_var.get().lower().strip() or ""
+        self.apply_filter(query)
+        if self.DEFAULT_SORT_COL:
+            self._sort_col = self.DEFAULT_SORT_COL
+            self._sort_rev = self.DEFAULT_SORT_REV
+            self._sort_tree_exec()
+        else:
+            self._sort_col = ''
+            self._update_sort_arrows()
+
+    def _after_refresh(self):
+        """数据刷新后恢复排序状态 - 子类 refresh_* 末尾调用"""
+        if self._user_sort and self._sort_col:
+            self._sort_tree_exec()
+        elif self.DEFAULT_SORT_COL:
+            self._sort_col = self.DEFAULT_SORT_COL
+            self._sort_rev = self.DEFAULT_SORT_REV
+            self._sort_tree_exec()
+        else:
+            self._sort_col = ''
+            self._update_sort_arrows()
+
     def _update_sort_arrows(self):
-        """更新表头排序箭头指示"""
+        """更新表头排序指示"""
         for col in self.COLUMNS:
-            arrow = ''
-            if col == self._sort_col:
-                arrow = ' ↓' if self._sort_rev else ' ↑'
             text = self.HEADINGS.get(col, col)
-            self.tree.heading(col, text=text + arrow)
+            if col == self._sort_col:
+                arrow = '↑' if not self._sort_rev else '↓'
+                label = '升序' if not self._sort_rev else '降序'
+                text = f"{text} ({arrow}{label})"
+            self.tree.heading(col, text=text)
 
     def refresh_selection(self):
         """刷新选择状态 - 子类可覆盖"""
