@@ -25,9 +25,7 @@ SIMPLE_SETTINGS = [
                options=list(EventDialog.STATUS_MAPPING.keys()),
                display_map=EventDialog.STATUS_MAPPING),
     SettingDef("default_version", "默认日历版本:", "combo", "基本设置",
-               default="2.0", options=["1.0", "2.0", "2.1", "3.0"], width=10),
-    SettingDef("default_duration", "默认持续时间 (小时):", "spin", "基本设置",
-               default="1", spin_from=1, spin_to=24, width=5),
+                default="2.0", options=["1.0", "2.0", "2.1", "3.0"], width=10),
     SettingDef("default_priority", "默认优先级 (0-9):", "scale", "基本设置",
                default=5, db_default="5", spin_from=0, spin_to=9),
     SettingDef("default_transparency", "默认透明度:", "combo", "基本设置",
@@ -195,7 +193,28 @@ class SettingsDialog(tk.Toplevel):
         b_t = ttk.Frame(nb); nb.add(b_t, text="基本设置")
         p_t = ttk.Frame(nb); nb.add(p_t, text="预设提醒")
 
-        self._build_simple(b_t, "基本设置")
+        row = self._build_simple(b_t, "基本设置")
+
+        # 手动构建持续时间行（小时+分钟 Spinbox + 常用预设按钮）
+        ttk.Separator(b_t, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=(10, 5))
+        row += 1
+        ttk.Label(b_t, text="默认持续时间:").grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        df = ttk.Frame(b_t); df.grid(row=row, column=1, sticky="w", padx=5)
+        self._dur_h_var = tk.StringVar(value="1")
+        self._dur_m_var = tk.StringVar(value="0")
+        ttk.Spinbox(df, textvariable=self._dur_h_var, from_=0, to=23, width=3).pack(side=tk.LEFT)
+        ttk.Label(df, text="小时").pack(side=tk.LEFT, padx=1)
+        ttk.Spinbox(df, textvariable=self._dur_m_var, from_=0, to=59, width=3).pack(side=tk.LEFT)
+        ttk.Label(df, text="分钟").pack(side=tk.LEFT, padx=1)
+
+        ttk.Label(df, text="  预设:").pack(side=tk.LEFT)
+        for label, h, m in [("30分", 0, 30), ("1小时", 1, 0), ("1h30m", 1, 30), ("2小时", 2, 0)]:
+            ttk.Button(df, text=label, width=6,
+                       command=lambda h=h, m=m: (
+                           self._dur_h_var.set(str(h)), self._dur_m_var.set(str(m))
+                       )).pack(side=tk.LEFT, padx=2)
+        row += 1
+
         self._create_timezone_format_ui(b_t)
         self.create_preset_settings(p_t)
 
@@ -552,6 +571,12 @@ class SettingsDialog(tk.Toplevel):
             "{offset} - {city} ({tz_id}) {localized}{local_tag}"))
         TimezoneHelper.set_format(self.tz_fmt_var.get())
 
+        total_min = int(s.get_setting("default_duration", "60"))
+        if total_min <= 24:  # 旧版 DB 存小时数 → 转为分钟
+            total_min *= 60
+        self._dur_h_var.set(str(total_min // 60))
+        self._dur_m_var.set(str(total_min % 60))
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -579,6 +604,9 @@ class SettingsDialog(tk.Toplevel):
         self.tz_fmt_var.set("{offset} - {city} ({tz_id}) {localized}{local_tag}")
         TimezoneHelper.set_format(self.tz_fmt_var.get())
 
+        self._dur_h_var.set("1")
+        self._dur_m_var.set("0")
+
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
     # ── 保存 ────────────────────────────────────────────────────
@@ -599,6 +627,9 @@ class SettingsDialog(tk.Toplevel):
         s.set_setting("log_level", self.log_level_var.get())
         s.set_setting("timezone_format", self.tz_fmt_var.get())
         TimezoneHelper.set_format(self.tz_fmt_var.get())
+
+        total_min = int(self._dur_h_var.get() or "0") * 60 + int(self._dur_m_var.get() or "0")
+        s.set_setting("default_duration", str(total_min))
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:

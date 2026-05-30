@@ -87,7 +87,7 @@ class Database:
                 ('default_port', "8000"),
                 ('default_status', "CONFIRMED"),
                 ('default_version', "2.0"),
-                ('default_duration', "1"),
+                ('default_duration', "60"),
                 ('default_priority', "5"),
                 ('default_transparency', "OPAQUE"),
                 ('default_sync_timezone', "True"),

@@ -226,7 +226,7 @@ class EventDialog:
             self.initial.setdefault('repeat', self.db.get_setting('default_repeat', '不重复'))
             self.initial.setdefault('end_cond', self.db.get_setting('default_end_cond', '永不结束'))
             self.initial.setdefault('end_count', self.db.get_setting('default_end_count', '5'))
-            self.initial.setdefault('duration', self.db.get_setting('default_duration', '1'))
+            self.initial.setdefault('duration', self.db.get_setting('default_duration', '60'))
             self.initial.setdefault('sync_timezone', self.db.get_setting('default_sync_timezone', 'True') == 'True')
 
             if not self.initial.get('ical'):
@@ -396,6 +396,20 @@ class EventDialog:
             hour = 0
         return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
+    def _get_default_duration_minutes(self):
+        if not self.db:
+            return 60
+        mode = self.db.get_setting("default_duration", "60")
+        if mode == "custom":
+            return int(self.db.get_setting("default_duration_custom", "45"))
+        try:
+            v = int(mode)
+            if v <= 24:  # 旧版 DB 存小时数 → 转为分钟
+                v *= 60
+            return v
+        except:
+            return 60
+
     def create_time_tab(self):
         frame = ttk.LabelFrame(self.time_tab, text="时间设置")
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -407,22 +421,22 @@ class EventDialog:
         ttk.Label(s_frame, text="开始日期*:").pack(side=tk.LEFT, padx=5)
         self.start_date = DateEntry(s_frame, date_pattern='yyyy-mm-dd', width=12); self.start_date.pack(side=tk.LEFT)
         self.start_hour = ttk.Combobox(s_frame, width=3, values=[f"{h:02d}" for h in range(24)], state="readonly"); self.start_hour.pack(side=tk.LEFT, padx=2)
-        self.start_minute = ttk.Combobox(s_frame, width=3, values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly"); self.start_minute.pack(side=tk.LEFT)
+        self.start_minute = ttk.Combobox(s_frame, width=3, values=[f"{m:02d}" for m in range(60)], state="readonly"); self.start_minute.pack(side=tk.LEFT)
         ttk.Button(s_frame, text="当前时间", command=self.set_start_now).pack(side=tk.LEFT, padx=10)
 
         e_frame = ttk.Frame(frame); e_frame.grid(row=2, column=0, columnspan=3, sticky="w", pady=5)
         ttk.Label(e_frame, text="结束日期*:").pack(side=tk.LEFT, padx=5)
         self.end_date = DateEntry(e_frame, date_pattern='yyyy-mm-dd', width=12); self.end_date.pack(side=tk.LEFT)
         self.end_hour = ttk.Combobox(e_frame, width=3, values=[f"{h:02d}" for h in range(24)], state="readonly"); self.end_hour.pack(side=tk.LEFT, padx=2)
-        self.end_minute = ttk.Combobox(e_frame, width=3, values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly"); self.end_minute.pack(side=tk.LEFT)
+        self.end_minute = ttk.Combobox(e_frame, width=3, values=[f"{m:02d}" for m in range(60)], state="readonly"); self.end_minute.pack(side=tk.LEFT)
         ttk.Button(e_frame, text="当前时间", command=self.set_end_now).pack(side=tk.LEFT, padx=10)
 
         # 初始化默认值（根据吸附设置自动计算开始时间）
         start = self._compute_snapped_start()
         self.start_hour.set(f"{start.hour:02d}")
         self.start_minute.set(f"{start.minute:02d}")
-        dur = int(self.db.get_setting("default_duration", "1")) if self.db else 1
-        end = start + timedelta(hours=dur)
+        dur_min = self._get_default_duration_minutes()
+        end = start + timedelta(minutes=dur_min)
         self.end_date.set_date(end)
         self.end_hour.set(f"{end.hour:02d}")
         self.end_minute.set(f"{end.minute:02d}")
@@ -453,9 +467,18 @@ class EventDialog:
         self.duration_frame = ttk.Frame(frame)
         self.duration_frame.grid(row=6, column=0, columnspan=3, sticky='w', padx=5, pady=10)
         ttk.Label(self.duration_frame, text="快速调整持续时间:").pack(side='left')
-        dur_opts = ["1小时", "2小时", (self.db.get_setting('default_duration', '1') if self.db else "1") + "小时", "半天", "全天"]
+        dur_opts = ["30分钟", "1小时", "2小时", "半天", "全天"]
         for opt in dur_opts:
             ttk.Button(self.duration_frame, text=opt, command=lambda o=opt: self.apply_duration(o)).pack(side='left', padx=2)
+
+        dur_min = self._get_default_duration_minutes()
+        h, m = dur_min // 60, dur_min % 60
+        parts = []
+        if h: parts.append(f"{h}小时")
+        if m: parts.append(f"{m}分钟")
+        custom_text = "自定义: " + ("".join(parts) or "0分钟")
+        ttk.Button(self.duration_frame, text=custom_text, width=16,
+                   command=self.apply_default_duration).pack(side='left', padx=2)
 
         ttk.Label(frame, text="重复规则:").grid(row=7, column=0, sticky="w", padx=5, pady=5)
         self.repeat_var = tk.StringVar(value="不重复")
@@ -480,14 +503,26 @@ class EventDialog:
 
     def apply_duration(self, dur_str):
         try:
-            start_dt = datetime.combine(self.start_date.get_date(), 
+            start_dt = datetime.combine(self.start_date.get_date(),
                                         datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M").time())
             if dur_str == "半天": delta = timedelta(hours=12)
             elif dur_str == "全天": delta = timedelta(days=1)
+            elif dur_str == "30分钟": delta = timedelta(minutes=30)
             else:
                 h = int(dur_str.replace("小时", ""))
                 delta = timedelta(hours=h)
             end_dt = start_dt + delta
+            self.end_date.set_date(end_dt.date())
+            self.end_hour.set(end_dt.strftime("%H"))
+            self.end_minute.set(end_dt.strftime("%M"))
+        except: pass
+
+    def apply_default_duration(self):
+        try:
+            dur_min = self._get_default_duration_minutes()
+            start_dt = datetime.combine(self.start_date.get_date(),
+                                        datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M").time())
+            end_dt = start_dt + timedelta(minutes=dur_min)
             self.end_date.set_date(end_dt.date())
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
