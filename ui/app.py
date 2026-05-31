@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import queue
+from database.db_manager import Database
 import logging
 import webbrowser
 from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -250,6 +251,7 @@ class DAVServerApp:
     def on_closing(self):
         if messagebox.askokcancel("退出", "确定要退出吗？"):
             self.server_tab.stop_server()
+            Database().close()
             self.root.destroy()
 
     def open_project_url(self):
