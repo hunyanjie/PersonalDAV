@@ -111,23 +111,35 @@ class BaseTreeTab(ttk.Frame):
             self._update_checkboxes(selected)
             return "break"
 
+        ctrl = bool(event.state & 0x0004)
+
         # 复选框列点击
         if column == "#1" and item:
-            cur = self.tree.selection()
-            if item in cur:
-                self.tree.selection_remove(item)
-                state = " "
+            if ctrl:
+                if item in self.tree.selection():
+                    self.tree.selection_remove(item)
+                    self._set_item_checkbox(item, " ")
+                else:
+                    self.tree.selection_add(item)
+                    self._set_item_checkbox(item, "✓")
             else:
-                self.tree.selection_add(item)
-                state = "✓"
-            self._set_item_checkbox(item, state)
+                self.tree.selection_set([item])
+                self._set_item_checkbox(item, "✓")
             self._last_selected = item
             return "break"
 
         # 普通列点击
         if item:
-            self.tree.selection_set([item])
-            self._update_checkboxes([item] if item else [])
+            if ctrl:
+                if item in self.tree.selection():
+                    self.tree.selection_remove(item)
+                    self._set_item_checkbox(item, " ")
+                else:
+                    self.tree.selection_add(item)
+                    self._set_item_checkbox(item, "✓")
+            else:
+                self.tree.selection_set([item])
+                self._update_checkboxes([item])
             self._last_selected = item
             return "break"
 
