@@ -141,7 +141,7 @@ class DAVHandler(BaseHTTPRequestHandler):
             
             if self.path.startswith("/contacts/") and self.path.endswith(".vcf"):
                 uid = os.path.basename(self.path).replace(".vcf", "")
-                vcard = self.contact_service.get_contact(uid)
+                vcard = self.contact_service.get_by_uid(uid)
                 if vcard:
                     self.send_response(200)
                     self.send_header('Content-type', 'text/vcard')
@@ -151,7 +151,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     self._send_error(404, "Contact not found")
             elif self.path.startswith("/events/") and self.path.endswith(".ics"):
                 uid = os.path.basename(self.path).replace(".ics", "")
-                event = self.event_service.get_event(uid)
+                event = self.event_service.get_by_uid(uid)
                 if event:
                     self.send_response(200)
                     self.send_header('Content-type', 'text/calendar')
