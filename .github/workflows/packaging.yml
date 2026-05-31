@@ -2,6 +2,8 @@ name: Package and Release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v*'
 
@@ -31,9 +33,15 @@ jobs:
       with:
         install-only: true
 
-    - name: Get version from tag
+    - name: Set version
       shell: pwsh
-      run: echo "VERSION=$("${{ github.ref_name }}".Substring(1))" >> $env:GITHUB_ENV
+      run: |
+        if ("${{ github.ref_type }}" -eq "tag") {
+          $v = "${{ github.ref_name }}".Substring(1)
+        } else {
+          $v = "${{ github.sha }}".Substring(0, 7)
+        }
+        echo "VERSION=$v" >> $env:GITHUB_ENV
 
     - name: Package to EXE
       shell: pwsh
@@ -41,7 +49,14 @@ jobs:
         $tkdnd = & python -c "import tkinterdnd2,os;print(os.path.join(os.path.dirname(tkinterdnd2.__file__),'tkdnd','win-x64'))"
         & pyinstaller --onefile --clean -w --name "PersonalDAV-$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --hidden-import tkinterdnd2 main.py
 
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PersonalDAV-${{ env.VERSION }}.exe
+        path: dist/PersonalDAV-${{ env.VERSION }}.exe
+
     - name: Create Release
+      if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v2
       with:
         name: PersonalDAV v${{ env.VERSION }}
