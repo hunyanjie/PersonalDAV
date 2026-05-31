@@ -1,10 +1,14 @@
-# PersonalDAV - 依赖库
-vobject
-pytz
-requests
-python-dateutil
-tzlocal
-Babel
-tkcalendar
-tkinterdnd2
-webdavclient3
+# PersonalDAV - 运行依赖
+vobject>=0.9.6
+pytz>=2023.3
+requests>=2.28.0
+python-dateutil>=2.8.2
+tzlocal>=5.0
+Babel>=2.12.0
+tkcalendar>=1.6.1
+tkinterdnd2>=0.3.0
+webdavclient3>=3.14.6
+cryptography>=41.0.0
+
+# 开发/测试依赖（pip install -r requirements-dev.txt）
+# pytest>=9.0.0
