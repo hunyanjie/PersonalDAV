@@ -7,7 +7,7 @@ from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert
 from models.setting_defs import SettingDef
-from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS
+from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
 import json
 from datetime import datetime, timedelta
 
@@ -597,7 +597,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
     @staticmethod
     def _format_alarm_display(alarm_data):
-        action_map = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
+        action_map = ALARM_ACTION_REV_MAPPING
         action = action_map.get(alarm_data.get('action', ''), alarm_data.get('action', ''))
         trigger = alarm_data.get('trigger', {})
         if isinstance(trigger, dict):
@@ -658,7 +658,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                     if not item_str.startswith('{'):
                         parts = item_str.split(':', 3)
                         if len(parts) >= 3:
-                            act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(parts[0], "DISPLAY")
+                            act = ALARM_ACTION_MAPPING.get(parts[0], "DISPLAY")
                             trig_str = parts[2]
                             if ":" in trig_str:
                                 h, m = map(int, trig_str.split(':'))
