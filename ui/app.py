@@ -41,6 +41,10 @@ class DAVServerApp:
         self.file_handler = None
         self.setup_logging()
 
+        # MCP 服务器（需在 create_widgets 前初始化，因为状态栏用到它）
+        self.mcp_server = MCPServer()
+        self._sync_mcp_server()
+
         self.create_widgets()
 
         # 启动日志处理循环
@@ -58,10 +62,6 @@ class DAVServerApp:
 
         # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
-
-        # MCP 服务器（根据设置自动启停）
-        self.mcp_server = MCPServer()
-        self._sync_mcp_server()
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
