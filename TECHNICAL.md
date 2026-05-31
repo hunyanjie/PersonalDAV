@@ -41,7 +41,7 @@ PersonalDAV/
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
 │   ├── settings_service.py    # SettingsService 单例
-│   └── import_service.py      # 导入框架（策略模式：文件/URL/剪贴板）
+│   └── import_service.py      # 旧导入框架（QueuedImportManager，仅保留兼容）
 ├── network/                   # 网络层
 │   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV 端点）
 │   └── dav_client.py          # WebDAV 客户端导入
@@ -59,15 +59,17 @@ PersonalDAV/
     │   ├── calendar_tab.py    # CalendarTab
     │   └── server_tab.py      # ServerTab
     ├── dialogs/
-    │   ├── settings_dialog.py # 声明式设置对话框
-    │   ├── event_dialog.py    # 事件编辑对话框
-    │   ├── contact_dialog.py  # 联系人编辑对话框
+    │   ├── settings_dialog.py    # 声明式设置对话框
+    │   ├── event_dialog.py       # 事件编辑对话框
+    │   ├── contact_dialog.py     # 联系人编辑对话框
+    │   ├── import_preview_dialog.py # 导入预览 + 对比对话框
     │   ├── text_import_dialog.py
     │   └── webdav_import_dialog.py
     └── widgets/
-        ├── right_click_menu.py # 右键菜单（上下文感知）
-        ├── progress_window.py  # 通用进度窗口
-        └── treeview_scroller.py # 拖拽自动滚动
+        ├── enhanced_tooltip.py   # 悬浮提示框
+        ├── right_click_menu.py   # 右键菜单（上下文感知）
+        ├── progress_window.py    # 通用进度窗口
+        └── treeview_scroller.py  # 拖拽自动滚动
 ```
 
 ---
@@ -474,6 +476,141 @@ def get_column_width(self, col): ... # 自定义列宽
 | 结束分钟 Combobox 保留 5 分钟步进 | 保持与开始分钟一致的用户体验 |
 | `selected` 列运行时不入库 | 避免数据库冗余字段 |
 | 设置使用 `display_map` 分离显示和存储 | UI 显示中文，DB 存英文，国际化友好 |
+| 批量导入 `publish=False` + 最后一次性刷新 | 避免 N 次 event_bus 同步回调触发 N 次 `refresh_events` |
+| `force=True` 参数覆盖内容相同的条目 | 满足用户 "覆盖已存在条目" 的主动选择 |
+| ImportPreviewFrame 继承 BaseTreeTab 覆写 `_on_click` | 复用搜索/排序/复选框框架，只禁数据列勾选 |
+| CompareDialog 双栏 + 下拉切换而不是 N 面板并列 | 处理 10+ 个重复时不炸屏 |
+| 右键菜单切换 "覆盖" / "重置UID" | 让用户决定冲突条目是覆盖旧数据还是生成新 UID 共存 |
+| EnhancedTooltip 无边框 Toplevel + Enter/Leave 事件 | 轻量悬浮提示，不依赖第三方库 |
+
+---
+
+---
+
+## 导入预览系统
+
+### 设计目的
+
+文件/URL/剪贴板导入统一经过预览对话框，用户确认后再实际写入数据库。
+
+### 流程
+
+```
+_import_file / _import_url / _import_clipboard / show_text_import
+  │
+  ▼
+_parse_data_to_items(data)
+  │  解析原始数据、提取 UID/title、查 DB 标记 is_new
+  ▼
+ImportPreviewDialog(items)
+  │  ImportPreviewFrame（BaseTreeTab 子类）
+  │  ✓ 复选框选择 | 右键切换覆盖/重置UID | 双击对比
+  │  "选择推荐" / "覆盖已存在条目" / "全选" / "全不选"
+  ▼
+_import_selected(selected_items, source)
+  │  ProgressWindow（进度条 + 详细日志）
+  │  逐条调用 add_event/add_contact
+  ▼
+refresh_events() (仅一次)
+```
+
+### ImportPreviewFrame
+
+继承 `BaseTreeTab`，覆写 `_on_click` 使数据列不改变复选框状态。提供：
+
+| 方法 | 功能 |
+|------|------|
+| `_default_checked(it)` | 判断默认是否勾选：新条目 ✓，重复/已存在 ✗ |
+| `_status_text(it)` | 显示 "新条目" / "已存在(覆盖)" / "重复(重置)" 等 |
+| `selected_items()` | 返回当前勾选的 items |
+| `select_recommended()` | 恢复推荐选择 |
+| `_on_right_click()` | 弹出 "覆盖更新" / "重置UID" 右键菜单 |
+| `_set_default_action(it)` | 根据冲突类型设置默认操作 |
+
+### 重复 UID 冲突处理
+
+两种冲突类型：
+
+| 类型 | 标记 | 默认操作 |
+|------|------|----------|
+| 导入内同 UID（多个条目 ID 相同） | `has_dup=True`, `_dup_idx` | 第一个 `overwrite`，后续 `new_uid` |
+| 与数据库已有条目 UID 相同 | `is_new=False` | `overwrite` |
+
+用户可通过右键切换：
+- **覆盖更新 (保留原UID)**: 调用 `add_event(raw, force=True)`, 覆盖数据库对应条目
+- **重置UID (作为新条目)**: 生成新 UUID 替换 `UID:xxx`，作为全新条目导入
+
+### CompareDialog
+
+对比两个或更多同 UID 条目的差异：
+
+- 左侧 Listbox：点击切换左侧版本
+- 右侧双栏：两个可缩放文本面板 + 下拉选择版本 + ⇄ 交换按钮
+- 颜色标记：`common` 灰色、`diff` 黄色背景、`unique` 蓝色背景、`struct` 灰色斜体
+- 支持任意数量重复条目（通过双栏 + 下拉切换，而非 N 面板并列）
+
+---
+
+## 增强批量导入（add_event/add_contact 参数）
+
+### `force` 参数
+
+```python
+def add_event(self, ical_data: str, force: bool = False, publish: bool = True)
+def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True)
+```
+
+| 参数 | 默认值 | 效果 |
+|------|--------|------|
+| `force=False` | 内容相同时返回 `"unchanged"`, 跳过写入 |
+| `force=True` | 即使内容完全相同也标记为 `"updated"`, 覆盖写入 DB |
+| `publish=True` | 写入后同步发布 `EVENTS_CHANGED` / `CONTACTS_CHANGED` |
+| `publish=False` | 不发布事件, 适合批量导入（最后手动刷新一次） |
+
+### 性能优化
+
+批量导入时（`_import_selected`）：
+1. `publish=False` 避免每次写入都触发 `refresh_events()`（全表查询 + tkinter 树重建）
+2. 日志每 10 条批量 flush 到 tkinter 主线程；进度条逐条更新
+3. 最后一次性调用 `self.refresh_events()`
+
+---
+
+## 悬浮提示系统（EnhancedTooltip）
+
+### 设计目的
+
+为表单字段提供鼠标悬停提示，说明字段用途、格式要求等。
+
+### 使用方式
+
+```python
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
+
+EnhancedTooltip(widget, "提示文字",
+    background='#ffffea',   # 可选：背景色
+    font=(None, 10))        # 可选：字体
+```
+
+### 实现细节
+
+- 绑定 `<Enter>` / `<Leave>` 事件
+- `Toplevel(overrideredirect=True)` 无边框窗口
+- 相对鼠标指针偏移（10px, 5px）
+- 默认淡黄色背景 `#ffffea`
+
+### 已应用位置
+
+| 对话框 | 字段 | 提示内容 |
+|--------|------|----------|
+| EventDialog | 事件标题* | "必填。事件的简要标题" |
+| EventDialog | 地点 | "事件发生的地点或会议室" |
+| EventDialog | 描述 | "事件的详细描述或备注" |
+| EventDialog | 事件状态 | "事件状态: 已确认/待定/已取消" |
+| EventDialog | 日历版本 | "iCalendar 版本号，通常保持 2.0" |
+| ContactDialog | 姓名* | "必填。联系人显示名称" |
+| ContactDialog | 邮箱 | "多个邮箱请用分号(;)分隔" |
+| ContactDialog | 电话 | "多个电话请用分号(;)分隔" |
 
 ---
 
