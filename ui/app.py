@@ -15,6 +15,7 @@ from services.settings_service import SettingsService
 from utils.logger import GUIHandler, logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
+from mcp_server import MCPServer
 
 class DAVServerApp:
     """主应用程序类"""
@@ -57,6 +58,10 @@ class DAVServerApp:
 
         # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
+
+        # MCP 服务器（根据设置自动启动）
+        self.mcp_server = MCPServer()
+        self._auto_start_mcp()
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
@@ -238,6 +243,12 @@ class DAVServerApp:
                 messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
         messagebox.showinfo("成功", "设置已保存")
 
+    def _auto_start_mcp(self):
+        if self.settings_service.get_setting("mcp_enabled", "False") == "True":
+            port = int(self.settings_service.get_setting("mcp_port", "8100"))
+            self.mcp_server.start(port=port)
+            logger.info(f"MCP 服务器已自动启动，端口 {port}")
+
     def process_log_queue(self):
         """将队列中的日志刷新到 UI，附带级别信息用于着色"""
         try:
@@ -251,6 +262,7 @@ class DAVServerApp:
     def on_closing(self):
         if messagebox.askokcancel("退出", "确定要退出吗？"):
             self.server_tab.stop_server()
+            self.mcp_server.stop()
             Database().close()
             self.root.destroy()
 

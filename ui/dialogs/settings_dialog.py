@@ -22,6 +22,10 @@ SIMPLE_SETTINGS = [
     SettingDef("auto_start_server", "启动时自动启动服务器", "check", "服务器控制", default=False, db_default="False"),
     SettingDef("default_port", "默认端口号:", "entry", "服务器控制", default="8000", width=10),
 
+    # ========== MCP 设置 ==========
+    SettingDef("mcp_enabled", "启用 MCP 服务", "check", "MCP 服务", default=False, db_default="False"),
+    SettingDef("mcp_port", "MCP 服务端口:", "entry", "MCP 服务", default="8100", width=10),
+
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
                default="已确认", db_default="CONFIRMED",
@@ -76,10 +80,12 @@ class SettingsDialog(tk.Toplevel):
         server_frame = ttk.Frame(notebook); notebook.add(server_frame, text="服务器设置")
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
+        mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
+        self.create_mcp_settings(mcp_frame)
 
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=10)
@@ -211,6 +217,30 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
         ssl_f.grid_columnconfigure(1, weight=1)
+
+    # ── MCP 服务设置 ────────────────────────────────────────────
+
+    def create_mcp_settings(self, parent):
+        f = ttk.LabelFrame(parent, text="MCP 服务控制")
+        f.pack(fill=tk.X, padx=5, pady=5)
+        self._build_simple(f, "MCP 服务")
+
+        info = ttk.LabelFrame(parent, text="连接信息")
+        info.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(info, text="启用后在 AI 工具（如 opencode）中配置以下 URL 即可连接：",
+                  wraplength=500).pack(anchor="w", padx=10, pady=5)
+        self._mcp_url_label = ttk.Label(info, text="", foreground="blue", font=('Consolas', 10))
+        self._mcp_url_label.pack(anchor="w", padx=10, pady=5)
+        ttk.Label(info, text="提示：更改端口后需重启程序或重新打开设置以刷新 URL。",
+                  foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=5)
+
+        def update_url(*_):
+            port = self.mcp_port_var.get() if hasattr(self, 'mcp_port_var') else "8100"
+            self._mcp_url_label.config(text=f"URL: http://127.0.0.1:{port}/sse")
+
+        if hasattr(self, 'mcp_port_var'):
+            self.mcp_port_var.trace("w", update_url)
+        self.after(100, update_url)
 
     # ── 日历设置 ────────────────────────────────────────────────
 
