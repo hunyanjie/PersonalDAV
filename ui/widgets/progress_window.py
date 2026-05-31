@@ -8,7 +8,7 @@ class ProgressWindow(tk.Toplevel):
     def __init__(self, parent, title, cancel_callback=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry('700x500')
+        self.geometry('700x520')
         self.transient(parent)
         self.grab_set()
         
