@@ -196,3 +196,8 @@ cython_debug/
 # Other
 .idea/
 docs/
+
+dav_data.db
+dav_server.log
+dav_data.db-wal
+dav_data.db-shm
