@@ -15,7 +15,7 @@ from services.settings_service import SettingsService
 from utils.logger import GUIHandler, logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
-from mcp_server import MCPServer
+from services.mcp_server import MCPServer
 
 class DAVServerApp:
     """主应用程序类"""
