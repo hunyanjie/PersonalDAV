@@ -373,7 +373,9 @@ class CalendarTab(BaseTreeTab):
 
     def export_selected(self):
         sel = self.tree.selection()
-        if not sel: return
+        if not sel:
+            messagebox.showinfo("提示", "请先选择要导出的事件", parent=self)
+            return
         uids = [self.tree.item(i)['values'][1] for i in sel]
         events = self.db.get_selected_raw(uids)
 

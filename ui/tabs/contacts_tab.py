@@ -371,7 +371,9 @@ class ContactsTab(BaseTreeTab):
 
     def export_selected(self):
         sel = self.tree.selection()
-        if not sel: return
+        if not sel:
+            messagebox.showinfo("提示", "请先选择要导出的联系人", parent=self)
+            return
         uids = [self.tree.item(i)['values'][1] for i in sel]
         vcards = self.db.get_selected_raw(uids)
 
