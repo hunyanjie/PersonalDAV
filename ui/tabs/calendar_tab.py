@@ -32,6 +32,7 @@ class CalendarTab(BaseTreeTab):
         self.app_root = app_root
 
         super().__init__(parent)
+        self._import_type = 'events'
 
         self.create_widgets()
         self.refresh_events()
@@ -175,35 +176,19 @@ class CalendarTab(BaseTreeTab):
         dialog = WebDAVImportDialog(self, "从 WebDAV 导入日历", self.db.add_event)
         self.wait_window(dialog)
 
-    def show_text_import(self):
-        from ui.dialogs.text_import_dialog import TextImportDialog
-        dialog = TextImportDialog(self.app_root, "粘贴 iCalendar 文本导入")
-        self.wait_window(dialog)
-        data = dialog.result
-        if not data:
-            return
-        items = self._parse_data_to_items(data)
-        if not items:
-            messagebox.showinfo("提示", "未识别到有效 iCalendar 数据", parent=self)
-            return
-        dlg = ImportPreviewDialog(self, "events",
-            on_import_callback=lambda sel: self._import_selected(sel, "文本粘贴"),
-            items=items)
-        self.wait_window(dlg)
+    def _import_add_item(self, raw, force=False, publish=True):
+        return self.db.add_event(raw, force=force, publish=publish)
 
-    def show_import_preview(self):
-        dialog = ImportPreviewDialog(self, "events")
-        self.wait_window(dialog)
-
-    # === 文件/URL/剪切板导入 (先预览后导入) ===
+    def _import_refresh_list(self):
+        self.refresh_events()
 
     def _parse_data_to_items(self, data):
         """将原始 iCalendar 数据解析为 item 列表，供 ImportPreviewDialog 使用"""
         items = []
         if "BEGIN:VEVENT" not in data and "BEGIN:VCALENDAR" not in data:
             return items
-        import vobject
         try:
+            import vobject
             if "BEGIN:VEVENT" in data and "BEGIN:VCALENDAR" not in data:
                 cal = vobject.readOne(data)
                 uid = cal.uid.value if hasattr(cal, 'uid') else ""
@@ -222,115 +207,6 @@ class CalendarTab(BaseTreeTab):
         except Exception:
             pass
         return items
-
-    def _import_selected(self, items, source):
-        """将预览对话框中选择的 items 导入（带进度窗口）"""
-        from ui.widgets.progress_window import ProgressWindow
-        import threading, uuid, re
-        win = ProgressWindow(self, f"正在从 {source} 导入...")
-        def run():
-            total = len(items)
-            stats = {'new': 0, 'updated': 0, 'unchanged': 0, 'failed': 0}
-            for idx, it in enumerate(items):
-                action = it.get('_action', 'new')
-                if action == 'new_uid':
-                    new_uid = str(uuid.uuid4())
-                    raw = re.sub(r'^UID:.*$', f'UID:{new_uid}', it['raw'], count=1, flags=re.MULTILINE | re.IGNORECASE)
-                    _, op = self.db.add_event(raw, publish=False)
-                    if op == "inserted":
-                        stats['new'] += 1
-                        msg = f"新增(重置UID): {it['title']}"
-                    else:
-                        stats['failed'] += 1
-                        msg = f"失败(重置UID): {it['title']}"
-                else:
-                    _, op = self.db.add_event(it['raw'], force=True, publish=False)
-                    if op == "inserted":
-                        stats['new'] += 1
-                        msg = f"新增: {it['title']}"
-                    elif op == "updated":
-                        stats['updated'] += 1
-                        msg = f"更新: {it['title']}"
-                    elif op == "unchanged":
-                        stats['unchanged'] += 1
-                        msg = None
-                    else:
-                        stats['failed'] += 1
-                        msg = f"失败: {it['title']}"
-                pct = (idx + 1) / total * 100
-                s = dict(stats)
-                win.after(0, lambda m=msg, p=pct, st=s: (
-                    win.log(m) if m else None,
-                    win.update_progress(p),
-                    win.stat_vars['new'].set(st['new']),
-                    win.stat_vars['updated'].set(st['updated']),
-                    win.stat_vars['unchanged'].set(st['unchanged']),
-                    win.stat_vars['failed'].set(st['failed'])))
-            win.after(0, lambda: (
-                win.update_status("导入完成"),
-                win.set_finished(),
-                self.refresh_events()))
-        threading.Thread(target=run, daemon=True).start()
-
-    def _import_file(self):
-        path = filedialog.askopenfilename(
-            filetypes=[("日历文件", "*.ics *.vcs"), ("所有文件", "*.*")])
-        if not path:
-            return
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = f.read()
-            items = self._parse_data_to_items(data)
-            if not items:
-                messagebox.showinfo("提示", "未识别到有效 iCalendar 数据", parent=self)
-                return
-            dialog = ImportPreviewDialog(self, "events",
-                on_import_callback=lambda sel: self._import_selected(sel, os.path.basename(path)),
-                items=items)
-            self.wait_window(dialog)
-        except Exception as e:
-            messagebox.showerror("错误", f"读取文件失败: {e}", parent=self)
-
-    def _import_url(self):
-        from tkinter import simpledialog
-        url = simpledialog.askstring("URL 导入", "请输入 ICS 文件的 URL:", parent=self)
-        if not url:
-            return
-        from ui.widgets.progress_window import ProgressWindow
-        import threading, requests
-        win = ProgressWindow(self, "正在从 URL 下载...")
-        def run():
-            try:
-                resp = requests.get(url, timeout=10)
-                resp.raise_for_status()
-                data = resp.text
-                win.after(0, win.destroy)
-                items = self._parse_data_to_items(data)
-                if not items:
-                    win.after(0, lambda: messagebox.showinfo("提示", "未识别到有效 iCalendar 数据", parent=self))
-                    return
-                win.after(0, lambda: ImportPreviewDialog(self, "events",
-                    on_import_callback=lambda sel: self._import_selected(sel, "URL"),
-                    items=items))
-            except Exception as e:
-                win.after(0, lambda: [win.destroy(), messagebox.showerror("错误", f"下载失败: {e}", parent=self)])
-        threading.Thread(target=run, daemon=True).start()
-
-    def _import_clipboard(self):
-        try:
-            data = self.app_root.clipboard_get()
-            if not data.strip():
-                messagebox.showinfo("提示", "剪切板为空", parent=self); return
-            items = self._parse_data_to_items(data)
-            if not items:
-                messagebox.showinfo("提示", "未识别到有效 iCalendar 数据", parent=self)
-                return
-            dialog = ImportPreviewDialog(self, "events",
-                on_import_callback=lambda sel: self._import_selected(sel, "剪切板"),
-                items=items)
-            self.wait_window(dialog)
-        except:
-            messagebox.showinfo("提示", "无法读取剪切板内容", parent=self)
 
     def export_selected(self):
         sel = self.tree.selection()

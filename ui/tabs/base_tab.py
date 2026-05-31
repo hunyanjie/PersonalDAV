@@ -1,7 +1,11 @@
 """Treeview 通用操作基类 - 遵循 DRY 原则"""
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
+import os
+import threading
+import uuid
+import re
 from ui.widgets.treeview_scroller import TreeviewScroller
 
 
@@ -24,6 +28,8 @@ class BaseTreeTab(ttk.Frame):
         self._sort_rev = False
         self._user_sort = False   # True = 用户主动排序, False = 使用默认排序
         self._all_data = []       # 存储完整数据用于过滤
+        self.app_root = None      # 子类应设为 Tk 根窗口
+        self._import_type = ''    # 'contacts' 或 'events'，子类设置
 
     def setup_search_ui(self, parent):
         """创建统一的搜索栏"""
@@ -280,6 +286,158 @@ class BaseTreeTab(ttk.Frame):
     def refresh_selection(self):
         """刷新选择状态 - 子类可覆盖"""
         pass
+
+    # ── 导入框架（子类只需实现 _import_add_item / _import_refresh_list / _parse_data_to_items） ──
+
+    def _import_add_item(self, raw, force=False, publish=True):
+        """子类覆盖：调用服务添加单项"""
+        raise NotImplementedError
+
+    def _import_refresh_list(self):
+        """子类覆盖：刷新列表"""
+        raise NotImplementedError
+
+    def _parse_data_to_items(self, data):
+        """子类覆盖：解析原始数据为 item 列表"""
+        raise NotImplementedError
+
+    def _import_selected(self, items, source):
+        """将预览对话框中选择的 items 导入（带进度窗口）"""
+        from ui.widgets.progress_window import ProgressWindow
+        win = ProgressWindow(self, f"正在从 {source} 导入...")
+        def run():
+            total = len(items)
+            stats = {'new': 0, 'updated': 0, 'unchanged': 0, 'failed': 0}
+            for idx, it in enumerate(items):
+                action = it.get('_action', 'new')
+                if action == 'new_uid':
+                    new_uid = str(uuid.uuid4())
+                    raw = re.sub(r'^UID:.*$', f'UID:{new_uid}', it['raw'], count=1, flags=re.MULTILINE | re.IGNORECASE)
+                    _, op = self._import_add_item(raw, publish=False)
+                    if op == "inserted":
+                        stats['new'] += 1
+                        msg = f"新增(重置UID): {it['title']}"
+                    else:
+                        stats['failed'] += 1
+                        msg = f"失败(重置UID): {it['title']}"
+                else:
+                    _, op = self._import_add_item(it['raw'], force=True, publish=False)
+                    if op == "inserted":
+                        stats['new'] += 1
+                        msg = f"新增: {it['title']}"
+                    elif op == "updated":
+                        stats['updated'] += 1
+                        msg = f"更新: {it['title']}"
+                    elif op == "unchanged":
+                        stats['unchanged'] += 1
+                        msg = None
+                    else:
+                        stats['failed'] += 1
+                        msg = f"失败: {it['title']}"
+                pct = (idx + 1) / total * 100
+                s = dict(stats)
+                win.after(0, lambda m=msg, p=pct, st=s: (
+                    win.log(m) if m else None,
+                    win.update_progress(p),
+                    win.stat_vars['new'].set(st['new']),
+                    win.stat_vars['updated'].set(st['updated']),
+                    win.stat_vars['unchanged'].set(st['unchanged']),
+                    win.stat_vars['failed'].set(st['failed'])))
+            win.after(0, lambda: (
+                win.update_status("导入完成"),
+                win.set_finished(),
+                self._import_refresh_list()))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _import_file(self):
+        is_contact = self._import_type == 'contacts'
+        path = filedialog.askopenfilename(
+            filetypes=[("联系人文件", "*.vcf *.vcs"), ("日历文件", "*.ics *.vcs"), ("所有文件", "*.*")] if is_contact
+                      else [("日历文件", "*.ics *.vcs"), ("联系人文件", "*.vcf *.vcs"), ("所有文件", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = f.read()
+            items = self._parse_data_to_items(data)
+            if not items:
+                label = "vCard" if is_contact else "iCalendar"
+                messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=self)
+                return
+            from ui.dialogs.import_preview_dialog import ImportPreviewDialog
+            dialog = ImportPreviewDialog(self, self._import_type,
+                on_import_callback=lambda sel: self._import_selected(sel, os.path.basename(path)),
+                items=items)
+            self.wait_window(dialog)
+        except Exception as e:
+            messagebox.showerror("错误", f"读取文件失败: {e}", parent=self)
+
+    def _import_url(self):
+        is_contact = self._import_type == 'contacts'
+        label = "VCF" if is_contact else "ICS"
+        from tkinter import simpledialog
+        url = simpledialog.askstring("URL 导入", f"请输入 {label} 文件的 URL:", parent=self)
+        if not url:
+            return
+        from ui.widgets.progress_window import ProgressWindow
+        import requests
+        win = ProgressWindow(self, "正在从 URL 下载...")
+        def run():
+            try:
+                resp = requests.get(url, timeout=10)
+                resp.raise_for_status()
+                data = resp.text
+                win.after(0, win.destroy)
+                items = self._parse_data_to_items(data)
+                if not items:
+                    wn = win
+                    win.after(0, lambda: messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=self))
+                    return
+                win.after(0, lambda: self._open_import_preview(items, "URL"))
+            except Exception as e:
+                win.after(0, lambda: [win.destroy(), messagebox.showerror("错误", f"下载失败: {e}", parent=self)])
+        threading.Thread(target=run, daemon=True).start()
+
+    def _import_clipboard(self):
+        try:
+            data = self.app_root.clipboard_get()
+            if not data.strip():
+                messagebox.showinfo("提示", "剪切板为空", parent=self); return
+            items = self._parse_data_to_items(data)
+            if not items:
+                label = "vCard" if self._import_type == 'contacts' else "iCalendar"
+                messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=self)
+                return
+            self._open_import_preview(items, "剪切板")
+        except:
+            messagebox.showinfo("提示", "无法读取剪切板内容", parent=self)
+
+    def show_text_import(self):
+        is_contact = self._import_type == 'contacts'
+        label = "vCard" if is_contact else "iCalendar"
+        from ui.dialogs.text_import_dialog import TextImportDialog
+        dialog = TextImportDialog(self.app_root, f"粘贴 {label} 文本导入")
+        self.wait_window(dialog)
+        data = dialog.result
+        if not data:
+            return
+        items = self._parse_data_to_items(data)
+        if not items:
+            messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=self)
+            return
+        self._open_import_preview(items, "文本粘贴")
+
+    def show_import_preview(self):
+        from ui.dialogs.import_preview_dialog import ImportPreviewDialog
+        dialog = ImportPreviewDialog(self, self._import_type)
+        self.wait_window(dialog)
+
+    def _open_import_preview(self, items, source):
+        from ui.dialogs.import_preview_dialog import ImportPreviewDialog
+        dialog = ImportPreviewDialog(self, self._import_type,
+            on_import_callback=lambda sel: self._import_selected(sel, source),
+            items=items)
+        self.wait_window(dialog)
 
     def show_raw(self):
         """查看原始数据 - 子类可覆盖"""
