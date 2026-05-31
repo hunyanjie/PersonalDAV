@@ -26,7 +26,7 @@ PersonalDAV/
 ├── config.py                  # 软件元信息（名称、版本、作者等）
 ├── models/                    # 数据模型层
 │   ├── setting_defs.py        # SettingDef 声明式设置定义
-│   ├── constants.py           # STANDARD_VCARD_FIELDS / STANDARD_ICAL_FIELDS
+│   ├── constants.py           # 共享映射常量（状态/透明度/提醒/频率/预设等）
 │   ├── contact.py             # ContactModel dataclass
 │   └── event.py               # EventModel dataclass
 ├── database/                  # 数据访问层
@@ -37,11 +37,10 @@ PersonalDAV/
 │       ├── event_repository.py
 │       └── settings_repository.py
 ├── services/                  # 业务逻辑层
-│   ├── base_service.py        # BaseService 泛型服务基类
+│   ├── base_service.py        # BaseService 泛型服务基类（含 get_etag / get_all_items）
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
-│   ├── settings_service.py    # SettingsService 单例
-│   └── import_service.py      # 旧导入框架（QueuedImportManager，仅保留兼容）
+│   └── settings_service.py    # SettingsService 单例
 ├── network/                   # 网络层
 │   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV 端点）
 │   └── dav_client.py          # WebDAV 客户端导入
@@ -51,6 +50,9 @@ PersonalDAV/
 │   ├── encoding_helper.py     # QP/Base64 编解码
 │   ├── vcard_parser.py        # RobustVCardParser 回退解析（策略模式）
 │   └── logger.py              # 日志系统（RotatingFile + GUI 输出）
+├── tests/                     # 单元测试
+│   ├── test_config.py         # 配置常量验证
+│   └── test_base_service.py   # BaseService 核心方法测试
 └── ui/                        # 视图层
     ├── app.py                 # DAVServerApp 主应用类
     ├── tabs/
@@ -155,6 +157,22 @@ _load_simple()                                # 从 DB 加载值到控件
 _save_simple()                                # 从控件保存值到 DB
 _reset_simple()                               # 重置所有控件为默认值
 ```
+
+---
+
+## 命令行参数
+
+```bash
+python main.py --port 8080 --db-path my_data.db --log-level DEBUG
+```
+
+| 参数 | 简写 | 说明 |
+|------|------|------|
+| `--port` | `-p` | WebDAV 服务器端口，覆盖设置中的默认端口 |
+| `--db-path` | | 数据库文件路径，默认 `dav_data.db` |
+| `--log-level` | | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL |
+
+`--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
 
 ---
 
@@ -482,6 +500,10 @@ def get_column_width(self, col): ... # 自定义列宽
 | CompareDialog 双栏 + 下拉切换而不是 N 面板并列 | 处理 10+ 个重复时不炸屏 |
 | 右键菜单切换 "覆盖" / "重置UID" | 让用户决定冲突条目是覆盖旧数据还是生成新 UID 共存 |
 | EnhancedTooltip 无边框 Toplevel + Enter/Leave 事件 | 轻量悬浮提示，不依赖第三方库 |
+| 导入方法 `_import_*` / `show_text_import` 抽到 BaseTreeTab | 消除 contacts_tab / calendar_tab 各 200+ 行重复代码 |
+| event_dialog 常量全部抽离到 models/constants.py | 消除 settings_dialog 对 EventDialog 的导入依赖，SRP 更清晰 |
+| ETag 通过 `hashlib.md5(raw)` 实时计算 | 无状态、零存储开销，内容变更 ETag 自然失效 |
+| `Database.reset()` 类方法 | 仅在测试中重置单例，允许测试使用 `:memory:` 数据库 |
 
 ---
 
@@ -493,13 +515,24 @@ def get_column_width(self, col): ... # 自定义列宽
 
 文件/URL/剪贴板导入统一经过预览对话框，用户确认后再实际写入数据库。
 
+导入流程方法 (`_import_file` / `_import_url` / `_import_clipboard` / `show_text_import` / `show_import_preview` / `_import_selected` / `_open_import_preview`) 均在 `BaseTreeTab` 中一次性实现，子类只需提供三个接口：
+
+| 接口 | 用途 |
+|------|------|
+| `_import_add_item(raw, force, publish)` | 实际调用 `add_contact` / `add_event` |
+| `_import_refresh_list()` | 导入完成后刷新列表 |
+| `_parse_data_to_items(data)` | 解析原始数据为 item 字典列表 |
+
+子类通过 `self._import_type = 'contacts' | 'events'` 区分导入类型。
+
 ### 流程
 
 ```
+BaseTreeTab 共享方法:
 _import_file / _import_url / _import_clipboard / show_text_import
   │
   ▼
-_parse_data_to_items(data)
+_parse_data_to_items(data)  [子类实现]
   │  解析原始数据、提取 UID/title、查 DB 标记 is_new
   ▼
 ImportPreviewDialog(items)
@@ -573,6 +606,78 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 1. `publish=False` 避免每次写入都触发 `refresh_events()`（全表查询 + tkinter 树重建）
 2. 日志每 10 条批量 flush 到 tkinter 主线程；进度条逐条更新
 3. 最后一次性调用 `self.refresh_events()`
+
+---
+
+## DAV 服务器（dav_server.py）
+
+### 端点路由
+
+| 路径前缀 | 服务 | 资源类型 |
+|----------|------|----------|
+| `/contacts/` | `ContactService` | CardDAV (text/vcard) |
+| `/events/` | `EventService` | CalDAV (text/calendar) |
+| `/` | 静态 HTML | 信息页 |
+
+### HTTP 方法状态
+
+| 方法 | 功能 | 备注 |
+|------|------|------|
+| `GET` | 读取单个资源或集合 | 返回 `ETag` 头 |
+| `HEAD` | 仅返回元数据 | 返回 `Content-Length` + `ETag` |
+| `PUT` | 创建/更新资源 | 返回 `ETag` 头 |
+| `POST` | 创建资源 | 返回 `ETag` 头 |
+| `DELETE` | 删除资源 | — |
+| `PROPFIND` | 属性查询（WebDAV） | 返回资源类型、ETag、子资源列表 |
+| `OPTIONS` | 查询服务器能力 | 按路径返回 `addressbook` / `calendar-access` |
+
+### PROPFIND
+
+返回标准 WebDAV 多状态响应，包含：
+
+- `<D:resourcetype>` — `<C:addressbook/>` 或 `<C:calendar/>`
+- `<D:getetag>` — 每个资源的 MD5 ETag
+- `<D:getcontenttype>` — MIME 类型
+- `<D:getcontentlength>` — 大小
+
+支持 `Depth: 0`（仅自身）和 `Depth: 1`（含子资源）。
+
+### ETag
+
+通过 `BaseService.get_etag(uid)` 计算：
+
+```python
+def get_etag(self, uid: str) -> str | None:
+    raw = self.get_by_uid(uid)
+    if raw is None:
+        return None
+    return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
+```
+
+在 `GET` / `HEAD` / `PUT` / `POST` 响应中返回 `ETag` 头，支持客户端条件请求。
+
+---
+
+## 单元测试
+
+运行方式：
+
+```bash
+pytest tests/ -v
+```
+
+### 测试结构
+
+| 文件 | 测试内容 |
+|------|----------|
+| `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
+| `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
+
+### 测试隔离
+
+- `Database.reset()` 在 `setUpClass` 中重置单例，使用 `:memory:` 数据库
+- 每个 `setUp` 清空表数据，测试之间互不干扰
+- 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
 
 ---
 
