@@ -63,6 +63,7 @@ class ProgressWindow(tk.Toplevel):
     def on_cancel(self):
         if self.cancel_callback:
             self.cancel_callback()
+        self.grab_release()
         self.destroy()
 
     def update_status(self, text):
