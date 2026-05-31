@@ -75,7 +75,7 @@ class DAVServerApp:
             logger.warning(f"无法注册全局拖拽: {e}")
 
     def handle_drop(self, event):
-        """处理文件拖拽事件 - 异步重构版"""
+        """处理文件拖拽事件 — 解析后走预览对话框"""
         import os
         files = []
 
@@ -100,48 +100,35 @@ class DAVServerApp:
 
         if not files: return
 
-        current_tab_widget = self.notebook.nametowidget(self.notebook.select())
         tab_text = self.notebook.tab(self.notebook.select(), "text")
 
         if tab_text not in ["联系人", "日历"]:
             messagebox.showinfo("提示", "请切换到联系人或日历标签页进行导入")
             return
 
-        # 启动异步导入
-        from ui.widgets.progress_window import ProgressWindow
-        import threading
-        
-        progress_win = ProgressWindow(self.root, f"正在导入{tab_text}...")
-        
-        def run_import():
-            total = len(files)
-            success = 0
-            for i, f in enumerate(files):
-                if not progress_win.winfo_exists(): break # 窗口关闭则停止
-                
-                ext = os.path.splitext(f)[1].lower()
-                target_ext = '.vcf' if tab_text == "联系人" else '.ics'
-                
-                if ext == target_ext:
-                    try:
-                        progress_win.update_status(f"正在处理 ({i+1}/{total}): {os.path.basename(f)}")
-                        progress_win.update_progress((i/total)*100)
-                        with open(f, 'r', encoding='utf-8') as file:
-                            if tab_text == "联系人":
-                                self.contact_service.add_contact(file.read())
-                            else:
-                                self.event_service.add_event(file.read())
-                        success += 1
-                        progress_win.stat_vars['new'].set(success)
-                    except Exception as e:
-                        progress_win.log(f"失败 {f}: {e}")
-                        progress_win.stat_vars['failed'].set(progress_win.stat_vars['failed'].get()+1)
-            
-            progress_win.update_progress(100)
-            progress_win.update_status(f"导入完成: 成功 {success} 个")
-            progress_win.set_finished()
+        tab = self.contacts_tab if tab_text == "联系人" else self.calendar_tab
 
-        threading.Thread(target=run_import, daemon=True).start()
+        all_data = []
+        for f in files:
+            try:
+                with open(f, 'r', encoding='utf-8') as fh:
+                    all_data.append(fh.read())
+            except Exception as e:
+                messagebox.showerror("错误", f"读取文件失败 {f}: {e}")
+                return
+
+        data = "\n".join(all_data)
+        items = tab._parse_data_to_items(data)
+        if not items:
+            label = "vCard" if tab_text == "联系人" else "iCalendar"
+            messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=tab)
+            return
+
+        from ui.dialogs.import_preview_dialog import ImportPreviewDialog
+        dialog = ImportPreviewDialog(tab, tab._import_type,
+            on_import_callback=lambda sel: tab._import_selected(sel, "拖拽文件"),
+            items=items)
+        self.root.wait_window(dialog)
 
     def on_tab_changed(self, event):
         """标签页切换时自动刷新列表"""
