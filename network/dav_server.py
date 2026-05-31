@@ -91,12 +91,14 @@ class DAVHandler(BaseHTTPRequestHandler):
                 uid = os.path.basename(self.path).replace(".vcf", "")
                 self.contact_service.add_contact(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f"Contact {uid} created/updated".encode())
             elif self.path.startswith("/events/"):
                 uid = os.path.basename(self.path).replace(".ics", "")
                 self.event_service.add_event(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f"Event {uid} created/updated".encode())
             else:
@@ -200,6 +202,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                 uid = os.path.basename(self.path).replace(".vcf", "")
                 self.contact_service.add_contact(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f"Contact {uid} created".encode())
             # 处理事件创建
@@ -207,6 +210,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                 uid = os.path.basename(self.path).replace(".ics", "")
                 self.event_service.add_event(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f"Event {uid} created".encode())
             else:
