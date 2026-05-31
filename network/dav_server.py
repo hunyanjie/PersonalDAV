@@ -252,15 +252,25 @@ class DAVServer:
 
     def start(self):
         self.server = HTTPServer(('', self.port), DAVHandler)
+        scheme = "HTTPS" if (self.ssl_enabled and self.ssl_certfile) else "HTTP"
         if self.ssl_enabled and self.ssl_certfile:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(self.ssl_certfile, self.ssl_keyfile if self.ssl_keyfile else None)
-            self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
-            logger.info(f"SSL/TLS 已启用，证书: {self.ssl_certfile}")
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(self.ssl_certfile, self.ssl_keyfile if self.ssl_keyfile else None)
+                self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+                logger.info(f"SSL/TLS 已启用，证书: {self.ssl_certfile}")
+            except Exception as e:
+                logger.error(f"SSL/TLS 配置失败: {e}")
+                self.server.server_close()
+                self.server = None
+                raise
+        logger.info(f"DAVServer 开始监听 {scheme} 端口 {self.port}")
         self.server.serve_forever()
 
     def stop(self):
         if self.server:
+            logger.info("DAVServer 正在关闭...")
             self.server.shutdown()
             self.server.server_close()
             self.server = None
+            logger.info("DAVServer 已关闭")

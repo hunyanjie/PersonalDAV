@@ -108,14 +108,22 @@ CalDAV 配置:
         self.settings_service.set_setting("ssl_certfile", ssl_cert)
         self.settings_service.set_setting("ssl_keyfile", ssl_key)
 
-        self.server_instance = DAVServer(port, ssl_enabled, ssl_cert, ssl_key)
-        self.server_thread = threading.Thread(target=self.server_instance.start, daemon=True)
-        self.server_thread.start()
+        try:
+            self.server_instance = DAVServer(port, ssl_enabled, ssl_cert, ssl_key)
+            self.server_thread = threading.Thread(target=self.server_instance.start, daemon=True)
+            self.server_thread.start()
+        except Exception as e:
+            logger.error(f"服务器启动失败: {e}")
+            self.log_message(f"服务器启动失败: {e}", logging.ERROR)
+            self.server_instance = None
+            return
 
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         scheme = "HTTPS" if ssl_enabled else "HTTP"
-        self.log_message(f"服务器已启动 ({scheme}) 在端口 {port}", logging.INFO)
+        msg = f"服务器已启动 ({scheme}) 在端口 {port}"
+        logger.info(msg)
+        self.log_message(msg, logging.INFO)
         event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def stop_server(self):
@@ -124,7 +132,9 @@ CalDAV 配置:
             self.server_instance = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
-            self.log_message("服务器已停止", logging.INFO)
+            msg = "服务器已停止"
+            logger.info(msg)
+            self.log_message(msg, logging.INFO)
             event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def log_message(self, message, levelno=logging.INFO):
