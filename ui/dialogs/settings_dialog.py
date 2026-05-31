@@ -2,11 +2,12 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
 from ui.widgets.right_click_menu import RightClickMenu
-from ui.dialogs.event_dialog import EventDialog, DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
+from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert
 from models.setting_defs import SettingDef
+from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS
 import json
 from datetime import datetime, timedelta
 
@@ -24,23 +25,23 @@ SIMPLE_SETTINGS = [
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
                default="已确认", db_default="CONFIRMED",
-               options=list(EventDialog.STATUS_MAPPING.keys()),
-               display_map=EventDialog.STATUS_MAPPING),
+               options=list(STATUS_MAPPING.keys()),
+               display_map=STATUS_MAPPING),
     SettingDef("default_version", "默认日历版本:", "combo", "基本设置",
                 default="2.0", options=["1.0", "2.0", "2.1", "3.0"], width=10),
     SettingDef("default_priority", "默认优先级 (0-9):", "scale", "基本设置",
                default=5, db_default="5", spin_from=0, spin_to=9),
     SettingDef("default_transparency", "默认透明度:", "combo", "基本设置",
                default="忙碌", db_default="OPAQUE",
-               options=list(EventDialog.TRANSPARENCY_MAPPING.keys()),
-               display_map=EventDialog.TRANSPARENCY_MAPPING, width=10),
+               options=list(TRANSPARENCY_MAPPING.keys()),
+               display_map=TRANSPARENCY_MAPPING, width=10),
     SettingDef("default_sync_timezone", "结束时间使用相同时区", "check", "基本设置",
                default=True, db_default="True", columnspan=2),
     SettingDef("_sep1", "", "sep", "基本设置"),
     SettingDef("default_repeat", "默认重复规则:", "combo", "基本设置",
-               default="不重复", options=EventDialog.REPEAT_OPTIONS, width=12),
+               default="不重复", options=REPEAT_OPTIONS, width=12),
     SettingDef("default_end_cond", "默认结束条件:", "combo", "基本设置",
-               default="永不结束", options=EventDialog.END_CONDITIONS, width=12),
+               default="永不结束", options=END_CONDITIONS, width=12),
     SettingDef("default_end_count", "默认结束次数:", "spin", "基本设置",
                default="5", spin_from=1, spin_to=999, width=5),
     SettingDef("default_allday", "默认创建全天事件", "check", "基本设置",

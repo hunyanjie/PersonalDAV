@@ -18,7 +18,7 @@ from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
 from utils.encoding_helper import smart_quoted_printable_encode, should_encode, decode_ical_value
-from models.constants import STANDARD_ICAL_FIELDS
+from models.constants import STANDARD_ICAL_FIELDS, STATUS_MAPPING, STATUS_REV_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, WEEKDAYS, WEEKDAYS_RRULE, END_CONDITIONS
 import json
 
 class DetailedReminderEditor(tk.Toplevel):
@@ -156,13 +156,13 @@ class DetailedReminderEditor(tk.Toplevel):
 
 class EventDialog:
     """日历事件编辑对话框 - 1:1 深度还原，Flawless 架构演进版"""
-    STATUS_MAPPING = {"待定": "TENTATIVE", "已确认": "CONFIRMED", "已取消": "CANCELLED"}
-    STATUS_REV_MAPPING = {v: k for k, v in STATUS_MAPPING.items()}
-    TRANSPARENCY_MAPPING = {"忙碌": "OPAQUE", "空闲": "TRANSPARENT"}
-    REPEAT_OPTIONS = ["不重复", "每天", "每周", "每两周", "每月", "每年", "自定义"]
-    WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-    WEEKDAYS_RRULE = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
-    END_CONDITIONS = ["永不结束", "按日期结束", "按次数结束"]
+    STATUS_MAPPING = STATUS_MAPPING
+    STATUS_REV_MAPPING = STATUS_REV_MAPPING
+    TRANSPARENCY_MAPPING = TRANSPARENCY_MAPPING
+    REPEAT_OPTIONS = REPEAT_OPTIONS
+    WEEKDAYS = WEEKDAYS
+    WEEKDAYS_RRULE = WEEKDAYS_RRULE
+    END_CONDITIONS = END_CONDITIONS
 
     def __init__(self, parent, initial=None, db=None):
         self.root = tk.Toplevel(parent)
