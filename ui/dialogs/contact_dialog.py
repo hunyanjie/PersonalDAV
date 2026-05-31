@@ -12,16 +12,6 @@ import quopri
 class ContactDialog(tk.Toplevel):
     """添加/编辑联系人对话框"""
 
-    FIELD_MAP = {
-        'ORG': '组织/公司',
-        'TITLE': '职位',
-        'URL': '网址',
-        'ADR': '地址',
-        'X-PHONETIC-FIRST-NAME': '名字拼音',
-        'X-PHONETIC-LAST-NAME': '姓氏拼音'
-    }
-    REV_FIELD_MAP = {v: k for k, v in FIELD_MAP.items()}
-
     def __init__(self, parent, initial=None, vcard=None, raw_vcard=None):
         super().__init__(parent)
         self.title("添加/编辑联系人")
@@ -33,6 +23,7 @@ class ContactDialog(tk.Toplevel):
         self.initial = initial or {}
         self.vcard = vcard
         self.raw_vcard_data = raw_vcard
+        self.other_fields = []
 
         self.create_widgets()
         self.set_initial_values()
@@ -108,9 +99,29 @@ class ContactDialog(tk.Toplevel):
         # 其他 vCard 字段
         sep = ttk.Separator(f, orient='horizontal'); sep.grid(row=13, column=0, columnspan=4, sticky='ew', pady=10)
         ttk.Label(f, text="其他 vCard 字段:").grid(row=14, column=0, sticky="nw", pady=3)
-        self.other_text = tk.Text(f, height=6, width=40, exportselection=False); self.other_text.grid(row=14, column=1, columnspan=3, pady=3, sticky="nsew")
-        RightClickMenu(self.other_text, "text")
-        ttk.Label(f, text="(格式: 标签: 内容，如: X-CUSTOM: value)", foreground="gray").grid(row=15, column=1, columnspan=3, sticky="w")
+        other_frame = ttk.Frame(f)
+        other_frame.grid(row=14, column=1, columnspan=3, sticky="nsew", pady=3)
+        form_f = ttk.Frame(other_frame); form_f.pack(fill=tk.X)
+        ttk.Label(form_f, text="键:").pack(side=tk.LEFT)
+        self.other_key_var = tk.StringVar()
+        ttk.Entry(form_f, textvariable=self.other_key_var, width=14).pack(side=tk.LEFT, padx=2)
+        ttk.Label(form_f, text="值:").pack(side=tk.LEFT)
+        self.other_val_var = tk.StringVar()
+        ttk.Entry(form_f, textvariable=self.other_val_var, width=25).pack(side=tk.LEFT, padx=2)
+        ttk.Button(form_f, text="增加", width=8, command=self._other_add).pack(side=tk.LEFT, padx=1)
+        ttk.Button(form_f, text="修改", width=8, command=self._other_update).pack(side=tk.LEFT, padx=1)
+        ttk.Button(form_f, text="删除", width=8, command=self._other_delete).pack(side=tk.LEFT, padx=1)
+        tree_f = ttk.Frame(other_frame); tree_f.pack(fill=tk.BOTH, expand=True, pady=2)
+        self.other_tree = ttk.Treeview(tree_f, columns=('key', 'value'), show="headings", height=5, selectmode='extended')
+        self.other_tree.heading('key', text='键', command=lambda: self._other_sort('key'))
+        self.other_tree.heading('value', text='值', command=lambda: self._other_sort('value'))
+        self.other_tree.column('key', width=120); self.other_tree.column('value', width=300)
+        tv_scroll = ttk.Scrollbar(tree_f, orient="vertical", command=self.other_tree.yview)
+        self.other_tree.configure(yscrollcommand=tv_scroll.set)
+        self.other_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True); tv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.other_tree.bind("<Double-1>", lambda e: self._other_edit())
+        self.other_tree.bind("<Button-3>", self._other_popup)
+        f.grid_rowconfigure(14, weight=1); f.grid_columnconfigure(1, weight=1)
 
         btn_f = ttk.Frame(self); btn_f.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
         ttk.Button(btn_f, text="确定", command=self.ok).pack(side=tk.RIGHT, padx=5)
@@ -135,7 +146,6 @@ class ContactDialog(tk.Toplevel):
             
             emails = []
             phones = []
-            others = []
             standard = STANDARD_VCARD_FIELDS
 
             for child in self.vcard.getChildren():
@@ -168,12 +178,11 @@ class ContactDialog(tk.Toplevel):
                 elif name == 'BDAY':
                     self.birthday_var.set(child.value)
                 elif name not in standard:
-                    label = self.FIELD_MAP.get(name, name)
-                    others.append(f"{label}: {child.value}")
+                    self.other_fields.append({"key": name, "value": child.value})
 
             self.email_entry.insert(0, ";".join(emails))
             self.phone_entry.insert(0, ";".join(phones))
-            self.other_text.insert(tk.END, "\n".join(others))
+            self._other_refresh()
         else:
             # 仅在非 vcard 模式下使用简化 initial 数据
             self.email_entry.insert(0, self.initial.get('email', ''))
@@ -185,13 +194,90 @@ class ContactDialog(tk.Toplevel):
         scroll_h = ttk.Scrollbar(w, orient=tk.HORIZONTAL)
         scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL)
         t = tk.Text(w, wrap=tk.NONE, xscrollcommand=scroll_h.set, yscrollcommand=scroll_v.set)
-        RightClickMenu(t, "text")
+        RightClickMenu(t, "text", actions=["copy", None, "select_all"])
         scroll_h.config(command=t.xview); scroll_v.config(command=t.yview)
         scroll_h.pack(side=tk.BOTTOM, fill=tk.X)
         scroll_v.pack(side=tk.RIGHT, fill=tk.Y)
         t.pack(fill=tk.BOTH, expand=True)
         content = self.vcard.serialize() if self.vcard else self.raw_vcard_data
         t.insert(tk.END, content); t.config(state=tk.DISABLED)
+
+    def _other_add(self):
+        key = self.other_key_var.get().strip()
+        value = self.other_val_var.get().strip()
+        if not key:
+            messagebox.showwarning("提示", "键不能为空", parent=self)
+            return
+        self.other_fields.append({"key": key.upper(), "value": value})
+        self._other_refresh()
+
+    def _other_update(self):
+        sel = self.other_tree.selection()
+        if len(sel) != 1:
+            messagebox.showinfo("提示", "请选择一个字段", parent=self)
+            return
+        idx = self.other_tree.index(sel[0])
+        key = self.other_key_var.get().strip()
+        value = self.other_val_var.get().strip()
+        if not key:
+            messagebox.showwarning("提示", "键不能为空", parent=self)
+            return
+        self.other_fields[idx] = {"key": key.upper(), "value": value}
+        self._other_refresh()
+
+    def _other_edit(self):
+        sel = self.other_tree.selection()
+        if len(sel) != 1:
+            messagebox.showinfo("提示", "请选择一个字段", parent=self)
+            return
+        idx = self.other_tree.index(sel[0])
+        self.other_key_var.set(self.other_fields[idx]['key'])
+        self.other_val_var.set(self.other_fields[idx]['value'])
+
+    def _other_delete(self):
+        sel = self.other_tree.selection()
+        if not sel:
+            messagebox.showinfo("提示", "请选择要删除的字段", parent=self)
+            return
+        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self):
+            return
+        indices = sorted([self.other_tree.index(i) for i in sel], reverse=True)
+        for idx in indices:
+            del self.other_fields[idx]
+        self._other_refresh()
+
+    def _other_duplicate(self):
+        sel = self.other_tree.selection()
+        if not sel:
+            return
+        new_items = []
+        for iid in sel:
+            idx = self.other_tree.index(iid)
+            new_items.append(dict(self.other_fields[idx]))
+        self.other_fields.extend(new_items)
+        self._other_refresh()
+
+    def _other_refresh(self):
+        for item in self.other_tree.get_children():
+            self.other_tree.delete(item)
+        for f in self.other_fields:
+            self.other_tree.insert("", tk.END, values=(f['key'], f['value']))
+        self.other_key_var.set(""); self.other_val_var.set("")
+
+    def _other_sort(self, col):
+        self.other_fields.sort(key=lambda x: x[col])
+        self._other_refresh()
+
+    def _other_popup(self, e):
+        iid = self.other_tree.identify_row(e.y)
+        if iid:
+            self.other_tree.selection_set(iid)
+        sel = self.other_tree.selection()
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="编辑", command=self._other_edit, state=tk.NORMAL if len(sel) == 1 else tk.DISABLED)
+        menu.add_command(label="删除", command=self._other_delete)
+        menu.add_command(label="重复", command=self._other_duplicate)
+        menu.post(e.x_root, e.y_root)
 
     def encode_text(self, text):
         if not text: return ""
@@ -244,14 +330,11 @@ class ContactDialog(tk.Toplevel):
             v.add(self.preserved_photo)
 
         # 处理其他扩展字段
-        others = self.other_text.get("1.0", "end-1c").strip().splitlines()
-        for line in others:
-            if ":" in line:
-                label, val = line.split(":", 1)
-                key = self.REV_FIELD_MAP.get(label.strip(), label.strip().upper())
-                if key not in STANDARD_VCARD_FIELDS + ['X-PHONETIC-FIRST-NAME', 'X-PHONETIC-LAST-NAME']:
-                    try: v.add(key.lower()).value = val.strip()
-                    except: pass
+        for field in self.other_fields:
+            k, val = field.get('key', '').strip(), field.get('value', '').strip()
+            if k and k.upper() not in STANDARD_VCARD_FIELDS + ['X-PHONETIC-FIRST-NAME', 'X-PHONETIC-LAST-NAME']:
+                try: v.add(k.lower()).value = val
+                except: pass
 
         self.result = {'vcard': v.serialize(), 'name': v.fn.value}
         self.destroy()

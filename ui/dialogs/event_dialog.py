@@ -176,6 +176,7 @@ class EventDialog:
         self.result = None
         self.alarms = []
         self.custom_repeat_data = {}
+        self.other_fields = []
         self.end_count_var = tk.StringVar(value="5")
         self.raw_ical = None
         
@@ -587,8 +588,106 @@ class EventDialog:
         self.attendee_text = tk.Text(frame, height=3, width=40); self.attendee_text.grid(row=6, column=1, sticky="nsew", padx=5, pady=5)
         RightClickMenu(self.attendee_text, "text"); attendee_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.attendee_text.yview); attendee_scrollbar.grid(row=6, column=2, sticky="ns"); self.attendee_text.config(yscrollcommand=attendee_scrollbar.set)
         ttk.Label(frame, text="其他字段:").grid(row=7, column=0, sticky="nw", padx=5, pady=5)
-        self.other_text = tk.Text(frame, height=4, width=40); self.other_text.grid(row=7, column=1, sticky="nsew", padx=5, pady=5)
-        RightClickMenu(self.other_text, "text"); other_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.other_text.yview); other_scrollbar.grid(row=7, column=2, sticky="ns"); self.other_text.config(yscrollcommand=other_scrollbar.set)
+        other_frame = ttk.Frame(frame)
+        other_frame.grid(row=7, column=1, columnspan=2, sticky="nsew", padx=5, pady=5)
+        form_f = ttk.Frame(other_frame); form_f.pack(fill=tk.X)
+        ttk.Label(form_f, text="键:").pack(side=tk.LEFT)
+        self.other_key_var = tk.StringVar()
+        ttk.Entry(form_f, textvariable=self.other_key_var, width=14).pack(side=tk.LEFT, padx=2)
+        ttk.Label(form_f, text="值:").pack(side=tk.LEFT)
+        self.other_val_var = tk.StringVar()
+        ttk.Entry(form_f, textvariable=self.other_val_var, width=24).pack(side=tk.LEFT, padx=2)
+        ttk.Button(form_f, text="增加", command=self._other_add).pack(side=tk.LEFT, padx=1)
+        ttk.Button(form_f, text="修改", command=self._other_update).pack(side=tk.LEFT, padx=1)
+        ttk.Button(form_f, text="删除", command=self._other_delete).pack(side=tk.LEFT, padx=1)
+        tree_f = ttk.Frame(other_frame); tree_f.pack(fill=tk.BOTH, expand=True, pady=2)
+        self.other_tree = ttk.Treeview(tree_f, columns=('key', 'value'), show="headings", height=5, selectmode='extended')
+        self.other_tree.heading('key', text='键', command=lambda: self._other_sort('key'))
+        self.other_tree.heading('value', text='值', command=lambda: self._other_sort('value'))
+        self.other_tree.column('key', width=120); self.other_tree.column('value', width=250)
+        tv_scroll = ttk.Scrollbar(tree_f, orient="vertical", command=self.other_tree.yview)
+        self.other_tree.configure(yscrollcommand=tv_scroll.set)
+        self.other_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True); tv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.other_tree.bind("<Double-1>", lambda e: self._other_edit())
+        self.other_tree.bind("<Button-3>", self._other_popup)
+        frame.grid_rowconfigure(7, weight=1); frame.grid_columnconfigure(1, weight=1)
+
+    def _other_add(self):
+        key = self.other_key_var.get().strip()
+        value = self.other_val_var.get().strip()
+        if not key:
+            messagebox.showwarning("提示", "键不能为空", parent=self.root)
+            return
+        self.other_fields.append({"key": key.upper(), "value": value})
+        self._other_refresh()
+
+    def _other_update(self):
+        sel = self.other_tree.selection()
+        if len(sel) != 1:
+            messagebox.showinfo("提示", "请选择一个字段", parent=self.root)
+            return
+        idx = self.other_tree.index(sel[0])
+        key = self.other_key_var.get().strip()
+        value = self.other_val_var.get().strip()
+        if not key:
+            messagebox.showwarning("提示", "键不能为空", parent=self.root)
+            return
+        self.other_fields[idx] = {"key": key.upper(), "value": value}
+        self._other_refresh()
+
+    def _other_edit(self):
+        sel = self.other_tree.selection()
+        if len(sel) != 1:
+            messagebox.showinfo("提示", "请选择一个字段", parent=self.root)
+            return
+        idx = self.other_tree.index(sel[0])
+        self.other_key_var.set(self.other_fields[idx]['key'])
+        self.other_val_var.set(self.other_fields[idx]['value'])
+
+    def _other_delete(self):
+        sel = self.other_tree.selection()
+        if not sel:
+            messagebox.showinfo("提示", "请选择要删除的字段", parent=self.root)
+            return
+        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self.root):
+            return
+        indices = sorted([self.other_tree.index(i) for i in sel], reverse=True)
+        for idx in indices:
+            del self.other_fields[idx]
+        self._other_refresh()
+
+    def _other_duplicate(self):
+        sel = self.other_tree.selection()
+        if not sel:
+            return
+        new_items = []
+        for iid in sel:
+            idx = self.other_tree.index(iid)
+            new_items.append(dict(self.other_fields[idx]))
+        self.other_fields.extend(new_items)
+        self._other_refresh()
+
+    def _other_refresh(self):
+        for item in self.other_tree.get_children():
+            self.other_tree.delete(item)
+        for f in self.other_fields:
+            self.other_tree.insert("", tk.END, values=(f['key'], f['value']))
+        self.other_key_var.set(""); self.other_val_var.set("")
+
+    def _other_sort(self, col):
+        self.other_fields.sort(key=lambda x: x[col])
+        self._other_refresh()
+
+    def _other_popup(self, e):
+        iid = self.other_tree.identify_row(e.y)
+        if iid:
+            self.other_tree.selection_set(iid)
+        sel = self.other_tree.selection()
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="编辑", command=self._other_edit, state=tk.NORMAL if len(sel) == 1 else tk.DISABLED)
+        menu.add_command(label="删除", command=self._other_delete)
+        menu.add_command(label="重复", command=self._other_duplicate)
+        menu.post(e.x_root, e.y_root)
 
     def get_local_tz_str(self): return TimezoneHelper.get_local_timezone_id()
 
@@ -636,12 +735,13 @@ class EventDialog:
                 elif hasattr(ev, 'attendee'):
                     val = decode_ical_value(ev.attendee.value); attendee_values.add(val)
                 if attendee_values: self.attendee_text.insert("1.0", "\n".join(sorted(list(attendee_values))))
-                others = []; standard = STANDARD_ICAL_FIELDS
+                standard = STANDARD_ICAL_FIELDS
                 for child in ev.contents.values():
                     for item in child:
                         name = item.name.upper()
-                        if name not in standard: others.append(f"{name}: {item.value}")
-                self.other_text.insert(tk.END, "\n".join(others))
+                        if name not in standard:
+                            self.other_fields.append({"key": name, "value": str(item.value)})
+                self._other_refresh()
                 if hasattr(ev, 'dtstart'):
                     dt = ev.dtstart.value
                     if isinstance(dt, datetime):
@@ -847,13 +947,12 @@ class EventDialog:
         if hasattr(self, 'attendee_text'):
             for line in self.attendee_text.get("1.0", "end-1c").split('\n'):
                 if line.strip(): ev.add('attendee').value = line.strip()
-        if hasattr(self, 'other_text'):
-            for line in self.other_text.get("1.0", "end-1c").splitlines():
-                if ":" in line:
-                    k, v = line.split(":", 1)
-                    if k.strip().upper() not in STANDARD_ICAL_FIELDS:
-                        try: ev.add(k.strip().lower()).value = v.strip()
-                        except: pass
+        if hasattr(self, 'other_fields'):
+            for field in self.other_fields:
+                k, v = field.get('key', '').strip(), field.get('value', '').strip()
+                if k and k.upper() not in STANDARD_ICAL_FIELDS:
+                    try: ev.add(k.lower()).value = v
+                    except: pass
         return cal.serialize()
 
     def show_raw_data(self):
@@ -861,7 +960,7 @@ class EventDialog:
         sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
         sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
         txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
-        RightClickMenu(txt, "text")
+        RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
         sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
         sb_h.pack(side=tk.BOTTOM, fill=tk.X)
         sb_v.pack(side=tk.RIGHT, fill=tk.Y)
