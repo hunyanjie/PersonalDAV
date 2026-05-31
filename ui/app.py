@@ -59,9 +59,9 @@ class DAVServerApp:
         # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
 
-        # MCP 服务器（根据设置自动启动）
+        # MCP 服务器（根据设置自动启停）
         self.mcp_server = MCPServer()
-        self._auto_start_mcp()
+        self._sync_mcp_server()
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
@@ -177,8 +177,9 @@ class DAVServerApp:
                 logger.warning(f"无法创建日志文件: {e}")
 
     def on_settings_changed(self, *args):
-        """设置变更时重新配置日志"""
+        """设置变更时重新配置日志并同步 MCP 服务"""
         self._setup_file_logging()
+        self._sync_mcp_server()
 
     def create_widgets(self):
         # 菜单栏
@@ -243,11 +244,13 @@ class DAVServerApp:
                 messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
         messagebox.showinfo("成功", "设置已保存")
 
-    def _auto_start_mcp(self):
-        if self.settings_service.get_setting("mcp_enabled", "False") == "True":
+    def _sync_mcp_server(self):
+        enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"
+        if enabled and not self.mcp_server.is_running:
             port = int(self.settings_service.get_setting("mcp_port", "8100"))
             self.mcp_server.start(port=port)
-            logger.info(f"MCP 服务器已自动启动，端口 {port}")
+        elif not enabled and self.mcp_server.is_running:
+            self.mcp_server.stop()
 
     def process_log_queue(self):
         """将队列中的日志刷新到 UI，附带级别信息用于着色"""
