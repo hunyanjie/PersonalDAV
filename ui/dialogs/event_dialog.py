@@ -12,6 +12,7 @@ import locale
 import quopri
 from tkcalendar import DateEntry
 from ui.widgets.right_click_menu import RightClickMenu
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.logger import logger
 from models.event import EventModel
@@ -358,28 +359,34 @@ class EventDialog:
         self.summary_var = tk.StringVar()
         self.summary_entry = ttk.Entry(frame, textvariable=self.summary_var, width=40)
         self.summary_entry.grid(row=1, column=1, columnspan=3, sticky="we", padx=5)
+        EnhancedTooltip(self.summary_entry, "必填。事件的简要标题")
         RightClickMenu(self.summary_entry)
 
         ttk.Label(frame, text="地点:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.location_var = tk.StringVar()
         self.location_entry = ttk.Entry(frame, textvariable=self.location_var, width=40)
         self.location_entry.grid(row=2, column=1, columnspan=3, sticky="we", padx=5)
+        EnhancedTooltip(self.location_entry, "事件发生的地点或会议室")
         RightClickMenu(self.location_entry)
 
         ttk.Label(frame, text="描述:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
         self.description_text = tk.Text(frame, height=5, width=50, undo=True)
         self.description_text.grid(row=3, column=1, columnspan=3, sticky="nsew", padx=5)
+        EnhancedTooltip(self.description_text, "事件的详细描述或备注")
         RightClickMenu(self.description_text, "text")
 
         ttk.Label(frame, text="事件状态:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.status_var = tk.StringVar()
         status_combo = ttk.Combobox(frame, textvariable=self.status_var, values=list(self.STATUS_MAPPING.keys()), state="readonly")
         status_combo.grid(row=4, column=1, sticky="w", padx=5)
+        EnhancedTooltip(status_combo, "事件状态: 已确认/待定/已取消")
         self.status_var.trace("w", self.on_status_changed)
         
         ttk.Label(frame, text="日历版本:").grid(row=4, column=2, sticky="e", padx=5)
         self.version_var = tk.StringVar(value="2.0")
-        ttk.Combobox(frame, textvariable=self.version_var, values=["1.0", "2.0", "2.1", "3.0"], state="readonly", width=5).grid(row=4, column=3, sticky="w", padx=5)
+        ver_combo = ttk.Combobox(frame, textvariable=self.version_var, values=["1.0", "2.0", "2.1", "3.0"], state="readonly", width=5)
+        ver_combo.grid(row=4, column=3, sticky="w", padx=5)
+        EnhancedTooltip(ver_combo, "iCalendar 版本号，通常保持 2.0")
 
     def _compute_snapped_start(self):
         mode = (self.db.get_setting("start_time_snap", "current")
