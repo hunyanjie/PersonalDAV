@@ -146,3 +146,11 @@ class Database:
         if self.conn:
             self.conn.close()
             self.conn = None
+
+    @classmethod
+    def reset(cls):
+        """重置单例（仅用于测试）"""
+        with cls._lock:
+            if cls._instance and cls._instance.conn:
+                cls._instance.conn.close()
+            cls._instance = None
