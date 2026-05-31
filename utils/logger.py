@@ -4,20 +4,17 @@ from logging.handlers import RotatingFileHandler
 from config import DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL
 
 class GUIHandler(logging.Handler):
-    """自定义日志处理器，将日志发送到GUI队列"""
+    """自定义日志处理器，将日志发送到GUI队列，包含级别和消息"""
 
     def __init__(self, log_queue):
         super().__init__()
         self.log_queue = log_queue
-        # 设置格式化器 - 添加时间戳
-        self.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
+        self.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S'))
 
     def emit(self, record):
         try:
-            # 使用格式化器格式化日志消息
             formatted_message = self.format(record)
-            # 将格式化后的日志添加到队列
-            self.log_queue.put(formatted_message)
+            self.log_queue.put((record.levelno, formatted_message))
         except Exception:
             self.handleError(record)
 

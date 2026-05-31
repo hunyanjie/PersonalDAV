@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import threading
+import logging
 from network.dav_server import DAVServer
 from ui.widgets.right_click_menu import RightClickMenu
 from utils.logger import logger, GUIHandler
@@ -46,6 +47,11 @@ class ServerTab(ttk.Frame):
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.log_text = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD)
+        self.log_text.tag_config("CRITICAL", foreground="white", background="darkred")
+        self.log_text.tag_config("ERROR", foreground="red")
+        self.log_text.tag_config("WARNING", foreground="orange")
+        self.log_text.tag_config("INFO", foreground="black")
+        self.log_text.tag_config("DEBUG", foreground="gray")
         RightClickMenu(self.log_text, "text")
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -73,6 +79,8 @@ CalDAV 配置:
   http://localhost:8000/events/ - 所有日历事件"""
         ttk.Label(info_frame, text=info_text, justify=tk.LEFT, font=('Consolas', 9)).pack(padx=5, pady=5)
 
+    LEVEL_TAGS = {50: "CRITICAL", 40: "ERROR", 30: "WARNING", 20: "INFO", 10: "DEBUG"}
+
     def start_server(self):
         port = int(self.port_entry.get())
         if self.settings_service.get_setting("auto_save_port", "True") == "True":
@@ -84,7 +92,7 @@ CalDAV 配置:
         
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
-        self.log_message(f"服务器已启动在端口 {port}")
+        self.log_message(f"服务器已启动在端口 {port}", logging.INFO)
         event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def stop_server(self):
@@ -93,14 +101,12 @@ CalDAV 配置:
             self.server_instance = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
-            self.log_message("服务器已停止")
+            self.log_message("服务器已停止", logging.INFO)
             event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
-    def log_message(self, message):
+    def log_message(self, message, levelno=logging.INFO):
+        tag = self.LEVEL_TAGS.get(levelno // 10 * 10, "INFO")
         self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, message + "\n")
-        self.log_text.see(tk.END)
-        self.log_text.config(state=tk.DISABLED)
-
+        self.log_text.insert(tk.END, message + "\n", tag)
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)

@@ -154,39 +154,19 @@ class DAVServerApp:
             self.calendar_tab.refresh_events()
 
     def setup_logging(self):
-        """配置 GUI、控制台和文件日志处理器"""
-        # 配置根日志器，确保只输出一次
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        # 禁用根日志器的向上传播
-        root_logger.propagate = False
-
-        # 清除根日志器已有的处理器（防止重复）
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
-
-        # 添加控制台处理器
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        root_logger.addHandler(console_handler)
-
+        """配置 GUI 日志处理器，挂在 app 的 logger 上（非根日志器）"""
         gui_handler = GUIHandler(self.log_queue)
-        root_logger.addHandler(gui_handler)
-
-        # 根据设置配置日志文件
+        logger.addHandler(gui_handler)
         self._setup_file_logging()
 
     def _setup_file_logging(self):
-        """根据设置配置日志文件"""
+        """根据设置配置日志文件（挂载到 app logger 上）"""
         enable_file = self.settings_service.get_setting("enable_log_file", "False") == "True"
-        root_logger = logging.getLogger()
 
-        # 移除现有的文件处理器
         if self.file_handler:
-            root_logger.removeHandler(self.file_handler)
+            logger.removeHandler(self.file_handler)
             self.file_handler = None
 
-        # 如果启用日志文件，添加新的文件处理器
         if enable_file:
             log_file = self.settings_service.get_setting("log_file_path", "dav_server.log")
             log_level = self.settings_service.get_setting("log_level", "INFO")
@@ -195,7 +175,7 @@ class DAVServerApp:
                 self.file_handler = logging.FileHandler(log_file, encoding='utf-8')
                 self.file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
                 self.file_handler.setLevel(getattr(logging, log_level, logging.INFO))
-                root_logger.addHandler(self.file_handler)
+                logger.addHandler(self.file_handler)
                 logger.info(f"日志文件已启用，路径: {log_file}，级别: {log_level}")
             except Exception as e:
                 logger.warning(f"无法创建日志文件: {e}")
@@ -262,11 +242,11 @@ class DAVServerApp:
         messagebox.showinfo("成功", "设置已保存")
 
     def process_log_queue(self):
-        """将队列中的日志刷新到 UI"""
+        """将队列中的日志刷新到 UI，附带级别信息用于着色"""
         try:
             while not self.log_queue.empty():
-                msg = self.log_queue.get_nowait()
-                self.server_tab.log_message(msg)
+                levelno, msg = self.log_queue.get_nowait()
+                self.server_tab.log_message(msg, levelno)
         except queue.Empty:
             pass
         self.root.after(100, self.process_log_queue)
