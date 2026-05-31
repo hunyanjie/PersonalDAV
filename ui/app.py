@@ -17,13 +17,16 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 
 class DAVServerApp:
     """主应用程序类"""
-    def __init__(self, root):
+    def __init__(self, root, cli_port=None, cli_log_level=None):
         self.root = root
         self.root.title(f"{SOFTWARE_NAME} v{SOFTWARE_VERSION}")
-        # self.root.geometry("1000x700")
-        
-        # 初始化服务
+
         self.settings_service = SettingsService()
+        if cli_port is not None:
+            self.settings_service.set_setting("default_port", str(cli_port))
+        if cli_log_level is not None:
+            self.settings_service.set_setting("log_level", cli_log_level)
+
         fmt = self.settings_service.get_setting("timezone_format",
             "{offset} - {city} ({tz_id}) {localized}{local_tag}")
         from utils.timezone_helper import TimezoneHelper
