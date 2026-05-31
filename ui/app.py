@@ -238,7 +238,13 @@ class DAVServerApp:
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
 
-    def on_settings_saved(self):
+    def on_settings_saved(self, ssl_toggled=False):
+        if ssl_toggled and self.server_tab.server_instance is not None:
+            if messagebox.askyesno("重启服务器", "HTTPS 设置已更改，是否立即重启服务器以生效？"):
+                self.server_tab.stop_server()
+                self.server_tab.start_server()
+            else:
+                messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
         messagebox.showinfo("成功", "设置已保存")
 
     def process_log_queue(self):

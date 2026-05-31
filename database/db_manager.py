@@ -93,7 +93,10 @@ class Database:
                 ('default_sync_timezone', "True"),
                 ('default_repeat', "不重复"),
                 ('default_end_cond', "永不结束"),
-                ('default_end_count', "5")
+                ('default_end_count', "5"),
+                ('ssl_enabled', "False"),
+                ('ssl_certfile', ""),
+                ('ssl_keyfile', "")
             ]
 
             c.executemany("INSERT INTO settings (key, value) VALUES (?, ?)", initial_settings)

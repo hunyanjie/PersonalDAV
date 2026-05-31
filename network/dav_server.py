@@ -1,4 +1,5 @@
 import os
+import ssl
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from services.contact_service import ContactService
 from services.event_service import EventService
@@ -241,13 +242,21 @@ class DAVHandler(BaseHTTPRequestHandler):
             logger.info(log_line)
 
 class DAVServer:
-    """WebDAV 服务器封装"""
-    def __init__(self, port):
+    """WebDAV 服务器封装（支持可选 SSL/TLS）"""
+    def __init__(self, port, ssl_enabled=False, ssl_certfile='', ssl_keyfile=''):
         self.port = port
+        self.ssl_enabled = ssl_enabled
+        self.ssl_certfile = ssl_certfile
+        self.ssl_keyfile = ssl_keyfile
         self.server = None
 
     def start(self):
         self.server = HTTPServer(('', self.port), DAVHandler)
+        if self.ssl_enabled and self.ssl_certfile:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(self.ssl_certfile, self.ssl_keyfile if self.ssl_keyfile else None)
+            self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+            logger.info(f"SSL/TLS 已启用，证书: {self.ssl_certfile}")
         self.server.serve_forever()
 
     def stop(self):
