@@ -22,11 +22,16 @@ class EventService(BaseService):
             )
         return cls._instance
 
-    def add_event(self, ical_data: str):
-        """添加或更新事件"""
+    def add_event(self, ical_data: str, force: bool = False, publish: bool = True):
+        """添加或更新事件。force=True 时即使内容相同也覆盖更新。"""
         try:
             ical = vobject.readOne(ical_data)
-            ev = ical.vevent
+            if ical.name == 'VCALENDAR':
+                ev = ical.vevent
+            elif ical.name == 'VEVENT':
+                ev = ical
+            else:
+                raise ValueError(f"Unexpected component: {ical.name}")
             uid = ev.uid.value
 
             def to_str(val):
@@ -47,6 +52,8 @@ class EventService(BaseService):
             now = datetime.now().isoformat()
             if existing:
                 operation = "unchanged" if existing.ical == ical_data else "updated"
+                if force:
+                    operation = "updated"
                 event.created_at = existing.created_at
                 event.updated_at = now
             else:
@@ -55,7 +62,8 @@ class EventService(BaseService):
 
             if operation != "unchanged":
                 self.repo.add_or_update(event)
-                event_bus.publish(EVENT_EVENTS_CHANGED)
+                if publish:
+                    event_bus.publish(EVENT_EVENTS_CHANGED)
 
             return uid, operation
         except Exception as e:

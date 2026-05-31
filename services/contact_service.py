@@ -23,8 +23,8 @@ class ContactService(BaseService):
             )
         return cls._instance
 
-    def add_contact(self, vcard_data: str):
-        """添加或更新联系人"""
+    def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True):
+        """添加或更新联系人。force=True 时即使内容相同也覆盖更新。"""
         try:
             parsed_data = None
             try:
@@ -51,7 +51,9 @@ class ContactService(BaseService):
             operation = "inserted"
             if existing:
                 operation = "unchanged" if existing.vcard == vcard_data else "updated"
-                contact.created_at = existing.created_at
+                if force:
+                    operation = "updated"
+                contact.created_at = existing.created_at or now
                 contact.updated_at = now
             else:
                 contact.created_at = now
@@ -59,7 +61,8 @@ class ContactService(BaseService):
 
             if operation != "unchanged":
                 self.repo.add_or_update(contact)
-                event_bus.publish(EVENT_CONTACTS_CHANGED)
+                if publish:
+                    event_bus.publish(EVENT_CONTACTS_CHANGED)
 
             return contact.uid, operation
         except Exception as e:

@@ -2,12 +2,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from ui.dialogs.event_dialog import EventDialog
 from ui.dialogs.webdav_import_dialog import WebDAVImportDialog
+from ui.dialogs.import_preview_dialog import ImportPreviewDialog
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.tabs.base_tab import BaseTreeTab
 from tkinterdnd2 import DND_FILES
 
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
-from services.import_service import TextImportManager, FileSource, UrlSource, ClipboardSource
+import os
 
 
 class CalendarTab(BaseTreeTab):
@@ -29,9 +30,9 @@ class CalendarTab(BaseTreeTab):
         self.db = event_service
         self.settings = settings_service
         self.app_root = app_root
-        self.import_manager = TextImportManager(event_service)
 
         super().__init__(parent)
+        self._import_type = 'events'
 
         self.create_widgets()
         self.refresh_events()
@@ -73,11 +74,13 @@ class CalendarTab(BaseTreeTab):
         # 导入菜单
         import_btn = ttk.Menubutton(btn_frame, text="导入数据")
         import_menu = tk.Menu(import_btn, tearoff=0)
-        import_menu.add_command(label="从文件导入...", command=lambda: self.import_manager.perform_import(FileSource([("iCalendar", "*.ics")])))
-        import_menu.add_command(label="从 URL 导入...", command=lambda: self.import_manager.perform_import(UrlSource()))
-        import_menu.add_command(label="从剪切板导入", command=lambda: self.import_manager.perform_import(ClipboardSource(self.app_root)))
+        import_menu.add_command(label="从文件导入...", command=self._import_file)
+        import_menu.add_command(label="从 URL 导入...", command=self._import_url)
+        import_menu.add_command(label="从剪切板导入", command=self._import_clipboard)
         import_menu.add_command(label="粘贴文本导入...", command=self.show_text_import)
         import_menu.add_command(label="WebDAV 导入...", command=self.import_webdav)
+        import_menu.add_separator()
+        import_menu.add_command(label="预览导入...", command=self.show_import_preview)
         import_btn.config(menu=import_menu)
         import_btn.pack(side=tk.LEFT, padx=2)
 
@@ -132,8 +135,16 @@ class CalendarTab(BaseTreeTab):
     def delete_event(self):
         sel = self.tree.selection()
         if not sel: return
-        if messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个事件吗？"):
-            for i in sel: self.db.delete(self.tree.item(i)['values'][1])
+        uids = []
+        for i in sel:
+            try:
+                uids.append(self.tree.item(i)['values'][1])
+            except:
+                continue
+        if not uids: return
+        if messagebox.askyesno("确认", f"确定删除选中的 {len(uids)} 个事件吗？"):
+            for uid in uids:
+                self.db.delete(uid)
             self.refresh_events()
     
     def _on_delete(self):
@@ -165,14 +176,43 @@ class CalendarTab(BaseTreeTab):
         dialog = WebDAVImportDialog(self, "从 WebDAV 导入日历", self.db.add_event)
         self.wait_window(dialog)
 
-    def show_text_import(self):
-        from ui.dialogs.text_import_dialog import TextImportDialog
-        dialog = TextImportDialog(self.app_root, "粘贴 iCalendar 文本导入", self.db.add_event)
-        self.wait_window(dialog)
+    def _import_add_item(self, raw, force=False, publish=True):
+        return self.db.add_event(raw, force=force, publish=publish)
+
+    def _import_refresh_list(self):
+        self.refresh_events()
+
+    def _parse_data_to_items(self, data):
+        """将原始 iCalendar 数据解析为 item 列表，供 ImportPreviewDialog 使用"""
+        items = []
+        if "BEGIN:VEVENT" not in data and "BEGIN:VCALENDAR" not in data:
+            return items
+        try:
+            import vobject
+            if "BEGIN:VEVENT" in data and "BEGIN:VCALENDAR" not in data:
+                cal = vobject.readOne(data)
+                uid = cal.uid.value if hasattr(cal, 'uid') else ""
+                title = cal.summary.value if hasattr(cal, 'summary') else "(无标题)"
+                existing = self.db.get_by_uid(uid) is not None
+                items.append({"uid": uid, "title": title, "raw": data, "is_new": not existing, "has_dup": False})
+            else:
+                cal = vobject.readOne(data)
+                for comp in cal.components():
+                    if comp.name == 'VEVENT':
+                        raw = comp.serialize()
+                        uid = comp.uid.value if hasattr(comp, 'uid') else ""
+                        title = comp.summary.value if hasattr(comp, 'summary') else "(无标题)"
+                        existing = self.db.get_by_uid(uid) is not None
+                        items.append({"uid": uid, "title": title, "raw": raw, "is_new": not existing, "has_dup": False})
+        except Exception:
+            pass
+        return items
 
     def export_selected(self):
         sel = self.tree.selection()
-        if not sel: return
+        if not sel:
+            messagebox.showinfo("提示", "请先选择要导出的事件", parent=self)
+            return
         uids = [self.tree.item(i)['values'][1] for i in sel]
         events = self.db.get_selected_raw(uids)
 

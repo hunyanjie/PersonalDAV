@@ -6,6 +6,7 @@ from tkcalendar import Calendar
 from ui.widgets.right_click_menu import RightClickMenu
 from utils.encoding_helper import should_encode
 from models.constants import STANDARD_VCARD_FIELDS
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
 import quopri
 
 
@@ -41,6 +42,7 @@ class ContactDialog(tk.Toplevel):
 
         ttk.Label(f, text="姓名*:").grid(row=1, column=0, sticky="w", pady=3)
         self.name_entry = ttk.Entry(f, width=40, exportselection=False); self.name_entry.grid(row=1, column=1, columnspan=2, pady=3, sticky="we")
+        EnhancedTooltip(self.name_entry, "必填。联系人显示名称")
         RightClickMenu(self.name_entry)
 
         # 拼音字段
@@ -55,11 +57,13 @@ class ContactDialog(tk.Toplevel):
         ttk.Label(f, text="邮箱:").grid(row=3, column=0, sticky="w", pady=3)
         self.email_entry = ttk.Entry(f, width=40, exportselection=False); self.email_entry.grid(row=3, column=1, columnspan=3, pady=3, sticky="we")
         ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=4, column=1, sticky="w")
+        EnhancedTooltip(self.email_entry, "多个邮箱请用分号(;)分隔")
         RightClickMenu(self.email_entry)
 
         ttk.Label(f, text="电话:").grid(row=5, column=0, sticky="w", pady=3)
         self.phone_entry = ttk.Entry(f, width=40, exportselection=False); self.phone_entry.grid(row=5, column=1, columnspan=3, pady=3, sticky="we")
         ttk.Label(f, text="(多个用分号分隔)", foreground="gray").grid(row=6, column=1, sticky="w")
+        EnhancedTooltip(self.phone_entry, "多个电话请用分号(;)分隔")
         RightClickMenu(self.phone_entry)
 
         # 组织/公司

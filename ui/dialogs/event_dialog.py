@@ -12,12 +12,21 @@ import locale
 import quopri
 from tkcalendar import DateEntry
 from ui.widgets.right_click_menu import RightClickMenu
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
 from utils.encoding_helper import smart_quoted_printable_encode, should_encode, decode_ical_value
-from models.constants import STANDARD_ICAL_FIELDS
+from models.constants import (
+    STANDARD_ICAL_FIELDS, STATUS_MAPPING, STATUS_REV_MAPPING,
+    TRANSPARENCY_MAPPING, TRANSPARENCY_REV_MAPPING,
+    REPEAT_OPTIONS, WEEKDAYS, WEEKDAYS_RRULE, END_CONDITIONS,
+    ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING,
+    DURATION_QUICK_OPTIONS, FREQ_MAPPING,
+    PRESET_REMINDERS_DEFAULT, PRESET_ALLDAY_REMINDERS_DEFAULT,
+    REMINDER_STRING_MAPPING,
+)
 import json
 
 class DetailedReminderEditor(tk.Toplevel):
@@ -105,7 +114,7 @@ class DetailedReminderEditor(tk.Toplevel):
         ttk.Button(main_f, text="保存提醒", command=self.save).pack(pady=10)
 
     def load_data(self, a):
-        self.rem_type_var.set({"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}.get(a.get('action'), "显示"))
+        self.rem_type_var.set(ALARM_ACTION_REV_MAPPING.get(a.get('action'), "显示"))
         tr = a.get('trigger')
         if isinstance(tr, datetime):
             self.trig_type_var.set("absolute")
@@ -129,7 +138,7 @@ class DetailedReminderEditor(tk.Toplevel):
 
     def save(self):
         try:
-            act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(self.rem_type_var.get(), "DISPLAY")
+            act = ALARM_ACTION_MAPPING.get(self.rem_type_var.get(), "DISPLAY")
             if self.trig_type_var.get() == "relative":
                 d, h, m = int(self.days_v.get() or 0), int(self.hours_v.get() or 0), int(self.mins_v.get() or 0)
                 trig = -timedelta(days=d, hours=h, minutes=m)
@@ -155,13 +164,13 @@ class DetailedReminderEditor(tk.Toplevel):
 
 class EventDialog:
     """日历事件编辑对话框 - 1:1 深度还原，Flawless 架构演进版"""
-    STATUS_MAPPING = {"待定": "TENTATIVE", "已确认": "CONFIRMED", "已取消": "CANCELLED"}
-    STATUS_REV_MAPPING = {v: k for k, v in STATUS_MAPPING.items()}
-    TRANSPARENCY_MAPPING = {"忙碌": "OPAQUE", "空闲": "TRANSPARENT"}
-    REPEAT_OPTIONS = ["不重复", "每天", "每周", "每两周", "每月", "每年", "自定义"]
-    WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-    WEEKDAYS_RRULE = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
-    END_CONDITIONS = ["永不结束", "按日期结束", "按次数结束"]
+    STATUS_MAPPING = STATUS_MAPPING
+    STATUS_REV_MAPPING = STATUS_REV_MAPPING
+    TRANSPARENCY_MAPPING = TRANSPARENCY_MAPPING
+    REPEAT_OPTIONS = REPEAT_OPTIONS
+    WEEKDAYS = WEEKDAYS
+    WEEKDAYS_RRULE = WEEKDAYS_RRULE
+    END_CONDITIONS = END_CONDITIONS
 
     def __init__(self, parent, initial=None, db=None):
         self.root = tk.Toplevel(parent)
@@ -279,7 +288,7 @@ class EventDialog:
                         # 旧版格式兼容
                         parts = item.split(':', 3)
                         if len(parts) >= 3:
-                            act_en = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(parts[0], "DISPLAY")
+                            act_en = ALARM_ACTION_MAPPING.get(parts[0], "DISPLAY")
                             trig_mode, time_val, desc = parts[1], parts[2], parts[3] if len(parts) > 3 else ""
                             trigger = None
                             if trig_mode == "提前": trigger = self.parse_reminder_string(time_val)
@@ -295,17 +304,7 @@ class EventDialog:
     def parse_reminder_string(self, text):
         """解析提醒字符串为 timedelta"""
         if not text: return None
-        mapping = {
-            "日程发生时": timedelta(0), "发生时": timedelta(0),
-            "5分钟前": timedelta(minutes=-5), "15分钟前": timedelta(minutes=-15),
-            "30分钟前": timedelta(minutes=-30), "1小时前": timedelta(hours=-1),
-            "2小时前": timedelta(hours=-2), "1天前": timedelta(days=-1),
-            "2天前": timedelta(days=-2), "7天前": timedelta(days=-7),
-            "当天上午9点": timedelta(hours=9), "1天前上午9点": timedelta(days=-1, hours=9),
-            "2天前上午9点": timedelta(days=-2, hours=9), "3天前上午9点": timedelta(days=-3, hours=9),
-            "5天前上午9点": timedelta(days=-5, hours=9), "7天前上午9点": timedelta(days=-7, hours=9)
-        }
-        if text in mapping: return mapping[text]
+        if text in REMINDER_STRING_MAPPING: return REMINDER_STRING_MAPPING[text]
         
         # 尝试正则解析 "X天Y小时Z分钟前"
         try:
@@ -358,28 +357,34 @@ class EventDialog:
         self.summary_var = tk.StringVar()
         self.summary_entry = ttk.Entry(frame, textvariable=self.summary_var, width=40)
         self.summary_entry.grid(row=1, column=1, columnspan=3, sticky="we", padx=5)
+        EnhancedTooltip(self.summary_entry, "必填。事件的简要标题")
         RightClickMenu(self.summary_entry)
 
         ttk.Label(frame, text="地点:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.location_var = tk.StringVar()
         self.location_entry = ttk.Entry(frame, textvariable=self.location_var, width=40)
         self.location_entry.grid(row=2, column=1, columnspan=3, sticky="we", padx=5)
+        EnhancedTooltip(self.location_entry, "事件发生的地点或会议室")
         RightClickMenu(self.location_entry)
 
         ttk.Label(frame, text="描述:").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
         self.description_text = tk.Text(frame, height=5, width=50, undo=True)
         self.description_text.grid(row=3, column=1, columnspan=3, sticky="nsew", padx=5)
+        EnhancedTooltip(self.description_text, "事件的详细描述或备注")
         RightClickMenu(self.description_text, "text")
 
         ttk.Label(frame, text="事件状态:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
         self.status_var = tk.StringVar()
         status_combo = ttk.Combobox(frame, textvariable=self.status_var, values=list(self.STATUS_MAPPING.keys()), state="readonly")
         status_combo.grid(row=4, column=1, sticky="w", padx=5)
+        EnhancedTooltip(status_combo, "事件状态: 已确认/待定/已取消")
         self.status_var.trace("w", self.on_status_changed)
         
         ttk.Label(frame, text="日历版本:").grid(row=4, column=2, sticky="e", padx=5)
         self.version_var = tk.StringVar(value="2.0")
-        ttk.Combobox(frame, textvariable=self.version_var, values=["1.0", "2.0", "2.1", "3.0"], state="readonly", width=5).grid(row=4, column=3, sticky="w", padx=5)
+        ver_combo = ttk.Combobox(frame, textvariable=self.version_var, values=["1.0", "2.0", "2.1", "3.0"], state="readonly", width=5)
+        ver_combo.grid(row=4, column=3, sticky="w", padx=5)
+        EnhancedTooltip(ver_combo, "iCalendar 版本号，通常保持 2.0")
 
     def _compute_snapped_start(self):
         mode = (self.db.get_setting("start_time_snap", "current")
@@ -468,8 +473,7 @@ class EventDialog:
         self.duration_frame = ttk.Frame(frame)
         self.duration_frame.grid(row=6, column=0, columnspan=3, sticky='w', padx=5, pady=10)
         ttk.Label(self.duration_frame, text="快速调整持续时间:").pack(side='left')
-        dur_opts = ["30分钟", "1小时", "2小时", "半天", "全天"]
-        for opt in dur_opts:
+        for opt in DURATION_QUICK_OPTIONS:
             ttk.Button(self.duration_frame, text=opt, command=lambda o=opt: self.apply_duration(o)).pack(side='left', padx=2)
 
         dur_min = self._get_default_duration_minutes()
@@ -703,7 +707,7 @@ class EventDialog:
             if v.get('priority') is not None:
                 p = int(v.get('priority')); self.priority_var.set(p); self.priority_label.config(text=f" {p} ")
             if v.get('transparency'):
-                trans_map = {"OPAQUE": "忙碌", "TRANSPARENT": "空闲"}; self.transparency_var.set(trans_map.get(v.get('transparency'), "忙碌"))
+                self.transparency_var.set(TRANSPARENCY_REV_MAPPING.get(v.get('transparency'), "忙碌"))
             if v.get('allday'): self.allday_var.set(True)
             if v.get('force_reminder'): self.force_reminder_var.set(True)
             if v.get('repeat'): self.repeat_var.set(v.get('repeat'))
@@ -837,8 +841,7 @@ class EventDialog:
         self.interval_var = tk.StringVar(value="1")
         ttk.Spinbox(main_f, from_=1, to=99, textvariable=self.interval_var, width=5).grid(row=1, column=1, pady=5, sticky="w")
         def save_custom():
-            f_map = {"每天": "DAILY", "每周": "WEEKLY", "每月": "MONTHLY", "每年": "YEARLY"}
-            self.custom_repeat_data = {'freq': f_map.get(self.freq_var.get(), "WEEKLY"), 'interval': self.interval_var.get()}
+            self.custom_repeat_data = {'freq': FREQ_MAPPING.get(self.freq_var.get(), "WEEKLY"), 'interval': self.interval_var.get()}
             dialog.destroy()
         ttk.Button(main_f, text="确定", command=save_custom).grid(row=2, column=1, pady=20)
 
@@ -854,7 +857,7 @@ class EventDialog:
                 elif total_min < 60: trigger_str = f"{total_min}分钟前"
                 elif total_min < 1440: trigger_str = f"{total_min//60}小时前"
                 else: trigger_str = f"{total_min//1440}天前"
-            act_display = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}.get(a.get('action', 'DISPLAY'))
+            act_display = ALARM_ACTION_REV_MAPPING.get(a.get('action', 'DISPLAY'))
             self.reminder_listbox.insert(tk.END, f"{act_display} - {trigger_str}")
 
     def delete_reminder(self):
@@ -890,12 +893,11 @@ class EventDialog:
 
     def load_preset_reminders(self):
         if not self.db:
-            # 备选默认值
-            presets = ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前"]
-            allday_presets = ["日程发生时", "1天前", "2天前", "7天前"]
+            presets = PRESET_REMINDERS_DEFAULT
+            allday_presets = PRESET_ALLDAY_REMINDERS_DEFAULT
         else:
-            p_val = self.db.get_setting('preset_reminders', "5分钟前;15分钟前;30分钟前;1小时前;2小时前;1天前")
-            a_val = self.db.get_setting('preset_allday_reminders', "日程发生时;1天前;2天前;7天前")
+            p_val = self.db.get_setting('preset_reminders', ";".join(PRESET_REMINDERS_DEFAULT))
+            a_val = self.db.get_setting('preset_allday_reminders', ";".join(PRESET_ALLDAY_REMINDERS_DEFAULT))
             presets = [x for x in p_val.split(';') if x]
             allday_presets = [x for x in a_val.split(';') if x]
             
@@ -916,7 +918,7 @@ class EventDialog:
             if e_tz.zone != "UTC": ev.dtend.params['TZID'] = [e_tz.zone]
         r_opt = self.repeat_var.get()
         if r_opt != "不重复":
-            rrule = {"每天": "DAILY", "每周": "WEEKLY", "每两周": "WEEKLY;INTERVAL=2", "每月": "MONTHLY", "每年": "YEARLY"}.get(r_opt, "")
+            rrule = FREQ_MAPPING.get(r_opt, "")
             if r_opt == "自定义" and self.custom_repeat_data: rrule = f"FREQ={self.custom_repeat_data['freq']};INTERVAL={self.custom_repeat_data['interval']}"
             if rrule:
                 cond = self.end_cond_var.get()

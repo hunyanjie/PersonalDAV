@@ -1,10 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+import os
 from ui.widgets.right_click_menu import RightClickMenu
-from ui.dialogs.event_dialog import EventDialog, DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
+from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
+from utils.cert_helper import generate_self_signed_cert
 from models.setting_defs import SettingDef
+from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
 import json
 from datetime import datetime, timedelta
 
@@ -22,23 +25,23 @@ SIMPLE_SETTINGS = [
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
                default="已确认", db_default="CONFIRMED",
-               options=list(EventDialog.STATUS_MAPPING.keys()),
-               display_map=EventDialog.STATUS_MAPPING),
+               options=list(STATUS_MAPPING.keys()),
+               display_map=STATUS_MAPPING),
     SettingDef("default_version", "默认日历版本:", "combo", "基本设置",
                 default="2.0", options=["1.0", "2.0", "2.1", "3.0"], width=10),
     SettingDef("default_priority", "默认优先级 (0-9):", "scale", "基本设置",
                default=5, db_default="5", spin_from=0, spin_to=9),
     SettingDef("default_transparency", "默认透明度:", "combo", "基本设置",
                default="忙碌", db_default="OPAQUE",
-               options=list(EventDialog.TRANSPARENCY_MAPPING.keys()),
-               display_map=EventDialog.TRANSPARENCY_MAPPING, width=10),
+               options=list(TRANSPARENCY_MAPPING.keys()),
+               display_map=TRANSPARENCY_MAPPING, width=10),
     SettingDef("default_sync_timezone", "结束时间使用相同时区", "check", "基本设置",
                default=True, db_default="True", columnspan=2),
     SettingDef("_sep1", "", "sep", "基本设置"),
     SettingDef("default_repeat", "默认重复规则:", "combo", "基本设置",
-               default="不重复", options=EventDialog.REPEAT_OPTIONS, width=12),
+               default="不重复", options=REPEAT_OPTIONS, width=12),
     SettingDef("default_end_cond", "默认结束条件:", "combo", "基本设置",
-               default="永不结束", options=EventDialog.END_CONDITIONS, width=12),
+               default="永不结束", options=END_CONDITIONS, width=12),
     SettingDef("default_end_count", "默认结束次数:", "spin", "基本设置",
                default="5", spin_from=1, spin_to=999, width=5),
     SettingDef("default_allday", "默认创建全天事件", "check", "基本设置",
@@ -183,8 +186,31 @@ class SettingsDialog(tk.Toplevel):
 
     def create_server_settings(self, parent):
         f = ttk.LabelFrame(parent, text="服务器控制")
-        f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        f.pack(fill=tk.X, padx=5, pady=5)
         self._build_simple(f, "服务器控制")
+
+        ssl_f = ttk.LabelFrame(parent, text="SSL/TLS 设置")
+        ssl_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self.ssl_enabled_var = tk.BooleanVar()
+        ttk.Checkbutton(ssl_f, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
+            row=0, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+
+        ttk.Label(ssl_f, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.ssl_cert_var = tk.StringVar()
+        ttk.Entry(ssl_f, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Button(ssl_f, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
+
+        ttk.Label(ssl_f, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        self.ssl_key_var = tk.StringVar()
+        ttk.Entry(ssl_f, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Button(ssl_f, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
+
+        btn_f = ttk.Frame(ssl_f)
+        btn_f.grid(row=3, column=0, columnspan=4, pady=5)
+        ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
+        ssl_f.grid_columnconfigure(1, weight=1)
 
     # ── 日历设置 ────────────────────────────────────────────────
 
@@ -478,11 +504,100 @@ class SettingsDialog(tk.Toplevel):
         p = filedialog.asksaveasfilename(title="选择日志文件", filetypes=[("日志文件", "*.log"), ("所有文件", "*.*")], defaultextension=".log")
         if p: self.log_path_var.set(p)
 
+    def _browse_ssl(self, target):
+        path = filedialog.askopenfilename(title="选择文件", parent=self)
+        if path:
+            path = os.path.normpath(path)
+            if target == "cert":
+                self.ssl_cert_var.set(path)
+            else:
+                self.ssl_key_var.set(path)
+
+    def _generate_cert(self):
+        dir_path = filedialog.askdirectory(title="选择证书保存目录", parent=self)
+        if not dir_path:
+            return
+        cert_path = os.path.normpath(os.path.join(dir_path, "cert.pem"))
+        key_path = os.path.normpath(os.path.join(dir_path, "key.pem"))
+        try:
+            generate_self_signed_cert(cert_path, key_path)
+            self.ssl_cert_var.set(os.path.normpath(cert_path))
+            self.ssl_key_var.set(os.path.normpath(key_path))
+            self.ssl_enabled_var.set(True)
+            messagebox.showinfo("成功", f"自签名证书已生成：\n{cert_path}\n\n请将此证书添加到系统的信任列表中。\n\nmacOS: 双击 cert.pem → 钥匙串 → 信任 → 始终信任\niOS: 通过 Safari 下载安装描述文件", parent=self)
+        except Exception as e:
+            messagebox.showerror("生成失败", str(e), parent=self)
+
+    def _show_cert_guide(self):
+        win = tk.Toplevel(self); win.title("手动创建自签名证书"); win.geometry("680x520")
+        win.transient(self); win.grab_set()
+
+        text = tk.Text(win, wrap=tk.WORD, padx=10, pady=10)
+        scroll = ttk.Scrollbar(win, command=text.yview)
+        text.config(yscrollcommand=scroll.set)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        guide = """一键生成的证书适用于基本使用场景。如果系统要求严格（如 iOS 16+ 证书要求），或需要指定更多参数，可按以下步骤手动创建。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+方法一：使用 OpenSSL（推荐）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 安装 OpenSSL
+   Windows: 从 https://slproweb.com/products/Win32OpenSSL.html 下载安装
+   macOS:   brew install openssl
+   Linux:   sudo apt install openssl
+
+2. 在终端中运行以下命令：
+
+   openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes -subj "/CN=localhost"
+
+   参数说明:
+     -x509      生成自签名证书
+     -newkey rsa:2048  创建 2048 位 RSA 密钥
+     -keyout    私钥输出文件
+     -out       证书输出文件
+     -days 3650 有效期 10 年
+     -nodes     不加密私钥（服务器需要）
+     -subj      /CN=localhost  指定通用名
+
+3. 将生成的 cert.pem 和 key.pem 放入同一个目录，
+   然后在设置中选择这两个文件即可。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+信任证书（苹果设备必须）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+macOS:
+   双击 cert.pem 打开钥匙串访问，
+   找到该证书 → 右键"显示简介" → 信任 → 改为"始终信任"
+
+iOS:
+   将 cert.pem 上传至可下载的位置，
+   用 Safari 打开 → 会提示安装描述文件 → 前往"设置"→"已下载的描述文件"安装
+   → 进入"通用"→"关于本机"→"证书信任设置"中开启该证书
+
+Windows:
+   双击 cert.pem → 安装证书 → 选择"受信任的根证书颁发机构"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+验证证书是否正确
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  openssl x509 -in cert.pem -text -noout
+
+查看输出中的 Subject: CN = localhost 和
+X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
+
+        text.insert(tk.END, guide)
+        text.config(state=tk.DISABLED)
+
     # ── 显示格式 ────────────────────────────────────────────────
 
     @staticmethod
     def _format_alarm_display(alarm_data):
-        action_map = {"DISPLAY": "显示", "AUDIO": "声音", "EMAIL": "邮件"}
+        action_map = ALARM_ACTION_REV_MAPPING
         action = action_map.get(alarm_data.get('action', ''), alarm_data.get('action', ''))
         trigger = alarm_data.get('trigger', {})
         if isinstance(trigger, dict):
@@ -543,7 +658,7 @@ class SettingsDialog(tk.Toplevel):
                     if not item_str.startswith('{'):
                         parts = item_str.split(':', 3)
                         if len(parts) >= 3:
-                            act = {"显示": "DISPLAY", "声音": "AUDIO", "邮件": "EMAIL"}.get(parts[0], "DISPLAY")
+                            act = ALARM_ACTION_MAPPING.get(parts[0], "DISPLAY")
                             trig_str = parts[2]
                             if ":" in trig_str:
                                 h, m = map(int, trig_str.split(':'))
@@ -577,6 +692,10 @@ class SettingsDialog(tk.Toplevel):
         self._dur_h_var.set(str(total_min // 60))
         self._dur_m_var.set(str(total_min % 60))
 
+        self.ssl_enabled_var.set(s.get_setting("ssl_enabled", "False") == "True")
+        self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
+        self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -607,6 +726,10 @@ class SettingsDialog(tk.Toplevel):
         self._dur_h_var.set("1")
         self._dur_m_var.set("0")
 
+        self.ssl_enabled_var.set(False)
+        self.ssl_cert_var.set("")
+        self.ssl_key_var.set("")
+
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
     # ── 保存 ────────────────────────────────────────────────────
@@ -631,7 +754,15 @@ class SettingsDialog(tk.Toplevel):
         total_min = int(self._dur_h_var.get() or "0") * 60 + int(self._dur_m_var.get() or "0")
         s.set_setting("default_duration", str(total_min))
 
+        prev_ssl = s.get_setting("ssl_enabled", "False") == "True"
+        new_ssl = self.ssl_enabled_var.get()
+        ssl_toggled = (prev_ssl != new_ssl)
+
+        s.set_setting("ssl_enabled", str(new_ssl))
+        s.set_setting("ssl_certfile", self.ssl_cert_var.get())
+        s.set_setting("ssl_keyfile", self.ssl_key_var.get())
+
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
-            self.on_save_callback()
+            self.on_save_callback(ssl_toggled)
         self.destroy()

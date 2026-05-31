@@ -4,14 +4,12 @@ from ui.widgets.right_click_menu import RightClickMenu
 
 class TextImportDialog(tk.Toplevel):
     """文本粘贴导入对话框"""
-    def __init__(self, parent, title, on_import_callback):
+    def __init__(self, parent, title):
         super().__init__(parent)
         self.title(title)
         self.geometry("600x500")
         self.transient(parent)
         self.grab_set()
-        self.on_import_callback = on_import_callback
-        self.result = None
 
         self.create_widgets()
 
@@ -32,15 +30,32 @@ class TextImportDialog(tk.Toplevel):
         self.text_area.config(xscrollcommand=sb_x.set)
 
         btn_f = ttk.Frame(self); btn_f.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Button(btn_f, text="开始导入", command=self.ok).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_f, text="预览导入", command=self.ok).pack(side=tk.RIGHT, padx=5)
         ttk.Button(btn_f, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
         ttk.Button(btn_f, text="清空", command=lambda: self.text_area.delete("1.0", tk.END)).pack(side=tk.LEFT)
 
+        self.result = None
+
     def ok(self):
-        data = self.text_area.get("1.0", "end-1c").strip()
-        if data:
-            self.on_import_callback(data)
+        self.result = self.text_area.get("1.0", "end-1c").strip()
         self.destroy()
+
+def show_raw_dialog(parent, title, raw_data):
+    """显示原始数据对话框"""
+    win = tk.Toplevel(parent)
+    win.title(f"原始数据 - {title}")
+    win.geometry("600x400")
+    sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
+    sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
+    txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+    RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
+    sb_h.config(command=txt.xview)
+    sb_v.config(command=txt.yview)
+    sb_h.pack(side=tk.BOTTOM, fill=tk.X)
+    sb_v.pack(side=tk.RIGHT, fill=tk.Y)
+    txt.pack(fill=tk.BOTH, expand=True)
+    txt.insert(tk.END, raw_data)
+    txt.config(state=tk.DISABLED)
 
 def show_about(parent):
     """关于对话框"""

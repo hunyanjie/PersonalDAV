@@ -17,13 +17,16 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 
 class DAVServerApp:
     """主应用程序类"""
-    def __init__(self, root):
+    def __init__(self, root, cli_port=None, cli_log_level=None):
         self.root = root
         self.root.title(f"{SOFTWARE_NAME} v{SOFTWARE_VERSION}")
-        # self.root.geometry("1000x700")
-        
-        # 初始化服务
+
         self.settings_service = SettingsService()
+        if cli_port is not None:
+            self.settings_service.set_setting("default_port", str(cli_port))
+        if cli_log_level is not None:
+            self.settings_service.set_setting("log_level", cli_log_level)
+
         fmt = self.settings_service.get_setting("timezone_format",
             "{offset} - {city} ({tz_id}) {localized}{local_tag}")
         from utils.timezone_helper import TimezoneHelper
@@ -75,7 +78,7 @@ class DAVServerApp:
             logger.warning(f"无法注册全局拖拽: {e}")
 
     def handle_drop(self, event):
-        """处理文件拖拽事件 - 异步重构版"""
+        """处理文件拖拽事件 — 解析后走预览对话框"""
         import os
         files = []
 
@@ -100,48 +103,35 @@ class DAVServerApp:
 
         if not files: return
 
-        current_tab_widget = self.notebook.nametowidget(self.notebook.select())
         tab_text = self.notebook.tab(self.notebook.select(), "text")
 
         if tab_text not in ["联系人", "日历"]:
             messagebox.showinfo("提示", "请切换到联系人或日历标签页进行导入")
             return
 
-        # 启动异步导入
-        from ui.widgets.progress_window import ProgressWindow
-        import threading
-        
-        progress_win = ProgressWindow(self.root, f"正在导入{tab_text}...")
-        
-        def run_import():
-            total = len(files)
-            success = 0
-            for i, f in enumerate(files):
-                if not progress_win.winfo_exists(): break # 窗口关闭则停止
-                
-                ext = os.path.splitext(f)[1].lower()
-                target_ext = '.vcf' if tab_text == "联系人" else '.ics'
-                
-                if ext == target_ext:
-                    try:
-                        progress_win.update_status(f"正在处理 ({i+1}/{total}): {os.path.basename(f)}")
-                        progress_win.update_progress((i/total)*100)
-                        with open(f, 'r', encoding='utf-8') as file:
-                            if tab_text == "联系人":
-                                self.contact_service.add_contact(file.read())
-                            else:
-                                self.event_service.add_event(file.read())
-                        success += 1
-                        progress_win.stat_vars['new'].set(success)
-                    except Exception as e:
-                        progress_win.log(f"失败 {f}: {e}")
-                        progress_win.stat_vars['failed'].set(progress_win.stat_vars['failed'].get()+1)
-            
-            progress_win.update_progress(100)
-            progress_win.update_status(f"导入完成: 成功 {success} 个")
-            progress_win.set_finished()
+        tab = self.contacts_tab if tab_text == "联系人" else self.calendar_tab
 
-        threading.Thread(target=run_import, daemon=True).start()
+        all_data = []
+        for f in files:
+            try:
+                with open(f, 'r', encoding='utf-8') as fh:
+                    all_data.append(fh.read())
+            except Exception as e:
+                messagebox.showerror("错误", f"读取文件失败 {f}: {e}")
+                return
+
+        data = "\n".join(all_data)
+        items = tab._parse_data_to_items(data)
+        if not items:
+            label = "vCard" if tab_text == "联系人" else "iCalendar"
+            messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=tab)
+            return
+
+        from ui.dialogs.import_preview_dialog import ImportPreviewDialog
+        dialog = ImportPreviewDialog(tab, tab._import_type,
+            on_import_callback=lambda sel: tab._import_selected(sel, "拖拽文件"),
+            items=items)
+        self.root.wait_window(dialog)
 
     def on_tab_changed(self, event):
         """标签页切换时自动刷新列表"""
@@ -154,39 +144,19 @@ class DAVServerApp:
             self.calendar_tab.refresh_events()
 
     def setup_logging(self):
-        """配置 GUI、控制台和文件日志处理器"""
-        # 配置根日志器，确保只输出一次
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        # 禁用根日志器的向上传播
-        root_logger.propagate = False
-
-        # 清除根日志器已有的处理器（防止重复）
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
-
-        # 添加控制台处理器
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        root_logger.addHandler(console_handler)
-
+        """配置 GUI 日志处理器，挂在 app 的 logger 上（非根日志器）"""
         gui_handler = GUIHandler(self.log_queue)
-        root_logger.addHandler(gui_handler)
-
-        # 根据设置配置日志文件
+        logger.addHandler(gui_handler)
         self._setup_file_logging()
 
     def _setup_file_logging(self):
-        """根据设置配置日志文件"""
+        """根据设置配置日志文件（挂载到 app logger 上）"""
         enable_file = self.settings_service.get_setting("enable_log_file", "False") == "True"
-        root_logger = logging.getLogger()
 
-        # 移除现有的文件处理器
         if self.file_handler:
-            root_logger.removeHandler(self.file_handler)
+            logger.removeHandler(self.file_handler)
             self.file_handler = None
 
-        # 如果启用日志文件，添加新的文件处理器
         if enable_file:
             log_file = self.settings_service.get_setting("log_file_path", "dav_server.log")
             log_level = self.settings_service.get_setting("log_level", "INFO")
@@ -195,7 +165,7 @@ class DAVServerApp:
                 self.file_handler = logging.FileHandler(log_file, encoding='utf-8')
                 self.file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
                 self.file_handler.setLevel(getattr(logging, log_level, logging.INFO))
-                root_logger.addHandler(self.file_handler)
+                logger.addHandler(self.file_handler)
                 logger.info(f"日志文件已启用，路径: {log_file}，级别: {log_level}")
             except Exception as e:
                 logger.warning(f"无法创建日志文件: {e}")
@@ -258,15 +228,21 @@ class DAVServerApp:
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
 
-    def on_settings_saved(self):
+    def on_settings_saved(self, ssl_toggled=False):
+        if ssl_toggled and self.server_tab.server_instance is not None:
+            if messagebox.askyesno("重启服务器", "HTTPS 设置已更改，是否立即重启服务器以生效？"):
+                self.server_tab.stop_server()
+                self.server_tab.start_server()
+            else:
+                messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
         messagebox.showinfo("成功", "设置已保存")
 
     def process_log_queue(self):
-        """将队列中的日志刷新到 UI"""
+        """将队列中的日志刷新到 UI，附带级别信息用于着色"""
         try:
             while not self.log_queue.empty():
-                msg = self.log_queue.get_nowait()
-                self.server_tab.log_message(msg)
+                levelno, msg = self.log_queue.get_nowait()
+                self.server_tab.log_message(msg, levelno)
         except queue.Empty:
             pass
         self.root.after(100, self.process_log_queue)

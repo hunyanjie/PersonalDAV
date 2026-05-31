@@ -1,4 +1,6 @@
 import os
+import ssl
+import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from services.contact_service import ContactService
 from services.event_service import EventService
@@ -29,6 +31,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     if vcard:
                         self.send_response(200)
                         self.send_header('Content-type', 'text/vcard')
+                        self.send_header('ETag', self.contact_service.get_etag(uid) or '')
                         self.end_headers()
                         self.wfile.write(vcard.encode('utf-8'))
                     else:
@@ -52,6 +55,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     if event:
                         self.send_response(200)
                         self.send_header('Content-type', 'text/calendar')
+                        self.send_header('ETag', self.event_service.get_etag(uid) or '')
                         self.end_headers()
                         self.wfile.write(event.encode('utf-8'))
                     else:
@@ -90,12 +94,16 @@ class DAVHandler(BaseHTTPRequestHandler):
                 uid = os.path.basename(self.path).replace(".vcf", "")
                 self.contact_service.add_contact(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
+                self.send_header('ETag', self.contact_service.get_etag(uid) or '')
                 self.end_headers()
                 self.wfile.write(f"Contact {uid} created/updated".encode())
             elif self.path.startswith("/events/"):
                 uid = os.path.basename(self.path).replace(".ics", "")
                 self.event_service.add_event(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
+                self.send_header('ETag', self.event_service.get_etag(uid) or '')
                 self.end_headers()
                 self.wfile.write(f"Event {uid} created/updated".encode())
             else:
@@ -109,17 +117,65 @@ class DAVHandler(BaseHTTPRequestHandler):
             self.send_response(207)
             self.send_header('Content-Type', 'text/xml; charset="utf-8"')
             self.end_headers()
-            response = f"""<?xml version="1.0" encoding="utf-8" ?>
-<D:multistatus xmlns:D="DAV:">
-    <D:response>
-        <D:href>{self.path}</D:href>
+
+            depth = self.headers.get('Depth', '0')
+            is_collection = self.path.endswith('/')
+
+            if self.path.startswith("/contacts/"):
+                ns = 'xmlns:C="urn:ietf:params:xml:ns:carddav"'
+                rtype = '<C:addressbook/>'
+                svc = self.contact_service
+                ext = '.vcf'
+                ctype = 'text/vcard'
+            elif self.path.startswith("/events/"):
+                ns = 'xmlns:C="urn:ietf:params:xml:ns:caldav"'
+                rtype = '<C:calendar/>'
+                svc = self.event_service
+                ext = '.ics'
+                ctype = 'text/calendar'
+            else:
+                ns = ''
+                rtype = ''
+                svc = None
+                ext = ''
+                ctype = ''
+
+            responses = []
+
+            def resource_xml(href, rtype_xml, etag_val, ctype_val, res_size):
+                return f"""    <D:response>
+        <D:href>{href}</D:href>
         <D:propstat>
-            <D:prop><D:resourcetype/></D:prop>
+            <D:prop>
+                <D:resourcetype>{rtype_xml}</D:resourcetype>
+                <D:getetag>{etag_val}</D:getetag>
+                <D:getcontenttype>{ctype_val}</D:getcontenttype>
+                <D:getcontentlength>{res_size}</D:getcontentlength>
+            </D:prop>
             <D:status>HTTP/1.1 200 OK</D:status>
         </D:propstat>
-    </D:response>
+    </D:response>"""
+
+            if svc and is_collection:
+                etag = svc.get_etag("") or '"dummy"'
+                responses.append(resource_xml(self.path, rtype, etag, ctype, "0"))
+                if depth != '0':
+                    for uid, raw in svc.get_all_items():
+                        child_href = f"{self.path}{uid}{ext}"
+                        child_etag = svc.get_etag(uid) or f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
+                        responses.append(resource_xml(child_href, '', child_etag, ctype, str(len(raw.encode('utf-8')))))
+            elif svc and not is_collection:
+                uid = os.path.basename(self.path).replace(ext, '')
+                etag = svc.get_etag(uid) or '""'
+                responses.append(resource_xml(self.path, '', etag, ctype, "0"))
+            else:
+                responses.append(resource_xml(self.path, rtype, '""', 'text/html', "0"))
+
+            response_xml = f"""<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:" {ns}>
+{chr(10).join(responses)}
 </D:multistatus>"""
-            self.wfile.write(response.encode('utf-8'))
+            self.wfile.write(response_xml.encode('utf-8'))
         except Exception as e:
             self._send_error(500, str(e))
 
@@ -128,7 +184,12 @@ class DAVHandler(BaseHTTPRequestHandler):
             self.log_message(f"处理OPTIONS请求: {self.path}")
             self.send_response(200)
             self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
-            self.send_header('DAV', '1, 2')
+            if self.path.startswith("/contacts/"):
+                self.send_header('DAV', '1, 2, addressbook')
+            elif self.path.startswith("/events/"):
+                self.send_header('DAV', '1, 2, calendar-access')
+            else:
+                self.send_header('DAV', '1, 2')
             self.end_headers()
         except Exception as e:
             self._send_error(500, str(e))
@@ -140,21 +201,23 @@ class DAVHandler(BaseHTTPRequestHandler):
             
             if self.path.startswith("/contacts/") and self.path.endswith(".vcf"):
                 uid = os.path.basename(self.path).replace(".vcf", "")
-                vcard = self.contact_service.get_contact(uid)
+                vcard = self.contact_service.get_by_uid(uid)
                 if vcard:
                     self.send_response(200)
                     self.send_header('Content-type', 'text/vcard')
                     self.send_header('Content-Length', str(len(vcard.encode('utf-8'))))
+                    self.send_header('ETag', self.contact_service.get_etag(uid) or '')
                     self.end_headers()
                 else:
                     self._send_error(404, "Contact not found")
             elif self.path.startswith("/events/") and self.path.endswith(".ics"):
                 uid = os.path.basename(self.path).replace(".ics", "")
-                event = self.event_service.get_event(uid)
+                event = self.event_service.get_by_uid(uid)
                 if event:
                     self.send_response(200)
                     self.send_header('Content-type', 'text/calendar')
                     self.send_header('Content-Length', str(len(event.encode('utf-8'))))
+                    self.send_header('ETag', self.event_service.get_etag(uid) or '')
                     self.end_headers()
                 else:
                     self._send_error(404, "Event not found")
@@ -199,6 +262,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                 uid = os.path.basename(self.path).replace(".vcf", "")
                 self.contact_service.add_contact(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f"Contact {uid} created".encode())
             # 处理事件创建
@@ -206,6 +270,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                 uid = os.path.basename(self.path).replace(".ics", "")
                 self.event_service.add_event(data)
                 self.send_response(201)
+                self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f"Event {uid} created".encode())
             else:
@@ -241,17 +306,35 @@ class DAVHandler(BaseHTTPRequestHandler):
             logger.info(log_line)
 
 class DAVServer:
-    """WebDAV 服务器封装"""
-    def __init__(self, port):
+    """WebDAV 服务器封装（支持可选 SSL/TLS）"""
+    def __init__(self, port, ssl_enabled=False, ssl_certfile='', ssl_keyfile=''):
         self.port = port
+        self.ssl_enabled = ssl_enabled
+        self.ssl_certfile = ssl_certfile
+        self.ssl_keyfile = ssl_keyfile
         self.server = None
 
     def start(self):
         self.server = HTTPServer(('', self.port), DAVHandler)
+        scheme = "HTTPS" if (self.ssl_enabled and self.ssl_certfile) else "HTTP"
+        if self.ssl_enabled and self.ssl_certfile:
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(self.ssl_certfile, self.ssl_keyfile if self.ssl_keyfile else None)
+                self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+                logger.info(f"SSL/TLS 已启用，证书: {self.ssl_certfile}")
+            except Exception as e:
+                logger.error(f"SSL/TLS 配置失败: {e}")
+                self.server.server_close()
+                self.server = None
+                raise
+        logger.info(f"DAVServer 开始监听 {scheme} 端口 {self.port}")
         self.server.serve_forever()
 
     def stop(self):
         if self.server:
+            logger.info("DAVServer 正在关闭...")
             self.server.shutdown()
             self.server.server_close()
             self.server = None
+            logger.info("DAVServer 已关闭")
