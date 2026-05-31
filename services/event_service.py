@@ -75,3 +75,17 @@ class EventService(BaseService):
         header = f"BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//{SOFTWARE_NAME}//{SOFTWARE_VERSION}//ZH-CN\n"
         events = "\n".join(v.strip() for v in vevents_str_list if v.strip()).replace("\r\n", "\n")
         return f"{header}{events}\nEND:VCALENDAR\n"
+
+    def combine_raw_events(self, raw_list: list) -> str:
+        """将多个完整 iCalendar 字符串合并为一个（去除重复的 VCALENDAR 包裹）"""
+        inner = []
+        for e in raw_list:
+            lines = e.strip().splitlines()
+            lines = [l for l in lines
+                     if l.strip() and 'BEGIN:VCALENDAR' not in l
+                     and 'END:VCALENDAR' not in l
+                     and not l.startswith('VERSION:')
+                     and not l.startswith('PRODID:')]
+            chunk = '\n'.join(lines)
+            if chunk.strip(): inner.append(chunk)
+        return self.generate_calendar_wrapper(inner)

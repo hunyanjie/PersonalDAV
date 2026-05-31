@@ -148,17 +148,7 @@ class CalendarTab(BaseTreeTab):
         if len(sel) == 1:
             data = events[0]
         else:
-            inner = []
-            for e in events:
-                lines = e.strip().splitlines()
-                lines = [l for l in lines
-                         if l.strip() and 'BEGIN:VCALENDAR' not in l
-                         and 'END:VCALENDAR' not in l
-                         and not l.startswith('VERSION:')
-                         and not l.startswith('PRODID:')]
-                chunk = '\n'.join(lines)
-                if chunk.strip(): inner.append(chunk)
-            data = self.db.generate_calendar_wrapper(inner)
+            data = self.db.combine_raw_events(events)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
             sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
@@ -204,6 +194,6 @@ class CalendarTab(BaseTreeTab):
         if path:
             if not path.endswith('.ics'):
                 path += '.ics'
-            data = self.db.generate_calendar_wrapper(events)
+            data = self.db.combine_raw_events(events)
             with open(path, 'w', encoding='utf-8') as f: f.write(data)
             messagebox.showinfo("成功", f"成功导出 {len(events)} 个事件")

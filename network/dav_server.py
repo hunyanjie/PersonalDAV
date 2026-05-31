@@ -61,7 +61,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     self.send_header('Content-type', 'text/calendar')
                     self.end_headers()
                     all_events = self.event_service.get_all_raw()
-                    calendar_data = self.event_service.generate_calendar_wrapper(all_events)
+                    calendar_data = self.event_service.combine_raw_events(all_events)
                     self.wfile.write(calendar_data.encode('utf-8'))
                 else:
                     self._send_error(404)
