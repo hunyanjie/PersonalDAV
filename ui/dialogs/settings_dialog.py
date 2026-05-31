@@ -242,6 +242,37 @@ class SettingsDialog(tk.Toplevel):
             self.mcp_port_var.trace("w", update_url)
         self.after(100, update_url)
 
+        tools = ttk.LabelFrame(parent, text="可用工具列表")
+        tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        cols = ("工具名", "类别", "说明")
+        tree = ttk.Treeview(tools, columns=cols, show="headings", height=14)
+        for c in cols:
+            tree.heading(c, text=c)
+            tree.column(c, width=180 if c == "说明" else 100)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).pack(side=tk.RIGHT, fill=tk.Y)
+        tree.configure(yscrollcommand=ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).set)
+
+        tool_list = [
+            ("server_start(port=8080)", "服务端管理", "启动 DAV 服务器（后台线程）"),
+            ("server_stop()", "服务端管理", "停止 DAV 服务器"),
+            ("server_status()", "服务端管理", "查询 DAV 服务器运行状态"),
+            ("list_contacts()", "联系人", "列出所有联系人 uid + 姓名"),
+            ("get_contact(uid)", "联系人", "获取联系人完整 vCard 数据"),
+            ("create_contact(vcard_data)", "联系人", "从 vCard 创建联系人"),
+            ("update_contact(uid, vcard)", "联系人", "覆盖更新联系人"),
+            ("delete_contact(uid)", "联系人", "删除联系人"),
+            ("list_events()", "日历", "列出所有事件 uid + 标题 + 时间"),
+            ("get_event(uid)", "日历", "获取事件完整 iCalendar 数据"),
+            ("create_event(ical_data)", "日历", "从 iCal 创建事件"),
+            ("update_event(uid, ical)", "日历", "覆盖更新事件"),
+            ("delete_event(uid)", "日历", "删除事件"),
+            ("get_config()", "系统", "返回软件配置与数据统计"),
+            ("dav_health_check(url)", "系统", "验证 DAV 端点是否正常"),
+        ]
+        for name, cat, desc in tool_list:
+            tree.insert("", tk.END, values=(name, cat, desc))
+
     # ── 日历设置 ────────────────────────────────────────────────
 
     def create_calendar_settings(self, parent):

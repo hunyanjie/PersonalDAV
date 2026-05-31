@@ -40,7 +40,8 @@ PersonalDAV/
 │   ├── base_service.py        # BaseService 泛型服务基类（含 get_etag / get_all_items）
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
-│   └── settings_service.py    # SettingsService 单例
+│   ├── settings_service.py    # SettingsService 单例
+│   └── mcp_server.py          # MCPServer（MCP SSE 协议服务器）
 ├── network/                   # 网络层
 │   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV 端点）
 │   └── dav_client.py          # WebDAV 客户端导入
@@ -658,6 +659,94 @@ def get_etag(self, uid: str) -> str | None:
 
 ---
 
+## MCP 服务器（services/mcp_server.py）
+
+### 设计目的
+
+MCP（Model Context Protocol）服务器允许 AI 助手（opencode、Claude 等）直接调用 PersonalDAV 的内部服务层，无需模拟 HTTP 请求。集成到 GUI 程序中，以 SSE 协议在后台线程运行。
+
+### 架构
+
+```
+AI / opencode
+    │  MCP 协议 (SSE, http://127.0.0.1:8100/sse)
+    ▼
+MCPServer (FastMCP + Uvicorn)
+    │  后台线程，非阻塞
+    ▼
+ContactService / EventService / SettingsService
+    │  publish=False（避免从后台线程触发 tkinter 回调）
+    ▼
+Database 单例（threading.Lock 保护）
+```
+
+### 类方法
+
+```python
+class MCPServer:
+    def start(self, host="127.0.0.1", port=8100) -> bool   # 启动 SSE 服务器
+    def stop(self) -> None                                   # 停止服务器
+    @property
+    def is_running(self) -> bool                             # 查询运行状态
+```
+
+`start()` 通过 `uvicorn.Server` 在 daemon 线程中运行，`stop()` 设置 `should_exit = True`。
+
+### 暴露的工具
+
+| 工具 | 类别 | 说明 |
+|------|------|------|
+| `server_start(port)` | 服务端管理 | 后台启动 DAV 服务器 |
+| `server_stop()` | 服务端管理 | 停止 DAV 服务器 |
+| `server_status()` | 服务端管理 | 查询运行状态 + 端口 |
+| `list_contacts()` | 联系人 | 列出所有联系人摘要 |
+| `get_contact(uid)` | 联系人 | 获取联系人完整 vCard |
+| `create_contact(vcard_data)` | 联系人 | 从 vCard 创建联系人 |
+| `update_contact(uid, vcard_data)` | 联系人 | 强制覆盖更新联系人 |
+| `delete_contact(uid)` | 联系人 | 删除联系人 |
+| `list_events()` | 日历 | 列出所有事件摘要 |
+| `get_event(uid)` | 日历 | 获取事件完整 iCalendar |
+| `create_event(ical_data)` | 日历 | 从 iCal 创建事件 |
+| `update_event(uid, ical_data)` | 日历 | 强制覆盖更新事件 |
+| `delete_event(uid)` | 日历 | 删除事件 |
+| `get_config()` | 系统 | 返回配置（名称/版本/数量等） |
+| `dav_health_check(base_url)` | 系统 | OPTIONS + PROPFIND + GET 端点验证 |
+
+所有写入操作使用 `publish=False`（不触发 tkinter 事件循环），GUI 通过标签切换自动刷新。
+
+### 集成方式
+
+```python
+# app.py — 自动启停
+self.mcp_server = MCPServer()
+self._sync_mcp_server()           # 读取 mcp_enabled 设置决定启停
+event_bus.subscribe(EVENT_SETTINGS_CHANGED, self._sync_mcp_server)
+```
+
+用户在设置界面勾选「启用 MCP 服务」→ 保存后，`EVENT_SETTINGS_CHANGED` 被发布，`_sync_mcp_server()` 动态启动或停止后台服务器。
+
+### 独立运行
+
+```bash
+python -m services.mcp_server        # 默认 8100 端口
+python -m services.mcp_server --port 8100
+```
+
+### 配置 opencode
+
+```json
+{
+  "mcp": {
+    "personal-dav": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8100/sse"
+    }
+  }
+}
+```
+
+---
+
 ## 单元测试
 
 运行方式：
@@ -672,6 +761,7 @@ pytest tests/ -v
 |------|----------|
 | `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
 | `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
+| `test_mcp_tools.py` | MCP 全部 16 个工具的端到端集成测试 |
 
 ### 测试隔离
 
