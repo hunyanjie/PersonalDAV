@@ -225,11 +225,13 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.update_status_bar)
+        event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.update_status_bar)
 
     def update_status_bar(self, *args):
         c_count = self.contact_service.count()
         e_count = self.event_service.count()
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | 服务器状态: {'运行中' if self.server_tab.server_instance else '已停止'}")
+        mcp = "MCP 运行中" if self.mcp_server.is_running else "MCP 已关闭"
+        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | MCP: {mcp} | 服务器: {'运行中' if self.server_tab.server_instance else '已停止'}")
 
     def show_settings(self):
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
