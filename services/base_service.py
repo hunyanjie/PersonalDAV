@@ -1,3 +1,4 @@
+import hashlib
 from typing import List
 from utils.event_bus import event_bus
 
@@ -23,6 +24,10 @@ class BaseService:
     def get_all_raw(self):
         return [getattr(c, self._raw_field) for c in self.repo.get_all()]
 
+    def get_all_items(self) -> list[tuple[str, str]]:
+        """返回 (uid, raw_data) 列表"""
+        return [(getattr(c, 'uid'), getattr(c, self._raw_field)) for c in self.repo.get_all()]
+
     def get_selected_raw(self, uids: list):
         return [getattr(c, self._raw_field) for uid in uids if (c := self.repo.get_by_uid(uid))]
 
@@ -34,3 +39,9 @@ class BaseService:
 
     def count(self) -> int:
         return self.repo.count()
+
+    def get_etag(self, uid: str) -> str | None:
+        raw = self.get_by_uid(uid)
+        if raw is None:
+            return None
+        return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
