@@ -332,45 +332,6 @@ class CalendarTab(BaseTreeTab):
         except:
             messagebox.showinfo("提示", "无法读取剪切板内容", parent=self)
 
-    def _import_data(self, data, source):
-        """通用直接导入（跳过预览），由 show_text_import 等调用"""
-        from ui.widgets.progress_window import ProgressWindow
-        import threading
-        win = ProgressWindow(self, f"正在从 {source} 导入...")
-        def run():
-            stats = {'new': 0, 'updated': 0, 'unchanged': 0, 'failed': 0}
-            try:
-                if "BEGIN:VEVENT" in data or "BEGIN:VCALENDAR" in data:
-                    if "BEGIN:VEVENT" in data and "BEGIN:VCALENDAR" not in data:
-                        _, op = self.db.add_event(data, publish=False)
-                        if op == "inserted": stats['new'] += 1
-                        elif op == "updated": stats['updated'] += 1
-                        elif op == "unchanged": stats['unchanged'] += 1
-                        else: stats['failed'] += 1
-                    else:
-                        import vobject
-                        cal = vobject.readOne(data)
-                        for comp in cal.components():
-                            if comp.name == 'VEVENT':
-                                _, op = self.db.add_event(comp.serialize(), publish=False)
-                                if op == "inserted": stats['new'] += 1
-                                elif op == "updated": stats['updated'] += 1
-                                elif op == "unchanged": stats['unchanged'] += 1
-                                else: stats['failed'] += 1
-                else:
-                    win.after(0, lambda: win.log("错误: 未检测到 iCalendar 数据"))
-            except Exception as e:
-                win.after(0, lambda: win.log(f"错误: {e}"))
-            win.after(0, lambda: [
-                win.stat_vars['new'].set(stats['new']),
-                win.stat_vars['updated'].set(stats['updated']),
-                win.stat_vars['unchanged'].set(stats['unchanged']),
-                win.stat_vars['failed'].set(stats['failed']),
-                win.update_status("导入完成"),
-                win.set_finished(),
-                self.refresh_events()])
-        threading.Thread(target=run, daemon=True).start()
-
     def export_selected(self):
         sel = self.tree.selection()
         if not sel:
