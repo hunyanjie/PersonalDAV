@@ -30,18 +30,24 @@ def export_backup(output_path: str) -> bool:
 
 def import_backup(zip_path: str) -> bool:
     try:
-        db = Database()
-        db_path = db.db_path
-        db_dir = os.path.dirname(db_path) or "."
         with zipfile.ZipFile(zip_path, 'r') as zf:
+            # 先读设置到内存
+            raw = zf.read("settings.json") if "settings.json" in zf.namelist() else None
+            imported = json.loads(raw) if raw else None
+            # 关闭当前连接，覆盖 DB 文件
+            db = Database()
+            db_path = db.db_path
+            db_dir = os.path.dirname(db_path) or "."
             if "dav_data.db" in zf.namelist():
                 db.close()
                 zf.extract("dav_data.db", path=db_dir)
-            if "settings.json" in zf.namelist():
-                raw = zf.read("settings.json")
-                imported = json.loads(raw)
+            # 重新连接数据库
+            db.reopen()
+            # 写回设置
+            if imported:
                 for k, v in imported.items():
                     SettingsService().set_setting(k, v)
+            # 解压日志
             for name in zf.namelist():
                 if name.endswith(".log"):
                     zf.extract(name, path=db_dir)

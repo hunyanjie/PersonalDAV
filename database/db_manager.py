@@ -155,6 +155,16 @@ class Database:
             self.conn.close()
             self.conn = None
 
+    def reopen(self):
+        """关闭旧连接并重新打开（用于恢复备份后）"""
+        if self.conn:
+            self.conn.close()
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.execute("PRAGMA busy_timeout = 5000;")
+        self.conn.execute("PRAGMA journal_mode = WAL;")
+        self.conn.execute("PRAGMA synchronous = NORMAL;")
+        self.create_tables()
+
     @classmethod
     def reset(cls):
         """重置单例（仅用于测试）"""
