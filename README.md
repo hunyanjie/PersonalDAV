@@ -41,6 +41,14 @@ PersonalDAV是一个带图形界面的私人CardDAV/CalDAV服务，允许您在�
    python main.py
    ```
 
+### 运行测试
+
+```bash
+python tests/run_all.py
+```
+
+依次执行：pytest 单元测试（13 项）→ MCP 内部工具测试（16 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）。
+
 ## 使用指南
 
 ### 服务器管理
@@ -132,7 +140,7 @@ MCP 服务提供 16 个工具供 AI 调用：
     - `python-dateutil` — 日期解析
     - `pytz` / `tzlocal` — 时区处理
     - `babel` — 日期和时间的国际化
-    - `requests` — HTTP请求
+    - `requests` / `httpx` — HTTP请求
     - `tkcalendar` — 日历选择控件
     - `mcp` — MCP 协议库
 

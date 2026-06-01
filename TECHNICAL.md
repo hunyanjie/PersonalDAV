@@ -801,7 +801,7 @@ class MCPServer:
 
 ### 鉴权中间件
 
-MCP 服务器通过 Starlette `BaseHTTPMiddleware` 添加 `MCPAuthMiddleware`，处理流程：
+MCP 服务器通过 `_AuthASGIMiddleware`（原生 ASGI 中间件，兼容 SSE 流式响应）拦截 `/sse` 和 `/messages/` 路径，处理流程：
 
 1. **IP 访问控制** — `check_ip(client_ip)`，拒绝时返回 403 + 记录日志
 2. **密码开关** — 未设密码直接放行
@@ -858,13 +858,24 @@ pytest tests/ -v
 |------|----------|
 | `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
 | `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
-| `_run_mcp_tools_check.py` | MCP 全部 16 个工具的端到端集成测试（`python tests/_run_mcp_tools_check.py`） |
+| `_run_mcp_tools_check.py` | MCP 全部 16 个工具的内部端到端测试（`python tests/_run_mcp_tools_check.py`） |
+| `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议） |
+| `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 |
+
+### 运行全部测试
+
+```bash
+python tests/run_all.py
+```
+
+依次执行：pytest 单元测试 → MCP 内部工具检查 → MCP HTTP 工具检查 → MCP 鉴权测试。
 
 ### 测试隔离
 
 - `Database.reset()` 在 `setUpClass` 中重置单例，使用 `:memory:` 数据库
 - 每个 `setUp` 清空表数据，测试之间互不干扰
 - 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
+- HTTP 测试使用独立端口（8101、8102），互不冲突
 
 ---
 
