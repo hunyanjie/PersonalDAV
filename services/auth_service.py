@@ -52,6 +52,19 @@ class AuthService:
             return True
         return secrets.compare_digest(self.get_mcp_token(), token)
 
+    def ip_bypasses_auth(self, client_ip: str) -> bool:
+        if client_ip in ('127.0.0.1', '::1', 'localhost'):
+            return True
+        raw = SettingsService().get_setting("ip_bypass_auth", "").strip()
+        if not raw:
+            return False
+        import re
+        for p in re.split(r'[\n,，]+', raw):
+            p = p.strip()
+            if p and self._ip_matches(client_ip, p):
+                return True
+        return False
+
     # ── IP 访问控制 ─────────────────────────────────────────────
 
     def get_whitelist(self) -> list[str]:

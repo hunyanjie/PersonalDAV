@@ -98,6 +98,10 @@ class MCPServer:
                     if not svc.is_enabled():
                         return await call_next(request)
 
+                    if svc.ip_bypasses_auth(client_ip):
+                        svc.log_auth(True, client_ip, "MCP", "免密 IP")
+                        return await call_next(request)
+
                     auth = request.headers.get('authorization', '')
                     if not auth.startswith('Bearer '):
                         svc.log_auth(False, client_ip, "MCP", "无令牌")

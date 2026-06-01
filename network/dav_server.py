@@ -34,6 +34,10 @@ class DAVHandler(BaseHTTPRequestHandler):
         if not svc.is_enabled():
             return True
 
+        if svc.ip_bypasses_auth(client_ip):
+            svc.log_auth(True, client_ip, "WebDAV", f"免密 IP UA={ua}")
+            return True
+
         auth = self.headers.get('Authorization', '')
         if not auth.startswith('Basic '):
             svc.log_auth(False, client_ip, "WebDAV", f"无凭证 UA={ua}")

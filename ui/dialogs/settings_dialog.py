@@ -266,6 +266,14 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(ip_f, text="示例: 127.0.0.1 | 192.168.1.0/24 | 10.0.* | 白名单非空时只允许白名单 IP 访问",
                   foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
 
+        bypass_f = ttk.LabelFrame(parent, text="免密码 IP（这些 IP 访问时不需密码验证）")
+        bypass_f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符（本机 127.0.0.1 / ::1 永久免密）:",
+                  foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
+        self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
+        self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+
         self._refresh_auth_ui()
 
     def _refresh_auth_ui(self):
@@ -894,6 +902,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
         self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
+        self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
 
     # ── 重置 ────────────────────────────────────────────────────
 
@@ -931,6 +940,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self._ip_whitelist_text.delete("1.0", tk.END)
         self._ip_blacklist_text.delete("1.0", tk.END)
+        self._ip_bypass_text.delete("1.0", tk.END)
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
@@ -971,6 +981,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
+        s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
