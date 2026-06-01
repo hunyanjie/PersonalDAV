@@ -3,8 +3,8 @@
 """
 
 SOFTWARE_NAME = "PrivateDAV"
-SOFTWARE_DESCRIPTION = "私人 CardDAV/CalDAV 服务"
-SOFTWARE_VERSION = "2.2"
+SOFTWARE_DESCRIPTION = "全能 DAV 服务 (CardDAV + CalDAV + WebDAV)"
+SOFTWARE_VERSION = "2.3"
 SOFTWARE_AUTHOR = "hunyanjie"
 
 # 数据库路径

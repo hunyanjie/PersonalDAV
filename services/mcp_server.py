@@ -88,6 +88,9 @@ class _AuthASGIMiddleware:
             svc.log_auth(False, client_ip, "MCP", "IP被拒绝")
             return await _send_json(send, 403, {"error": "forbidden"})
 
+        if not svc.check_rate_limit(client_ip):
+            return await _send_json(send, 429, {"error": "too many requests"})
+
         if not svc.is_enabled():
             await self.app(scope, receive, send)
             return
@@ -174,6 +177,12 @@ class MCPServer:
         mcp = self._mcp
         _server_instance: list[DAVServer | None] = [None]
 
+        def _check_readonly():
+            from services.settings_service import SettingsService
+            if SettingsService().get_setting("mcp_readonly", "False") == "True":
+                return True
+            return False
+
         def _safe_json(data) -> str:
             try:
                 return json.dumps(data, ensure_ascii=False)
@@ -185,6 +194,8 @@ class MCPServer:
 
         @mcp.tool(description="启动 DAV 服务器（后台线程运行）")
         def server_start(port: int = 8080) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: server_start port={port}")
             try:
                 if _server_instance[0] is not None:
@@ -204,6 +215,8 @@ class MCPServer:
 
         @mcp.tool(description="停止正在运行的 DAV 服务器")
         def server_stop() -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info("MCP 调用: server_stop")
             try:
                 s = _server_instance[0]
@@ -263,6 +276,8 @@ class MCPServer:
 
         @mcp.tool(description="通过 vCard 数据创建联系人")
         def create_contact(vcard_data: str) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: create_contact vcard_data({len(vcard_data)}B)")
             try:
                 uid, op = CONTACT_SVC.add_contact(vcard_data, publish=False)
@@ -277,6 +292,8 @@ class MCPServer:
 
         @mcp.tool(description="更新联系人（提供 UID 和新的 vCard 数据）")
         def update_contact(uid: str, vcard_data: str) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: update_contact uid={uid} vcard_data({len(vcard_data)}B)")
             try:
                 uid, op = CONTACT_SVC.add_contact(vcard_data, force=True, publish=False)
@@ -291,6 +308,8 @@ class MCPServer:
 
         @mcp.tool(description="删除指定 UID 的联系人")
         def delete_contact(uid: str) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: delete_contact uid={uid}")
             try:
                 ok = CONTACT_SVC.delete(uid)
@@ -334,6 +353,8 @@ class MCPServer:
 
         @mcp.tool(description="通过 iCalendar 数据创建事件")
         def create_event(ical_data: str) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: create_event ical_data({len(ical_data)}B)")
             try:
                 uid, op = EVENT_SVC.add_event(ical_data, publish=False)
@@ -348,6 +369,8 @@ class MCPServer:
 
         @mcp.tool(description="更新事件（提供 UID 和新的 iCalendar 数据）")
         def update_event(uid: str, ical_data: str) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: update_event uid={uid} ical_data({len(ical_data)}B)")
             try:
                 uid, op = EVENT_SVC.add_event(ical_data, force=True, publish=False)
@@ -362,6 +385,8 @@ class MCPServer:
 
         @mcp.tool(description="删除指定 UID 的事件")
         def delete_event(uid: str) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
             logger.info(f"MCP 调用: delete_event uid={uid}")
             try:
                 ok = EVENT_SVC.delete(uid)

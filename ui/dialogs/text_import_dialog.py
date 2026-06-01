@@ -66,7 +66,7 @@ def show_about(parent):
 
 作者: {SOFTWARE_AUTHOR}
 
-这是一个私人 CardDAV/CalDAV 服务程序，可以管理联系人和日历事件。
+这是一个全能 DAV 服务程序，支持 CardDAV（联系人）、CalDAV（日历事件）和 WebDAV（文件管理）。
 
 功能特点:
 - 本地数据库存储

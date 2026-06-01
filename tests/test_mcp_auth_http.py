@@ -72,6 +72,21 @@ def main():
     check("IP 不在白名单 403", r.status_code == 403, f"status={r.status_code}")
     ss.set_setting("ip_whitelist", "")
 
+    print("\n=== 访问频率限制 ===")
+
+    ss.set_setting("rate_limit_enabled", "True")
+    ss.set_setting("rate_limit_max", "3")
+    ss.set_setting("bypass_localhost", "True")
+    r = http_get()
+    check("频率限制第1次 200", r.status_code == 200, f"status={r.status_code}")
+    r = http_get()
+    check("频率限制第2次 200", r.status_code == 200, f"status={r.status_code}")
+    r = http_get()
+    check("频率限制第3次 200", r.status_code == 200, f"status={r.status_code}")
+    r = http_get()
+    check("频率限制第4次 429", r.status_code == 429, f"status={r.status_code}")
+    ss.set_setting("rate_limit_enabled", "False")
+
     print("\n=== 免密码 IP ===")
     ss.set_setting("bypass_localhost", "False")
     r = http_get()

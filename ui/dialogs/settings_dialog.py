@@ -27,6 +27,7 @@ SIMPLE_SETTINGS = [
     # ========== MCP 设置 ==========
     SettingDef("mcp_enabled", "启用 MCP 服务", "check", "MCP 服务", default=False, db_default="False"),
     SettingDef("mcp_port", "MCP 服务端口:", "entry", "MCP 服务", default="8100", width=10),
+    SettingDef("mcp_readonly", "只读模式（禁止写操作）", "check", "MCP 服务", default=False, db_default="False"),
 
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
@@ -55,6 +56,11 @@ SIMPLE_SETTINGS = [
     SettingDef("default_force_reminder", "默认勾选强制提醒", "check", "基本设置",
                default=False, db_default="False", columnspan=2),
     SettingDef("_sep2", "", "sep", "基本设置"),
+    SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
+               default=False, db_default="False"),
+    # ========== 安全设置 ==========
+    SettingDef("rate_limit_enabled", "启用访问频率限制", "check", "安全设置", default=False, db_default="False"),
+    SettingDef("rate_limit_max", "每分钟最大请求数:", "entry", "安全设置", default="60", width=10),
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
                default="当前时间", db_default="current",
                options=["当前时间", "5整数倍", "10整数倍", "15整数倍", "30整数倍"],
@@ -83,12 +89,14 @@ class SettingsDialog(tk.Toplevel):
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
         security_frame = ttk.Frame(notebook); notebook.add(security_frame, text="安全设置")
+        audit_frame = ttk.Frame(notebook); notebook.add(audit_frame, text="审计日志")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
         self.create_security_settings(security_frame)
+        self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
 
         btn_frame = ttk.Frame(main_frame)
@@ -222,6 +230,16 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
         ssl_f.grid_columnconfigure(1, weight=1)
 
+        # 备份与恢复
+        bk_f = ttk.LabelFrame(parent, text="备份与恢复")
+        bk_f.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(bk_f, text="备份包含数据库、设置及日志文件。恢复将关闭当前数据库并替换。",
+                  foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=2)
+        btn_f = ttk.Frame(bk_f)
+        btn_f.pack(pady=5)
+        ttk.Button(btn_f, text="导出备份 (.zip)", command=self._export_backup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="从备份恢复", command=self._import_backup).pack(side=tk.LEFT, padx=5)
+
     # ── 安全设置 ────────────────────────────────────────────────
 
     def create_security_settings(self, parent):
@@ -231,9 +249,12 @@ class SettingsDialog(tk.Toplevel):
         self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
         self._auth_status_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
-        ttk.Button(pw_f, text="设置密码", command=self._set_password).grid(row=1, column=0, padx=5, pady=5)
-        ttk.Button(pw_f, text="更改密码", command=self._change_password).grid(row=1, column=1, padx=5, pady=5)
-        ttk.Button(pw_f, text="清除密码", command=self._clear_password).grid(row=1, column=2, padx=5, pady=5)
+        self._set_pw_btn = ttk.Button(pw_f, text="设置密码", command=self._set_password)
+        self._set_pw_btn.grid(row=1, column=0, padx=5, pady=5)
+        self._change_pw_btn = ttk.Button(pw_f, text="更改密码", command=self._change_password)
+        self._change_pw_btn.grid(row=1, column=1, padx=5, pady=5)
+        self._clear_pw_btn = ttk.Button(pw_f, text="清除密码", command=self._clear_password)
+        self._clear_pw_btn.grid(row=1, column=2, padx=5, pady=5)
 
         ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
                   foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
@@ -282,6 +303,19 @@ class SettingsDialog(tk.Toplevel):
         self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
         self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
 
+        rate_f = ttk.LabelFrame(parent, text="访问频率限制")
+        rate_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self.rate_limit_enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(rate_f, text="启用访问频率限制",
+                        variable=self.rate_limit_enabled_var).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+
+        ttk.Label(rate_f, text="每分钟最大请求数:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.rate_limit_max_var = tk.StringVar(value="60")
+        ttk.Entry(rate_f, textvariable=self.rate_limit_max_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=2)
+        ttk.Label(rate_f, text="超过限制的请求将被返回 429 Too Many Requests",
+                  foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+
         self._refresh_auth_ui()
 
     def _refresh_auth_ui(self):
@@ -291,6 +325,9 @@ class SettingsDialog(tk.Toplevel):
             text=f"访问密码: {'已设置' if enabled else '未设置'}",
             foreground="green" if enabled else "orange"
         )
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self._change_pw_btn.config(state=state)
+        self._clear_pw_btn.config(state=state)
         self._mcp_token_var.set(svc.get_mcp_token() if enabled else "(未设置密码)")
         if self._mcp_tip:
             self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
@@ -350,13 +387,29 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
     def _clear_password(self):
-        if not AuthService().is_enabled():
+        svc = AuthService()
+        if not svc.is_enabled():
             return
-        if not messagebox.askyesno("确认清除", "清除后所有服务将不再需要密码验证，确定吗？", parent=self):
-            return
-        AuthService().clear_password()
-        self._refresh_auth_ui()
-        messagebox.showinfo("成功", "密码已清除", parent=self)
+        dialog = tk.Toplevel(self)
+        dialog.title("清除密码")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("350x120")
+        ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
+        pw_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=5)
+        def do_clear():
+            if not svc.verify_password(pw_var.get()):
+                messagebox.showerror("错误", "密码不正确", parent=dialog)
+                return
+            dialog.destroy()
+            svc.clear_password()
+            self._refresh_auth_ui()
+            messagebox.showinfo("成功", "密码已清除", parent=self)
+        btn_f = ttk.Frame(dialog)
+        btn_f.pack(pady=10)
+        ttk.Button(btn_f, text="确定清除", command=do_clear).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
     def _copy_mcp_token(self):
         token = AuthService().get_mcp_token()
@@ -426,6 +479,38 @@ class SettingsDialog(tk.Toplevel):
         for name, cat, desc in tool_list:
             tree.insert("", tk.END, values=(name, cat, desc))
 
+    # ── 审计日志查看器 ──────────────────────────────────────────
+
+    def create_audit_log_viewer(self, parent):
+        from services.auth_service import AuthService
+        cols = ("时间", "IP", "状态", "协议", "详情")
+        tree = ttk.Treeview(parent, columns=cols, show="headings", height=20)
+        for c in cols:
+            tree.heading(c, text=c)
+            tree.column(c, width=180 if c == "时间" else 140 if c == "IP" else 80)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=tree.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        tree.configure(yscrollcommand=scroll.set)
+
+        def refresh():
+            tree.delete(*tree.get_children())
+            for log in AuthService().get_auth_logs(500):
+                tag = "success" if log["success"] else "failure"
+                status = "成功" if log["success"] else "失败"
+                tree.insert("", tk.END, values=(log["time"], log["ip"], status, log["method"], log["detail"]), tags=(tag,))
+            tree.tag_configure("success", foreground="green")
+            tree.tag_configure("failure", foreground="red")
+
+        btn_f = ttk.Frame(parent)
+        btn_f.pack(fill=tk.X, padx=5, pady=(0, 5))
+        ttk.Button(btn_f, text="刷新", command=refresh).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="清空日志", command=lambda: [
+            __import__("database.db_manager", fromlist=["Database"]).Database().execute("DELETE FROM auth_logs"), refresh()
+        ]).pack(side=tk.LEFT, padx=2)
+
+        refresh()
+
     # ── 日历设置 ────────────────────────────────────────────────
 
     def create_calendar_settings(self, parent):
@@ -453,6 +538,17 @@ class SettingsDialog(tk.Toplevel):
                        command=lambda h=h, m=m: (
                            self._dur_h_var.set(str(h)), self._dur_m_var.set(str(m))
                        )).pack(side=tk.LEFT, padx=2)
+        row += 1
+
+        # 数据存储目录
+        ttk.Separator(b_t, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=(10, 5))
+        row += 1
+        ttk.Label(b_t, text="数据存储目录（留空=程序所在目录）:").grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        dir_f = ttk.Frame(b_t)
+        dir_f.grid(row=row, column=1, sticky="w", padx=5)
+        self.data_dir_var = tk.StringVar()
+        ttk.Entry(dir_f, textvariable=self.data_dir_var, width=40).pack(side=tk.LEFT)
+        ttk.Button(dir_f, text="浏览...", command=self._browse_data_dir).pack(side=tk.LEFT, padx=5)
         row += 1
 
         self._create_timezone_format_ui(b_t)
@@ -915,6 +1011,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
 
+        self.data_dir_var.set(s.get_setting("data_dir", ""))
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -956,6 +1054,42 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
+    def _browse_data_dir(self):
+        dir_path = filedialog.askdirectory(title="选择数据存储目录", parent=self)
+        if dir_path:
+            self.data_dir_var.set(dir_path)
+
+    def _export_backup(self):
+        from datetime import datetime
+        default_name = f"personaldav_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        path = filedialog.asksaveasfilename(
+            title="导出备份", defaultextension=".zip",
+            initialfile=default_name, filetypes=[("ZIP 文件", "*.zip")], parent=self)
+        if not path:
+            return
+        from utils.backup import export_backup
+        if export_backup(path):
+            messagebox.showinfo("备份成功", f"已导出到:\n{path}", parent=self)
+        else:
+            messagebox.showerror("备份失败", "导出过程中发生错误，请查看日志。", parent=self)
+
+    def _import_backup(self):
+        path = filedialog.askopenfilename(
+            title="从备份恢复", filetypes=[("ZIP 文件", "*.zip")], parent=self)
+        if not path:
+            return
+        if not messagebox.askyesno("确认恢复",
+                                    "恢复将替换当前数据库和设置，\n"
+                                    "程序需要重启才能生效。确定继续？", parent=self):
+            return
+        from utils.backup import import_backup
+        if import_backup(path):
+            self._load_settings()
+            messagebox.showinfo("恢复成功",
+                                "数据已恢复，请重启程序以使更改生效。", parent=self)
+        else:
+            messagebox.showerror("恢复失败", "恢复过程中发生错误，请查看日志。", parent=self)
+
     def _load_text_widget_lines(self, widget: tk.Text, raw: str):
         widget.delete("1.0", tk.END)
         for line in raw.replace('\r', '').split('\n'):
@@ -991,6 +1125,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
 
+        s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())

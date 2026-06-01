@@ -1,8 +1,10 @@
 import hashlib
 import secrets
 import ipaddress
+from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
+from utils.rate_limiter import get_rate_limiter
 
 
 class AuthService:
@@ -116,6 +118,26 @@ class AuthService:
 
         return True
 
+    # ── 访问频率限制 ──────────────────────────────────────────
+
+    def is_rate_limit_enabled(self) -> bool:
+        return SettingsService().get_setting("rate_limit_enabled", "False") == "True"
+
+    def get_rate_limit_max(self) -> int:
+        try:
+            return int(SettingsService().get_setting("rate_limit_max", "60"))
+        except (ValueError, TypeError):
+            return 60
+
+    def check_rate_limit(self, client_ip: str) -> bool:
+        if not self.is_rate_limit_enabled():
+            return True
+        max_req = self.get_rate_limit_max()
+        allowed = get_rate_limiter().check(client_ip, max_requests=max_req, window_seconds=60)
+        if not allowed:
+            logger.warning(f"[{client_ip}] 频率限制已触发 ({max_req}/分钟)")
+        return allowed
+
     # ── 鉴权日志（统一入口，后续可扩展 UA、浏览器指纹等） ──────
 
     def log_auth(self, success: bool, client_ip: str, method: str = "", extra: str = ""):
@@ -129,3 +151,24 @@ class AuthService:
             logger.info(parts)
         else:
             logger.warning(parts)
+        try:
+            from database.db_manager import Database
+            Database().execute(
+                "INSERT INTO auth_logs (timestamp, ip, success, method, detail) VALUES (?, ?, ?, ?, ?)",
+                (datetime.now().isoformat(), client_ip, 1 if success else 0, method, extra)
+            )
+        except Exception:
+            pass
+
+    def get_auth_logs(self, limit: int = 200) -> list[dict]:
+        try:
+            rows = Database().query(
+                "SELECT timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                (limit,)
+            )
+            return [
+                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or ""}
+                for r in rows
+            ]
+        except Exception:
+            return []

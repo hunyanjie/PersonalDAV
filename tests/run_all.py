@@ -37,6 +37,10 @@ if __name__ == "__main__":
     if ret != 0:
         exit_code = ret
 
+    ret = run("test_dav_protocol.py", "DAV 协议测试")
+    if ret != 0:
+        exit_code = ret
+
     if exit_code == 0:
         print("\n所有测试通过")
     else:
