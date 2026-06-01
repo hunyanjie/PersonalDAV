@@ -237,9 +237,12 @@ class SettingsDialog(tk.Toplevel):
         self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
         self._auth_status_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
-        ttk.Button(pw_f, text="设置密码", command=self._set_password).grid(row=1, column=0, padx=5, pady=5)
-        ttk.Button(pw_f, text="更改密码", command=self._change_password).grid(row=1, column=1, padx=5, pady=5)
-        ttk.Button(pw_f, text="清除密码", command=self._clear_password).grid(row=1, column=2, padx=5, pady=5)
+        self._set_pw_btn = ttk.Button(pw_f, text="设置密码", command=self._set_password)
+        self._set_pw_btn.grid(row=1, column=0, padx=5, pady=5)
+        self._change_pw_btn = ttk.Button(pw_f, text="更改密码", command=self._change_password)
+        self._change_pw_btn.grid(row=1, column=1, padx=5, pady=5)
+        self._clear_pw_btn = ttk.Button(pw_f, text="清除密码", command=self._clear_password)
+        self._clear_pw_btn.grid(row=1, column=2, padx=5, pady=5)
 
         ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
                   foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
@@ -310,6 +313,9 @@ class SettingsDialog(tk.Toplevel):
             text=f"访问密码: {'已设置' if enabled else '未设置'}",
             foreground="green" if enabled else "orange"
         )
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self._change_pw_btn.config(state=state)
+        self._clear_pw_btn.config(state=state)
         self._mcp_token_var.set(svc.get_mcp_token() if enabled else "(未设置密码)")
         if self._mcp_tip:
             self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
