@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import ipaddress
+from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
 from utils.rate_limiter import get_rate_limiter
@@ -150,3 +151,24 @@ class AuthService:
             logger.info(parts)
         else:
             logger.warning(parts)
+        try:
+            from database.db_manager import Database
+            Database().execute(
+                "INSERT INTO auth_logs (timestamp, ip, success, method, detail) VALUES (?, ?, ?, ?, ?)",
+                (datetime.now().isoformat(), client_ip, 1 if success else 0, method, extra)
+            )
+        except Exception:
+            pass
+
+    def get_auth_logs(self, limit: int = 200) -> list[dict]:
+        try:
+            rows = Database().query(
+                "SELECT timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                (limit,)
+            )
+            return [
+                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or ""}
+                for r in rows
+            ]
+        except Exception:
+            return []

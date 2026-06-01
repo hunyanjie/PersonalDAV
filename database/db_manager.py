@@ -67,6 +67,14 @@ class Database:
         c.execute('''CREATE TABLE IF NOT EXISTS settings
                      (key TEXT PRIMARY KEY,
                       value TEXT)''')
+        # 鉴权日志表
+        c.execute('''CREATE TABLE IF NOT EXISTS auth_logs
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      timestamp TEXT,
+                      ip TEXT,
+                      success INTEGER,
+                      method TEXT,
+                      detail TEXT)''')
         
         # 迁移: 为已有数据库添加时间戳列
         for table in ['contacts', 'events']:

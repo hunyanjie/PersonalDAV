@@ -89,12 +89,14 @@ class SettingsDialog(tk.Toplevel):
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
         security_frame = ttk.Frame(notebook); notebook.add(security_frame, text="安全设置")
+        audit_frame = ttk.Frame(notebook); notebook.add(audit_frame, text="审计日志")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
         self.create_security_settings(security_frame)
+        self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
 
         btn_frame = ttk.Frame(main_frame)
@@ -466,6 +468,38 @@ class SettingsDialog(tk.Toplevel):
         ]
         for name, cat, desc in tool_list:
             tree.insert("", tk.END, values=(name, cat, desc))
+
+    # ── 审计日志查看器 ──────────────────────────────────────────
+
+    def create_audit_log_viewer(self, parent):
+        from services.auth_service import AuthService
+        cols = ("时间", "IP", "状态", "协议", "详情")
+        tree = ttk.Treeview(parent, columns=cols, show="headings", height=20)
+        for c in cols:
+            tree.heading(c, text=c)
+            tree.column(c, width=180 if c == "时间" else 140 if c == "IP" else 80)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=tree.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        tree.configure(yscrollcommand=scroll.set)
+
+        def refresh():
+            tree.delete(*tree.get_children())
+            for log in AuthService().get_auth_logs(500):
+                tag = "success" if log["success"] else "failure"
+                status = "成功" if log["success"] else "失败"
+                tree.insert("", tk.END, values=(log["time"], log["ip"], status, log["method"], log["detail"]), tags=(tag,))
+            tree.tag_configure("success", foreground="green")
+            tree.tag_configure("failure", foreground="red")
+
+        btn_f = ttk.Frame(parent)
+        btn_f.pack(fill=tk.X, padx=5, pady=(0, 5))
+        ttk.Button(btn_f, text="刷新", command=refresh).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="清空日志", command=lambda: [
+            __import__("database.db_manager", fromlist=["Database"]).Database().execute("DELETE FROM auth_logs"), refresh()
+        ]).pack(side=tk.LEFT, padx=2)
+
+        refresh()
 
     # ── 日历设置 ────────────────────────────────────────────────
 
