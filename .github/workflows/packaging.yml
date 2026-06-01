@@ -56,16 +56,16 @@ jobs:
       shell: pwsh
       run: |
         $tkdnd = & python -c "import tkinterdnd2,os;print(os.path.join(os.path.dirname(tkinterdnd2.__file__),'tkdnd','win-x64'))"
-        & pyinstaller --onefile --clean -w --name "PersonalDAV-$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --hidden-import tkinterdnd2 main.py
+        & pyinstaller --onefile --clean -w --name "PersonalDAV-v$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --hidden-import tkinterdnd2 main.py
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: PersonalDAV-${{ env.VERSION }}.exe
-        path: dist/PersonalDAV-${{ env.VERSION }}.exe
+        path: dist/PersonalDAV-v${{ env.VERSION }}.exe
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         name: PersonalDAV v${{ env.VERSION }}
-        files: dist/PersonalDAV-${{ env.VERSION }}.exe
+        files: dist/PersonalDAV-v${{ env.VERSION }}.exe
         generate_release_notes: true
         draft: true
