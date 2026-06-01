@@ -1,4 +1,4 @@
-"""一键运行全部测试：pytest 单元测试 + MCP 工具集成检查"""
+"""一键运行全部测试：pytest 单元测试 + MCP 内部/HTTP 集成测试 + 鉴权测试"""
 import subprocess
 import sys
 from pathlib import Path
@@ -9,13 +9,13 @@ def run_pytest():
     result = subprocess.run([sys.executable, "-m", "pytest", str(TEST_DIR), "-v"], capture_output=False)
     return result.returncode
 
-def run_mcp_check():
-    print("\n========== MCP 工具集成检查 ==========")
-    result = subprocess.run([sys.executable, str(TEST_DIR / "_run_mcp_tools_check.py")], capture_output=False)
+def run(name, label):
+    print(f"\n========== {label} ==========")
+    result = subprocess.run([sys.executable, str(TEST_DIR / name)], capture_output=False)
     if result.returncode == 0:
-        print("MCP 工具检查通过")
+        print(f"{label} 通过")
     else:
-        print("MCP 工具检查失败")
+        print(f"{label} 失败")
     return result.returncode
 
 if __name__ == "__main__":
@@ -25,7 +25,15 @@ if __name__ == "__main__":
     if ret != 0:
         exit_code = ret
 
-    ret = run_mcp_check()
+    ret = run("_run_mcp_tools_check.py", "MCP 内部工具检查")
+    if ret != 0:
+        exit_code = ret
+
+    ret = run("_run_mcp_http_check.py", "MCP HTTP 工具检查")
+    if ret != 0:
+        exit_code = ret
+
+    ret = run("test_mcp_auth_http.py", "MCP 鉴权测试")
     if ret != 0:
         exit_code = ret
 

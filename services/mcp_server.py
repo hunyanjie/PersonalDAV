@@ -20,7 +20,7 @@ import urllib.request
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from starlette.middleware.base import BaseHTTPMiddleware
+import json as _json
 from starlette.responses import JSONResponse
 
 from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION, DEFAULT_DB_PATH
@@ -65,6 +65,63 @@ def _make_event_summary(uid: str) -> dict[str, Any]:
         return {"uid": uid, "detail": "(parse failed)"}
 
 
+class _AuthASGIMiddleware:
+    """ASGI 中间件 — 对 /sse 和 /messages/ 路径做鉴权（兼容 SSE 流式响应）"""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path not in ('/sse', '/messages/') and not path.startswith('/messages/'):
+            await self.app(scope, receive, send)
+            return
+
+        headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
+        client_ip = scope.get("client", ("unknown", 0))[0]
+        svc = AuthService()
+
+        if not svc.check_ip(client_ip):
+            svc.log_auth(False, client_ip, "MCP", "IP被拒绝")
+            return await _send_json(send, 403, {"error": "forbidden"})
+
+        if not svc.is_enabled():
+            await self.app(scope, receive, send)
+            return
+
+        if svc.ip_bypasses_auth(client_ip):
+            svc.log_auth(True, client_ip, "MCP", "免密 IP")
+            await self.app(scope, receive, send)
+            return
+
+        auth = headers.get('authorization', '')
+        if not auth.startswith('Bearer '):
+            svc.log_auth(False, client_ip, "MCP", "无令牌")
+            return await _send_json(send, 401, {"error": "missing token"})
+        if not svc.verify_mcp_token(auth[7:]):
+            svc.log_auth(False, client_ip, "MCP", "令牌无效")
+            return await _send_json(send, 401, {"error": "invalid token"})
+
+        svc.log_auth(True, client_ip, "MCP", "")
+        await self.app(scope, receive, send)
+
+
+async def _send_json(send, status, data):
+    body = _json.dumps(data).encode()
+    await send({
+        "type": "http.response.start",
+        "status": status,
+        "headers": [(b"content-type", b"application/json")],
+    })
+    await send({
+        "type": "http.response.body",
+        "body": body,
+    })
+
+
 class MCPServer:
     """可在后台线程运行的 MCP SSE 服务器"""
 
@@ -85,35 +142,7 @@ class MCPServer:
         logger.info(f"MCP 服务器正在启动，监听 {host}:{port}")
         app = self._mcp.sse_app()
 
-        class MCPAuthMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request, call_next):
-                if request.url.path in ('/sse', '/messages/'):
-                    svc = AuthService()
-                    client_ip = request.client.host if request.client else "unknown"
-
-                    if not svc.check_ip(client_ip):
-                        svc.log_auth(False, client_ip, "MCP", "IP被拒绝")
-                        return JSONResponse({"error": "forbidden"}, status_code=403)
-
-                    if not svc.is_enabled():
-                        return await call_next(request)
-
-                    if svc.ip_bypasses_auth(client_ip):
-                        svc.log_auth(True, client_ip, "MCP", "免密 IP")
-                        return await call_next(request)
-
-                    auth = request.headers.get('authorization', '')
-                    if not auth.startswith('Bearer '):
-                        svc.log_auth(False, client_ip, "MCP", "无令牌")
-                        return JSONResponse({"error": "missing token"}, status_code=401)
-                    if not svc.verify_mcp_token(auth[7:]):
-                        svc.log_auth(False, client_ip, "MCP", "令牌无效")
-                        return JSONResponse({"error": "invalid token"}, status_code=401)
-
-                    svc.log_auth(True, client_ip, "MCP", "")
-                return await call_next(request)
-
-        app.add_middleware(MCPAuthMiddleware)
+        app = _AuthASGIMiddleware(app)
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         self._uvicorn_server = uvicorn.Server(config)
         self._thread = threading.Thread(target=self._uvicorn_server.run, daemon=True)
