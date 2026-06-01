@@ -53,9 +53,11 @@ class AuthService:
         return secrets.compare_digest(self.get_mcp_token(), token)
 
     def ip_bypasses_auth(self, client_ip: str) -> bool:
-        if client_ip in ('127.0.0.1', '::1', 'localhost'):
+        s = SettingsService()
+        bypass_local = s.get_setting("bypass_localhost", "True") == "True"
+        if bypass_local and client_ip in ('127.0.0.1', '::1', 'localhost'):
             return True
-        raw = SettingsService().get_setting("ip_bypass_auth", "").strip()
+        raw = s.get_setting("ip_bypass_auth", "").strip()
         if not raw:
             return False
         import re

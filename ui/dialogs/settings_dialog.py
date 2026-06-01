@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
 from ui.widgets.right_click_menu import RightClickMenu
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
@@ -246,7 +247,9 @@ class SettingsDialog(tk.Toplevel):
 
         btn_f = ttk.Frame(token_f)
         btn_f.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token).pack(side=tk.LEFT, padx=2)
+        copy_btn = ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token)
+        copy_btn.pack(side=tk.LEFT, padx=2)
+        self._mcp_tip = EnhancedTooltip(copy_btn, "请先设置密码以生成令牌")
         ttk.Label(btn_f, text="  设置密码后令牌自动生成，更改密码会刷新令牌。",
                   foreground="gray").pack(side=tk.LEFT)
 
@@ -266,10 +269,15 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(ip_f, text="示例: 127.0.0.1 | 192.168.1.0/24 | 10.0.* | 白名单非空时只允许白名单 IP 访问",
                   foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
 
-        bypass_f = ttk.LabelFrame(parent, text="免密码 IP（这些 IP 访问时不需密码验证）")
+        self._bypass_localhost_var = tk.BooleanVar(value=True)
+        bypass_local_cb = ttk.Checkbutton(parent, text="本机访问免密码",
+                                          variable=self._bypass_localhost_var)
+        bypass_local_cb.pack(anchor="w", padx=10, pady=(5, 0))
+
+        bypass_f = ttk.LabelFrame(parent, text="免密码 IP（以下 IP 访问时不需密码验证）")
         bypass_f.pack(fill=tk.X, padx=5, pady=5)
 
-        ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符（本机 127.0.0.1 / ::1 永久免密）:",
+        ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符:",
                   foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
         self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
         self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
@@ -284,6 +292,8 @@ class SettingsDialog(tk.Toplevel):
             foreground="green" if enabled else "orange"
         )
         self._mcp_token_var.set(svc.get_mcp_token() if enabled else "(未设置密码)")
+        if self._mcp_tip:
+            self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
 
     def _set_password(self):
         self._password_dialog(change=False)
@@ -903,6 +913,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
         self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
         self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
+        self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
 
     # ── 重置 ────────────────────────────────────────────────────
 
@@ -941,6 +952,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._ip_whitelist_text.delete("1.0", tk.END)
         self._ip_blacklist_text.delete("1.0", tk.END)
         self._ip_bypass_text.delete("1.0", tk.END)
+        self._bypass_localhost_var.set(True)
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
@@ -982,6 +994,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
+        s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
