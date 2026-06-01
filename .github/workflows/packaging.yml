@@ -66,6 +66,6 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         name: PersonalDAV v${{ env.VERSION }}
-        files: dist/PersonalDAV-v${{ env.VERSION }}.exe
+        files: dist/PersonalDAV-${{ env.VERSION }}.exe
         generate_release_notes: true
         draft: true
