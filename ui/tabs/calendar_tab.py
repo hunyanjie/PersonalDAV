@@ -9,6 +9,8 @@ from tkinterdnd2 import DND_FILES
 
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
 import os
+from datetime import datetime, date
+from utils.encoding_helper import decode_ical_value
 
 
 class CalendarTab(BaseTreeTab):
@@ -37,7 +39,6 @@ class CalendarTab(BaseTreeTab):
         self.create_widgets()
         self.refresh_events()
 
-        # 订阅数据变更事件
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.refresh_events)
 
     def get_column_width(self, col):
@@ -45,34 +46,57 @@ class CalendarTab(BaseTreeTab):
         return widths.get(col, 100)
 
     def create_widgets(self):
-        # 搜索栏
         self.setup_search_ui(self)
 
-        # 列表框架
-        list_frame = ttk.LabelFrame(self, text="日历事件列表")
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        view_f = ttk.Frame(self)
+        view_f.pack(fill=tk.X, padx=10, pady=(0, 5))
+        ttk.Label(view_f, text="视图:").pack(side=tk.LEFT, padx=(0, 5))
+        self._view_var = tk.StringVar(value="议程")
+        self._view_combo = ttk.Combobox(view_f, textvariable=self._view_var,
+                                          values=["议程", "月视图"], state="readonly", width=10)
+        self._view_combo.pack(side=tk.LEFT)
+        self._view_var.trace("w", self._on_view_changed)
 
-        # 操作提示
-        hint_label = ttk.Label(list_frame, text="操作提示: 1) 点击复选框选择/取消 2) 表头复选框全选 3) 鼠标拖拽多选 4) 双击行编辑", foreground="blue")
+        self._agenda_frame = ttk.LabelFrame(self, text="日历事件列表")
+        self._agenda_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        hint_label = ttk.Label(self._agenda_frame, text="操作提示: 1) 点击复选框选择/取消 2) 表头复选框全选 3) 鼠标拖拽多选 4) 双击行编辑", foreground="blue")
         hint_label.pack(fill=tk.X, padx=5, pady=5)
 
-        # 初始化 Treeview
-        self.setup_treeview(list_frame, self.edit_event)
-
-        # 右键菜单
+        self.setup_treeview(self._agenda_frame, self.edit_event)
         RightClickMenu(self.tree)
 
-        # 按钮栏
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill=tk.X, padx=10, pady=5)
+        self._month_frame = ttk.LabelFrame(self, text="月视图")
+        cal_top = ttk.Frame(self._month_frame); cal_top.pack(fill=tk.X, padx=5, pady=5)
+        nav_f = ttk.Frame(cal_top); nav_f.pack(side=tk.LEFT)
+        ttk.Button(nav_f, text="◀", width=3, command=self._month_prev).pack(side=tk.LEFT, padx=1)
+        self._month_label = ttk.Label(nav_f, text="", font=('', 11, 'bold'))
+        self._month_label.pack(side=tk.LEFT, padx=10)
+        ttk.Button(nav_f, text="▶", width=3, command=self._month_next).pack(side=tk.LEFT, padx=1)
+        ttk.Button(cal_top, text="今天", command=self._month_today).pack(side=tk.RIGHT)
 
-        ttk.Button(btn_frame, text="添加事件", command=self.add_event).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="编辑事件", command=self.edit_event).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="删除事件", command=self.delete_event).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="查看原始数据", command=self.show_raw).pack(side=tk.LEFT, padx=2)
+        from tkcalendar import Calendar
+        self._month_cal = Calendar(self._month_frame, selectmode='day', locale='zh_CN',
+                                    date_pattern='yyyy-mm-dd', showweeknumbers=False)
+        self._month_cal.pack(fill=tk.X, padx=5, pady=5)
+        self._month_cal.bind("<<CalendarSelected>>", self._month_on_select)
 
-        # 导入菜单
-        import_btn = ttk.Menubutton(btn_frame, text="导入数据")
+        ev_f = ttk.LabelFrame(self._month_frame, text="选定日事件")
+        ev_f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self._month_events_listbox = tk.Listbox(ev_f, exportselection=False)
+        self._month_events_listbox.pack(fill=tk.BOTH, expand=True)
+        self._month_events_listbox.bind("<Double-1>", self._month_edit_event)
+        self._month_event_uids = []
+
+        self._btn_frame = ttk.Frame(self)
+        self._btn_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Button(self._btn_frame, text="添加事件", command=self.add_event).pack(side=tk.LEFT, padx=2)
+        ttk.Button(self._btn_frame, text="编辑事件", command=self.edit_event).pack(side=tk.LEFT, padx=2)
+        ttk.Button(self._btn_frame, text="删除事件", command=self.delete_event).pack(side=tk.LEFT, padx=2)
+        ttk.Button(self._btn_frame, text="查看原始数据", command=self.show_raw).pack(side=tk.LEFT, padx=2)
+
+        import_btn = ttk.Menubutton(self._btn_frame, text="导入数据")
         import_menu = tk.Menu(import_btn, tearoff=0)
         import_menu.add_command(label="从文件导入...", command=self._import_file)
         import_menu.add_command(label="从 URL 导入...", command=self._import_url)
@@ -84,33 +108,105 @@ class CalendarTab(BaseTreeTab):
         import_btn.config(menu=import_menu)
         import_btn.pack(side=tk.LEFT, padx=2)
 
-        ttk.Button(btn_frame, text="导出选中", command=self.export_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.RIGHT, padx=10)
+        ttk.Button(self._btn_frame, text="导出选中", command=self.export_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(self._btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.RIGHT, padx=10)
+
+    def _on_view_changed(self, *args):
+        view = self._view_var.get()
+        if view == "月视图":
+            self._agenda_frame.pack_forget()
+            self._month_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            self._refresh_month_view()
+        else:
+            self._month_frame.pack_forget()
+            self._agenda_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+    def _refresh_month_view(self):
+        cal_date = self._month_cal.selection_get()
+        self._month_label.config(text=cal_date.strftime("%Y 年 %m 月") if cal_date else "")
+        self._month_cal.calevent_remove('all')
+        for ev in getattr(self, '_all_data', []):
+            uid, summary, start, end, *_ = ev
+            try:
+                dt = datetime.fromisoformat(start)
+                self._month_cal.calevent_create(dt.date(), summary[:20], 'event')
+            except Exception:
+                pass
+        self._month_cal.tag_config('event', background='#3498db', foreground='white')
+        self._month_on_select()
+
+    def _month_prev(self):
+        self._month_cal.date_add(-30)
+        self._refresh_month_view()
+
+    def _month_next(self):
+        self._month_cal.date_add(30)
+        self._refresh_month_view()
+
+    def _month_today(self):
+        self._month_cal.selection_set(date.today())
+        self._refresh_month_view()
+
+    def _month_on_select(self, event=None):
+        self._month_events_listbox.delete(0, tk.END)
+        self._month_event_uids.clear()
+        try:
+            cal_date = self._month_cal.selection_get()
+        except Exception:
+            return
+        if not cal_date:
+            return
+        for ev in getattr(self, '_all_data', []):
+            uid, summary, start, end, *_ = ev
+            try:
+                dt = datetime.fromisoformat(start)
+                if dt.date() == cal_date:
+                    disp = decode_ical_value(summary or "(无标题)")
+                    self._month_events_listbox.insert(tk.END, f"{dt.strftime('%H:%M')} {disp}")
+                    self._month_event_uids.append(uid)
+            except Exception:
+                pass
+
+    def _month_edit_event(self, event=None):
+        sel = self._month_events_listbox.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        if idx < len(self._month_event_uids):
+            uid = self._month_event_uids[idx]
+            self._edit_event_by_uid(uid)
+
+    def _edit_event_by_uid(self, uid):
+        data = self.db.get_by_uid(uid)
+        if data:
+            init = {'uid': uid, 'ical': data}
+            dialog = EventDialog(self.app_root, initial=init, db=self.settings)
+            if dialog.result:
+                self.db.add_event(dialog.get_raw_ical())
+                self.refresh_events()
 
     def refresh_events(self):
-        """刷新事件列表"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         self._all_data = self.db.get_list_data()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
+        if self._view_var.get() == "月视图":
+            self._refresh_month_view()
 
     def apply_filter(self, query):
-        """执行过滤显示"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         for item in self.tree.get_children(): self.tree.delete(item)
 
         for event in self._all_data:
             uid, summary, start, end, created_at, updated_at = event
             match = not query or any(query in str(v).lower() for v in event)
-            
+
             if match:
                 sel = "✓" if uid in selected_uids else " "
-                # 解码事件名称
                 disp_summary = summary
                 if disp_summary:
-                    from utils.encoding_helper import decode_ical_value
                     disp_summary = decode_ical_value(disp_summary)
-                
+
                 item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end, created_at, updated_at))
                 if sel == "✓": self.tree.selection_add(item_id)
 
@@ -146,9 +242,8 @@ class CalendarTab(BaseTreeTab):
             for uid in uids:
                 self.db.delete(uid)
             self.refresh_events()
-    
+
     def _on_delete(self):
-        """处理删除事件（来自右键菜单或Delete键）"""
         self.delete_event()
 
     def show_raw(self):
@@ -183,7 +278,6 @@ class CalendarTab(BaseTreeTab):
         self.refresh_events()
 
     def _parse_data_to_items(self, data):
-        """将原始 iCalendar 数据解析为 item 列表，供 ImportPreviewDialog 使用"""
         items = []
         if "BEGIN:VEVENT" not in data and "BEGIN:VCALENDAR" not in data:
             return items
@@ -216,10 +310,9 @@ class CalendarTab(BaseTreeTab):
         uids = [self.tree.item(i)['values'][1] for i in sel]
         events = self.db.get_selected_raw(uids)
 
-        # 单选时预填文件名
         initial = ""
         if len(sel) == 1:
-            summary = self.tree.item(sel[0])['values'][2]  # 事件标题列
+            summary = self.tree.item(sel[0])['values'][2]
             if summary:
                 summary = str(summary)
                 import re
