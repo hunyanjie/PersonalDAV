@@ -44,9 +44,11 @@ class DAVServerApp:
 
         # MCP 服务器（需在 create_widgets 前初始化，因为状态栏用到它）
         self.mcp_server = MCPServer()
-        self._sync_mcp_server()
 
         self.create_widgets()
+
+        # 延迟执行非关键启动任务，让窗口先显示
+        self.root.after_idle(self._deferred_startup)
 
         # 启动日志处理循环
         self.root.after(100, self.process_log_queue)
@@ -213,18 +215,6 @@ class DAVServerApp:
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
 
-        # 同步系统自启动状态（确保与设置一致）
-        if self.settings_service.get_setting("auto_start_app", "False") == "True":
-            if not is_auto_start():
-                set_auto_start(True)
-        else:
-            if is_auto_start():
-                set_auto_start(False)
-
-        # 根据设置自动启动服务器
-        if self.settings_service.get_setting("auto_start_server", "False") == "True":
-            self.server_tab.start_server()
-
         # 状态栏
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -237,6 +227,17 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.update_status_bar)
+
+    def _deferred_startup(self):
+        """窗口显示后执行的非关键启动任务"""
+        self._sync_mcp_server()
+        if self.settings_service.get_setting("auto_start_server", "False") == "True":
+            self.server_tab.start_server()
+        auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
+        if auto_start and not is_auto_start():
+            set_auto_start(True)
+        elif not auto_start and is_auto_start():
+            set_auto_start(False)
 
     def update_status_bar(self, *args):
         c_count = self.contact_service.count()

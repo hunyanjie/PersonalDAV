@@ -15,8 +15,12 @@ def export_backup(output_path: str) -> bool:
             zf.write(db_path, arcname="dav_data.db")
             zf.writestr("settings.json", json.dumps(dict(settings), ensure_ascii=False, indent=2))
             for f in ["dav_server.log"]:
-                if os.path.isfile(f):
-                    zf.write(f, arcname=f)
+                log_path = f
+                if not os.path.isfile(log_path):
+                    from utils.path_helper import resolve_data_path
+                    log_path = resolve_data_path(f)
+                if os.path.isfile(log_path):
+                    zf.write(log_path, arcname=f)
             zf.writestr("backup_info.txt",
                         f"备份时间: {datetime.now().isoformat()}\n"
                         f"数据版本: 2.3\n"

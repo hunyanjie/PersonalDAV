@@ -1084,6 +1084,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             return
         from utils.backup import import_backup
         if import_backup(path):
+            self._load_settings()
             messagebox.showinfo("恢复成功",
                                 "数据已恢复，请重启程序以使更改生效。", parent=self)
         else:
