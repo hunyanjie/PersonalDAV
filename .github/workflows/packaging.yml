@@ -66,10 +66,13 @@ jobs:
       with:
         name: PersonalDAV-${{ env.VERSION }}.exe
         path: dist/PersonalDAV-v${{ env.VERSION }}.exe
+    - name: Extract release notes from CHANGELOG.md
+      shell: pwsh
+      run: python scripts/extract_release_notes.py $env:VERSION
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         name: PersonalDAV v${{ env.VERSION }}
+        body_path: release_notes.md
         files: dist/PersonalDAV-v${{ env.VERSION }}.exe
-        generate_release_notes: true
         draft: true
