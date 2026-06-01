@@ -206,8 +206,8 @@ class DAVServerApp:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="帮助", menu=help_menu)
         help_menu.add_command(label="项目地址", command=self.open_project_url)
-        from ui.dialogs.text_import_dialog import show_about
-        help_menu.add_command(label="关于", command=lambda: show_about(self.root))
+        from ui.dialogs.about_dialog import AboutDialog
+        help_menu.add_command(label="关于", command=lambda: AboutDialog(self.root))
 
         # 选项卡
         self.notebook = ttk.Notebook(self.root)

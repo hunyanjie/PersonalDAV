@@ -57,24 +57,4 @@ def show_raw_dialog(parent, title, raw_data):
     txt.insert(tk.END, raw_data)
     txt.config(state=tk.DISABLED)
 
-def show_about(parent):
-    """关于对话框"""
-    from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_AUTHOR, SOFTWARE_DESCRIPTION
-    about_text = f"""{SOFTWARE_NAME} v{SOFTWARE_VERSION}
 
-{SOFTWARE_DESCRIPTION}
-
-作者: {SOFTWARE_AUTHOR}
-
-这是一个全能 DAV 服务程序，支持 CardDAV（联系人）、CalDAV（日历事件）和 WebDAV（文件管理）。
-
-功能特点:
-- 本地数据库存储
-- 支持 WebDAV 协议
-- 支持导入/导出 vCard 和 iCalendar 格式
-- 提供图形用户界面
-- 支持拖拽导入
-
-(c) hunyanjie 2024-2025"""
-    from tkinter import messagebox
-    messagebox.showinfo("关于", about_text, parent=parent)
