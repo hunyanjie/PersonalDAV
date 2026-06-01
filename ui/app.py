@@ -250,6 +250,23 @@ class DAVServerApp:
         elif not auto_start and is_auto_start():
             set_auto_start(False)
         self.update_status_bar()
+        self._check_cert_renew()
+
+    def _check_cert_renew(self):
+        if self.settings_service.get_setting("ssl_auto_renew", "True") != "True":
+            return
+        cert_path = self.settings_service.get_setting("ssl_certfile", "")
+        if not cert_path:
+            return
+        from utils.cert_helper import should_renew, generate_self_signed_cert
+        if should_renew(cert_path):
+            key_path = self.settings_service.get_setting("ssl_keyfile", "")
+            if key_path:
+                try:
+                    generate_self_signed_cert(cert_path, key_path)
+                    logger.info("SSL证书已自动续期")
+                except Exception as e:
+                    logger.error(f"SSL证书自动续期失败: {e}")
 
     def _get_db_size(self) -> str:
         try:

@@ -7,7 +7,7 @@ from ui.widgets.collapsible_frame import CollapsibleFrame
 from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
-from utils.cert_helper import generate_self_signed_cert
+from utils.cert_helper import generate_self_signed_cert, get_cert_info
 from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
 from services.auth_service import AuthService
@@ -230,6 +230,12 @@ class SettingsDialog(tk.Toplevel):
         btn_f.grid(row=3, column=0, columnspan=4, pady=5)
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
+
+        self._cert_info_label = ttk.Label(body, text="", foreground="gray")
+        self._cert_info_label.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        self._auto_renew_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(body, text="自动续期（证书到期前自动生成新证书）",
+                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
 
         # 备份与恢复
@@ -843,6 +849,7 @@ class SettingsDialog(tk.Toplevel):
                 self.ssl_cert_var.set(path)
             else:
                 self.ssl_key_var.set(path)
+            self._update_cert_info()
 
     def _generate_cert(self):
         dir_path = filedialog.askdirectory(title="选择证书保存目录", parent=self)
@@ -855,6 +862,7 @@ class SettingsDialog(tk.Toplevel):
             self.ssl_cert_var.set(os.path.normpath(cert_path))
             self.ssl_key_var.set(os.path.normpath(key_path))
             self.ssl_enabled_var.set(True)
+            self._update_cert_info()
             messagebox.showinfo("成功", f"自签名证书已生成：\n{cert_path}\n\n请将此证书添加到系统的信任列表中。\n\nmacOS: 双击 cert.pem → 钥匙串 → 信任 → 始终信任\niOS: 通过 Safari 下载安装描述文件", parent=self)
         except Exception as e:
             messagebox.showerror("生成失败", str(e), parent=self)
@@ -923,6 +931,17 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         text.insert(tk.END, guide)
         text.config(state=tk.DISABLED)
+
+    def _update_cert_info(self):
+        cert_path = self.ssl_cert_var.get().strip()
+        info = get_cert_info(cert_path) if cert_path else None
+        if info:
+            color = "red" if info["remaining_days"] <= 30 else ("orange" if info["remaining_days"] <= 90 else "green")
+            self._cert_info_label.config(
+                text=f"证书状态: 颁发者={info['issuer']} | 有效期至={info['valid_to']} (剩余{info['remaining_days']}天)",
+                foreground=color)
+        else:
+            self._cert_info_label.config(text="证书状态: 未选择证书或无法读取", foreground="gray")
 
     # ── 显示格式 ────────────────────────────────────────────────
 
@@ -1026,6 +1045,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_enabled_var.set(s.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
+        self._auto_renew_var.set(s.get_setting("ssl_auto_renew", "True") == "True")
+        self._update_cert_info()
 
         self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
         self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
@@ -1067,6 +1088,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_enabled_var.set(False)
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
+        self._auto_renew_var.set(True)
 
         self._ip_whitelist_text.delete("1.0", tk.END)
         self._ip_blacklist_text.delete("1.0", tk.END)
@@ -1146,6 +1168,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_enabled", str(new_ssl))
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
+        s.set_setting("ssl_auto_renew", str(self._auto_renew_var.get()))
 
         s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
