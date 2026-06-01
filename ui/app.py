@@ -19,6 +19,7 @@ from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHAN
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from services.mcp_server import MCPServer
 from utils.auto_start import set_auto_start, is_auto_start
+from ui.tray_manager import TrayManager
 
 class DAVServerApp:
     """主应用程序类"""
@@ -71,6 +72,10 @@ class DAVServerApp:
 
         # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
+
+        # 托盘图标
+        self._tray = TrayManager(self.root, on_show=self._tray_show, on_quit=self._tray_quit)
+        self._tray.start()
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
@@ -316,11 +321,28 @@ class DAVServerApp:
         self.root.after(100, self.process_log_queue)
 
     def on_closing(self):
-        if messagebox.askokcancel("退出", "确定要退出吗？"):
-            self.server_tab.stop_server()
-            self.mcp_server.stop()
-            Database().close()
-            self.root.destroy()
+        self.root.withdraw()
+        self._tray_notify("仍在后台运行，点击托盘图标可恢复窗口")
+
+    def _tray_notify(self, text):
+        try:
+            import pystray
+            if self._tray and self._tray._icon:
+                self._tray._icon.notify(text, SOFTWARE_NAME)
+        except Exception:
+            pass
+
+    def _tray_show(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def _tray_quit(self):
+        self.server_tab.stop_server()
+        self.mcp_server.stop()
+        self._tray.stop()
+        Database().close()
+        self.root.destroy()
 
     def open_project_url(self):
         """打开项目地址"""
