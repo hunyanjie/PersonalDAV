@@ -230,6 +230,16 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
         ssl_f.grid_columnconfigure(1, weight=1)
 
+        # 备份与恢复
+        bk_f = ttk.LabelFrame(parent, text="备份与恢复")
+        bk_f.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(bk_f, text="备份包含数据库、设置及日志文件。恢复将关闭当前数据库并替换。",
+                  foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=2)
+        btn_f = ttk.Frame(bk_f)
+        btn_f.pack(pady=5)
+        ttk.Button(btn_f, text="导出备份 (.zip)", command=self._export_backup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="从备份恢复", command=self._import_backup).pack(side=tk.LEFT, padx=5)
+
     # ── 安全设置 ────────────────────────────────────────────────
 
     def create_security_settings(self, parent):
@@ -1048,6 +1058,36 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         dir_path = filedialog.askdirectory(title="选择数据存储目录", parent=self)
         if dir_path:
             self.data_dir_var.set(dir_path)
+
+    def _export_backup(self):
+        from datetime import datetime
+        default_name = f"personaldav_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        path = filedialog.asksaveasfilename(
+            title="导出备份", defaultextension=".zip",
+            initialfile=default_name, filetypes=[("ZIP 文件", "*.zip")], parent=self)
+        if not path:
+            return
+        from utils.backup import export_backup
+        if export_backup(path):
+            messagebox.showinfo("备份成功", f"已导出到:\n{path}", parent=self)
+        else:
+            messagebox.showerror("备份失败", "导出过程中发生错误，请查看日志。", parent=self)
+
+    def _import_backup(self):
+        path = filedialog.askopenfilename(
+            title="从备份恢复", filetypes=[("ZIP 文件", "*.zip")], parent=self)
+        if not path:
+            return
+        if not messagebox.askyesno("确认恢复",
+                                    "恢复将替换当前数据库和设置，\n"
+                                    "程序需要重启才能生效。确定继续？", parent=self):
+            return
+        from utils.backup import import_backup
+        if import_backup(path):
+            messagebox.showinfo("恢复成功",
+                                "数据已恢复，请重启程序以使更改生效。", parent=self)
+        else:
+            messagebox.showerror("恢复失败", "恢复过程中发生错误，请查看日志。", parent=self)
 
     def _load_text_widget_lines(self, widget: tk.Text, raw: str):
         widget.delete("1.0", tk.END)
