@@ -4,6 +4,8 @@ import uuid
 import pytz
 import vobject
 import re
+import os
+import base64
 from datetime import datetime, timedelta
 from dateutil import parser
 from babel.dates import get_timezone_name
@@ -330,11 +332,13 @@ class EventDialog:
         self.basic_tab = ttk.Frame(self.notebook); self.notebook.add(self.basic_tab, text="基本信息")
         self.time_tab = ttk.Frame(self.notebook); self.notebook.add(self.time_tab, text="时间设置")
         self.reminder_tab = ttk.Frame(self.notebook); self.notebook.add(self.reminder_tab, text="提醒设置")
+        self.attachment_tab = ttk.Frame(self.notebook); self.notebook.add(self.attachment_tab, text="附件")
         self.advanced_tab = ttk.Frame(self.notebook); self.notebook.add(self.advanced_tab, text="高级设置")
 
         self.create_basic_tab()
         self.create_time_tab()
         self.create_reminder_tab()
+        self.create_attachment_tab()
         self.create_advanced_tab()
 
         btn_frame = ttk.Frame(main_frame)
@@ -566,6 +570,96 @@ class EventDialog:
         self.preset_allday_reminders_listbox.bind("<Double-1>", lambda e: self.apply_preset_reminder(True))
         self.load_preset_reminders()
 
+    def create_attachment_tab(self):
+        frame = ttk.LabelFrame(self.attachment_tab, text="事件附件")
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.attachments = []
+        btn_f = ttk.Frame(frame); btn_f.pack(fill=tk.X, pady=(0, 5))
+        ttk.Button(btn_f, text="添加文件", command=self._attach_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="添加链接", command=self._attach_uri).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="移除选中", command=self._attach_remove).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="打开选中", command=self._attach_open).pack(side=tk.LEFT, padx=2)
+        tree_f = ttk.Frame(frame); tree_f.pack(fill=tk.BOTH, expand=True)
+        self.attach_tree = ttk.Treeview(tree_f, columns=('filename', 'size', 'type'), show="headings", height=6)
+        self.attach_tree.heading('filename', text='文件名/链接')
+        self.attach_tree.heading('size', text='大小')
+        self.attach_tree.heading('type', text='类型')
+        self.attach_tree.column('filename', width=280); self.attach_tree.column('size', width=80, anchor='center')
+        self.attach_tree.column('type', width=120, anchor='center')
+        tv_scroll = ttk.Scrollbar(tree_f, orient="vertical", command=self.attach_tree.yview)
+        self.attach_tree.configure(yscrollcommand=tv_scroll.set)
+        self.attach_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True); tv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.attach_tree.bind("<Double-1>", lambda e: self._attach_open())
+
+    def _attach_file(self):
+        paths = filedialog.askopenfilenames(title="选择附件文件", parent=self.root)
+        for p in paths:
+            try:
+                with open(p, 'rb') as f:
+                    data = f.read()
+                name = os.path.basename(p)
+                ext = os.path.splitext(name)[1].lower()
+                fmt_map = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+                           '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.doc': 'application/msword',
+                           '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                           '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
+                fmttype = fmt_map.get(ext, 'application/octet-stream')
+                b64 = base64.b64encode(data).decode('ascii')
+                self.attachments.append({'inline': True, 'data': b64, 'filename': name,
+                                         'fmttype': fmttype, 'size': len(data)})
+                self._attach_refresh()
+            except Exception as e:
+                messagebox.showerror("错误", f"无法读取文件:\n{e}", parent=self.root)
+
+    def _attach_uri(self):
+        uri = simpledialog.askstring("添加链接", "请输入附件链接 URL:", parent=self.root)
+        if uri:
+            self.attachments.append({'inline': False, 'uri': uri, 'filename': uri,
+                                     'fmttype': 'text/uri-list', 'size': 0})
+            self._attach_refresh()
+
+    def _attach_remove(self):
+        sel = self.attach_tree.selection()
+        for item in reversed(sel):
+            idx = self.attach_tree.index(item)
+            if 0 <= idx < len(self.attachments):
+                self.attachments.pop(idx)
+        self._attach_refresh()
+
+    def _attach_open(self):
+        sel = self.attach_tree.selection()
+        if not sel: return
+        idx = self.attach_tree.index(sel[0])
+        if idx < 0 or idx >= len(self.attachments): return
+        a = self.attachments[idx]
+        if a.get('inline'):
+            ext = os.path.splitext(a['filename'])[1] or '.bin'
+            tmp = os.path.join(os.environ.get('TEMP', os.environ.get('TMP', '.')), a['filename'])
+            try:
+                with open(tmp, 'wb') as f:
+                    f.write(base64.b64decode(a['data']))
+                os.startfile(tmp)
+            except Exception as e:
+                messagebox.showerror("错误", f"无法打开附件:\n{e}", parent=self.root)
+        else:
+            import webbrowser
+            webbrowser.open(a['uri'])
+
+    def _attach_refresh(self):
+        for item in self.attach_tree.get_children():
+            self.attach_tree.delete(item)
+        for a in self.attachments:
+            name = a['filename'] if a.get('inline') else a.get('uri', '')
+            size = self._format_size(a['size']) if a.get('inline') else '链接'
+            fmt = a.get('fmttype', '')
+            self.attach_tree.insert("", tk.END, values=(name, size, fmt))
+
+    def _format_size(self, bytes_):
+        if bytes_ < 1024: return f"{bytes_} B"
+        elif bytes_ < 1024*1024: return f"{bytes_/1024:.1f} KB"
+        else: return f"{bytes_/1024/1024:.1f} MB"
+
     def create_advanced_tab(self):
         frame = ttk.LabelFrame(self.advanced_tab, text="高级设置")
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -775,6 +869,24 @@ class EventDialog:
                         except: pass
                     elif 'COUNT' in parts: self.end_cond_var.set('按次数结束'); self.end_count_var.set(parts['COUNT'])
                     else: self.end_cond_var.set('永不结束')
+                # 解析 ATTACH 附件
+                self.attachments = []
+                if 'attach' in ev.contents:
+                    for att in ev.contents['attach']:
+                        a = {'inline': False}
+                        if hasattr(att, 'encoding_param') and att.encoding_param == 'BASE64':
+                            a['inline'] = True
+                            a['data'] = att.value
+                            a['filename'] = att.params.get('FILENAME', ['attachment.bin'])[0] if hasattr(att, 'params') else 'attachment.bin'
+                            a['fmttype'] = att.params.get('FMTTYPE', ['application/octet-stream'])[0] if hasattr(att, 'params') else 'application/octet-stream'
+                            a['size'] = int(len(base64.b64decode(a['data'])) * 3 / 4) if a['data'] else 0
+                        else:
+                            a['uri'] = att.value
+                            a['filename'] = att.params.get('FILENAME', [att.value])[0] if hasattr(att, 'params') else att.value
+                            a['fmttype'] = att.params.get('FMTTYPE', ['text/uri-list'])[0] if hasattr(att, 'params') else 'text/uri-list'
+                            a['size'] = 0
+                        self.attachments.append(a)
+                self._attach_refresh()
                 self.alarms = []; valarms = ev.contents.get('valarm', [])
                 if not valarms: valarms = [c for c in ev.getChildren() if c.name.upper() == 'VALARM']
                 for alarm in valarms:
@@ -932,7 +1044,21 @@ class EventDialog:
             if 'attendee' in a: al.add('attendee').value = a['attendee']
             if 'summary' in a: al.add('summary').value = a['summary']
             if 'repeat' in a: al.add('repeat').value = str(a['repeat']); al.add('duration').value = a['duration']
-        if self.categories_var.get(): ev.add('categories').value = self.categories_var.get()
+        # 写入 ATTACH 附件
+        for a in self.attachments:
+            att = ev.add('attach')
+            if a.get('inline'):
+                att.value = a['data']
+                att.encoding_param = 'BASE64'
+                att.params['VALUE'] = ['BINARY']
+                if a.get('fmttype') and a['fmttype'] != 'application/octet-stream':
+                    att.params['FMTTYPE'] = [a['fmttype']]
+                if a.get('filename'):
+                    att.params['FILENAME'] = [a['filename']]
+            else:
+                att.value = a.get('uri', '')
+                if a.get('fmttype') and a['fmttype'] != 'text/uri-list':
+                    att.params['FMTTYPE'] = [a['fmttype']]
         ev.add('priority').value = str(self.priority_var.get()); ev.add('transp').value = self.TRANSPARENCY_MAPPING.get(self.transparency_var.get(), "OPAQUE")
         if self.organizer_var.get(): ev.add('organizer').value = str(self.organizer_var.get())
         try:
