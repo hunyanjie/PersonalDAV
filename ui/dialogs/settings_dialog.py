@@ -56,7 +56,7 @@ SIMPLE_SETTINGS = [
     SettingDef("default_force_reminder", "默认勾选强制提醒", "check", "基本设置",
                default=False, db_default="False", columnspan=2),
     SettingDef("_sep2", "", "sep", "基本设置"),
-    SettingDef("auto_start_app", "开机时自动启动程序", "check", "基本设置",
+    SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
     # ========== 安全设置 ==========
     SettingDef("rate_limit_enabled", "启用访问频率限制", "check", "安全设置", default=False, db_default="False"),

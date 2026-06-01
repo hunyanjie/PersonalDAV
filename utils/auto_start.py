@@ -1,4 +1,5 @@
 """系统自启动管理"""
+import os
 import sys
 import platform
 
@@ -30,7 +31,7 @@ def is_auto_start() -> bool:
 def _get_exe_path() -> str:
     if getattr(sys, 'frozen', False):
         return f'"{sys.executable}"'
-    return f'"{sys.executable}" "{__import__("os").path.abspath(sys.argv[0])}"'
+    return f'"{sys.executable}" "{os.path.abspath(sys.argv[0])}"'
 
 
 # ── Windows ──────────────────────────────────────────────────────
