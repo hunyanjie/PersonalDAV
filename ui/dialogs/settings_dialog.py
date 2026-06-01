@@ -474,6 +474,17 @@ class SettingsDialog(tk.Toplevel):
                        )).pack(side=tk.LEFT, padx=2)
         row += 1
 
+        # 数据存储目录
+        ttk.Separator(b_t, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=(10, 5))
+        row += 1
+        ttk.Label(b_t, text="数据存储目录（留空=程序所在目录）:").grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        dir_f = ttk.Frame(b_t)
+        dir_f.grid(row=row, column=1, sticky="w", padx=5)
+        self.data_dir_var = tk.StringVar()
+        ttk.Entry(dir_f, textvariable=self.data_dir_var, width=40).pack(side=tk.LEFT)
+        ttk.Button(dir_f, text="浏览...", command=self._browse_data_dir).pack(side=tk.LEFT, padx=5)
+        row += 1
+
         self._create_timezone_format_ui(b_t)
         self.create_preset_settings(p_t)
 
@@ -934,6 +945,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
 
+        self.data_dir_var.set(s.get_setting("data_dir", ""))
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -975,6 +988,11 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
+    def _browse_data_dir(self):
+        dir_path = filedialog.askdirectory(title="选择数据存储目录", parent=self)
+        if dir_path:
+            self.data_dir_var.set(dir_path)
+
     def _load_text_widget_lines(self, widget: tk.Text, raw: str):
         widget.delete("1.0", tk.END)
         for line in raw.replace('\r', '').split('\n'):
@@ -1010,6 +1028,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
 
+        s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
