@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox
 import queue
 from database.db_manager import Database
 import logging
+import time
+import os
 import webbrowser
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from ui.tabs.server_tab import ServerTab
@@ -44,8 +46,12 @@ class DAVServerApp:
 
         # MCP 服务器（需在 create_widgets 前初始化，因为状态栏用到它）
         self.mcp_server = MCPServer()
+        self.start_time = time.time()
 
         self.create_widgets()
+
+        # 周期性刷新状态栏（运行时长实时更新）
+        self._tick_status_bar()
 
         # 延迟执行非关键启动任务，让窗口先显示
         self.root.after_idle(self._deferred_startup)
@@ -240,13 +246,41 @@ class DAVServerApp:
             set_auto_start(False)
         self.update_status_bar()
 
+    def _get_db_size(self) -> str:
+        try:
+            db = Database()
+            size = os.path.getsize(db.db_path)
+            if size < 1024:
+                return f"{size}B"
+            elif size < 1024 * 1024:
+                return f"{size / 1024:.0f}KB"
+            else:
+                return f"{size / 1024 / 1024:.1f}MB"
+        except Exception:
+            return "?"
+
+    def _tick_status_bar(self):
+        self.update_status_bar()
+        self.root.after(10000, self._tick_status_bar)
+
+    def _format_uptime(self, start: float) -> str:
+        elapsed = int(time.time() - start)
+        h, m = divmod(elapsed, 3600)
+        m, s = divmod(m, 60)
+        if h:
+            return f"{h}h{m}m"
+        elif m:
+            return f"{m}m{s}s"
+        return f"{s}s"
+
     def update_status_bar(self, *args):
         c_count = self.contact_service.count()
         e_count = self.event_service.count()
         mcp = "MCP 运行中" if self.mcp_server.is_running else "MCP 已关闭"
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | MCP: {mcp} | 服务器: {'运行中' if self.server_tab.server_instance else '已停止'}")
-
-    def show_settings(self):
+        server = self.server_tab.server_instance
+        srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
+        db_size = self._get_db_size()
+        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}")
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
 
