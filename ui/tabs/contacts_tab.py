@@ -15,13 +15,14 @@ import os
 
 class ContactsTab(BaseTreeTab):
     """联系人管理标签页"""
-    COLUMNS = ("selected", "uid", "name", "email", "phone", "created_at", "updated_at")
+    COLUMNS = ("selected", "uid", "name", "email", "phone", "groups", "created_at", "updated_at")
     HEADINGS = {
         "selected": "✓",
         "uid": "ID",
         "name": "姓名",
         "email": "邮箱",
         "phone": "电话",
+        "groups": "分组",
         "created_at": "添加时间",
         "updated_at": "修改时间"
     }
@@ -40,12 +41,22 @@ class ContactsTab(BaseTreeTab):
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.refresh_contacts)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 100, "name": 150, "email": 200, "phone": 150, "created_at": 160, "updated_at": 160}
+        widths = {"selected": 30, "uid": 100, "name": 150, "email": 200, "phone": 150, "groups": 120, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
         # 搜索栏 (放在列表框架上方)
         self.setup_search_ui(self)
+
+        # 分组筛选
+        filter_frame = ttk.Frame(self)
+        filter_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        ttk.Label(filter_frame, text="分组筛选:").pack(side=tk.LEFT, padx=(0, 5))
+        self._group_filter_var = tk.StringVar(value="全部")
+        self._group_filter_combo = ttk.Combobox(filter_frame, textvariable=self._group_filter_var,
+                                                  values=["全部"], state="readonly", width=18)
+        self._group_filter_combo.pack(side=tk.LEFT)
+        self._group_filter_var.trace("w", lambda *a: self._apply_group_filter())
 
         # 列表框架
         list_frame = ttk.LabelFrame(self, text="联系人列表")
@@ -90,24 +101,43 @@ class ContactsTab(BaseTreeTab):
         """刷新联系人列表"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         self._all_data = self.db.get_list_data()
+        self._update_group_filter()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
+
+    def _update_group_filter(self):
+        groups = set()
+        for c in self._all_data:
+            uid, name, emails, phones, gs, created_at, updated_at = c
+            if gs:
+                for g in gs.split(';'):
+                    if g.strip():
+                        groups.add(g.strip())
+        all_vals = ["全部"] + sorted(groups)
+        self._group_filter_combo['values'] = all_vals
+        if self._group_filter_var.get() not in all_vals:
+            self._group_filter_var.set("全部")
+
+    def _apply_group_filter(self):
+        query = getattr(self, 'search_var', None) and self.search_var.get().lower() or ""
+        self.apply_filter(query)
 
     def apply_filter(self, query):
         """执行过滤显示"""
         selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
         for item in self.tree.get_children(): self.tree.delete(item)
 
+        selected_group = self._group_filter_var.get()
         for contact in self._all_data:
-            uid, name, emails, phones, created_at, updated_at = contact
+            uid, name, emails, phones, gs, created_at, updated_at = contact
             match = not query or any(query in str(v).lower() for v in contact)
             
-            if match:
+            if match and (selected_group == "全部" or (gs and selected_group in gs.split(';'))):
                 sel = "✓" if uid in selected_uids else " "
                 disp_emails = emails.replace(";", "; ") if emails else ""
                 disp_phones = phones.replace(";", "; ") if phones else ""
 
-                item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones, created_at, updated_at))
+                item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones, gs, created_at, updated_at))
                 if sel == "✓": self.tree.selection_add(item_id)
 
     def add_contact(self):

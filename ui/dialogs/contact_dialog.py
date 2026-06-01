@@ -98,16 +98,23 @@ class ContactDialog(tk.Toplevel):
         ttk.Button(b_f, text="选择", width=6, command=self.pick_date).pack(side=tk.LEFT, padx=5)
         ttk.Button(b_f, text="清除", width=6, command=lambda: self.birthday_var.set("")).pack(side=tk.LEFT)
 
+        # 分组
+        ttk.Label(f, text="分组:").grid(row=12, column=0, sticky="w", pady=3)
+        self.groups_entry = ttk.Entry(f, width=40, exportselection=False)
+        self.groups_entry.grid(row=12, column=1, columnspan=3, pady=3, sticky="we")
+        EnhancedTooltip(self.groups_entry, "多个分组请用分号(;)分隔")
+        RightClickMenu(self.groups_entry)
+
         # 备注
-        ttk.Label(f, text="备注:").grid(row=12, column=0, sticky="nw", pady=3)
-        self.note_text = tk.Text(f, height=4, width=40, exportselection=False); self.note_text.grid(row=12, column=1, columnspan=3, pady=3, sticky="nsew")
+        ttk.Label(f, text="备注:").grid(row=13, column=0, sticky="nw", pady=3)
+        self.note_text = tk.Text(f, height=4, width=40, exportselection=False); self.note_text.grid(row=13, column=1, columnspan=3, pady=3, sticky="nsew")
         RightClickMenu(self.note_text, "text")
 
         # 其他 vCard 字段
-        sep = ttk.Separator(f, orient='horizontal'); sep.grid(row=13, column=0, columnspan=4, sticky='ew', pady=10)
-        ttk.Label(f, text="其他 vCard 字段:").grid(row=14, column=0, sticky="nw", pady=3)
+        sep = ttk.Separator(f, orient='horizontal'); sep.grid(row=14, column=0, columnspan=4, sticky='ew', pady=10)
+        ttk.Label(f, text="其他 vCard 字段:").grid(row=15, column=0, sticky="nw", pady=3)
         other_frame = ttk.Frame(f)
-        other_frame.grid(row=14, column=1, columnspan=3, sticky="nsew", pady=3)
+        other_frame.grid(row=15, column=1, columnspan=3, sticky="nsew", pady=3)
         form_f = ttk.Frame(other_frame); form_f.pack(fill=tk.X)
         ttk.Label(form_f, text="键:").pack(side=tk.LEFT)
         self.other_key_var = tk.StringVar()
@@ -130,7 +137,7 @@ class ContactDialog(tk.Toplevel):
         self.other_tree.bind("<Button-3>", self._other_popup)
         # 头像
         photo_f = ttk.LabelFrame(f, text="头像", width=180)
-        photo_f.grid(row=0, column=4, rowspan=12, padx=(10, 0), pady=3, sticky="n")
+        photo_f.grid(row=0, column=4, rowspan=13, padx=(10, 0), pady=3, sticky="n")
         photo_f.grid_propagate(False)
         self.photo_preview = ttk.Label(photo_f, text="无头像", anchor=tk.CENTER)
         self.photo_preview.pack(padx=5, pady=(10, 5))
@@ -140,7 +147,7 @@ class ContactDialog(tk.Toplevel):
         ttk.Button(photo_f, text="清除照片", command=self._clear_photo).pack(pady=2)
         ttk.Label(photo_f, text="支持 JPG/PNG，自动缩放", foreground="gray", wraplength=150).pack(pady=(5, 0))
 
-        f.grid_rowconfigure(14, weight=1); f.grid_columnconfigure(1, weight=1)
+        f.grid_rowconfigure(15, weight=1); f.grid_columnconfigure(1, weight=1)
 
         btn_f = ttk.Frame(self); btn_f.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
         ttk.Button(btn_f, text="确定", command=self.ok).pack(side=tk.RIGHT, padx=5)
@@ -239,6 +246,12 @@ class ContactDialog(tk.Toplevel):
                     self.note_text.insert("1.0", child.value)
                 elif name == 'BDAY':
                     self.birthday_var.set(child.value)
+                elif name == 'CATEGORIES':
+                    val = child.value
+                    if isinstance(val, list):
+                        self.groups_entry.insert(0, ";".join(val))
+                    else:
+                        self.groups_entry.insert(0, val.replace(',', ';'))
                 elif name not in standard:
                     self.other_fields.append({"key": name, "value": child.value})
 
@@ -386,6 +399,10 @@ class ContactDialog(tk.Toplevel):
             v.add('note').value = self.note_text.get("1.0", "end-1c").strip()
         # 生日
         if self.birthday_var.get(): v.add('bday').value = self.birthday_var.get()
+        # 分组
+        if self.groups_entry.get():
+            cats = [g.strip() for g in self.groups_entry.get().split(';') if g.strip()]
+            v.add('categories').value = cats
         
         # 照片
         if self._photo_bytes:
