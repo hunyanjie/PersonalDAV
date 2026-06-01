@@ -1,4 +1,4 @@
-name: Package and Release
+name: CI
 
 on:
   push:
@@ -6,57 +6,63 @@ on:
       - master
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  test:
     runs-on: windows-latest
-
     steps:
     - uses: actions/checkout@v4
-
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
         cache: 'pip'
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+    - name: Run all tests
+      run: python tests/run_all.py
 
+  build:
+    needs: test
+    if: github.ref_type == 'tag'
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip'
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
         pip install pyinstaller
-
     - name: Install UPX
       uses: crazy-max/ghaction-upx@v3
       with:
         install-only: true
-
     - name: Set version
       shell: pwsh
       run: |
-        if ("${{ github.ref_type }}" -eq "tag") {
-          $v = "${{ github.ref_name }}".Substring(1)
-        } else {
-          $v = "${{ github.sha }}".Substring(0, 7)
-        }
+        $v = "${{ github.ref_name }}".Substring(1)
         echo "VERSION=$v" >> $env:GITHUB_ENV
-
     - name: Package to EXE
       shell: pwsh
       run: |
         $tkdnd = & python -c "import tkinterdnd2,os;print(os.path.join(os.path.dirname(tkinterdnd2.__file__),'tkdnd','win-x64'))"
         & pyinstaller --onefile --clean -w --name "PersonalDAV-$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --hidden-import tkinterdnd2 main.py
-
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: PersonalDAV-${{ env.VERSION }}.exe
         path: dist/PersonalDAV-${{ env.VERSION }}.exe
-
     - name: Create Release
-      if: github.ref_type == 'tag'
       uses: softprops/action-gh-release@v2
       with:
         name: PersonalDAV v${{ env.VERSION }}
