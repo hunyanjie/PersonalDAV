@@ -5,7 +5,7 @@ from tkinterdnd2 import TkinterDnD
 from ui.app import DAVServerApp
 
 def main():
-    parser = argparse.ArgumentParser(description="PrivateDAV - 私人 CardDAV/CalDAV 服务")
+    parser = argparse.ArgumentParser(description="PersonalDAV - 全能 DAV 服务 (CardDAV + CalDAV + WebDAV)")
     parser.add_argument("--port", "-p", type=int, default=None, help="WebDAV 服务器端口号")
     parser.add_argument("--db-path", type=str, default=None, help="数据库文件路径（优先级最高）")
     parser.add_argument("--data-dir", type=str, default=None, help="数据存储目录（与 --db-path 冲突时 --db-path 优先）")
