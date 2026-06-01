@@ -20,10 +20,13 @@ import urllib.request
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION, DEFAULT_DB_PATH
 from services.contact_service import ContactService
 from services.event_service import EventService
+from services.auth_service import AuthService
 from network.dav_server import DAVServer
 from utils.logger import logger
 
@@ -81,6 +84,20 @@ class MCPServer:
         import uvicorn
         logger.info(f"MCP 服务器正在启动，监听 {host}:{port}")
         app = self._mcp.sse_app()
+
+        class MCPAuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                if request.url.path in ('/sse', '/messages/'):
+                    svc = AuthService()
+                    if svc.is_enabled():
+                        auth = request.headers.get('authorization', '')
+                        if not auth.startswith('Bearer '):
+                            return JSONResponse({"error": "missing token"}, status_code=401)
+                        if not svc.verify_mcp_token(auth[7:]):
+                            return JSONResponse({"error": "invalid token"}, status_code=401)
+                return await call_next(request)
+
+        app.add_middleware(MCPAuthMiddleware)
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         self._uvicorn_server = uvicorn.Server(config)
         self._thread = threading.Thread(target=self._uvicorn_server.run, daemon=True)

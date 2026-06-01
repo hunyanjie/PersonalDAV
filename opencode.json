@@ -4,8 +4,10 @@
     "personal-dav": {
       "type": "remote",
       "url": "http://127.0.0.1:8100/sse",
-      "enabled": true,
-      "description": "PersonalDAV MCP 服务（需先在设置中启用并启动程序）"
+      "headers": {
+        "Authorization": "Bearer ${PERSONALDAV_MCP_TOKEN}"
+      },
+      "enabled": true
     }
   }
 }

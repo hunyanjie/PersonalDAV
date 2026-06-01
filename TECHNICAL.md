@@ -643,6 +643,10 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 支持 `Depth: 0`（仅自身）和 `Depth: 1`（含子资源）。
 
+### 鉴权
+
+启用密码后，所有请求需携带 `Authorization: Basic base64(user:password)` 头。`_check_auth()` 在每 个 `do_*` 方法开头调用，未鉴权返回 401 + `WWW-Authenticate` 头。
+
 ### ETag
 
 通过 `BaseService.get_etag(uid)` 计算：
@@ -656,6 +660,37 @@ def get_etag(self, uid: str) -> str | None:
 ```
 
 在 `GET` / `HEAD` / `PUT` / `POST` 响应中返回 `ETag` 头，支持客户端条件请求。
+
+---
+
+## 统一鉴权系统（services/auth_service.py）
+
+### 设计目的
+
+统一密码管理，一个密码同时保护 WebDAV、MCP 等所有服务。密码通过 PBKDF2-HMAC-SHA256（600,000 轮）加盐哈希后存储。
+
+### 存储
+
+| 设置键 | 格式 | 示例 |
+|--------|------|------|
+| `access_password_hash` | `salt$hash` | `a1b2c3...$e4f5g6...` |
+
+空值 = 未设置密码（鉴权关闭）。
+
+### MCP 令牌
+
+令牌通过 `sha256("mcp:" + stored_hash)` 派生，确定性生成。更改密码自动刷新令牌。
+
+### 协议适配表
+
+| 服务 | 认证方式 | 凭证来源 |
+|------|---------|----------|
+| WebDAV (HTTP) | `Basic Auth` | 任意用户名 + 密码 |
+| MCP (SSE) | `Bearer Token` | 从设置页复制 |
+
+### 扩展指南
+
+添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。
 
 ---
 

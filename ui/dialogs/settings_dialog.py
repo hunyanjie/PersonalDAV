@@ -8,6 +8,7 @@ from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert
 from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
+from services.auth_service import AuthService
 import json
 from datetime import datetime, timedelta
 
@@ -80,11 +81,13 @@ class SettingsDialog(tk.Toplevel):
         server_frame = ttk.Frame(notebook); notebook.add(server_frame, text="服务器设置")
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
+        security_frame = ttk.Frame(notebook); notebook.add(security_frame, text="安全设置")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
+        self.create_security_settings(security_frame)
         self.create_mcp_settings(mcp_frame)
 
         btn_frame = ttk.Frame(main_frame)
@@ -217,6 +220,122 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
         ssl_f.grid_columnconfigure(1, weight=1)
+
+    # ── 安全设置 ────────────────────────────────────────────────
+
+    def create_security_settings(self, parent):
+        pw_f = ttk.LabelFrame(parent, text="访问密码")
+        pw_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
+        self._auth_status_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+
+        ttk.Button(pw_f, text="设置密码", command=self._set_password).grid(row=1, column=0, padx=5, pady=5)
+        ttk.Button(pw_f, text="更改密码", command=self._change_password).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(pw_f, text="清除密码", command=self._clear_password).grid(row=1, column=2, padx=5, pady=5)
+
+        ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
+                  foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
+
+        token_f = ttk.LabelFrame(parent, text="MCP 令牌（AI 连接用）")
+        token_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self._mcp_token_var = tk.StringVar()
+        token_entry = ttk.Entry(token_f, textvariable=self._mcp_token_var, state="readonly", width=70)
+        token_entry.pack(fill=tk.X, padx=5, pady=5)
+
+        btn_f = ttk.Frame(token_f)
+        btn_f.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token).pack(side=tk.LEFT, padx=2)
+        ttk.Label(btn_f, text="  设置密码后令牌自动生成，更改密码会刷新令牌。",
+                  foreground="gray").pack(side=tk.LEFT)
+
+        self._refresh_auth_ui()
+
+    def _refresh_auth_ui(self):
+        svc = AuthService()
+        enabled = svc.is_enabled()
+        self._auth_status_label.config(
+            text=f"访问密码: {'已设置' if enabled else '未设置'}",
+            foreground="green" if enabled else "orange"
+        )
+        self._mcp_token_var.set(svc.get_mcp_token() if enabled else "(未设置密码)")
+
+    def _set_password(self):
+        self._password_dialog(change=False)
+
+    def _change_password(self):
+        if not AuthService().is_enabled():
+            messagebox.showinfo("提示", "当前未设置密码，请使用「设置密码」", parent=self)
+            return
+        self._password_dialog(change=True)
+
+    def _password_dialog(self, change=False):
+        dialog = tk.Toplevel(self)
+        dialog.title("更改密码" if change else "设置密码")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("400x200")
+
+        row = 0
+        if change:
+            ttk.Label(dialog, text="当前密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+            old_var = tk.StringVar()
+            ttk.Entry(dialog, textvariable=old_var, show="*", width=30).grid(row=row, column=1, padx=5)
+            row += 1
+
+        ttk.Label(dialog, text="新密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        new_var = tk.StringVar()
+        new_entry = ttk.Entry(dialog, textvariable=new_var, show="*", width=30)
+        new_entry.grid(row=row, column=1, padx=5)
+        row += 1
+
+        ttk.Label(dialog, text="确认密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        confirm_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=confirm_var, show="*", width=30).grid(row=row, column=1, padx=5)
+        row += 1
+
+        def do_save():
+            if change and not AuthService().verify_password(old_var.get()):
+                messagebox.showerror("错误", "当前密码不正确", parent=dialog)
+                return
+            if not new_var.get():
+                messagebox.showerror("错误", "密码不能为空", parent=dialog)
+                return
+            if new_var.get() != confirm_var.get():
+                messagebox.showerror("错误", "两次密码不一致", parent=dialog)
+                return
+            AuthService().set_password(new_var.get())
+            self._refresh_auth_ui()
+            dialog.destroy()
+            messagebox.showinfo("成功", "密码已更新", parent=self)
+
+        btn_f = ttk.Frame(dialog)
+        btn_f.grid(row=row, column=0, columnspan=2, pady=15)
+        ttk.Button(btn_f, text="确定", command=do_save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    def _clear_password(self):
+        if not AuthService().is_enabled():
+            return
+        if not messagebox.askyesno("确认清除", "清除后所有服务将不再需要密码验证，确定吗？", parent=self):
+            return
+        AuthService().clear_password()
+        self._refresh_auth_ui()
+        messagebox.showinfo("成功", "密码已清除", parent=self)
+
+    def _copy_mcp_token(self):
+        token = AuthService().get_mcp_token()
+        if not token:
+            messagebox.showinfo("提示", "请先设置密码", parent=self)
+            return
+        try:
+            dialog.focus_get()
+        except:
+            pass
+        self.clipboard_clear()
+        self.clipboard_append(token)
+        messagebox.showinfo("已复制", "MCP 令牌已复制到剪贴板", parent=self)
 
     # ── MCP 服务设置 ────────────────────────────────────────────
 
