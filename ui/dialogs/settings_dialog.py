@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog
 import os
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
+from ui.widgets.collapsible_frame import CollapsibleFrame
 from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
@@ -207,35 +208,36 @@ class SettingsDialog(tk.Toplevel):
         f.pack(fill=tk.X, padx=5, pady=5)
         self._build_simple(f, "服务器控制")
 
-        ssl_f = ttk.LabelFrame(parent, text="SSL/TLS 设置")
-        ssl_f.pack(fill=tk.X, padx=5, pady=5)
+        ssl_f = CollapsibleFrame(parent, text="SSL/TLS 设置", expanded=False)
+        ssl_f.pack(fill=tk.X, padx=5, pady=2)
+        body = ssl_f.body
 
         self.ssl_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(ssl_f, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
+        ttk.Checkbutton(body, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
             row=0, column=0, columnspan=4, sticky="w", padx=5, pady=5)
 
-        ttk.Label(ssl_f, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
         self.ssl_cert_var = tk.StringVar()
-        ttk.Entry(ssl_f, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(ssl_f, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
 
-        ttk.Label(ssl_f, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
         self.ssl_key_var = tk.StringVar()
-        ttk.Entry(ssl_f, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(ssl_f, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
 
-        btn_f = ttk.Frame(ssl_f)
+        btn_f = ttk.Frame(body)
         btn_f.grid(row=3, column=0, columnspan=4, pady=5)
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
-        ssl_f.grid_columnconfigure(1, weight=1)
+        body.grid_columnconfigure(1, weight=1)
 
         # 备份与恢复
-        bk_f = ttk.LabelFrame(parent, text="备份与恢复")
-        bk_f.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Label(bk_f, text="备份包含数据库、设置及日志文件。恢复将关闭当前数据库并替换。",
+        bk_f = CollapsibleFrame(parent, text="备份与恢复")
+        bk_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(bk_f.body, text="备份包含数据库、设置及日志文件。恢复将关闭当前数据库并替换。",
                   foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=2)
-        btn_f = ttk.Frame(bk_f)
+        btn_f = ttk.Frame(bk_f.body)
         btn_f.pack(pady=5)
         ttk.Button(btn_f, text="导出备份 (.zip)", command=self._export_backup).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="从备份恢复", command=self._import_backup).pack(side=tk.LEFT, padx=5)
