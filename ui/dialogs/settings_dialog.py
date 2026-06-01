@@ -369,13 +369,29 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
     def _clear_password(self):
-        if not AuthService().is_enabled():
+        svc = AuthService()
+        if not svc.is_enabled():
             return
-        if not messagebox.askyesno("确认清除", "清除后所有服务将不再需要密码验证，确定吗？", parent=self):
-            return
-        AuthService().clear_password()
-        self._refresh_auth_ui()
-        messagebox.showinfo("成功", "密码已清除", parent=self)
+        dialog = tk.Toplevel(self)
+        dialog.title("清除密码")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("350x120")
+        ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
+        pw_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=5)
+        def do_clear():
+            if not svc.verify_password(pw_var.get()):
+                messagebox.showerror("错误", "密码不正确", parent=dialog)
+                return
+            dialog.destroy()
+            svc.clear_password()
+            self._refresh_auth_ui()
+            messagebox.showinfo("成功", "密码已清除", parent=self)
+        btn_f = ttk.Frame(dialog)
+        btn_f.pack(pady=10)
+        ttk.Button(btn_f, text="确定清除", command=do_clear).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
     def _copy_mcp_token(self):
         token = AuthService().get_mcp_token()
