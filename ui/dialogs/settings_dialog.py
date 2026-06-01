@@ -27,6 +27,7 @@ SIMPLE_SETTINGS = [
     # ========== MCP 设置 ==========
     SettingDef("mcp_enabled", "启用 MCP 服务", "check", "MCP 服务", default=False, db_default="False"),
     SettingDef("mcp_port", "MCP 服务端口:", "entry", "MCP 服务", default="8100", width=10),
+    SettingDef("mcp_readonly", "只读模式（禁止写操作）", "check", "MCP 服务", default=False, db_default="False"),
 
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
