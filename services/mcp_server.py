@@ -89,12 +89,24 @@ class MCPServer:
             async def dispatch(self, request, call_next):
                 if request.url.path in ('/sse', '/messages/'):
                     svc = AuthService()
-                    if svc.is_enabled():
-                        auth = request.headers.get('authorization', '')
-                        if not auth.startswith('Bearer '):
-                            return JSONResponse({"error": "missing token"}, status_code=401)
-                        if not svc.verify_mcp_token(auth[7:]):
-                            return JSONResponse({"error": "invalid token"}, status_code=401)
+                    client_ip = request.client.host if request.client else "unknown"
+
+                    if not svc.check_ip(client_ip):
+                        svc.log_auth(False, client_ip, "MCP", "IP被拒绝")
+                        return JSONResponse({"error": "forbidden"}, status_code=403)
+
+                    if not svc.is_enabled():
+                        return await call_next(request)
+
+                    auth = request.headers.get('authorization', '')
+                    if not auth.startswith('Bearer '):
+                        svc.log_auth(False, client_ip, "MCP", "无令牌")
+                        return JSONResponse({"error": "missing token"}, status_code=401)
+                    if not svc.verify_mcp_token(auth[7:]):
+                        svc.log_auth(False, client_ip, "MCP", "令牌无效")
+                        return JSONResponse({"error": "invalid token"}, status_code=401)
+
+                    svc.log_auth(True, client_ip, "MCP", "")
                 return await call_next(request)
 
         app.add_middleware(MCPAuthMiddleware)

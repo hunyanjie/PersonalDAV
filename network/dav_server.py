@@ -23,21 +23,35 @@ class DAVHandler(BaseHTTPRequestHandler):
     def _check_auth(self) -> bool:
         from services.auth_service import AuthService
         svc = AuthService()
+        client_ip = self.client_address[0]
+        ua = self.headers.get('User-Agent', '')
+
+        if not svc.check_ip(client_ip):
+            svc.log_auth(False, client_ip, "WebDAV", f"IP被拒绝 UA={ua}")
+            self._send_401()
+            return False
+
         if not svc.is_enabled():
             return True
+
         auth = self.headers.get('Authorization', '')
         if not auth.startswith('Basic '):
+            svc.log_auth(False, client_ip, "WebDAV", f"无凭证 UA={ua}")
             self._send_401()
             return False
         try:
             decoded = base64.b64decode(auth[6:]).decode('utf-8')
             _, password = decoded.split(':', 1)
         except Exception:
+            svc.log_auth(False, client_ip, "WebDAV", f"凭证格式错误 UA={ua}")
             self._send_401()
             return False
         if not svc.verify_password(password):
+            svc.log_auth(False, client_ip, "WebDAV", f"密码错误 UA={ua}")
             self._send_401()
             return False
+
+        svc.log_auth(True, client_ip, "WebDAV", f"UA={ua}")
         return True
 
     def _send_401(self):

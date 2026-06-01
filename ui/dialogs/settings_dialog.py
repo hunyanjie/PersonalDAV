@@ -250,6 +250,22 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(btn_f, text="  设置密码后令牌自动生成，更改密码会刷新令牌。",
                   foreground="gray").pack(side=tk.LEFT)
 
+        ip_f = ttk.LabelFrame(parent, text="IP 访问控制（留空 = 不限制）")
+        ip_f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(ip_f, text="白名单（每行一个 IP / CIDR / 通配符）:",
+                  foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
+        self._ip_whitelist_text = tk.Text(ip_f, height=3, width=60)
+        self._ip_whitelist_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+
+        ttk.Label(ip_f, text="黑名单（每行一个 IP / CIDR / 通配符）:",
+                  foreground="gray").grid(row=2, column=0, sticky="w", padx=5, pady=(5, 0))
+        self._ip_blacklist_text = tk.Text(ip_f, height=3, width=60)
+        self._ip_blacklist_text.grid(row=3, column=0, padx=5, pady=2, sticky="ew")
+
+        ttk.Label(ip_f, text="示例: 127.0.0.1 | 192.168.1.0/24 | 10.0.* | 白名单非空时只允许白名单 IP 访问",
+                  foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
+
         self._refresh_auth_ui()
 
     def _refresh_auth_ui(self):
@@ -876,6 +892,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
 
+        self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
+        self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -910,7 +929,15 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
 
+        self._ip_whitelist_text.delete("1.0", tk.END)
+        self._ip_blacklist_text.delete("1.0", tk.END)
+
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
+
+    def _load_text_widget_lines(self, widget: tk.Text, raw: str):
+        widget.delete("1.0", tk.END)
+        for line in raw.replace('\r', '').split('\n'):
+            widget.insert(tk.END, line + '\n')
 
     # ── 保存 ────────────────────────────────────────────────────
 
@@ -941,6 +968,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_enabled", str(new_ssl))
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
+
+        s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
+        s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
