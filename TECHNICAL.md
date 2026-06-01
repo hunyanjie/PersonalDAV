@@ -41,6 +41,7 @@ PersonalDAV/
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
 │   ├── settings_service.py    # SettingsService 单例
+│   ├── auth_service.py        # AuthService 统一鉴权（密码/IP控制/日志）
 │   └── mcp_server.py          # MCPServer（MCP SSE 协议服务器）
 ├── network/                   # 网络层
 │   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV 端点）
@@ -505,6 +506,12 @@ def get_column_width(self, col): ... # 自定义列宽
 | event_dialog 常量全部抽离到 models/constants.py | 消除 settings_dialog 对 EventDialog 的导入依赖，SRP 更清晰 |
 | ETag 通过 `hashlib.md5(raw)` 实时计算 | 无状态、零存储开销，内容变更 ETag 自然失效 |
 | `Database.reset()` 类方法 | 仅在测试中重置单例，允许测试使用 `:memory:` 数据库 |
+| 密码存储 PBKDF2-HMAC-SHA256 + 盐 | 纯 hashlib + secrets，零外部依赖 |
+| MCP 令牌 `sha256("mcp:" + stored_hash)` 确定性派生 | 改密码自动刷新令牌，无需手动重置 opencode.json |
+| IP 黑白名单白名单优先 + CIDR/通配符 | 非空时严格白名单模式，兼容子网和通配需求 |
+| `ip_bypasses_auth()` 本机默认免密 + bypass_localhost 开关 | 开发调试体验友好，生产环境可关闭 |
+| `log_auth()` 统一入口 | 集中记录鉴权事件，后续可扩展浏览器指纹等字段 |
+| EnhancedTooltip.text 直接赋值可动态切换 | 无需销毁重建，适合状态驱动的提示场景 |
 
 ---
 
@@ -645,7 +652,14 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 ### 鉴权
 
-启用密码后，所有请求需携带 `Authorization: Basic base64(user:password)` 头。`_check_auth()` 在每 个 `do_*` 方法开头调用，未鉴权返回 401 + `WWW-Authenticate` 头。
+`_check_auth()` 在每个 `do_*` 方法开头调用，处理流程（按顺序）：
+
+1. **IP 访问控制** — 调用 `AuthService().check_ip(client_ip)`，被拒绝时 `log_auth()` 记录并返回 403
+2. **密码开关** — 未设密码直接放行
+3. **免密码 IP** — 调用 `AuthService().ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
+4. **Basic Auth 校验** — 解析 `Authorization` 头，密码错误/格式错误/缺失均返回 401 + `WWW-Authenticate` 头
+
+每次鉴权结果（成功/失败/拒绝/免密）均通过 `log_auth()` 记录，含客户端 IP 和 User-Agent。
 
 ### ETag
 
@@ -681,6 +695,42 @@ def get_etag(self, uid: str) -> str | None:
 
 令牌通过 `sha256("mcp:" + stored_hash)` 派生，确定性生成。更改密码自动刷新令牌。
 
+### IP 访问控制
+
+| 设置键 | 作用 | 规则 |
+|--------|------|------|
+| `ip_whitelist` | 白名单 | 非空时仅允许名单内 IP，其余 403 |
+| `ip_blacklist` | 黑名单 | 白名单通过后再检查，命中则 403 |
+| `bypass_localhost` | 本机免密开关 | `"True"`/`"False"`，默认开启 |
+| `ip_bypass_auth` | 自定义免密码 IP | 这些 IP 访问时不需密码验证 |
+
+IP 匹配支持三种格式：
+- **精确 IP** — `192.168.1.1`
+- **CIDR** — `192.168.1.0/24`
+- **通配符** — `192.168.*`
+
+### 鉴权日志
+
+所有鉴权事件通过 `AuthService.log_auth(success, client_ip, method, extra)` 统一记录：
+
+| 参数 | 示例 | 说明 |
+|------|------|------|
+| `success` | `True` / `False` | 登录成功或失败 |
+| `client_ip` | `192.168.1.100` | 客户端 IP，可溯源 |
+| `method` | `"WebDAV"` / `"MCP"` | 协议标识 |
+| `extra` | `"UA=Mozilla..."` 或 `"免密 IP"` | 附加信息 |
+
+成功事件写 `logger.info()`，失败事件写 `logger.warning()`。
+
+### 免密码 IP
+
+`ip_bypasses_auth(client_ip)` 检测流程：
+1. `bypass_localhost=True` 且为本机（`127.0.0.1` / `::1` / `localhost`）→ 免密
+2. `ip_bypass_auth` 列表中有匹配 → 免密
+3. 否则需要密码
+
+WebDAV `_check_auth()` 和 MCP 中间件均在密码/令牌校验前调用此方法，命中则直接放行并记录 `"免密 IP"`。
+
 ### 协议适配表
 
 | 服务 | 认证方式 | 凭证来源 |
@@ -690,7 +740,7 @@ def get_etag(self, uid: str) -> str | None:
 
 ### 扩展指南
 
-添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。
+添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。如需 IP 控制，在请求入口处依次调用 `check_ip(client_ip)` → `ip_bypasses_auth(client_ip)` → `verify_*()` → `log_auth()`。
 
 ---
 
@@ -748,6 +798,18 @@ class MCPServer:
 | `dav_health_check(base_url)` | 系统 | OPTIONS + PROPFIND + GET 端点验证 |
 
 所有写入操作使用 `publish=False`（不触发 tkinter 事件循环），GUI 通过标签切换自动刷新。
+
+### 鉴权中间件
+
+MCP 服务器通过 Starlette `BaseHTTPMiddleware` 添加 `MCPAuthMiddleware`，处理流程：
+
+1. **IP 访问控制** — `check_ip(client_ip)`，拒绝时返回 403 + 记录日志
+2. **密码开关** — 未设密码直接放行
+3. **免密码 IP** — `ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
+4. **Bearer Token 校验** — 解析 `Authorization` 头，缺失返回 401，无效返回 401 + 分别记录失败日志
+5. **成功** — 记录 `log_auth(True, ...)`
+
+所有鉴权事件（成功/失败/拒绝/免密）统一通过 `AuthService.log_auth()` 写入日志。
 
 ### 集成方式
 
@@ -841,6 +903,11 @@ EnhancedTooltip(widget, "提示文字",
 | ContactDialog | 姓名* | "必填。联系人显示名称" |
 | ContactDialog | 邮箱 | "多个邮箱请用分号(;)分隔" |
 | ContactDialog | 电话 | "多个电话请用分号(;)分隔" |
+| SettingsDialog | 复制令牌 | 未设密码: "请先设置密码以生成令牌" / 已设密码: "复制令牌到剪贴板"（动态切换） |
+
+### 动态文本更新
+
+`EnhancedTooltip.text` 属性可直接赋值，无需重建 tooltip 对象。`_refresh_auth_ui()` 中根据密码状态切换提示文本。
 
 ---
 
