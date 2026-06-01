@@ -88,6 +88,9 @@ class _AuthASGIMiddleware:
             svc.log_auth(False, client_ip, "MCP", "IP被拒绝")
             return await _send_json(send, 403, {"error": "forbidden"})
 
+        if not svc.check_rate_limit(client_ip):
+            return await _send_json(send, 429, {"error": "too many requests"})
+
         if not svc.is_enabled():
             await self.app(scope, receive, send)
             return

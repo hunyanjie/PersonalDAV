@@ -31,6 +31,13 @@ class DAVHandler(BaseHTTPRequestHandler):
             self._send_401()
             return False
 
+        if not svc.check_rate_limit(client_ip):
+            self.send_response(429)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"Too Many Requests")
+            return False
+
         if not svc.is_enabled():
             return True
 

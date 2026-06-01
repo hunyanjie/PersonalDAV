@@ -58,6 +58,9 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "基本设置",
                default=False, db_default="False"),
+    # ========== 安全设置 ==========
+    SettingDef("rate_limit_enabled", "启用访问频率限制", "check", "安全设置", default=False, db_default="False"),
+    SettingDef("rate_limit_max", "每分钟最大请求数:", "entry", "安全设置", default="60", width=10),
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
                default="当前时间", db_default="current",
                options=["当前时间", "5整数倍", "10整数倍", "15整数倍", "30整数倍"],
@@ -284,6 +287,19 @@ class SettingsDialog(tk.Toplevel):
                   foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
         self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
         self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+
+        rate_f = ttk.LabelFrame(parent, text="访问频率限制")
+        rate_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self.rate_limit_enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(rate_f, text="启用访问频率限制",
+                        variable=self.rate_limit_enabled_var).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+
+        ttk.Label(rate_f, text="每分钟最大请求数:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.rate_limit_max_var = tk.StringVar(value="60")
+        ttk.Entry(rate_f, textvariable=self.rate_limit_max_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=2)
+        ttk.Label(rate_f, text="超过限制的请求将被返回 429 Too Many Requests",
+                  foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
         self._refresh_auth_ui()
 

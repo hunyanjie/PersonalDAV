@@ -3,6 +3,7 @@ import secrets
 import ipaddress
 from services.settings_service import SettingsService
 from utils.logger import logger
+from utils.rate_limiter import get_rate_limiter
 
 
 class AuthService:
@@ -115,6 +116,26 @@ class AuthService:
                 return False
 
         return True
+
+    # ── 访问频率限制 ──────────────────────────────────────────
+
+    def is_rate_limit_enabled(self) -> bool:
+        return SettingsService().get_setting("rate_limit_enabled", "False") == "True"
+
+    def get_rate_limit_max(self) -> int:
+        try:
+            return int(SettingsService().get_setting("rate_limit_max", "60"))
+        except (ValueError, TypeError):
+            return 60
+
+    def check_rate_limit(self, client_ip: str) -> bool:
+        if not self.is_rate_limit_enabled():
+            return True
+        max_req = self.get_rate_limit_max()
+        allowed = get_rate_limiter().check(client_ip, max_requests=max_req, window_seconds=60)
+        if not allowed:
+            logger.warning(f"[{client_ip}] 频率限制已触发 ({max_req}/分钟)")
+        return allowed
 
     # ── 鉴权日志（统一入口，后续可扩展 UA、浏览器指纹等） ──────
 
