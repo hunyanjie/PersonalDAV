@@ -13,6 +13,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PYTHONIOENCODING: utf-8
+
 jobs:
   test:
     runs-on: windows-latest
@@ -28,8 +31,6 @@ jobs:
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
     - name: Run all tests
-      env:
-        PYTHONIOENCODING: utf-8
       run: python tests/run_all.py
 
   build:
