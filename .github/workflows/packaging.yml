@@ -24,8 +24,12 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
     - name: Install dependencies
-      run: pip install -r requirements.txt
+      run: |
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
     - name: Run all tests
+      env:
+        PYTHONIOENCODING: utf-8
       run: python tests/run_all.py
 
   build:
