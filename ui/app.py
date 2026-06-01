@@ -16,6 +16,7 @@ from utils.logger import GUIHandler, logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from services.mcp_server import MCPServer
+from utils.auto_start import set_auto_start, is_auto_start
 
 class DAVServerApp:
     """主应用程序类"""
@@ -210,6 +211,14 @@ class DAVServerApp:
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
 
+        # 同步系统自启动状态（确保与设置一致）
+        if self.settings_service.get_setting("auto_start_app", "False") == "True":
+            if not is_auto_start():
+                set_auto_start(True)
+        else:
+            if is_auto_start():
+                set_auto_start(False)
+
         # 根据设置自动启动服务器
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
             self.server_tab.start_server()
@@ -244,6 +253,9 @@ class DAVServerApp:
                 self.server_tab.start_server()
             else:
                 messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
+        # 同步系统自启动状态
+        auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
+        set_auto_start(auto_start)
         messagebox.showinfo("成功", "设置已保存")
 
     def _sync_mcp_server(self):

@@ -56,6 +56,8 @@ SIMPLE_SETTINGS = [
     SettingDef("default_force_reminder", "默认勾选强制提醒", "check", "基本设置",
                default=False, db_default="False", columnspan=2),
     SettingDef("_sep2", "", "sep", "基本设置"),
+    SettingDef("auto_start_app", "开机时自动启动程序", "check", "基本设置",
+               default=False, db_default="False"),
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
                default="当前时间", db_default="current",
                options=["当前时间", "5整数倍", "10整数倍", "15整数倍", "30整数倍"],
