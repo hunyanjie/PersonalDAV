@@ -109,7 +109,23 @@ class CalendarTab(BaseTreeTab):
         import_btn.pack(side=tk.LEFT, padx=2)
 
         ttk.Button(self._btn_frame, text="导出选中", command=self.export_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(self._btn_frame, text="同步", command=self._sync_events).pack(side=tk.LEFT, padx=2)
         ttk.Button(self._btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.RIGHT, padx=10)
+
+    def _sync_events(self):
+        from services.sync_service import SyncService
+        svc = SyncService()
+        if not svc.is_configured():
+            messagebox.showinfo("提示", "请先在设置中配置 Nextcloud 同步", parent=self)
+            return
+        from ui.widgets.toast import Toast
+        Toast.show(self, "事件同步开始...")
+        try:
+            pulled, pushed = svc.sync_events()
+            self.refresh_events()
+            Toast.show(self, f"同步完成: 拉取 {pulled}, 推送 {pushed}")
+        except Exception as e:
+            messagebox.showerror("同步失败", str(e), parent=self)
 
     def _on_view_changed(self, *args):
         view = self._view_var.get()

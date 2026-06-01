@@ -95,7 +95,23 @@ class ContactsTab(BaseTreeTab):
         import_btn.pack(side=tk.LEFT, padx=2)
 
         ttk.Button(btn_frame, text="导出选中", command=self.export_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="同步", command=self._sync_contacts).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="刷新列表", command=self.refresh_contacts).pack(side=tk.RIGHT, padx=10)
+
+    def _sync_contacts(self):
+        from services.sync_service import SyncService
+        svc = SyncService()
+        if not svc.is_configured():
+            messagebox.showinfo("提示", "请先在设置中配置 Nextcloud 同步", parent=self)
+            return
+        from ui.widgets.toast import Toast
+        Toast.show(self, "联系人同步开始...")
+        try:
+            pulled, pushed = svc.sync_contacts()
+            self.refresh_contacts()
+            Toast.show(self, f"同步完成: 拉取 {pulled}, 推送 {pushed}")
+        except Exception as e:
+            messagebox.showerror("同步失败", str(e), parent=self)
 
     def refresh_contacts(self):
         """刷新联系人列表"""

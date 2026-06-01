@@ -90,6 +90,7 @@ class SettingsDialog(tk.Toplevel):
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
         security_frame = ttk.Frame(notebook); notebook.add(security_frame, text="安全设置")
+        sync_frame = ttk.Frame(notebook); notebook.add(sync_frame, text="同步设置")
         audit_frame = ttk.Frame(notebook); notebook.add(audit_frame, text="审计日志")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
@@ -97,6 +98,7 @@ class SettingsDialog(tk.Toplevel):
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
         self.create_security_settings(security_frame)
+        self.create_sync_settings(sync_frame)
         self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
 
@@ -247,6 +249,38 @@ class SettingsDialog(tk.Toplevel):
         btn_f.pack(pady=5)
         ttk.Button(btn_f, text="导出备份 (.zip)", command=self._export_backup).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="从备份恢复", command=self._import_backup).pack(side=tk.LEFT, padx=5)
+
+    # ── 同步设置 ────────────────────────────────────────────────
+
+    def create_sync_settings(self, parent):
+        f = ttk.LabelFrame(parent, text="Nextcloud 同步")
+        f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(f, text="服务器 URL:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.sync_url_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.sync_url_var, width=50).grid(row=0, column=1, sticky="we", padx=5, pady=3)
+        ttk.Label(f, text="https://example.com/remote.php/dav/", foreground="gray").grid(row=0, column=2, sticky="w", padx=2)
+
+        ttk.Label(f, text="用户名:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.sync_user_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.sync_user_var, width=30).grid(row=1, column=1, sticky="w", padx=5, pady=3)
+
+        ttk.Label(f, text="应用密码:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
+        self.sync_password_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.sync_password_var, width=30, show="*").grid(row=2, column=1, sticky="w", padx=5, pady=3)
+
+        ttk.Label(f, text="同步间隔:").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+        self.sync_interval_var = tk.StringVar(value="30")
+        ttk.Spinbox(f, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).grid(row=3, column=1, sticky="w", padx=5, pady=3)
+        ttk.Label(f, text="分钟").pack(side=tk.LEFT)
+
+        self.sync_enabled_var = tk.BooleanVar()
+        ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+
+        ttk.Label(f, text="提示：在 Nextcloud 安全设置中生成「应用密码」，建议不要使用主密码。",
+                  foreground="gray", wraplength=500).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
+        f.grid_columnconfigure(1, weight=1)
+
 
     # ── 安全设置 ────────────────────────────────────────────────
 
@@ -1055,6 +1089,12 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self.data_dir_var.set(s.get_setting("data_dir", ""))
 
+        self.sync_url_var.set(s.get_setting("sync_url", ""))
+        self.sync_user_var.set(s.get_setting("sync_user", ""))
+        self.sync_password_var.set(s.get_setting("sync_password", ""))
+        self.sync_interval_var.set(s.get_setting("sync_interval", "30"))
+        self.sync_enabled_var.set(s.get_setting("sync_enabled", "False") == "True")
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -1175,6 +1215,12 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
+
+        s.set_setting("sync_url", self.sync_url_var.get())
+        s.set_setting("sync_user", self.sync_user_var.get())
+        s.set_setting("sync_password", self.sync_password_var.get())
+        s.set_setting("sync_interval", self.sync_interval_var.get())
+        s.set_setting("sync_enabled", str(self.sync_enabled_var.get()))
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:

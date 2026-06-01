@@ -251,6 +251,17 @@ class DAVServerApp:
             set_auto_start(False)
         self.update_status_bar()
         self._check_cert_renew()
+        self._start_periodic_sync()
+
+    def _start_periodic_sync(self):
+        if self.settings_service.get_setting("sync_enabled", "False") != "True":
+            return
+        from services.sync_service import SyncService
+        interval = int(self.settings_service.get_setting("sync_interval", "30"))
+        svc = SyncService()
+        if svc.is_configured():
+            svc.start_periodic_sync(interval)
+            logger.info(f"定时同步已启动，间隔 {interval} 分钟")
 
     def _check_cert_renew(self):
         if self.settings_service.get_setting("ssl_auto_renew", "True") != "True":
