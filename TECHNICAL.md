@@ -761,7 +761,7 @@ pytest tests/ -v
 |------|----------|
 | `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
 | `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
-| `test_mcp_tools.py` | MCP 全部 16 个工具的端到端集成测试 |
+| `_run_mcp_tools_check.py` | MCP 全部 16 个工具的端到端集成测试（`python tests/_run_mcp_tools_check.py`） |
 
 ### 测试隔离
 
