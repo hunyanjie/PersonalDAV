@@ -73,9 +73,17 @@ class DAVServerApp:
         # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
 
-        # 托盘图标
-        self._tray = TrayManager(self.root, on_show=self._tray_show, on_quit=self._tray_quit)
-        self._tray.start()
+        # 托盘图标（pystray 不可用时静默降级）
+        self._tray = None
+        self._tray_available = False
+        try:
+            import pystray
+            self._tray_available = True
+        except ImportError:
+            self._tray_available = False
+        if self._tray_available:
+            self._tray = TrayManager(self.root, on_show=self._tray_show, on_quit=self._tray_quit)
+            self._tray.start()
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
@@ -314,6 +322,8 @@ class DAVServerApp:
         srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
         db_size = self._get_db_size()
         self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}")
+
+    def show_settings(self):
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
 
@@ -349,12 +359,54 @@ class DAVServerApp:
         self.root.after(100, self.process_log_queue)
 
     def on_closing(self):
+        if not self._tray_available:
+            self._do_quit()
+            return
+        action = self.settings_service.get_setting("close_action", "ask")
+        if action == "exit":
+            self._do_quit()
+            return
+        if action == "tray":
+            self._hide_to_tray()
+            return
+        self._show_close_dialog()
+
+    def _show_close_dialog(self):
+        dialog = tk.Toplevel(self.root); dialog.title("退出确认"); dialog.geometry("380x200")
+        dialog.transient(self.root); dialog.grab_set(); dialog.resizable(False, False)
+        ttk.Label(dialog, text="关闭窗口时执行的操作：", font=('', 11)).pack(pady=(15, 5))
+        var = tk.StringVar(value="tray")
+        ttk.Radiobutton(dialog, text="退出程序", variable=var, value="exit").pack(anchor="w", padx=40, pady=2)
+        ttk.Radiobutton(dialog, text="隐藏到系统托盘", variable=var, value="tray").pack(anchor="w", padx=40, pady=2)
+        remember_var = tk.BooleanVar()
+        ttk.Checkbutton(dialog, text="记住选择，不再询问", variable=remember_var).pack(anchor="w", padx=40, pady=5)
+        btn_f = ttk.Frame(dialog); btn_f.pack(pady=10)
+        def confirm():
+            chosen = var.get()
+            if remember_var.get():
+                self.settings_service.set_setting("close_action", chosen)
+            dialog.destroy()
+            if chosen == "exit":
+                self._do_quit()
+            else:
+                self._hide_to_tray()
+        ttk.Button(btn_f, text="确定", command=confirm).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=lambda: dialog.destroy() or None).pack(side=tk.LEFT, padx=5)
+
+    def _hide_to_tray(self):
         self.root.withdraw()
         self._tray_notify("仍在后台运行，点击托盘图标可恢复窗口")
 
+    def _do_quit(self):
+        self.server_tab.stop_server()
+        self.mcp_server.stop()
+        if hasattr(self, '_tray'):
+            self._tray.stop()
+        Database().close()
+        self.root.destroy()
+
     def _tray_notify(self, text):
         try:
-            import pystray
             if self._tray and self._tray._icon:
                 self._tray._icon.notify(text, SOFTWARE_NAME)
         except Exception:
@@ -366,11 +418,7 @@ class DAVServerApp:
         self.root.focus_force()
 
     def _tray_quit(self):
-        self.server_tab.stop_server()
-        self.mcp_server.stop()
-        self._tray.stop()
-        Database().close()
-        self.root.destroy()
+        self._do_quit()
 
     def open_project_url(self):
         """打开项目地址"""

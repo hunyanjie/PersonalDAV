@@ -5,7 +5,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
-from config import DATA_DIR
+
 
 
 def generate_self_signed_cert(cert_path, key_path, common_name="localhost"):
@@ -79,7 +79,8 @@ def should_renew(cert_path, days_before=30):
 
 def ensure_default_cert(data_dir=None):
     """确保默认证书存在，不存在则自动生成"""
-    data_dir = data_dir or DATA_DIR
+    if data_dir is None:
+        data_dir = os.path.dirname(os.path.abspath(__file__))
     cert_path = os.path.join(data_dir, "ssl", "cert.pem")
     key_path = os.path.join(data_dir, "ssl", "key.pem")
     if not os.path.isfile(cert_path) or not os.path.isfile(key_path) or should_renew(cert_path, 0):

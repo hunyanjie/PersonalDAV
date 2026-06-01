@@ -210,6 +210,13 @@ class SettingsDialog(tk.Toplevel):
         f.pack(fill=tk.X, padx=5, pady=5)
         self._build_simple(f, "服务器控制")
 
+        close_f = ttk.LabelFrame(parent, text="关闭行为")
+        close_f.pack(fill=tk.X, padx=5, pady=5)
+        self.close_action_var = tk.StringVar(value="ask")
+        ttk.Radiobutton(close_f, text="每次都询问", variable=self.close_action_var, value="ask").pack(anchor="w", padx=10, pady=2)
+        ttk.Radiobutton(close_f, text="退出程序", variable=self.close_action_var, value="exit").pack(anchor="w", padx=10, pady=2)
+        ttk.Radiobutton(close_f, text="隐藏到系统托盘", variable=self.close_action_var, value="tray").pack(anchor="w", padx=10, pady=2)
+
         ssl_f = CollapsibleFrame(parent, text="SSL/TLS 设置", expanded=False)
         ssl_f.pack(fill=tk.X, padx=5, pady=2)
         body = ssl_f.body
@@ -1089,6 +1096,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self.data_dir_var.set(s.get_setting("data_dir", ""))
 
+        self.close_action_var.set(s.get_setting("close_action", "ask"))
+
         self.sync_url_var.set(s.get_setting("sync_url", ""))
         self.sync_user_var.set(s.get_setting("sync_user", ""))
         self.sync_password_var.set(s.get_setting("sync_password", ""))
@@ -1125,10 +1134,18 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._dur_h_var.set("1")
         self._dur_m_var.set("0")
 
+        self.sync_url_var.set("")
+        self.sync_user_var.set("")
+        self.sync_password_var.set("")
+        self.sync_interval_var.set("30")
+        self.sync_enabled_var.set(False)
+
         self.ssl_enabled_var.set(False)
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
         self._auto_renew_var.set(True)
+
+        self.close_action_var.set("ask")
 
         self._ip_whitelist_text.delete("1.0", tk.END)
         self._ip_blacklist_text.delete("1.0", tk.END)
@@ -1211,6 +1228,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_auto_renew", str(self._auto_renew_var.get()))
 
         s.set_setting("data_dir", self.data_dir_var.get())
+        s.set_setting("close_action", self.close_action_var.get())
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())

@@ -32,9 +32,14 @@ class TrayManager:
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         draw.ellipse([2, 2, size - 2, size - 2], fill=(41, 128, 255))
-        try:
-            font = ImageFont.truetype("segoeui.ttf", 32)
-        except Exception:
+        font = None
+        for name in ["segoeui.ttf", "Arial.ttf", "DejaVuSans.ttf", "NotoSans-Regular.ttf"]:
+            try:
+                font = ImageFont.truetype(name, 32)
+                break
+            except Exception:
+                continue
+        if font is None:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), "PD", font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
