@@ -510,6 +510,15 @@ class EventDialog:
         self.end_cond_var.trace("w", update_end_ui)
         update_end_ui()
 
+        ttk.Label(frame, text="例外日期:").grid(row=9, column=0, sticky="nw", padx=5, pady=5)
+        exc_f = ttk.Frame(frame); exc_f.grid(row=9, column=1, columnspan=3, sticky="we", padx=5, pady=5)
+        self.exdate_listbox = tk.Listbox(exc_f, height=3, exportselection=False)
+        self.exdate_listbox.pack(fill=tk.X, pady=(0, 3))
+        exc_btn_f = ttk.Frame(exc_f); exc_btn_f.pack(fill=tk.X)
+        ttk.Button(exc_btn_f, text="添加日期", command=self._add_exdate, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(exc_btn_f, text="移除选中", command=self._remove_exdate, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Label(exc_f, text="例外日期在重复事件中跳过", foreground="gray").pack(anchor="w")
+
     def apply_duration(self, dur_str):
         try:
             start_dt = datetime.combine(self.start_date.get_date(),
@@ -525,6 +534,23 @@ class EventDialog:
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
         except: pass
+
+    def _add_exdate(self):
+        from tkcalendar import Calendar
+        w = tk.Toplevel(self.root); w.title("选择例外日期"); w.grab_set()
+        cal = Calendar(w, date_pattern='yyyy-mm-dd')
+        cal.pack(padx=10, pady=10)
+        def confirm():
+            d = cal.get_date()
+            if d not in self.exdate_listbox.get(0, tk.END):
+                self.exdate_listbox.insert(tk.END, d)
+            w.destroy()
+        ttk.Button(w, text="确定", command=confirm).pack(pady=5)
+
+    def _remove_exdate(self):
+        sel = self.exdate_listbox.curselection()
+        for i in reversed(sel):
+            self.exdate_listbox.delete(i)
 
     def apply_default_duration(self):
         try:
@@ -869,6 +895,21 @@ class EventDialog:
                         except: pass
                     elif 'COUNT' in parts: self.end_cond_var.set('按次数结束'); self.end_count_var.set(parts['COUNT'])
                     else: self.end_cond_var.set('永不结束')
+                # 解析 EXDATE 例外日期
+                self.exdate_listbox.delete(0, tk.END)
+                if 'exdate' in ev.contents:
+                    for ex in ev.contents['exdate']:
+                        val = ex.value
+                        if isinstance(val, list):
+                            for v in val:
+                                if isinstance(v, datetime):
+                                    self.exdate_listbox.insert(tk.END, v.strftime('%Y-%m-%d'))
+                                else:
+                                    self.exdate_listbox.insert(tk.END, str(v))
+                        elif isinstance(val, datetime):
+                            self.exdate_listbox.insert(tk.END, val.strftime('%Y-%m-%d'))
+                        else:
+                            self.exdate_listbox.insert(tk.END, str(val))
                 # 解析 ATTACH 附件
                 self.attachments = []
                 if 'attach' in ev.contents:
@@ -1037,6 +1078,22 @@ class EventDialog:
                 if cond == "按日期结束": rrule += f";UNTIL={self.end_date_entry.get_date().strftime('%Y%m%dT235959Z')}"
                 elif cond == "按次数结束": rrule += f";COUNT={self.end_count_var.get()}"
                 ev.add('rrule').value = rrule
+        exdates = self.exdate_listbox.get(0, tk.END)
+        if exdates:
+            tz_id = None
+            if not self.allday_var.get():
+                tz_id = TimezoneHelper.extract_tz_id(self.start_tz_var.get())
+            for d in exdates:
+                ex = ev.add('exdate')
+                if self.allday_var.get():
+                    ex.value = datetime.strptime(d, '%Y-%m-%d').date()
+                else:
+                    dt = datetime.strptime(d, '%Y-%m-%d')
+                    if tz_id:
+                        ex.value = pytz.timezone(tz_id).localize(dt)
+                        ex.params['TZID'] = [tz_id]
+                    else:
+                        ex.value = dt
         for a in self.alarms:
             al = ev.add('valarm'); al.add('action').value = a['action']; al.add('trigger').value = a['trigger']
             if 'description' in a: al.add('description').value = a['description']
