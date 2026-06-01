@@ -1,5 +1,6 @@
 import os
 import ssl
+import base64
 import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from services.contact_service import ContactService
@@ -19,9 +20,71 @@ class DAVHandler(BaseHTTPRequestHandler):
             DAVHandler.event_service = EventService()
         super().__init__(*args, **kwargs)
 
+    def _check_auth(self) -> bool:
+        from services.auth_service import AuthService
+        svc = AuthService()
+        client_ip = self.client_address[0]
+        ua = self.headers.get('User-Agent', '')
+
+        if not svc.check_ip(client_ip):
+            svc.log_auth(False, client_ip, "WebDAV", f"IP被拒绝 UA={ua}")
+            self._send_401()
+            return False
+
+        if not svc.is_enabled():
+            return True
+
+        if svc.ip_bypasses_auth(client_ip):
+            svc.log_auth(True, client_ip, "WebDAV", f"免密 IP UA={ua}")
+            return True
+
+        auth = self.headers.get('Authorization', '')
+        if not auth.startswith('Basic '):
+            svc.log_auth(False, client_ip, "WebDAV", f"无凭证 UA={ua}")
+            self._send_401()
+            return False
+        try:
+            decoded = base64.b64decode(auth[6:]).decode('utf-8')
+            _, password = decoded.split(':', 1)
+        except Exception:
+            svc.log_auth(False, client_ip, "WebDAV", f"凭证格式错误 UA={ua}")
+            self._send_401()
+            return False
+        if not svc.verify_password(password):
+            svc.log_auth(False, client_ip, "WebDAV", f"密码错误 UA={ua}")
+            self._send_401()
+            return False
+
+        svc.log_auth(True, client_ip, "WebDAV", f"UA={ua}")
+        return True
+
+    def _send_401(self):
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="PersonalDAV"')
+        self.send_header('Content-Type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Authorization required")
+
+    def do_OPTIONS(self):
+        try:
+            self.log_message(f"处理OPTIONS请求: {self.path}")
+            self.send_response(200)
+            self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
+            if self.path.startswith("/contacts/"):
+                self.send_header('DAV', '1, 2, addressbook')
+            elif self.path.startswith("/events/"):
+                self.send_header('DAV', '1, 2, calendar-access')
+            else:
+                self.send_header('DAV', '1, 2')
+            self.end_headers()
+        except Exception as e:
+            self._send_error(500, str(e))
+
     def do_GET(self):
         try:
             self.log_message(f"处理GET请求: {self.path}")
+            if not self._check_auth():
+                return
 
             # 处理联系人请求
             if self.path.startswith("/contacts/"):
@@ -87,6 +150,8 @@ class DAVHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         try:
             self.log_message(f"处理PUT请求: {self.path}")
+            if not self._check_auth():
+                return
             content_length = int(self.headers['Content-Length'])
             data = self.rfile.read(content_length).decode('utf-8')
 
@@ -114,6 +179,8 @@ class DAVHandler(BaseHTTPRequestHandler):
     def do_PROPFIND(self):
         try:
             self.log_message(f"处理PROPFIND请求: {self.path}")
+            if not self._check_auth():
+                return
             self.send_response(207)
             self.send_header('Content-Type', 'text/xml; charset="utf-8"')
             self.end_headers()
@@ -179,25 +246,12 @@ class DAVHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_error(500, str(e))
 
-    def do_OPTIONS(self):
-        try:
-            self.log_message(f"处理OPTIONS请求: {self.path}")
-            self.send_response(200)
-            self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
-            if self.path.startswith("/contacts/"):
-                self.send_header('DAV', '1, 2, addressbook')
-            elif self.path.startswith("/events/"):
-                self.send_header('DAV', '1, 2, calendar-access')
-            else:
-                self.send_header('DAV', '1, 2')
-            self.end_headers()
-        except Exception as e:
-            self._send_error(500, str(e))
-
     def do_HEAD(self):
         """处理 HEAD 请求 - 1:1 还原 main_old.py 缺失方法"""
         try:
             self.log_message(f"处理HEAD请求: {self.path}")
+            if not self._check_auth():
+                return
             
             if self.path.startswith("/contacts/") and self.path.endswith(".vcf"):
                 uid = os.path.basename(self.path).replace(".vcf", "")
@@ -230,6 +284,8 @@ class DAVHandler(BaseHTTPRequestHandler):
         """处理 DELETE 请求 - 1:1 还原 main_old.py 缺失方法"""
         try:
             self.log_message(f"处理DELETE请求: {self.path}")
+            if not self._check_auth():
+                return
             
             if self.path.startswith("/contacts/"):
                 uid = os.path.basename(self.path).replace(".vcf", "")
@@ -254,6 +310,8 @@ class DAVHandler(BaseHTTPRequestHandler):
         """处理 POST 请求 - 用于表单提交"""
         try:
             self.log_message(f"处理POST请求: {self.path}")
+            if not self._check_auth():
+                return
             content_length = int(self.headers.get('Content-Length', 0))
             data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else ""
             

@@ -40,7 +40,9 @@ PersonalDAV/
 │   ├── base_service.py        # BaseService 泛型服务基类（含 get_etag / get_all_items）
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
-│   └── settings_service.py    # SettingsService 单例
+│   ├── settings_service.py    # SettingsService 单例
+│   ├── auth_service.py        # AuthService 统一鉴权（密码/IP控制/日志）
+│   └── mcp_server.py          # MCPServer（MCP SSE 协议服务器）
 ├── network/                   # 网络层
 │   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV 端点）
 │   └── dav_client.py          # WebDAV 客户端导入
@@ -504,6 +506,12 @@ def get_column_width(self, col): ... # 自定义列宽
 | event_dialog 常量全部抽离到 models/constants.py | 消除 settings_dialog 对 EventDialog 的导入依赖，SRP 更清晰 |
 | ETag 通过 `hashlib.md5(raw)` 实时计算 | 无状态、零存储开销，内容变更 ETag 自然失效 |
 | `Database.reset()` 类方法 | 仅在测试中重置单例，允许测试使用 `:memory:` 数据库 |
+| 密码存储 PBKDF2-HMAC-SHA256 + 盐 | 纯 hashlib + secrets，零外部依赖 |
+| MCP 令牌 `sha256("mcp:" + stored_hash)` 确定性派生 | 改密码自动刷新令牌，无需手动重置 opencode.json |
+| IP 黑白名单白名单优先 + CIDR/通配符 | 非空时严格白名单模式，兼容子网和通配需求 |
+| `ip_bypasses_auth()` 本机默认免密 + bypass_localhost 开关 | 开发调试体验友好，生产环境可关闭 |
+| `log_auth()` 统一入口 | 集中记录鉴权事件，后续可扩展浏览器指纹等字段 |
+| EnhancedTooltip.text 直接赋值可动态切换 | 无需销毁重建，适合状态驱动的提示场景 |
 
 ---
 
@@ -642,6 +650,17 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 支持 `Depth: 0`（仅自身）和 `Depth: 1`（含子资源）。
 
+### 鉴权
+
+`_check_auth()` 在每个 `do_*` 方法开头调用，处理流程（按顺序）：
+
+1. **IP 访问控制** — 调用 `AuthService().check_ip(client_ip)`，被拒绝时 `log_auth()` 记录并返回 403
+2. **密码开关** — 未设密码直接放行
+3. **免密码 IP** — 调用 `AuthService().ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
+4. **Basic Auth 校验** — 解析 `Authorization` 头，密码错误/格式错误/缺失均返回 401 + `WWW-Authenticate` 头
+
+每次鉴权结果（成功/失败/拒绝/免密）均通过 `log_auth()` 记录，含客户端 IP 和 User-Agent。
+
 ### ETag
 
 通过 `BaseService.get_etag(uid)` 计算：
@@ -655,6 +674,173 @@ def get_etag(self, uid: str) -> str | None:
 ```
 
 在 `GET` / `HEAD` / `PUT` / `POST` 响应中返回 `ETag` 头，支持客户端条件请求。
+
+---
+
+## 统一鉴权系统（services/auth_service.py）
+
+### 设计目的
+
+统一密码管理，一个密码同时保护 WebDAV、MCP 等所有服务。密码通过 PBKDF2-HMAC-SHA256（600,000 轮）加盐哈希后存储。
+
+### 存储
+
+| 设置键 | 格式 | 示例 |
+|--------|------|------|
+| `access_password_hash` | `salt$hash` | `a1b2c3...$e4f5g6...` |
+
+空值 = 未设置密码（鉴权关闭）。
+
+### MCP 令牌
+
+令牌通过 `sha256("mcp:" + stored_hash)` 派生，确定性生成。更改密码自动刷新令牌。
+
+### IP 访问控制
+
+| 设置键 | 作用 | 规则 |
+|--------|------|------|
+| `ip_whitelist` | 白名单 | 非空时仅允许名单内 IP，其余 403 |
+| `ip_blacklist` | 黑名单 | 白名单通过后再检查，命中则 403 |
+| `bypass_localhost` | 本机免密开关 | `"True"`/`"False"`，默认开启 |
+| `ip_bypass_auth` | 自定义免密码 IP | 这些 IP 访问时不需密码验证 |
+
+IP 匹配支持三种格式：
+- **精确 IP** — `192.168.1.1`
+- **CIDR** — `192.168.1.0/24`
+- **通配符** — `192.168.*`
+
+### 鉴权日志
+
+所有鉴权事件通过 `AuthService.log_auth(success, client_ip, method, extra)` 统一记录：
+
+| 参数 | 示例 | 说明 |
+|------|------|------|
+| `success` | `True` / `False` | 登录成功或失败 |
+| `client_ip` | `192.168.1.100` | 客户端 IP，可溯源 |
+| `method` | `"WebDAV"` / `"MCP"` | 协议标识 |
+| `extra` | `"UA=Mozilla..."` 或 `"免密 IP"` | 附加信息 |
+
+成功事件写 `logger.info()`，失败事件写 `logger.warning()`。
+
+### 免密码 IP
+
+`ip_bypasses_auth(client_ip)` 检测流程：
+1. `bypass_localhost=True` 且为本机（`127.0.0.1` / `::1` / `localhost`）→ 免密
+2. `ip_bypass_auth` 列表中有匹配 → 免密
+3. 否则需要密码
+
+WebDAV `_check_auth()` 和 MCP 中间件均在密码/令牌校验前调用此方法，命中则直接放行并记录 `"免密 IP"`。
+
+### 协议适配表
+
+| 服务 | 认证方式 | 凭证来源 |
+|------|---------|----------|
+| WebDAV (HTTP) | `Basic Auth` | 任意用户名 + 密码 |
+| MCP (SSE) | `Bearer Token` | 从设置页复制 |
+
+### 扩展指南
+
+添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。如需 IP 控制，在请求入口处依次调用 `check_ip(client_ip)` → `ip_bypasses_auth(client_ip)` → `verify_*()` → `log_auth()`。
+
+---
+
+## MCP 服务器（services/mcp_server.py）
+
+### 设计目的
+
+MCP（Model Context Protocol）服务器允许 AI 助手（opencode、Claude 等）直接调用 PersonalDAV 的内部服务层，无需模拟 HTTP 请求。集成到 GUI 程序中，以 SSE 协议在后台线程运行。
+
+### 架构
+
+```
+AI / opencode
+    │  MCP 协议 (SSE, http://127.0.0.1:8100/sse)
+    ▼
+MCPServer (FastMCP + Uvicorn)
+    │  后台线程，非阻塞
+    ▼
+ContactService / EventService / SettingsService
+    │  publish=False（避免从后台线程触发 tkinter 回调）
+    ▼
+Database 单例（threading.Lock 保护）
+```
+
+### 类方法
+
+```python
+class MCPServer:
+    def start(self, host="127.0.0.1", port=8100) -> bool   # 启动 SSE 服务器
+    def stop(self) -> None                                   # 停止服务器
+    @property
+    def is_running(self) -> bool                             # 查询运行状态
+```
+
+`start()` 通过 `uvicorn.Server` 在 daemon 线程中运行，`stop()` 设置 `should_exit = True`。
+
+### 暴露的工具
+
+| 工具 | 类别 | 说明 |
+|------|------|------|
+| `server_start(port)` | 服务端管理 | 后台启动 DAV 服务器 |
+| `server_stop()` | 服务端管理 | 停止 DAV 服务器 |
+| `server_status()` | 服务端管理 | 查询运行状态 + 端口 |
+| `list_contacts()` | 联系人 | 列出所有联系人摘要 |
+| `get_contact(uid)` | 联系人 | 获取联系人完整 vCard |
+| `create_contact(vcard_data)` | 联系人 | 从 vCard 创建联系人 |
+| `update_contact(uid, vcard_data)` | 联系人 | 强制覆盖更新联系人 |
+| `delete_contact(uid)` | 联系人 | 删除联系人 |
+| `list_events()` | 日历 | 列出所有事件摘要 |
+| `get_event(uid)` | 日历 | 获取事件完整 iCalendar |
+| `create_event(ical_data)` | 日历 | 从 iCal 创建事件 |
+| `update_event(uid, ical_data)` | 日历 | 强制覆盖更新事件 |
+| `delete_event(uid)` | 日历 | 删除事件 |
+| `get_config()` | 系统 | 返回配置（名称/版本/数量等） |
+| `dav_health_check(base_url)` | 系统 | OPTIONS + PROPFIND + GET 端点验证 |
+
+所有写入操作使用 `publish=False`（不触发 tkinter 事件循环），GUI 通过标签切换自动刷新。
+
+### 鉴权中间件
+
+MCP 服务器通过 `_AuthASGIMiddleware`（原生 ASGI 中间件，兼容 SSE 流式响应）拦截 `/sse` 和 `/messages/` 路径，处理流程：
+
+1. **IP 访问控制** — `check_ip(client_ip)`，拒绝时返回 403 + 记录日志
+2. **密码开关** — 未设密码直接放行
+3. **免密码 IP** — `ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
+4. **Bearer Token 校验** — 解析 `Authorization` 头，缺失返回 401，无效返回 401 + 分别记录失败日志
+5. **成功** — 记录 `log_auth(True, ...)`
+
+所有鉴权事件（成功/失败/拒绝/免密）统一通过 `AuthService.log_auth()` 写入日志。
+
+### 集成方式
+
+```python
+# app.py — 自动启停
+self.mcp_server = MCPServer()
+self._sync_mcp_server()           # 读取 mcp_enabled 设置决定启停
+event_bus.subscribe(EVENT_SETTINGS_CHANGED, self._sync_mcp_server)
+```
+
+用户在设置界面勾选「启用 MCP 服务」→ 保存后，`EVENT_SETTINGS_CHANGED` 被发布，`_sync_mcp_server()` 动态启动或停止后台服务器。
+
+### 独立运行
+
+```bash
+python -m services.mcp_server        # 默认 8100 端口
+python -m services.mcp_server --port 8100
+```
+
+### 配置 opencode
+
+```json
+{
+  "mcp": {
+    "personal-dav": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8100/sse"
+    }
+  }
+}
+```
 
 ---
 
@@ -672,12 +858,24 @@ pytest tests/ -v
 |------|----------|
 | `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
 | `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
+| `_run_mcp_tools_check.py` | MCP 全部 16 个工具的内部端到端测试（`python tests/_run_mcp_tools_check.py`） |
+| `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议） |
+| `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 |
+
+### 运行全部测试
+
+```bash
+python tests/run_all.py
+```
+
+依次执行：pytest 单元测试 → MCP 内部工具检查 → MCP HTTP 工具检查 → MCP 鉴权测试。
 
 ### 测试隔离
 
 - `Database.reset()` 在 `setUpClass` 中重置单例，使用 `:memory:` 数据库
 - 每个 `setUp` 清空表数据，测试之间互不干扰
 - 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
+- HTTP 测试使用独立端口（8101、8102），互不冲突
 
 ---
 
@@ -716,6 +914,11 @@ EnhancedTooltip(widget, "提示文字",
 | ContactDialog | 姓名* | "必填。联系人显示名称" |
 | ContactDialog | 邮箱 | "多个邮箱请用分号(;)分隔" |
 | ContactDialog | 电话 | "多个电话请用分号(;)分隔" |
+| SettingsDialog | 复制令牌 | 未设密码: "请先设置密码以生成令牌" / 已设密码: "复制令牌到剪贴板"（动态切换） |
+
+### 动态文本更新
+
+`EnhancedTooltip.text` 属性可直接赋值，无需重建 tooltip 对象。`_refresh_auth_ui()` 中根据密码状态切换提示文本。
 
 ---
 

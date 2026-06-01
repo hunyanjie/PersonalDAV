@@ -2,12 +2,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
 from ui.widgets.right_click_menu import RightClickMenu
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert
 from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
+from services.auth_service import AuthService
 import json
 from datetime import datetime, timedelta
 
@@ -21,6 +23,10 @@ SIMPLE_SETTINGS = [
     SettingDef("auto_save_port", "自动保存端口号", "check", "服务器控制", default=True, db_default="True"),
     SettingDef("auto_start_server", "启动时自动启动服务器", "check", "服务器控制", default=False, db_default="False"),
     SettingDef("default_port", "默认端口号:", "entry", "服务器控制", default="8000", width=10),
+
+    # ========== MCP 设置 ==========
+    SettingDef("mcp_enabled", "启用 MCP 服务", "check", "MCP 服务", default=False, db_default="False"),
+    SettingDef("mcp_port", "MCP 服务端口:", "entry", "MCP 服务", default="8100", width=10),
 
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
@@ -76,10 +82,14 @@ class SettingsDialog(tk.Toplevel):
         server_frame = ttk.Frame(notebook); notebook.add(server_frame, text="服务器设置")
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
+        security_frame = ttk.Frame(notebook); notebook.add(security_frame, text="安全设置")
+        mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
+        self.create_security_settings(security_frame)
+        self.create_mcp_settings(mcp_frame)
 
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=10)
@@ -211,6 +221,210 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
         ssl_f.grid_columnconfigure(1, weight=1)
+
+    # ── 安全设置 ────────────────────────────────────────────────
+
+    def create_security_settings(self, parent):
+        pw_f = ttk.LabelFrame(parent, text="访问密码")
+        pw_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
+        self._auth_status_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+
+        ttk.Button(pw_f, text="设置密码", command=self._set_password).grid(row=1, column=0, padx=5, pady=5)
+        ttk.Button(pw_f, text="更改密码", command=self._change_password).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(pw_f, text="清除密码", command=self._clear_password).grid(row=1, column=2, padx=5, pady=5)
+
+        ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
+                  foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
+
+        token_f = ttk.LabelFrame(parent, text="MCP 令牌（AI 连接用）")
+        token_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self._mcp_token_var = tk.StringVar()
+        token_entry = ttk.Entry(token_f, textvariable=self._mcp_token_var, state="readonly", width=70)
+        token_entry.pack(fill=tk.X, padx=5, pady=5)
+
+        btn_f = ttk.Frame(token_f)
+        btn_f.pack(fill=tk.X, padx=5, pady=5)
+        copy_btn = ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token)
+        copy_btn.pack(side=tk.LEFT, padx=2)
+        self._mcp_tip = EnhancedTooltip(copy_btn, "请先设置密码以生成令牌")
+        ttk.Label(btn_f, text="  设置密码后令牌自动生成，更改密码会刷新令牌。",
+                  foreground="gray").pack(side=tk.LEFT)
+
+        ip_f = ttk.LabelFrame(parent, text="IP 访问控制（留空 = 不限制）")
+        ip_f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(ip_f, text="白名单（每行一个 IP / CIDR / 通配符）:",
+                  foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
+        self._ip_whitelist_text = tk.Text(ip_f, height=3, width=60)
+        self._ip_whitelist_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+
+        ttk.Label(ip_f, text="黑名单（每行一个 IP / CIDR / 通配符）:",
+                  foreground="gray").grid(row=2, column=0, sticky="w", padx=5, pady=(5, 0))
+        self._ip_blacklist_text = tk.Text(ip_f, height=3, width=60)
+        self._ip_blacklist_text.grid(row=3, column=0, padx=5, pady=2, sticky="ew")
+
+        ttk.Label(ip_f, text="示例: 127.0.0.1 | 192.168.1.0/24 | 10.0.* | 白名单非空时只允许白名单 IP 访问",
+                  foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
+
+        self._bypass_localhost_var = tk.BooleanVar(value=True)
+        bypass_local_cb = ttk.Checkbutton(parent, text="本机访问免密码",
+                                          variable=self._bypass_localhost_var)
+        bypass_local_cb.pack(anchor="w", padx=10, pady=(5, 0))
+
+        bypass_f = ttk.LabelFrame(parent, text="免密码 IP（以下 IP 访问时不需密码验证）")
+        bypass_f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符:",
+                  foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
+        self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
+        self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+
+        self._refresh_auth_ui()
+
+    def _refresh_auth_ui(self):
+        svc = AuthService()
+        enabled = svc.is_enabled()
+        self._auth_status_label.config(
+            text=f"访问密码: {'已设置' if enabled else '未设置'}",
+            foreground="green" if enabled else "orange"
+        )
+        self._mcp_token_var.set(svc.get_mcp_token() if enabled else "(未设置密码)")
+        if self._mcp_tip:
+            self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
+
+    def _set_password(self):
+        self._password_dialog(change=False)
+
+    def _change_password(self):
+        if not AuthService().is_enabled():
+            messagebox.showinfo("提示", "当前未设置密码，请使用「设置密码」", parent=self)
+            return
+        self._password_dialog(change=True)
+
+    def _password_dialog(self, change=False):
+        dialog = tk.Toplevel(self)
+        dialog.title("更改密码" if change else "设置密码")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("400x200")
+
+        row = 0
+        if change:
+            ttk.Label(dialog, text="当前密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+            old_var = tk.StringVar()
+            ttk.Entry(dialog, textvariable=old_var, show="*", width=30).grid(row=row, column=1, padx=5)
+            row += 1
+
+        ttk.Label(dialog, text="新密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        new_var = tk.StringVar()
+        new_entry = ttk.Entry(dialog, textvariable=new_var, show="*", width=30)
+        new_entry.grid(row=row, column=1, padx=5)
+        row += 1
+
+        ttk.Label(dialog, text="确认密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        confirm_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=confirm_var, show="*", width=30).grid(row=row, column=1, padx=5)
+        row += 1
+
+        def do_save():
+            if change and not AuthService().verify_password(old_var.get()):
+                messagebox.showerror("错误", "当前密码不正确", parent=dialog)
+                return
+            if not new_var.get():
+                messagebox.showerror("错误", "密码不能为空", parent=dialog)
+                return
+            if new_var.get() != confirm_var.get():
+                messagebox.showerror("错误", "两次密码不一致", parent=dialog)
+                return
+            AuthService().set_password(new_var.get())
+            self._refresh_auth_ui()
+            dialog.destroy()
+            messagebox.showinfo("成功", "密码已更新", parent=self)
+
+        btn_f = ttk.Frame(dialog)
+        btn_f.grid(row=row, column=0, columnspan=2, pady=15)
+        ttk.Button(btn_f, text="确定", command=do_save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    def _clear_password(self):
+        if not AuthService().is_enabled():
+            return
+        if not messagebox.askyesno("确认清除", "清除后所有服务将不再需要密码验证，确定吗？", parent=self):
+            return
+        AuthService().clear_password()
+        self._refresh_auth_ui()
+        messagebox.showinfo("成功", "密码已清除", parent=self)
+
+    def _copy_mcp_token(self):
+        token = AuthService().get_mcp_token()
+        if not token:
+            messagebox.showinfo("提示", "请先设置密码", parent=self)
+            return
+        try:
+            dialog.focus_get()
+        except:
+            pass
+        self.clipboard_clear()
+        self.clipboard_append(token)
+        messagebox.showinfo("已复制", "MCP 令牌已复制到剪贴板", parent=self)
+
+    # ── MCP 服务设置 ────────────────────────────────────────────
+
+    def create_mcp_settings(self, parent):
+        f = ttk.LabelFrame(parent, text="MCP 服务控制")
+        f.pack(fill=tk.X, padx=5, pady=5)
+        self._build_simple(f, "MCP 服务")
+
+        info = ttk.LabelFrame(parent, text="连接信息")
+        info.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(info, text="启用后在 AI 工具（如 opencode）中配置以下 URL 即可连接：",
+                  wraplength=500).pack(anchor="w", padx=10, pady=5)
+        self._mcp_url_label = ttk.Label(info, text="", foreground="blue", font=('Consolas', 10))
+        self._mcp_url_label.pack(anchor="w", padx=10, pady=5)
+        ttk.Label(info, text="提示：更改端口后需重启程序或重新打开设置以刷新 URL。",
+                  foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=5)
+
+        def update_url(*_):
+            port = self.mcp_port_var.get() if hasattr(self, 'mcp_port_var') else "8100"
+            self._mcp_url_label.config(text=f"URL: http://127.0.0.1:{port}/sse")
+
+        if hasattr(self, 'mcp_port_var'):
+            self.mcp_port_var.trace("w", update_url)
+        self.after(100, update_url)
+
+        tools = ttk.LabelFrame(parent, text="可用工具列表")
+        tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        cols = ("工具名", "类别", "说明")
+        tree = ttk.Treeview(tools, columns=cols, show="headings", height=14)
+        for c in cols:
+            tree.heading(c, text=c)
+            tree.column(c, width=180 if c == "说明" else 100)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).pack(side=tk.RIGHT, fill=tk.Y)
+        tree.configure(yscrollcommand=ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).set)
+
+        tool_list = [
+            ("server_start(port=8080)", "服务端管理", "启动 DAV 服务器（后台线程）"),
+            ("server_stop()", "服务端管理", "停止 DAV 服务器"),
+            ("server_status()", "服务端管理", "查询 DAV 服务器运行状态"),
+            ("list_contacts()", "联系人", "列出所有联系人 uid + 姓名"),
+            ("get_contact(uid)", "联系人", "获取联系人完整 vCard 数据"),
+            ("create_contact(vcard_data)", "联系人", "从 vCard 创建联系人"),
+            ("update_contact(uid, vcard)", "联系人", "覆盖更新联系人"),
+            ("delete_contact(uid)", "联系人", "删除联系人"),
+            ("list_events()", "日历", "列出所有事件 uid + 标题 + 时间"),
+            ("get_event(uid)", "日历", "获取事件完整 iCalendar 数据"),
+            ("create_event(ical_data)", "日历", "从 iCal 创建事件"),
+            ("update_event(uid, ical)", "日历", "覆盖更新事件"),
+            ("delete_event(uid)", "日历", "删除事件"),
+            ("get_config()", "系统", "返回软件配置与数据统计"),
+            ("dav_health_check(url)", "系统", "验证 DAV 端点是否正常"),
+        ]
+        for name, cat, desc in tool_list:
+            tree.insert("", tk.END, values=(name, cat, desc))
 
     # ── 日历设置 ────────────────────────────────────────────────
 
@@ -696,6 +910,11 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
 
+        self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
+        self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
+        self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
+        self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
@@ -730,7 +949,17 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
 
+        self._ip_whitelist_text.delete("1.0", tk.END)
+        self._ip_blacklist_text.delete("1.0", tk.END)
+        self._ip_bypass_text.delete("1.0", tk.END)
+        self._bypass_localhost_var.set(True)
+
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
+
+    def _load_text_widget_lines(self, widget: tk.Text, raw: str):
+        widget.delete("1.0", tk.END)
+        for line in raw.replace('\r', '').split('\n'):
+            widget.insert(tk.END, line + '\n')
 
     # ── 保存 ────────────────────────────────────────────────────
 
@@ -761,6 +990,11 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_enabled", str(new_ssl))
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
+
+        s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
+        s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
+        s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
+        s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:

@@ -15,6 +15,7 @@ from services.settings_service import SettingsService
 from utils.logger import GUIHandler, logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
+from services.mcp_server import MCPServer
 
 class DAVServerApp:
     """主应用程序类"""
@@ -39,6 +40,10 @@ class DAVServerApp:
         self.log_queue = queue.Queue()
         self.file_handler = None
         self.setup_logging()
+
+        # MCP 服务器（需在 create_widgets 前初始化，因为状态栏用到它）
+        self.mcp_server = MCPServer()
+        self._sync_mcp_server()
 
         self.create_widgets()
 
@@ -172,8 +177,9 @@ class DAVServerApp:
                 logger.warning(f"无法创建日志文件: {e}")
 
     def on_settings_changed(self, *args):
-        """设置变更时重新配置日志"""
+        """设置变更时重新配置日志并同步 MCP 服务"""
         self._setup_file_logging()
+        self._sync_mcp_server()
 
     def create_widgets(self):
         # 菜单栏
@@ -219,11 +225,13 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.update_status_bar)
         event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.update_status_bar)
+        event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.update_status_bar)
 
     def update_status_bar(self, *args):
         c_count = self.contact_service.count()
         e_count = self.event_service.count()
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | 服务器状态: {'运行中' if self.server_tab.server_instance else '已停止'}")
+        mcp = "MCP 运行中" if self.mcp_server.is_running else "MCP 已关闭"
+        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | MCP: {mcp} | 服务器: {'运行中' if self.server_tab.server_instance else '已停止'}")
 
     def show_settings(self):
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
@@ -238,6 +246,14 @@ class DAVServerApp:
                 messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
         messagebox.showinfo("成功", "设置已保存")
 
+    def _sync_mcp_server(self):
+        enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"
+        if enabled and not self.mcp_server.is_running:
+            port = int(self.settings_service.get_setting("mcp_port", "8100"))
+            self.mcp_server.start(port=port)
+        elif not enabled and self.mcp_server.is_running:
+            self.mcp_server.stop()
+
     def process_log_queue(self):
         """将队列中的日志刷新到 UI，附带级别信息用于着色"""
         try:
@@ -251,6 +267,7 @@ class DAVServerApp:
     def on_closing(self):
         if messagebox.askokcancel("退出", "确定要退出吗？"):
             self.server_tab.stop_server()
+            self.mcp_server.stop()
             Database().close()
             self.root.destroy()
 
