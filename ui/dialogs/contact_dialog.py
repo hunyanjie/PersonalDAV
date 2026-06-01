@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, filedialog, messagebox
 import uuid
 import vobject
 from tkcalendar import Calendar
@@ -8,6 +8,9 @@ from utils.encoding_helper import should_encode
 from models.constants import STANDARD_VCARD_FIELDS
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
 import quopri
+import base64
+import io
+from PIL import Image, ImageTk
 
 
 class ContactDialog(tk.Toplevel):
@@ -125,6 +128,18 @@ class ContactDialog(tk.Toplevel):
         self.other_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True); tv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.other_tree.bind("<Double-1>", lambda e: self._other_edit())
         self.other_tree.bind("<Button-3>", self._other_popup)
+        # 头像
+        photo_f = ttk.LabelFrame(f, text="头像", width=180)
+        photo_f.grid(row=0, column=4, rowspan=12, padx=(10, 0), pady=3, sticky="n")
+        photo_f.grid_propagate(False)
+        self.photo_preview = ttk.Label(photo_f, text="无头像", anchor=tk.CENTER)
+        self.photo_preview.pack(padx=5, pady=(10, 5))
+        self._photo_image = None
+        self._photo_bytes = None
+        ttk.Button(photo_f, text="选择照片", command=self._select_photo).pack(pady=2)
+        ttk.Button(photo_f, text="清除照片", command=self._clear_photo).pack(pady=2)
+        ttk.Label(photo_f, text="支持 JPG/PNG，自动缩放", foreground="gray", wraplength=150).pack(pady=(5, 0))
+
         f.grid_rowconfigure(14, weight=1); f.grid_columnconfigure(1, weight=1)
 
         btn_f = ttk.Frame(self); btn_f.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
@@ -137,6 +152,48 @@ class ContactDialog(tk.Toplevel):
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         cal.pack(padx=10, pady=10)
         ttk.Button(w, text="确定", command=lambda: [self.birthday_var.set(cal.get_date()), w.destroy()]).pack(pady=5)
+
+    def _select_photo(self):
+        path = filedialog.askopenfilename(
+            title="选择头像图片",
+            filetypes=[("图片文件", "*.jpg *.jpeg *.png *.gif *.bmp")]
+        )
+        if not path:
+            return
+        try:
+            img = Image.open(path)
+            self._set_photo_image(img)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法加载图片:\n{e}", parent=self)
+
+    def _clear_photo(self):
+        self._photo_image = None
+        self._photo_bytes = None
+        self.preserved_photo = None
+        self.photo_preview.config(image="", text="无头像")
+
+    def _set_photo_image(self, img):
+        img.thumbnail((160, 160), Image.LANCZOS)
+        self._photo_image = ImageTk.PhotoImage(img)
+        self.photo_preview.config(image=self._photo_image, text="")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        self._photo_bytes = buf.getvalue()
+
+    def _load_photo_from_vcard(self):
+        self._photo_bytes = None
+        if not self.preserved_photo:
+            return
+        try:
+            val = self.preserved_photo.value
+            if isinstance(val, str):
+                raw = base64.b64decode(val)
+            else:
+                raw = val
+            img = Image.open(io.BytesIO(raw))
+            self._set_photo_image(img)
+        except Exception:
+            pass
 
     def set_initial_values(self):
         self.uid_entry.insert(0, self.initial.get('uid', f"contact-{uuid.uuid4().hex}"))
@@ -158,6 +215,7 @@ class ContactDialog(tk.Toplevel):
                 # 处理标准字段
                 if name == 'PHOTO':
                     self.preserved_photo = child
+                    self._load_photo_from_vcard()
                 elif name == 'EMAIL':
                     emails.append(child.value)
                 elif name == 'TEL':
@@ -329,8 +387,12 @@ class ContactDialog(tk.Toplevel):
         # 生日
         if self.birthday_var.get(): v.add('bday').value = self.birthday_var.get()
         
-        # 恢复保留的照片
-        if self.preserved_photo:
+        # 照片
+        if self._photo_bytes:
+            v.add('photo').value = base64.b64encode(self._photo_bytes).decode('ascii')
+            v.photo.encoding_param = 'b'
+            v.photo.type_param = 'PNG'
+        elif self.preserved_photo:
             v.add(self.preserved_photo)
 
         # 处理其他扩展字段
