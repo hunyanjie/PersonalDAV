@@ -422,7 +422,8 @@ class SettingsDialog(tk.Toplevel):
             pass
         self.clipboard_clear()
         self.clipboard_append(token)
-        messagebox.showinfo("已复制", "MCP 令牌已复制到剪贴板", parent=self)
+        from ui.widgets.toast import Toast
+        Toast.show(self, "MCP 令牌已复制到剪贴板")
 
     # ── MCP 服务设置 ────────────────────────────────────────────
 
@@ -1069,7 +1070,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             return
         from utils.backup import export_backup
         if export_backup(path):
-            messagebox.showinfo("备份成功", f"已导出到:\n{path}", parent=self)
+            from ui.widgets.toast import Toast
+            Toast.show(self, f"备份已导出到:\n{path}", duration=4000)
         else:
             messagebox.showerror("备份失败", "导出过程中发生错误，请查看日志。", parent=self)
 

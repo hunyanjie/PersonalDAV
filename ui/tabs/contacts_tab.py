@@ -242,4 +242,5 @@ class ContactsTab(BaseTreeTab):
             # vCard 组件末尾已有换行符，直接连接
             content = "".join(vcards)
             with open(path, 'w', encoding='utf-8') as f: f.write(content)
-            messagebox.showinfo("成功", f"成功导出 {len(vcards)} 个联系人")
+            from ui.widgets.toast import Toast
+            Toast.show(self, f"成功导出 {len(vcards)} 个联系人")

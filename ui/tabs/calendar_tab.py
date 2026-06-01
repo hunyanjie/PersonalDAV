@@ -236,4 +236,5 @@ class CalendarTab(BaseTreeTab):
                 path += '.ics'
             data = self.db.combine_raw_events(events)
             with open(path, 'w', encoding='utf-8') as f: f.write(data)
-            messagebox.showinfo("成功", f"成功导出 {len(events)} 个事件")
+            from ui.widgets.toast import Toast
+            Toast.show(self, f"成功导出 {len(events)} 个事件")
