@@ -238,6 +238,7 @@ class DAVServerApp:
             set_auto_start(True)
         elif not auto_start and is_auto_start():
             set_auto_start(False)
+        self.update_status_bar()
 
     def update_status_bar(self, *args):
         c_count = self.contact_service.count()
