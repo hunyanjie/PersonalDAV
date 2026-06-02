@@ -204,7 +204,9 @@ class ContactsTab(BaseTreeTab):
 
     def show_raw(self):
         uids = list(self._selected_uids)
-        if not uids: return
+        if not uids:
+            messagebox.showinfo("提示", "请先选中要查看原始数据的联系人", parent=self)
+            return
         raws = self.db.get_selected_raw(uids)
         data = ''.join(raws) if len(uids) > 1 else raws[0]
         if data:

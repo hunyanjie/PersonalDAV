@@ -250,7 +250,9 @@ class CalendarTab(BaseTreeTab):
 
     def show_raw(self):
         uids = list(self._selected_uids)
-        if not uids: return
+        if not uids:
+            messagebox.showinfo("提示", "请先选中要查看原始数据的事件", parent=self)
+            return
         events = self.db.get_selected_raw(uids)
         if len(uids) == 1:
             data = events[0]
