@@ -11,6 +11,7 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
+- 🔑 **TOTP 双因素认证** — 密码之外再加一层验证，兼容 Google Authenticator / Authy
 - 🛡️ **IP 访问控制** — 白名单/黑名单/CIDR/通配符，支持本机免密码
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
 - 🖥️ **友好的GUI** — 图形界面操作，支持拖拽导入
@@ -76,6 +77,7 @@ python tests/run_all.py
 
 1. 在"设置 → 安全设置"中：
     - 设置统一访问密码（PBKDF2 加密）
+    - 开启 TOTP 双因素认证（兼容 Google Authenticator / Authy）
     - 复制 MCP 令牌供 AI 连接
     - 配置 IP 黑白名单
     - 开启/关闭本机免密码
@@ -101,7 +103,7 @@ python tests/run_all.py
 
 ## 客户端配置
 
-> 如果设置了访问密码，客户端需要输入密码（用户名任意）。
+> 如果设置了访问密码，客户端需要输入密码（用户名任意）。开启 TOTP 后，密码格式为 `密码:TOTP验证码`（如 `MyPass:123456`）。
 
 ### CardDAV 配置
 

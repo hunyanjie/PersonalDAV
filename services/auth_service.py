@@ -93,7 +93,7 @@ class AuthService:
         if for_time is None:
             for_time = time.time()
         counter = struct.pack('>Q', int(for_time / 30))
-        key = base64.b32decode(secret.upper() + '=' * (8 - len(secret) % 8))
+        key = base64.b32decode(secret.upper() + '=' * ((8 - len(secret) % 8) % 8))
         hs = hmac.new(key, counter, hashlib.sha1).digest()
         offset = hs[-1] & 0x0F
         code = (struct.unpack('>I', hs[offset:offset+4])[0] & 0x7FFFFFFF) % 1000000

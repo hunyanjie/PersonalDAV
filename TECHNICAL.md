@@ -735,6 +735,48 @@ IP 匹配支持三种格式：
 
 WebDAV `_check_auth()` 和 MCP 中间件均在密码/令牌校验前调用此方法，命中则直接放行并记录 `"免密 IP"`。
 
+### TOTP 双因素认证（v2.5+）
+
+纯 Python 实现（RFC 6238），无 `pyotp` 等外部依赖。
+
+#### 核心算法
+
+```python
+counter = struct.pack('>Q', int(time.time() / 30))      # 30秒时间步长
+key = base64.b32decode(secret + padding)                 # Base32 解码密钥
+hs = hmac.new(key, counter, hashlib.sha1).digest()       # HMAC-SHA1
+offset = hs[-1] & 0x0F                                   # 动态截断
+code = struct.unpack('>I', hs[offset:offset+4])[0] & 0x7FFFFFFF
+token = f"{code % 1000000:06d}"                          # 6位数字
+```
+
+- 密钥：`secrets.token_bytes(20)` → Base32 编码（32 字符）
+- 验证窗口：`window=1` → 当前 ±1 个时间步长（共 3 个窗口容忍）
+
+#### 集成方式
+
+用户在 WebDAV Basic Auth 密码字段输入 `password:TOTPCODE`，`verify_password()` 自动拆解并分别验证。密码错误优先否决，避免时间步长碰撞泄露信息。
+
+#### 设置页
+
+安全设置选项卡提供：
+- 开关：启用/禁用 TOTP
+- 生成密钥：`AuthService.generate_totp_secret()` → Base32 密钥
+- 复制密钥：点击后密钥可用 Authy/Google Authenticator 扫码（`otpauth://totp/...`）
+- 验证：输入 6 位验证码确认配置正确后保存
+
+#### 存储
+
+| 设置键 | 格式 | 说明 |
+|--------|------|------|
+| `totp_secret` | Base32 字符串 | 空值 = TOTP 未启用 |
+
+#### 安全性说明
+
+- 密码必须先通过，再校验 TOTP；密码错误不泄露 TOTP 信息
+- 时间同步依赖客户端系统时间，±30 秒偏差可接受（window=1）
+- 密钥存储在本地 SQLite 数据库，与密码同等保护级别
+
 ### 协议适配表
 
 | 服务 | 认证方式 | 凭证来源 |
