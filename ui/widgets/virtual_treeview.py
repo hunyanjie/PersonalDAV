@@ -135,13 +135,9 @@ class VirtualTreeview:
             idx += 1
             self.tree.update_idletasks()
             b = self.tree.bbox(iid)
-            if b:
-                if b[1] + b[3] > tree_h:
-                    self.tree.delete(iid)
-                    del new_items[idx - 1]
-                    idx -= 1
-                    break
-            elif idx - self._offset >= self._visible:
+            if b and b[1] + b[3] >= tree_h:
+                break  # 已填满或超出，保留最后一行露出部分来填满空隙
+            if not b and idx - self._offset >= self._visible:
                 break
         self._visible = max(5, idx - self._offset)
         self._swap_items(new_items)
