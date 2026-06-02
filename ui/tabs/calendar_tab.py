@@ -202,29 +202,22 @@ class CalendarTab(BaseTreeTab):
                 self.refresh_events()
 
     def refresh_events(self):
-        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        self._all_data = self.db.get_list_data()
+        raw = self.db.get_list_data()
+        self._all_raw = raw
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
         if self._view_var.get() == "月视图":
             self._refresh_month_view()
 
     def apply_filter(self, query):
-        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        for item in self.tree.get_children(): self.tree.delete(item)
-
-        for event in self._all_data:
+        self._all_data = []
+        for event in self._all_raw:
             uid, summary, start, end, created_at, updated_at = event
             match = not query or any(query in str(v).lower() for v in event)
-
             if match:
-                sel = "✓" if uid in selected_uids else " "
-                disp_summary = summary
-                if disp_summary:
-                    disp_summary = decode_ical_value(disp_summary)
-
-                item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end, created_at, updated_at))
-                if sel == "✓": self.tree.selection_add(item_id)
+                disp_summary = decode_ical_value(summary) if summary else summary
+                self._all_data.append((" ", uid, disp_summary, start, end, created_at, updated_at))
+        self._rerender()
 
     def add_event(self):
         dialog = EventDialog(self.app_root, db=self.settings)
@@ -233,9 +226,9 @@ class CalendarTab(BaseTreeTab):
             self.refresh_events()
 
     def edit_event(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uid = self.tree.item(sel[0])['values'][1]
+        uids = list(self._selected_uids)
+        if not uids: return
+        uid = uids[0]
         data = self.db.get_by_uid(uid)
         if data:
             init = {'uid': uid, 'ical': data}
@@ -245,14 +238,7 @@ class CalendarTab(BaseTreeTab):
                 self.refresh_events()
 
     def delete_event(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uids = []
-        for i in sel:
-            try:
-                uids.append(self.tree.item(i)['values'][1])
-            except:
-                continue
+        uids = list(self._selected_uids)
         if not uids: return
         if messagebox.askyesno("确认", f"确定删除选中的 {len(uids)} 个事件吗？"):
             for uid in uids:
@@ -263,11 +249,10 @@ class CalendarTab(BaseTreeTab):
         self.delete_event()
 
     def show_raw(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uids = [self.tree.item(i)['values'][1] for i in sel]
+        uids = list(self._selected_uids)
+        if not uids: return
         events = self.db.get_selected_raw(uids)
-        if len(sel) == 1:
+        if len(uids) == 1:
             data = events[0]
         else:
             data = self.db.combine_raw_events(events)
@@ -317,16 +302,19 @@ class CalendarTab(BaseTreeTab):
         return items
 
     def export_selected(self):
-        sel = self.tree.selection()
-        if not sel:
+        uids = list(self._selected_uids)
+        if not uids:
             messagebox.showinfo("提示", "请先选择要导出的事件", parent=self)
             return
-        uids = [self.tree.item(i)['values'][1] for i in sel]
         events = self.db.get_selected_raw(uids)
 
         initial = ""
-        if len(sel) == 1:
-            summary = self.tree.item(sel[0])['values'][2]
+        if len(uids) == 1:
+            summary = ""
+            for row in self._all_data:
+                if row[1] == uids[0]:
+                    summary = row[2]
+                    break
             if summary:
                 summary = str(summary)
                 import re

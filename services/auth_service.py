@@ -1,9 +1,5 @@
 import hashlib
-import hmac
 import secrets
-import struct
-import time
-import base64
 import ipaddress
 from datetime import datetime
 from services.settings_service import SettingsService
@@ -51,69 +47,9 @@ class AuthService:
             return not self.is_password_required()
         if '$' not in stored:
             return False
-        pw_part = password
-        totp_part = ""
-        if ':' in password:
-            *parts, last = password.rsplit(':', 1)
-            if len(last) == 6 and last.isdigit():
-                totp_part = last
-                pw_part = ':'.join(parts)
         salt, pw_hash = stored.split('$', 1)
-        computed = hashlib.pbkdf2_hmac('sha256', pw_part.encode('utf-8'), salt.encode('utf-8'), 600000).hex()
-        if not secrets.compare_digest(computed, pw_hash):
-            return False
-        if self.is_totp_enabled() and totp_part:
-            return self.verify_totp(totp_part)
-        return not self.is_totp_enabled()
-
-    # ── TOTP 双因素认证 ─────────────────────────────────────────
-
-    def is_totp_enabled(self) -> bool:
-        return bool(SettingsService().get_setting("totp_secret", ""))
-
-    def get_totp_secret(self) -> str:
-        return SettingsService().get_setting("totp_secret", "")
-
-    def set_totp_secret(self, secret: str):
-        SettingsService().set_setting("totp_secret", secret)
-        if secret:
-            logger.info("TOTP 双因素认证已启用")
-        else:
-            logger.info("TOTP 双因素认证已关闭")
-
-    @staticmethod
-    def generate_totp_secret() -> str:
-        raw = secrets.token_bytes(20)
-        return base64.b32encode(raw).decode('utf-8').rstrip('=')
-
-    @staticmethod
-    def get_totp_provisioning_uri(secret: str, label: str = "PersonalDAV") -> str:
-        return f"otpauth://totp/{label}?secret={secret}&issuer={label}&algorithm=SHA1&digits=6&period=30"
-
-    @staticmethod
-    def _totp_token(secret: str, for_time: float = None) -> str:
-        if for_time is None:
-            for_time = time.time()
-        counter = struct.pack('>Q', int(for_time / 30))
-        key = base64.b32decode(secret.upper() + '=' * ((8 - len(secret) % 8) % 8))
-        hs = hmac.new(key, counter, hashlib.sha1).digest()
-        offset = hs[-1] & 0x0F
-        code = (struct.unpack('>I', hs[offset:offset+4])[0] & 0x7FFFFFFF) % 1000000
-        return f"{code:06d}"
-
-    def verify_totp(self, token: str, window: int = 1) -> bool:
-        secret = self.get_totp_secret()
-        if not secret:
-            return True
-        return self.verify_totp_static(secret, token, window)
-
-    @staticmethod
-    def verify_totp_static(secret: str, token: str, window: int = 1) -> bool:
-        now = time.time()
-        for i in range(-window, window + 1):
-            if secrets.compare_digest(AuthService._totp_token(secret, now + i * 30), token):
-                return True
-        return False
+        computed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex()
+        return secrets.compare_digest(computed, pw_hash)
 
     # ── MCP 令牌（可轮换） ──────────────────────────────────────
 
