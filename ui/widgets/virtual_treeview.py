@@ -21,6 +21,7 @@ class VirtualTreeview:
         self._idx_to_iid = {}      # 数据索引 → tree item id
         self._iid_to_idx = {}      # tree item id → 数据索引
         self._col_width_fn = column_width_fn
+        self.post_render_hook = None  # _render 完成后回调，由 BaseTreeTab 设为 _update_checkboxes
 
         self.frame = ttk.Frame(parent)
         self.tree = ttk.Treeview(self.frame, columns=columns, show="headings",
@@ -31,7 +32,6 @@ class VirtualTreeview:
 
         self.scrollbar = ttk.Scrollbar(self.frame, orient=tk.VERTICAL,
                                        command=self._on_scrollbar)
-        self.tree.configure(yscrollcommand=self._on_tree_scroll)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.frame.pack(fill=tk.BOTH, expand=True)
@@ -112,6 +112,8 @@ class VirtualTreeview:
             self._iid_to_idx[iid] = i
 
         self._sync_scrollbar()
+        if self.post_render_hook:
+            self.post_render_hook()
 
     def _on_scrollbar(self, *args):
         """滚动条拖动/滚轮回调。"""
@@ -129,10 +131,6 @@ class VirtualTreeview:
                 self._offset = max(0, min(max_off, self._offset + n * self.PAGE_SIZE // 2))
 
         self._render()
-
-    def _on_tree_scroll(self, *args):
-        """Treeview 内部 yview 变化时更新滚动条。"""
-        self._sync_scrollbar()
 
     def _sync_scrollbar(self):
         """根据当前偏移量和总数据量更新滚动条。"""

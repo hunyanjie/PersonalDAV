@@ -82,6 +82,7 @@ class BaseTreeTab(ttk.Frame):
         self.tree.bind("<MouseWheel>", self._on_mousewheel)
 
         self._edit_callback = on_edit_callback
+        self.vtree.post_render_hook = self._update_checkboxes
 
     def get_column_width(self, col):
         """获取列宽 - 子类可覆盖"""
@@ -222,13 +223,17 @@ class BaseTreeTab(ttk.Frame):
         return self._selected_uids
 
     def _update_checkboxes(self):
-        """根据 _selected_uids 刷新当前页复选框。"""
+        """根据 _selected_uids 刷新当前页复选框和选中高亮。"""
+        sel = []
         for i in self.vtree.get_visible_iids():
             uid = self._uid_of(i)
-            state = "✓" if uid in self._selected_uids else " "
+            selected = uid in self._selected_uids
             vals = list(self.tree.item(i, 'values'))
-            vals[0] = state
+            vals[0] = "✓" if selected else " "
             self.tree.item(i, values=vals)
+            if selected:
+                sel.append(i)
+        self.tree.selection_set(sel)
 
     def sort_tree(self, col):
         """三态排序: asc -> desc -> 取消(默认排序)"""
