@@ -4,6 +4,8 @@ import uuid
 import pytz
 import vobject
 import re
+import os
+import base64
 from datetime import datetime, timedelta
 from dateutil import parser
 from babel.dates import get_timezone_name
@@ -34,7 +36,7 @@ class DetailedReminderEditor(tk.Toplevel):
     def __init__(self, parent, initial_alarm=None, callback=None):
         super().__init__(parent)
         self.title("编辑提醒" if initial_alarm else "添加提醒")
-        self.geometry("500x550") # 设置固定大小
+        # self.geometry("500x550") # 设置固定大小
         self.transient(parent); self.grab_set()
         self.callback = callback
         self.initial_alarm = initial_alarm
@@ -175,7 +177,7 @@ class EventDialog:
     def __init__(self, parent, initial=None, db=None):
         self.root = tk.Toplevel(parent)
         self.root.title("添加/编辑日历事件")
-        self.root.geometry("900x800")
+        # self.root.geometry("900x800")
         self.root.transient(parent)
         self.root.grab_set()
 
@@ -330,11 +332,13 @@ class EventDialog:
         self.basic_tab = ttk.Frame(self.notebook); self.notebook.add(self.basic_tab, text="基本信息")
         self.time_tab = ttk.Frame(self.notebook); self.notebook.add(self.time_tab, text="时间设置")
         self.reminder_tab = ttk.Frame(self.notebook); self.notebook.add(self.reminder_tab, text="提醒设置")
+        self.attachment_tab = ttk.Frame(self.notebook); self.notebook.add(self.attachment_tab, text="附件")
         self.advanced_tab = ttk.Frame(self.notebook); self.notebook.add(self.advanced_tab, text="高级设置")
 
         self.create_basic_tab()
         self.create_time_tab()
         self.create_reminder_tab()
+        self.create_attachment_tab()
         self.create_advanced_tab()
 
         btn_frame = ttk.Frame(main_frame)
@@ -506,6 +510,15 @@ class EventDialog:
         self.end_cond_var.trace("w", update_end_ui)
         update_end_ui()
 
+        ttk.Label(frame, text="例外日期:").grid(row=9, column=0, sticky="nw", padx=5, pady=5)
+        exc_f = ttk.Frame(frame); exc_f.grid(row=9, column=1, columnspan=3, sticky="we", padx=5, pady=5)
+        self.exdate_listbox = tk.Listbox(exc_f, height=3, exportselection=False)
+        self.exdate_listbox.pack(fill=tk.X, pady=(0, 3))
+        exc_btn_f = ttk.Frame(exc_f); exc_btn_f.pack(fill=tk.X)
+        ttk.Button(exc_btn_f, text="添加日期", command=self._add_exdate, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(exc_btn_f, text="移除选中", command=self._remove_exdate, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Label(exc_f, text="例外日期在重复事件中跳过", foreground="gray").pack(anchor="w")
+
     def apply_duration(self, dur_str):
         try:
             start_dt = datetime.combine(self.start_date.get_date(),
@@ -521,6 +534,23 @@ class EventDialog:
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
         except: pass
+
+    def _add_exdate(self):
+        from tkcalendar import Calendar
+        w = tk.Toplevel(self.root); w.title("选择例外日期"); w.grab_set()
+        cal = Calendar(w, date_pattern='yyyy-mm-dd')
+        cal.pack(padx=10, pady=10)
+        def confirm():
+            d = cal.get_date()
+            if d not in self.exdate_listbox.get(0, tk.END):
+                self.exdate_listbox.insert(tk.END, d)
+            w.destroy()
+        ttk.Button(w, text="确定", command=confirm).pack(pady=5)
+
+    def _remove_exdate(self):
+        sel = self.exdate_listbox.curselection()
+        for i in reversed(sel):
+            self.exdate_listbox.delete(i)
 
     def apply_default_duration(self):
         try:
@@ -565,6 +595,130 @@ class EventDialog:
         self.preset_allday_reminders_listbox.config(yscrollcommand=e_p_a_sb.set)
         self.preset_allday_reminders_listbox.bind("<Double-1>", lambda e: self.apply_preset_reminder(True))
         self.load_preset_reminders()
+
+    def create_attachment_tab(self):
+        frame = ttk.LabelFrame(self.attachment_tab, text="事件附件")
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.attachments = []
+        btn_f = ttk.Frame(frame); btn_f.pack(fill=tk.X, pady=(0, 5))
+        ttk.Button(btn_f, text="添加文件", command=self._attach_file).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="添加链接", command=self._attach_uri).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="编辑选中", command=self._attach_edit).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="移除选中", command=self._attach_remove).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="打开选中", command=self._attach_open).pack(side=tk.LEFT, padx=2)
+        tree_f = ttk.Frame(frame); tree_f.pack(fill=tk.BOTH, expand=True)
+        self.attach_tree = ttk.Treeview(tree_f, columns=('filename', 'size', 'type'), show="headings", height=6)
+        self.attach_tree.heading('filename', text='文件名/链接')
+        self.attach_tree.heading('size', text='大小')
+        self.attach_tree.heading('type', text='类型')
+        self.attach_tree.column('filename', width=280); self.attach_tree.column('size', width=80, anchor='center')
+        self.attach_tree.column('type', width=120, anchor='center')
+        tv_scroll = ttk.Scrollbar(tree_f, orient="vertical", command=self.attach_tree.yview)
+        self.attach_tree.configure(yscrollcommand=tv_scroll.set)
+        self.attach_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True); tv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.attach_tree.bind("<Double-1>", lambda e: self._attach_open())
+
+    def _attach_file(self):
+        paths = filedialog.askopenfilenames(title="选择附件文件", parent=self.root)
+        for p in paths:
+            try:
+                with open(p, 'rb') as f:
+                    data = f.read()
+                name = os.path.basename(p)
+                ext = os.path.splitext(name)[1].lower()
+                fmt_map = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+                           '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.doc': 'application/msword',
+                           '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                           '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
+                fmttype = fmt_map.get(ext, 'application/octet-stream')
+                b64 = base64.b64encode(data).decode('ascii')
+                self.attachments.append({'inline': True, 'data': b64, 'filename': name,
+                                         'fmttype': fmttype, 'size': len(data)})
+                self._attach_refresh()
+            except Exception as e:
+                messagebox.showerror("错误", f"无法读取文件:\n{e}", parent=self.root)
+
+    def _attach_uri(self):
+        uri = simpledialog.askstring("添加链接", "请输入附件链接 URL:", parent=self.root)
+        if uri:
+            self.attachments.append({'inline': False, 'uri': uri, 'filename': uri,
+                                     'fmttype': 'text/uri-list', 'size': 0})
+            self._attach_refresh()
+
+    def _attach_remove(self):
+        sel = self.attach_tree.selection()
+        for item in reversed(sel):
+            idx = self.attach_tree.index(item)
+            if 0 <= idx < len(self.attachments):
+                self.attachments.pop(idx)
+        self._attach_refresh()
+
+    def _attach_open(self):
+        sel = self.attach_tree.selection()
+        if not sel: return
+        idx = self.attach_tree.index(sel[0])
+        if idx < 0 or idx >= len(self.attachments): return
+        a = self.attachments[idx]
+        if a.get('inline'):
+            ext = os.path.splitext(a['filename'])[1] or '.bin'
+            tmp = os.path.join(os.environ.get('TEMP', os.environ.get('TMP', '.')), a['filename'])
+            try:
+                with open(tmp, 'wb') as f:
+                    f.write(base64.b64decode(a['data']))
+                os.startfile(tmp)
+            except Exception as e:
+                messagebox.showerror("错误", f"无法打开附件:\n{e}", parent=self.root)
+        else:
+            import webbrowser
+            webbrowser.open(a['uri'])
+
+    def _attach_edit(self):
+        sel = self.attach_tree.selection()
+        if not sel: return
+        idx = self.attach_tree.index(sel[0])
+        if idx < 0 or idx >= len(self.attachments): return
+        a = self.attachments[idx]
+        if a.get('inline'):
+            path = filedialog.askopenfilename(title="选择替换文件", parent=self.root)
+            if not path: return
+            try:
+                with open(path, 'rb') as f:
+                    data = f.read()
+                name = os.path.basename(path)
+                ext = os.path.splitext(name)[1].lower()
+                fmt_map = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+                           '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.doc': 'application/msword',
+                           '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                           '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
+                a['data'] = base64.b64encode(data).decode('ascii')
+                a['filename'] = name
+                a['fmttype'] = fmt_map.get(ext, 'application/octet-stream')
+                a['size'] = len(data)
+                self._attach_refresh()
+            except Exception as e:
+                messagebox.showerror("错误", f"无法替换文件:\n{e}", parent=self.root)
+        else:
+            uri = simpledialog.askstring("编辑链接", "修改附件链接 URL:", initialvalue=a.get('uri', ''), parent=self.root)
+            if uri is not None:
+                a['uri'] = uri
+                a['filename'] = uri
+                self._attach_refresh()
+
+    def _attach_refresh(self):
+        for item in self.attach_tree.get_children():
+            self.attach_tree.delete(item)
+        for a in self.attachments:
+            name = a['filename'] if a.get('inline') else a.get('uri', '')
+            size = self._format_size(a['size']) if a.get('inline') else '链接'
+            fmt = a.get('fmttype', '')
+            self.attach_tree.insert("", tk.END, values=(name, size, fmt))
+
+    def _format_size(self, bytes_):
+        if bytes_ < 1024: return f"{bytes_} B"
+        elif bytes_ < 1024*1024: return f"{bytes_/1024:.1f} KB"
+        else: return f"{bytes_/1024/1024:.1f} MB"
 
     def create_advanced_tab(self):
         frame = ttk.LabelFrame(self.advanced_tab, text="高级设置")
@@ -715,7 +869,8 @@ class EventDialog:
             if v.get('sync_timezone') is not None: self.sync_tz_var.set(v.get('sync_timezone'))
         if is_edit_mode:
             try:
-                ical = vobject.readOne(v['ical']); ev = ical.vevent
+                ical = vobject.readOne(v['ical'])
+                ev = ical.vevent if ical.name == 'VCALENDAR' else ical
                 if hasattr(ev, 'summary'): self.summary_var.set(decode_ical_value(ev.summary.value))
                 if hasattr(ev, 'location'): self.location_var.set(decode_ical_value(ev.location.value))
                 if hasattr(ev, 'description'): self.description_text.insert("1.0", decode_ical_value(ev.description.value))
@@ -775,6 +930,52 @@ class EventDialog:
                         except: pass
                     elif 'COUNT' in parts: self.end_cond_var.set('按次数结束'); self.end_count_var.set(parts['COUNT'])
                     else: self.end_cond_var.set('永不结束')
+                # 解析 EXDATE 例外日期
+                self.exdate_listbox.delete(0, tk.END)
+                if 'exdate' in ev.contents:
+                    for ex in ev.contents['exdate']:
+                        val = ex.value
+                        if isinstance(val, list):
+                            for v in val:
+                                if isinstance(v, datetime):
+                                    self.exdate_listbox.insert(tk.END, v.strftime('%Y-%m-%d'))
+                                else:
+                                    self.exdate_listbox.insert(tk.END, str(v))
+                        elif isinstance(val, datetime):
+                            self.exdate_listbox.insert(tk.END, val.strftime('%Y-%m-%d'))
+                        else:
+                            self.exdate_listbox.insert(tk.END, str(val))
+                # 解析 ATTACH 附件
+                self.attachments = []
+                seen_inline = set()
+                seen_uri = set()
+                if 'attach' in ev.contents:
+                    for att in ev.contents['attach']:
+                        a = {'inline': False}
+                        if hasattr(att, 'encoding_param') and att.encoding_param == 'BASE64':
+                            a['inline'] = True
+                            a['data'] = att.value
+                            a['filename'] = att.params.get('FILENAME', ['attachment.bin'])[0] if hasattr(att, 'params') else 'attachment.bin'
+                            a['fmttype'] = att.params.get('FMTTYPE', ['application/octet-stream'])[0] if hasattr(att, 'params') else 'application/octet-stream'
+                            a['size'] = int(len(base64.b64decode(a['data'])) * 3 / 4) if a['data'] else 0
+                            key = a['data']
+                            if key in seen_inline:
+                                continue
+                            seen_inline.add(key)
+                        else:
+                            raw = att.value
+                            if len(raw) > 100 and '://' not in raw and not raw.startswith('www.'):
+                                continue
+                            seen_uri_key = raw
+                            if seen_uri_key in seen_uri:
+                                continue
+                            seen_uri.add(seen_uri_key)
+                            a['uri'] = raw
+                            a['filename'] = att.params.get('FILENAME', [raw])[0] if hasattr(att, 'params') else raw
+                            a['fmttype'] = att.params.get('FMTTYPE', ['text/uri-list'])[0] if hasattr(att, 'params') else 'text/uri-list'
+                            a['size'] = 0
+                        self.attachments.append(a)
+                self._attach_refresh()
                 self.alarms = []; valarms = ev.contents.get('valarm', [])
                 if not valarms: valarms = [c for c in ev.getChildren() if c.name.upper() == 'VALARM']
                 for alarm in valarms:
@@ -790,7 +991,7 @@ class EventDialog:
                         except: pass
                     if hasattr(alarm, 'duration'): alarm_data['duration'] = alarm.duration.value
                     self.alarms.append(alarm_data)
-            except Exception as e: logger.error(f"解析 iCalendar 数据失败: {e}")
+            except Exception as e: logger.error(f"解析 iCalendar 数据失败 (UID={self.uid_var.get()}): {e}")
         self.toggle_allday(); self.toggle_sync_tz(); self.on_status_changed(); self.update_reminder_listbox()
 
     def toggle_allday(self):
@@ -925,6 +1126,22 @@ class EventDialog:
                 if cond == "按日期结束": rrule += f";UNTIL={self.end_date_entry.get_date().strftime('%Y%m%dT235959Z')}"
                 elif cond == "按次数结束": rrule += f";COUNT={self.end_count_var.get()}"
                 ev.add('rrule').value = rrule
+        exdates = self.exdate_listbox.get(0, tk.END)
+        if exdates:
+            tz_id = None
+            if not self.allday_var.get():
+                tz_id = TimezoneHelper.extract_tz_id(self.start_tz_var.get())
+            for d in exdates:
+                ex = ev.add('exdate')
+                if self.allday_var.get():
+                    ex.value = datetime.strptime(d, '%Y-%m-%d').date()
+                else:
+                    dt = datetime.strptime(d, '%Y-%m-%d')
+                    if tz_id:
+                        ex.value = pytz.timezone(tz_id).localize(dt)
+                        ex.params['TZID'] = [tz_id]
+                    else:
+                        ex.value = dt
         for a in self.alarms:
             al = ev.add('valarm'); al.add('action').value = a['action']; al.add('trigger').value = a['trigger']
             if 'description' in a: al.add('description').value = a['description']
@@ -932,7 +1149,22 @@ class EventDialog:
             if 'attendee' in a: al.add('attendee').value = a['attendee']
             if 'summary' in a: al.add('summary').value = a['summary']
             if 'repeat' in a: al.add('repeat').value = str(a['repeat']); al.add('duration').value = a['duration']
-        if self.categories_var.get(): ev.add('categories').value = self.categories_var.get()
+        # 写入 ATTACH 附件
+        for a in self.attachments:
+            att = ev.add('attach')
+            if a.get('inline'):
+                att.value = a['data']
+                att.encoding_param = 'BASE64'
+                att.encoded = True
+                att.params['VALUE'] = ['BINARY']
+                if a.get('fmttype') and a['fmttype'] != 'application/octet-stream':
+                    att.params['FMTTYPE'] = [a['fmttype']]
+                if a.get('filename'):
+                    att.params['FILENAME'] = [a['filename']]
+            else:
+                att.value = a.get('uri', '')
+                if a.get('fmttype') and a['fmttype'] != 'text/uri-list':
+                    att.params['FMTTYPE'] = [a['fmttype']]
         ev.add('priority').value = str(self.priority_var.get()); ev.add('transp').value = self.TRANSPARENCY_MAPPING.get(self.transparency_var.get(), "OPAQUE")
         if self.organizer_var.get(): ev.add('organizer').value = str(self.organizer_var.get())
         try:
@@ -959,15 +1191,15 @@ class EventDialog:
 
     def show_raw_data(self):
         win = tk.Toplevel(self.root); win.title("原始数据")
-        sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
         sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
-        txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+        txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
         RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
-        sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
-        sb_h.pack(side=tk.BOTTOM, fill=tk.X)
+        sb_v.config(command=txt.yview)
         sb_v.pack(side=tk.RIGHT, fill=tk.Y)
         txt.pack(fill=tk.BOTH, expand=True)
-        txt.insert(tk.END, self.generate_ical()); txt.config(state=tk.DISABLED)
+        content = self.initial.get('ical') or self.generate_ical()
+        txt.insert(tk.END, content)
+        txt.config(state=tk.DISABLED)
 
     def ok(self):
         summary = self.summary_var.get().strip()

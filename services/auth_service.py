@@ -5,6 +5,7 @@ from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
 from utils.rate_limiter import get_rate_limiter
+from database.db_manager import Database
 
 
 class AuthService:
@@ -22,10 +23,14 @@ class AuthService:
         salt = secrets.token_hex(16)
         pw_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex()
         SettingsService().set_setting("access_password_hash", f"{salt}${pw_hash}")
+        SettingsService().set_setting("mcp_token_salt", secrets.token_hex(16))
+        SettingsService().set_setting("mcp_token_rotated_at", datetime.now().isoformat())
         logger.info("鉴权密码已设置")
 
     def clear_password(self):
         SettingsService().set_setting("access_password_hash", "")
+        SettingsService().set_setting("mcp_token_salt", "")
+        SettingsService().set_setting("mcp_token_rotated_at", "")
         logger.info("鉴权密码已清除")
 
     def is_enabled(self) -> bool:
@@ -41,18 +46,33 @@ class AuthService:
         computed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex()
         return secrets.compare_digest(computed, pw_hash)
 
-    # ── MCP 令牌 ────────────────────────────────────────────────
+    # ── MCP 令牌（可轮换） ──────────────────────────────────────
 
-    def get_mcp_token(self) -> str:
+    def _mcp_token_seed(self) -> str:
         stored = SettingsService().get_setting("access_password_hash", "")
         if not stored:
             return ""
-        return hashlib.sha256(f"mcp:{stored}".encode('utf-8')).hexdigest()
+        salt = SettingsService().get_setting("mcp_token_salt", "")
+        return f"mcp:{stored}:{salt}" if salt else f"mcp:{stored}"
+
+    def get_mcp_token(self) -> str:
+        seed = self._mcp_token_seed()
+        if not seed:
+            return ""
+        return hashlib.sha256(seed.encode('utf-8')).hexdigest()
 
     def verify_mcp_token(self, token: str) -> bool:
         if not self.is_enabled():
             return True
         return secrets.compare_digest(self.get_mcp_token(), token)
+
+    def rotate_mcp_token(self):
+        SettingsService().set_setting("mcp_token_salt", secrets.token_hex(16))
+        SettingsService().set_setting("mcp_token_rotated_at", datetime.now().isoformat())
+        logger.info("MCP 令牌已轮换")
+
+    def get_mcp_token_rotated_at(self) -> str:
+        return SettingsService().get_setting("mcp_token_rotated_at", "")
 
     def ip_bypasses_auth(self, client_ip: str) -> bool:
         s = SettingsService()
@@ -152,7 +172,6 @@ class AuthService:
         else:
             logger.warning(parts)
         try:
-            from database.db_manager import Database
             Database().execute(
                 "INSERT INTO auth_logs (timestamp, ip, success, method, detail) VALUES (?, ?, ?, ?, ?)",
                 (datetime.now().isoformat(), client_ip, 1 if success else 0, method, extra)

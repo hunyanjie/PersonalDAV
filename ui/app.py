@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox
 import queue
 from database.db_manager import Database
 import logging
+import time
+import os
 import webbrowser
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from ui.tabs.server_tab import ServerTab
@@ -17,6 +19,7 @@ from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHAN
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from services.mcp_server import MCPServer
 from utils.auto_start import set_auto_start, is_auto_start
+from ui.tray_manager import TrayManager
 
 class DAVServerApp:
     """主应用程序类"""
@@ -44,8 +47,12 @@ class DAVServerApp:
 
         # MCP 服务器（需在 create_widgets 前初始化，因为状态栏用到它）
         self.mcp_server = MCPServer()
+        self.start_time = time.time()
 
         self.create_widgets()
+
+        # 周期性刷新状态栏（运行时长实时更新）
+        self._tick_status_bar()
 
         # 延迟执行非关键启动任务，让窗口先显示
         self.root.after_idle(self._deferred_startup)
@@ -65,6 +72,18 @@ class DAVServerApp:
 
         # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
+
+        # 托盘图标（pystray 不可用时静默降级）
+        self._tray = None
+        self._tray_available = False
+        try:
+            import pystray
+            self._tray_available = True
+        except ImportError:
+            self._tray_available = False
+        if self._tray_available:
+            self._tray = TrayManager(self.root, on_show=self._tray_show, on_quit=self._tray_quit)
+            self._tray.start()
 
     def on_global_delete(self, event):
         """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
@@ -200,8 +219,8 @@ class DAVServerApp:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="帮助", menu=help_menu)
         help_menu.add_command(label="项目地址", command=self.open_project_url)
-        from ui.dialogs.text_import_dialog import show_about
-        help_menu.add_command(label="关于", command=lambda: show_about(self.root))
+        from ui.dialogs.about_dialog import AboutDialog
+        help_menu.add_command(label="关于", command=lambda: AboutDialog(self.root))
 
         # 选项卡
         self.notebook = ttk.Notebook(self.root)
@@ -239,12 +258,70 @@ class DAVServerApp:
         elif not auto_start and is_auto_start():
             set_auto_start(False)
         self.update_status_bar()
+        self._check_cert_renew()
+        self._start_periodic_sync()
+
+    def _start_periodic_sync(self):
+        if self.settings_service.get_setting("sync_enabled", "False") != "True":
+            return
+        from services.sync_service import SyncService
+        interval = int(self.settings_service.get_setting("sync_interval", "30"))
+        svc = SyncService()
+        if svc.is_configured():
+            svc.start_periodic_sync(interval)
+            logger.info(f"定时同步已启动，间隔 {interval} 分钟")
+
+    def _check_cert_renew(self):
+        if self.settings_service.get_setting("ssl_auto_renew", "True") != "True":
+            return
+        cert_path = self.settings_service.get_setting("ssl_certfile", "")
+        if not cert_path:
+            return
+        from utils.cert_helper import should_renew, generate_self_signed_cert
+        if should_renew(cert_path):
+            key_path = self.settings_service.get_setting("ssl_keyfile", "")
+            if key_path:
+                try:
+                    generate_self_signed_cert(cert_path, key_path)
+                    logger.info("SSL证书已自动续期")
+                except Exception as e:
+                    logger.error(f"SSL证书自动续期失败: {e}")
+
+    def _get_db_size(self) -> str:
+        try:
+            db = Database()
+            size = os.path.getsize(db.db_path)
+            if size < 1024:
+                return f"{size}B"
+            elif size < 1024 * 1024:
+                return f"{size / 1024:.0f}KB"
+            else:
+                return f"{size / 1024 / 1024:.1f}MB"
+        except Exception:
+            return "?"
+
+    def _tick_status_bar(self):
+        self.update_status_bar()
+        self.root.after(10000, self._tick_status_bar)
+
+    def _format_uptime(self, start: float) -> str:
+        elapsed = int(time.time() - start)
+        h, m = divmod(elapsed, 3600)
+        m, s = divmod(m, 60)
+        if h:
+            return f"{h}h{m}m"
+        elif m:
+            return f"{m}m{s}s"
+        return f"{s}s"
 
     def update_status_bar(self, *args):
         c_count = self.contact_service.count()
         e_count = self.event_service.count()
         mcp = "MCP 运行中" if self.mcp_server.is_running else "MCP 已关闭"
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | MCP: {mcp} | 服务器: {'运行中' if self.server_tab.server_instance else '已停止'}")
+        server = self.server_tab.server_instance
+        srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
+        db_size = self._get_db_size()
+        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}")
 
     def show_settings(self):
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
@@ -260,7 +337,8 @@ class DAVServerApp:
         # 同步系统自启动状态
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         set_auto_start(auto_start)
-        messagebox.showinfo("成功", "设置已保存")
+        from ui.widgets.toast import Toast
+        Toast.show(self.root, "设置已保存")
 
     def _sync_mcp_server(self):
         enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"
@@ -281,11 +359,66 @@ class DAVServerApp:
         self.root.after(100, self.process_log_queue)
 
     def on_closing(self):
-        if messagebox.askokcancel("退出", "确定要退出吗？"):
-            self.server_tab.stop_server()
-            self.mcp_server.stop()
-            Database().close()
-            self.root.destroy()
+        if not self._tray_available:
+            self._do_quit()
+            return
+        action = self.settings_service.get_setting("close_action", "ask")
+        if action == "exit":
+            self._do_quit()
+            return
+        if action == "tray":
+            self._hide_to_tray()
+            return
+        self._show_close_dialog()
+
+    def _show_close_dialog(self):
+        dialog = tk.Toplevel(self.root); dialog.title("退出确认")  # ; dialog.geometry("380x200")
+        dialog.transient(self.root); dialog.grab_set(); dialog.resizable(False, False)
+        ttk.Label(dialog, text="关闭窗口时执行的操作：", font=('', 11)).pack(pady=(15, 5))
+        var = tk.StringVar(value="tray")
+        ttk.Radiobutton(dialog, text="退出程序", variable=var, value="exit").pack(anchor="w", padx=40, pady=2)
+        ttk.Radiobutton(dialog, text="隐藏到系统托盘", variable=var, value="tray").pack(anchor="w", padx=40, pady=2)
+        remember_var = tk.BooleanVar()
+        ttk.Checkbutton(dialog, text="记住选择，不再询问", variable=remember_var).pack(anchor="w", padx=40, pady=5)
+        btn_f = ttk.Frame(dialog); btn_f.pack(pady=10)
+        def confirm():
+            chosen = var.get()
+            if remember_var.get():
+                self.settings_service.set_setting("close_action", chosen)
+            dialog.destroy()
+            if chosen == "exit":
+                self._do_quit()
+            else:
+                self._hide_to_tray()
+        ttk.Button(btn_f, text="确定", command=confirm).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=lambda: dialog.destroy() or None).pack(side=tk.LEFT, padx=5)
+
+    def _hide_to_tray(self):
+        self.root.withdraw()
+        self._tray_notify("仍在后台运行，点击托盘图标可恢复窗口")
+
+    def _do_quit(self):
+        self.server_tab.stop_server()
+        self.mcp_server.stop()
+        if hasattr(self, '_tray'):
+            self._tray.stop()
+        Database().close()
+        self.root.destroy()
+
+    def _tray_notify(self, text):
+        try:
+            if self._tray and self._tray._icon:
+                self._tray._icon.notify(text, SOFTWARE_NAME)
+        except Exception:
+            pass
+
+    def _tray_show(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def _tray_quit(self):
+        self._do_quit()
 
     def open_project_url(self):
         """打开项目地址"""

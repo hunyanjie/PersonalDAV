@@ -7,7 +7,7 @@ class TextImportDialog(tk.Toplevel):
     def __init__(self, parent, title):
         super().__init__(parent)
         self.title(title)
-        self.geometry("600x500")
+        # self.geometry("600x500")
         self.transient(parent)
         self.grab_set()
 
@@ -44,37 +44,13 @@ def show_raw_dialog(parent, title, raw_data):
     """显示原始数据对话框"""
     win = tk.Toplevel(parent)
     win.title(f"原始数据 - {title}")
-    win.geometry("600x400")
-    sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
     sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
-    txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+    txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
     RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
-    sb_h.config(command=txt.xview)
     sb_v.config(command=txt.yview)
-    sb_h.pack(side=tk.BOTTOM, fill=tk.X)
     sb_v.pack(side=tk.RIGHT, fill=tk.Y)
     txt.pack(fill=tk.BOTH, expand=True)
     txt.insert(tk.END, raw_data)
     txt.config(state=tk.DISABLED)
 
-def show_about(parent):
-    """关于对话框"""
-    from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_AUTHOR, SOFTWARE_DESCRIPTION
-    about_text = f"""{SOFTWARE_NAME} v{SOFTWARE_VERSION}
 
-{SOFTWARE_DESCRIPTION}
-
-作者: {SOFTWARE_AUTHOR}
-
-这是一个全能 DAV 服务程序，支持 CardDAV（联系人）、CalDAV（日历事件）和 WebDAV（文件管理）。
-
-功能特点:
-- 本地数据库存储
-- 支持 WebDAV 协议
-- 支持导入/导出 vCard 和 iCalendar 格式
-- 提供图形用户界面
-- 支持拖拽导入
-
-(c) hunyanjie 2024-2025"""
-    from tkinter import messagebox
-    messagebox.showinfo("关于", about_text, parent=parent)

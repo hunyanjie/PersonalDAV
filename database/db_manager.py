@@ -82,6 +82,10 @@ class Database:
                 try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
                 except: pass
 
+        # 迁移: 联系人分组
+        try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
+        except: pass
+
         # 初始数据填充 (仅在表为空时)
         c.execute("SELECT COUNT(*) FROM settings")
         if c.fetchone()[0] == 0:

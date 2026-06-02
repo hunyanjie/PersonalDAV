@@ -9,6 +9,7 @@ class ContactModel:
     email: str = ""
     phone: str = ""
     vcard: str = ""
+    groups: str = ""
     id: Optional[int] = None
     created_at: str = ""
     updated_at: str = ""
@@ -21,6 +22,7 @@ class ContactModel:
             "email": self.email,
             "phone": self.phone,
             "vcard": self.vcard,
+            "groups": self.groups,
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }

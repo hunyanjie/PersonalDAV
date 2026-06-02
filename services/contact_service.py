@@ -7,6 +7,7 @@ from services.base_service import BaseService
 from utils.logger import logger
 from utils.vcard_parser import RobustVCardParser
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
+import re
 
 class ContactService(BaseService):
     """联系人业务逻辑 - 单例模式"""
@@ -19,7 +20,7 @@ class ContactService(BaseService):
                 repo=ContactRepository(),
                 changed_event=EVENT_CONTACTS_CHANGED,
                 raw_field='vcard',
-                list_fields=['uid', 'full_name', 'email', 'phone', 'created_at', 'updated_at']
+                list_fields=['uid', 'full_name', 'email', 'phone', 'groups', 'created_at', 'updated_at']
             )
         return cls._instance
 
@@ -36,11 +37,19 @@ class ContactService(BaseService):
                     "full_name": self._extract_full_name(vcard),
                     "email": ";".join(self._extract_emails(vcard)),
                     "phone": ";".join(self._extract_phones(vcard)),
+                    "groups": self._extract_categories(vcard),
                     "vcard": vcard_data
                 }
             except Exception as e:
-                logger.warning(f"vobject 解析失败，切换到鲁棒手动解析: {str(e)}")
+                uid_raw = ""
+                for line in vcard_data.splitlines():
+                    if line.upper().startswith("UID:"):
+                        uid_raw = line[4:].strip()
+                        break
+                logger.warning(f"vobject 解析失败 (UID={uid_raw}), 切换到鲁棒手动解析: {str(e)}")
                 parsed_data = RobustVCardParser.manual_parse(vcard_data)
+                if parsed_data:
+                    parsed_data['groups'] = self._extract_categories_from_text(vcard_data)
 
             if not parsed_data:
                 return None, "Parse Error"
@@ -86,3 +95,31 @@ class ContactService(BaseService):
         if hasattr(vcard, 'tel_list'): return [t.value for t in vcard.tel_list]
         if hasattr(vcard, 'tel'): return [vcard.tel.value]
         return []
+
+    def _extract_categories(self, vcard):
+        if hasattr(vcard, 'categories_list'):
+            vals = []
+            for c in vcard.categories_list:
+                val = c.value
+                if isinstance(val, list):
+                    vals.extend(val)
+                else:
+                    vals.append(val)
+            return ";".join(vals)
+        if hasattr(vcard, 'categories'):
+            val = vcard.categories.value
+            if isinstance(val, list):
+                return ";".join(val)
+            return val
+        return ""
+
+    @staticmethod
+    def _extract_categories_from_text(vcard_text: str) -> str:
+        """从 vCard 纯文本中提取 CATEGORIES（当 vobject 解析失败时）"""
+        for line in vcard_text.splitlines():
+            if line.upper().startswith('CATEGORIES'):
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    val = parts[1].strip()
+                    return val.replace('\\,', ';').replace(',', ';')
+        return ""

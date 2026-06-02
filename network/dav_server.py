@@ -378,8 +378,11 @@ class DAVServer:
         self.ssl_certfile = ssl_certfile
         self.ssl_keyfile = ssl_keyfile
         self.server = None
+        self.start_time = 0.0
 
     def start(self):
+        import time
+        self.start_time = time.time()
         self.server = HTTPServer(('', self.port), DAVHandler)
         scheme = "HTTPS" if (self.ssl_enabled and self.ssl_certfile) else "HTTP"
         if self.ssl_enabled and self.ssl_certfile:

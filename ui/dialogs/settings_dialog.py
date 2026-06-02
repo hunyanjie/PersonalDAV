@@ -3,10 +3,11 @@ from tkinter import ttk, messagebox, filedialog
 import os
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
+from ui.widgets.collapsible_frame import CollapsibleFrame
 from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
-from utils.cert_helper import generate_self_signed_cert
+from utils.cert_helper import generate_self_signed_cert, get_cert_info
 from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
 from services.auth_service import AuthService
@@ -74,7 +75,7 @@ class SettingsDialog(tk.Toplevel):
     def __init__(self, parent, db_service, on_save_callback):
         super().__init__(parent)
         self.title("设置")
-        self.geometry("800x750")
+        # self.geometry("800x750")
         self.transient(parent)
         self.grab_set()
         self.db = db_service
@@ -89,6 +90,7 @@ class SettingsDialog(tk.Toplevel):
         calendar_frame = ttk.Frame(notebook); notebook.add(calendar_frame, text="日历设置")
         log_frame = ttk.Frame(notebook); notebook.add(log_frame, text="日志设置")
         security_frame = ttk.Frame(notebook); notebook.add(security_frame, text="安全设置")
+        sync_frame = ttk.Frame(notebook); notebook.add(sync_frame, text="同步设置")
         audit_frame = ttk.Frame(notebook); notebook.add(audit_frame, text="审计日志")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
 
@@ -96,6 +98,7 @@ class SettingsDialog(tk.Toplevel):
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
         self.create_security_settings(security_frame)
+        self.create_sync_settings(sync_frame)
         self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
 
@@ -207,38 +210,84 @@ class SettingsDialog(tk.Toplevel):
         f.pack(fill=tk.X, padx=5, pady=5)
         self._build_simple(f, "服务器控制")
 
-        ssl_f = ttk.LabelFrame(parent, text="SSL/TLS 设置")
-        ssl_f.pack(fill=tk.X, padx=5, pady=5)
+        close_f = ttk.LabelFrame(parent, text="关闭行为")
+        close_f.pack(fill=tk.X, padx=5, pady=5)
+        self.close_action_var = tk.StringVar(value="ask")
+        ttk.Radiobutton(close_f, text="每次都询问", variable=self.close_action_var, value="ask").pack(anchor="w", padx=10, pady=2)
+        ttk.Radiobutton(close_f, text="退出程序", variable=self.close_action_var, value="exit").pack(anchor="w", padx=10, pady=2)
+        ttk.Radiobutton(close_f, text="隐藏到系统托盘", variable=self.close_action_var, value="tray").pack(anchor="w", padx=10, pady=2)
+
+        ssl_f = CollapsibleFrame(parent, text="SSL/TLS 设置", expanded=False)
+        ssl_f.pack(fill=tk.X, padx=5, pady=2)
+        body = ssl_f.body
 
         self.ssl_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(ssl_f, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
+        ttk.Checkbutton(body, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
             row=0, column=0, columnspan=4, sticky="w", padx=5, pady=5)
 
-        ttk.Label(ssl_f, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
         self.ssl_cert_var = tk.StringVar()
-        ttk.Entry(ssl_f, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(ssl_f, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
 
-        ttk.Label(ssl_f, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
         self.ssl_key_var = tk.StringVar()
-        ttk.Entry(ssl_f, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(ssl_f, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
 
-        btn_f = ttk.Frame(ssl_f)
+        btn_f = ttk.Frame(body)
         btn_f.grid(row=3, column=0, columnspan=4, pady=5)
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
-        ssl_f.grid_columnconfigure(1, weight=1)
+
+        self._cert_info_label = ttk.Label(body, text="", foreground="gray")
+        self._cert_info_label.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        self._auto_renew_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(body, text="自动续期（证书到期前自动生成新证书）",
+                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        body.grid_columnconfigure(1, weight=1)
 
         # 备份与恢复
-        bk_f = ttk.LabelFrame(parent, text="备份与恢复")
-        bk_f.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Label(bk_f, text="备份包含数据库、设置及日志文件。恢复将关闭当前数据库并替换。",
+        bk_f = CollapsibleFrame(parent, text="备份与恢复")
+        bk_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(bk_f.body, text="备份包含数据库、设置及日志文件。恢复将关闭当前数据库并替换。",
                   foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=2)
-        btn_f = ttk.Frame(bk_f)
+        btn_f = ttk.Frame(bk_f.body)
         btn_f.pack(pady=5)
         ttk.Button(btn_f, text="导出备份 (.zip)", command=self._export_backup).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="从备份恢复", command=self._import_backup).pack(side=tk.LEFT, padx=5)
+
+    # ── 同步设置 ────────────────────────────────────────────────
+
+    def create_sync_settings(self, parent):
+        f = ttk.LabelFrame(parent, text="Nextcloud 同步")
+        f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(f, text="服务器 URL:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.sync_url_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.sync_url_var, width=50).grid(row=0, column=1, sticky="we", padx=5, pady=3)
+        ttk.Label(f, text="https://example.com/remote.php/dav/", foreground="gray").grid(row=0, column=2, sticky="w", padx=2)
+
+        ttk.Label(f, text="用户名:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.sync_user_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.sync_user_var, width=30).grid(row=1, column=1, sticky="w", padx=5, pady=3)
+
+        ttk.Label(f, text="应用密码:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
+        self.sync_password_var = tk.StringVar()
+        ttk.Entry(f, textvariable=self.sync_password_var, width=30, show="*").grid(row=2, column=1, sticky="w", padx=5, pady=3)
+
+        ttk.Label(f, text="同步间隔:").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+        self.sync_interval_var = tk.StringVar(value="30")
+        ttk.Spinbox(f, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).grid(row=3, column=1, sticky="w", padx=5, pady=3)
+        ttk.Label(f, text="分钟").grid(row=3, column=2, sticky="w", padx=2)
+
+        self.sync_enabled_var = tk.BooleanVar()
+        ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+
+        ttk.Label(f, text="提示：在 Nextcloud 安全设置中生成「应用密码」，建议不要使用主密码。",
+                  foreground="gray", wraplength=500).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
+        f.grid_columnconfigure(1, weight=1)
+
 
     # ── 安全设置 ────────────────────────────────────────────────
 
@@ -266,12 +315,17 @@ class SettingsDialog(tk.Toplevel):
         token_entry = ttk.Entry(token_f, textvariable=self._mcp_token_var, state="readonly", width=70)
         token_entry.pack(fill=tk.X, padx=5, pady=5)
 
+        self._mcp_token_time_var = tk.StringVar()
+        ttk.Label(token_f, textvariable=self._mcp_token_time_var, foreground="gray", font=('', 8)).pack(anchor="w", padx=5)
+
         btn_f = ttk.Frame(token_f)
         btn_f.pack(fill=tk.X, padx=5, pady=5)
         copy_btn = ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token)
         copy_btn.pack(side=tk.LEFT, padx=2)
         self._mcp_tip = EnhancedTooltip(copy_btn, "请先设置密码以生成令牌")
-        ttk.Label(btn_f, text="  设置密码后令牌自动生成，更改密码会刷新令牌。",
+        self._rotate_token_btn = ttk.Button(btn_f, text="轮换令牌", command=self._rotate_mcp_token)
+        self._rotate_token_btn.pack(side=tk.LEFT, padx=2)
+        ttk.Label(btn_f, text="  更改密码或轮换后旧令牌立即失效。",
                   foreground="gray").pack(side=tk.LEFT)
 
         ip_f = ttk.LabelFrame(parent, text="IP 访问控制（留空 = 不限制）")
@@ -328,7 +382,14 @@ class SettingsDialog(tk.Toplevel):
         state = tk.NORMAL if enabled else tk.DISABLED
         self._change_pw_btn.config(state=state)
         self._clear_pw_btn.config(state=state)
-        self._mcp_token_var.set(svc.get_mcp_token() if enabled else "(未设置密码)")
+        token = svc.get_mcp_token() if enabled else "(未设置密码)"
+        self._mcp_token_var.set(token)
+        rotated = svc.get_mcp_token_rotated_at()
+        if rotated:
+            self._mcp_token_time_var.set(f"上次轮换: {rotated}")
+        else:
+            self._mcp_token_time_var.set("")
+        self._rotate_token_btn.config(state=state)
         if self._mcp_tip:
             self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
 
@@ -346,7 +407,7 @@ class SettingsDialog(tk.Toplevel):
         dialog.title("更改密码" if change else "设置密码")
         dialog.transient(self)
         dialog.grab_set()
-        dialog.geometry("400x200")
+        # dialog.geometry("400x200")
 
         row = 0
         if change:
@@ -394,7 +455,7 @@ class SettingsDialog(tk.Toplevel):
         dialog.title("清除密码")
         dialog.transient(self)
         dialog.grab_set()
-        dialog.geometry("350x120")
+        # dialog.geometry("350x120")
         ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
         pw_var = tk.StringVar()
         ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=5)
@@ -411,18 +472,21 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_f, text="确定清除", command=do_clear).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
+    def _rotate_mcp_token(self):
+        AuthService().rotate_mcp_token()
+        self._refresh_auth_ui()
+        from ui.widgets.toast import Toast
+        Toast.show(self, "MCP 令牌已轮换，旧令牌立即失效")
+
     def _copy_mcp_token(self):
         token = AuthService().get_mcp_token()
         if not token:
             messagebox.showinfo("提示", "请先设置密码", parent=self)
             return
-        try:
-            dialog.focus_get()
-        except:
-            pass
         self.clipboard_clear()
         self.clipboard_append(token)
-        messagebox.showinfo("已复制", "MCP 令牌已复制到剪贴板", parent=self)
+        from ui.widgets.toast import Toast
+        Toast.show(self, "MCP 令牌已复制到剪贴板")
 
     # ── MCP 服务设置 ────────────────────────────────────────────
 
@@ -718,7 +782,7 @@ class SettingsDialog(tk.Toplevel):
                        command=lambda v=t: [entry.delete(0, tk.END), entry.insert(0, v)]).pack(side=tk.LEFT, padx=1)
 
     def add_preset_reminder(self):
-        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set(); dialog.geometry("520x300")
+        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set()  # ; dialog.geometry("520x300")
         ttk.Label(dialog, text="添加预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
         ttk.Label(dialog, text="输入提醒触发时间，新建日程时可双击预设快速添加。", foreground="gray").pack(anchor='w', padx=10)
         ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
@@ -750,7 +814,7 @@ class SettingsDialog(tk.Toplevel):
         lb = self.preset_reminders_listbox if n_sel else self.preset_allday_reminders_listbox
         idx = n_sel[0] if n_sel else a_sel[0]
         cur = lb.get(idx)
-        dialog = tk.Toplevel(self); dialog.title('编辑预设提醒'); dialog.transient(self); dialog.grab_set(); dialog.geometry("520x300")
+        dialog = tk.Toplevel(self); dialog.title('编辑预设提醒'); dialog.transient(self); dialog.grab_set()  # ; dialog.geometry("520x300")
         ttk.Label(dialog, text="编辑预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
         ttk.Label(dialog, text="修改提醒触发时间。", foreground="gray").pack(anchor='w', padx=10)
         ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
@@ -822,6 +886,7 @@ class SettingsDialog(tk.Toplevel):
                 self.ssl_cert_var.set(path)
             else:
                 self.ssl_key_var.set(path)
+            self._update_cert_info()
 
     def _generate_cert(self):
         dir_path = filedialog.askdirectory(title="选择证书保存目录", parent=self)
@@ -834,12 +899,13 @@ class SettingsDialog(tk.Toplevel):
             self.ssl_cert_var.set(os.path.normpath(cert_path))
             self.ssl_key_var.set(os.path.normpath(key_path))
             self.ssl_enabled_var.set(True)
+            self._update_cert_info()
             messagebox.showinfo("成功", f"自签名证书已生成：\n{cert_path}\n\n请将此证书添加到系统的信任列表中。\n\nmacOS: 双击 cert.pem → 钥匙串 → 信任 → 始终信任\niOS: 通过 Safari 下载安装描述文件", parent=self)
         except Exception as e:
             messagebox.showerror("生成失败", str(e), parent=self)
 
     def _show_cert_guide(self):
-        win = tk.Toplevel(self); win.title("手动创建自签名证书"); win.geometry("680x520")
+        win = tk.Toplevel(self); win.title("手动创建自签名证书")  # ; win.geometry("680x520")
         win.transient(self); win.grab_set()
 
         text = tk.Text(win, wrap=tk.WORD, padx=10, pady=10)
@@ -902,6 +968,17 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         text.insert(tk.END, guide)
         text.config(state=tk.DISABLED)
+
+    def _update_cert_info(self):
+        cert_path = self.ssl_cert_var.get().strip()
+        info = get_cert_info(cert_path) if cert_path else None
+        if info:
+            color = "red" if info["remaining_days"] <= 30 else ("orange" if info["remaining_days"] <= 90 else "green")
+            self._cert_info_label.config(
+                text=f"证书状态: 颁发者={info['issuer']} | 有效期至={info['valid_to']} (剩余{info['remaining_days']}天)",
+                foreground=color)
+        else:
+            self._cert_info_label.config(text="证书状态: 未选择证书或无法读取", foreground="gray")
 
     # ── 显示格式 ────────────────────────────────────────────────
 
@@ -1005,6 +1082,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_enabled_var.set(s.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
+        self._auto_renew_var.set(s.get_setting("ssl_auto_renew", "True") == "True")
+        self._update_cert_info()
 
         self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
         self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
@@ -1012,6 +1091,14 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
 
         self.data_dir_var.set(s.get_setting("data_dir", ""))
+
+        self.close_action_var.set(s.get_setting("close_action", "ask"))
+
+        self.sync_url_var.set(s.get_setting("sync_url", ""))
+        self.sync_user_var.set(s.get_setting("sync_user", ""))
+        self.sync_password_var.set(s.get_setting("sync_password", ""))
+        self.sync_interval_var.set(s.get_setting("sync_interval", "30"))
+        self.sync_enabled_var.set(s.get_setting("sync_enabled", "False") == "True")
 
     # ── 重置 ────────────────────────────────────────────────────
 
@@ -1043,9 +1130,18 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._dur_h_var.set("1")
         self._dur_m_var.set("0")
 
+        self.sync_url_var.set("")
+        self.sync_user_var.set("")
+        self.sync_password_var.set("")
+        self.sync_interval_var.set("30")
+        self.sync_enabled_var.set(False)
+
         self.ssl_enabled_var.set(False)
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
+        self._auto_renew_var.set(True)
+
+        self.close_action_var.set("ask")
 
         self._ip_whitelist_text.delete("1.0", tk.END)
         self._ip_blacklist_text.delete("1.0", tk.END)
@@ -1069,7 +1165,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             return
         from utils.backup import export_backup
         if export_backup(path):
-            messagebox.showinfo("备份成功", f"已导出到:\n{path}", parent=self)
+            from ui.widgets.toast import Toast
+            Toast.show(self, f"备份已导出到:\n{path}", duration=4000)
         else:
             messagebox.showerror("备份失败", "导出过程中发生错误，请查看日志。", parent=self)
 
@@ -1124,12 +1221,20 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_enabled", str(new_ssl))
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
+        s.set_setting("ssl_auto_renew", str(self._auto_renew_var.get()))
 
         s.set_setting("data_dir", self.data_dir_var.get())
+        s.set_setting("close_action", self.close_action_var.get())
         s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
+
+        s.set_setting("sync_url", self.sync_url_var.get())
+        s.set_setting("sync_user", self.sync_user_var.get())
+        s.set_setting("sync_password", self.sync_password_var.get())
+        s.set_setting("sync_interval", self.sync_interval_var.get())
+        s.set_setting("sync_enabled", str(self.sync_enabled_var.get()))
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
