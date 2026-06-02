@@ -6,6 +6,9 @@ from tkinter import ttk
 class VirtualTreeview:
     """用滑动窗口包装 ttk.Treeview，总数据量不限。
 
+    不再使用固定 PAGE_SIZE，而是根据 Treeview 实际高度动态
+    计算可视行数，Treeview 自身无需滚动，滚动条完全控制虚拟偏移。
+
     用法:
         vtree = VirtualTreeview(parent, columns, headings, column_width_fn)
         vtree.set_data(data)         # data 是 (值, ...) 元组列表
@@ -13,7 +16,7 @@ class VirtualTreeview:
         vtree.frame                   # 容器 Frame（用于 pack）
         vtree.scrollbar               # 滚动条
     """
-    PAGE_SIZE = 200  # 每页行数
+    ROW_HEIGHT = 24  # 估算行高（像素）
 
     def __init__(self, parent, columns, headings, column_width_fn):
         self._data = []            # 全量数据
@@ -21,7 +24,8 @@ class VirtualTreeview:
         self._idx_to_iid = {}      # 数据索引 → tree item id
         self._iid_to_idx = {}      # tree item id → 数据索引
         self._col_width_fn = column_width_fn
-        self.post_render_hook = None  # _render 完成后回调，由 BaseTreeTab 设为 _update_checkboxes
+        self._visible = 20         # 默认可视行数（window 未映射前用这个）
+        self.post_render_hook = None
 
         self.frame = ttk.Frame(parent)
         self.tree = ttk.Treeview(self.frame, columns=columns, show="headings",
@@ -35,6 +39,8 @@ class VirtualTreeview:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.frame.pack(fill=tk.BOTH, expand=True)
+
+        self.tree.bind('<Configure>', self._on_configure, add='+')
 
     # ── 公共接口 ────────────────────────────────────────────
 
@@ -65,7 +71,8 @@ class VirtualTreeview:
         total = self.get_count()
         if total == 0:
             return []
-        end = min(self._offset + self.PAGE_SIZE, total)
+        page = self._get_visible_count()
+        end = min(self._offset + page, total)
         result = []
         for i in range(self._offset, end):
             iid = self._idx_to_iid.get(i)
@@ -85,13 +92,31 @@ class VirtualTreeview:
     def scroll_to_index(self, index):
         """滚动到指定数据索引处（使其进入可视窗口）。"""
         total = self.get_count()
-        if total <= self.PAGE_SIZE:
+        page = self._get_visible_count()
+        if total <= page:
             return
-        max_off = total - self.PAGE_SIZE
-        self._offset = max(0, min(max_off, index - self.PAGE_SIZE // 4))
+        max_off = total - page
+        self._offset = max(0, min(max_off, index - page // 4))
         self._render()
 
     # ── 内部 ────────────────────────────────────────────────
+
+    def _get_visible_count(self):
+        """根据 Treeview 实际高度计算可视行数。"""
+        h = self.tree.winfo_height()
+        if h > 20:
+            return max(5, h // self.ROW_HEIGHT)
+        return self._visible
+
+    def _on_configure(self, event):
+        """窗口尺寸变化时重新计算可视行数，必要时重新渲染。"""
+        if event.widget is not self.tree:
+            return
+        new = max(5, event.height // self.ROW_HEIGHT)
+        if new != self._visible:
+            self._visible = new
+            if self._data:
+                self._render()
 
     def _render(self):
         """销毁旧行，插入当前窗口范围内的行。"""
@@ -105,7 +130,8 @@ class VirtualTreeview:
             self._sync_scrollbar()
             return
 
-        end = min(self._offset + self.PAGE_SIZE, total)
+        page = self._get_visible_count()
+        end = min(self._offset + page, total)
         for i in range(self._offset, end):
             iid = self.tree.insert("", tk.END, values=self._data[i])
             self._idx_to_iid[i] = iid
@@ -118,7 +144,8 @@ class VirtualTreeview:
     def _on_scrollbar(self, *args):
         """滚动条拖动/滚轮回调。"""
         total = self.get_count()
-        max_off = max(0, total - self.PAGE_SIZE)
+        page = self._get_visible_count()
+        max_off = max(0, total - page)
 
         if args[0] == 'moveto':
             frac = float(args[1])
@@ -128,16 +155,17 @@ class VirtualTreeview:
             if args[2] == 'units':
                 self._offset = max(0, min(max_off, self._offset + n))
             elif args[2] == 'pages':
-                self._offset = max(0, min(max_off, self._offset + n * self.PAGE_SIZE // 2))
+                self._offset = max(0, min(max_off, self._offset + n * page // 2))
 
         self._render()
 
     def _sync_scrollbar(self):
         """根据 _offset 和总数据量更新滚动条位置。"""
         total = self.get_count()
-        if total <= self.PAGE_SIZE:
+        page = self._get_visible_count()
+        if total <= page:
             self.scrollbar.set(0.0, 1.0)
             return
         first = self._offset / total
-        last = (self._offset + self.PAGE_SIZE) / total
+        last = (self._offset + page) / total
         self.scrollbar.set(first, last)
