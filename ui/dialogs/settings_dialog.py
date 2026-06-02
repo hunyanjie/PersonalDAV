@@ -60,6 +60,7 @@ SIMPLE_SETTINGS = [
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
     # ========== 安全设置 ==========
+    SettingDef("force_password", "强制要求密码（未设密码时拒绝访问）", "check", "安全设置", default=True, db_default="True"),
     SettingDef("rate_limit_enabled", "启用访问频率限制", "check", "安全设置", default=False, db_default="False"),
     SettingDef("rate_limit_max", "每分钟最大请求数:", "entry", "安全设置", default="60", width=10),
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",

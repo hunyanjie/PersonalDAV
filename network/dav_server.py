@@ -38,11 +38,11 @@ class DAVHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"Too Many Requests")
             return False
 
-        if not svc.is_enabled():
-            return True
-
         if svc.ip_bypasses_auth(client_ip):
             svc.log_auth(True, client_ip, "WebDAV", f"免密 IP UA={ua}")
+            return True
+
+        if not svc.is_password_required():
             return True
 
         auth = self.headers.get('Authorization', '')

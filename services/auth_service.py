@@ -36,10 +36,15 @@ class AuthService:
     def is_enabled(self) -> bool:
         return bool(SettingsService().get_setting("access_password_hash", ""))
 
+    def is_password_required(self) -> bool:
+        if self.is_enabled():
+            return True
+        return SettingsService().get_setting("force_password", "True") == "True"
+
     def verify_password(self, password: str) -> bool:
         stored = SettingsService().get_setting("access_password_hash", "")
         if not stored:
-            return True
+            return not self.is_password_required()
         if '$' not in stored:
             return False
         salt, pw_hash = stored.split('$', 1)
@@ -62,7 +67,7 @@ class AuthService:
         return hashlib.sha256(seed.encode('utf-8')).hexdigest()
 
     def verify_mcp_token(self, token: str) -> bool:
-        if not self.is_enabled():
+        if not self.is_password_required():
             return True
         return secrets.compare_digest(self.get_mcp_token(), token)
 

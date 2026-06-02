@@ -91,12 +91,12 @@ class _AuthASGIMiddleware:
         if not svc.check_rate_limit(client_ip):
             return await _send_json(send, 429, {"error": "too many requests"})
 
-        if not svc.is_enabled():
+        if svc.ip_bypasses_auth(client_ip):
+            svc.log_auth(True, client_ip, "MCP", "免密 IP")
             await self.app(scope, receive, send)
             return
 
-        if svc.ip_bypasses_auth(client_ip):
-            svc.log_auth(True, client_ip, "MCP", "免密 IP")
+        if not svc.is_password_required():
             await self.app(scope, receive, send)
             return
 
