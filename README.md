@@ -4,7 +4,8 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 
 ## 功能特性
 
-- 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式
+- 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
+- 📎 **事件附件** — 为日历事件添加文件或链接附件，支持 base64 内联存储
 - 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式，支持重复事件
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
@@ -116,11 +117,11 @@ python tests/run_all.py
 
 ## MCP 可用工具
 
-MCP 服务提供 16 个工具供 AI 调用：
+MCP 服务提供 15 个工具供 AI 调用：
 
 | 工具 | 说明 |
 |------|------|
-| `server_start` / `stop` / `status` | 管理 DAV 服务器启停和状态查询 |
+| `server_start` / `server_stop` / `server_status` | 管理 DAV 服务器启停和状态查询 |
 | `list_contacts` / `get_contact` | 查看联系人列表和详情 |
 | `create_contact` / `update_contact` / `delete_contact` | 联系人增删改 |
 | `list_events` / `get_event` | 查看事件列表和详情 |

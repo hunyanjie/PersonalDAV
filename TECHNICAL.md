@@ -512,6 +512,10 @@ def get_column_width(self, col): ... # 自定义列宽
 | `ip_bypasses_auth()` 本机默认免密 + bypass_localhost 开关 | 开发调试体验友好，生产环境可关闭 |
 | `log_auth()` 统一入口 | 集中记录鉴权事件，后续可扩展浏览器指纹等字段 |
 | EnhancedTooltip.text 直接赋值可动态切换 | 无需销毁重建，适合状态驱动的提示场景 |
+| vcard 序列化前关闭 `wacky_apple_photo_serialize = False` | 恢复 RFC 2426 规范的 75 字符行折叠，默认开启为兼容 Apple Address Book |
+| `att.encoded = True` + `encoding_param='BASE64'` | 阻止 TextBehavior 对已 base64 的 ATTACH 值二次编码 |
+| `_load_photo_from_vcard` 延迟到 `after_idle` 异步执行 | 避免大图同步处理阻塞主线程界面响应 |
+| `show_raw` 优先使用 DB 缓存的 raw 数据而非 `serialize()` | 避免 vCard 带大 PHOTO/iCal 带大 ATTACH 时重序列化卡顿 |
 
 ---
 
