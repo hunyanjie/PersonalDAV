@@ -325,7 +325,7 @@ class DAVServerApp:
         db_size = self._get_db_size()
         update_text = ""
         if getattr(self, '_pending_update', None):
-            update_text = f" | 📥 v{self._pending_update} 可用"
+            update_text = f" | 📥 新版本 v{self._pending_update} 可用"
         self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}{update_text}")
 
     def show_settings(self):

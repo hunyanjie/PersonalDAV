@@ -534,8 +534,9 @@ class SettingsDialog(tk.Toplevel):
                 return
             dialog.destroy()
             svc.clear_password()
+            svc.set_totp_secret("")
             self._refresh_auth_ui()
-            messagebox.showinfo("成功", "密码已清除", parent=self)
+            messagebox.showinfo("成功", "密码已清除，TOTP 双因素认证已自动关闭", parent=self)
         btn_f = ttk.Frame(dialog)
         btn_f.pack(pady=10)
         ttk.Button(btn_f, text="确定清除", command=do_clear).pack(side=tk.LEFT, padx=5)
@@ -561,16 +562,18 @@ class SettingsDialog(tk.Toplevel):
 
     def _on_totp_toggle(self):
         enabled = self._totp_enabled_var.get()
-        if enabled and not self._totp_secret_var.get():
-            secret = AuthService.generate_totp_secret()
-            self._totp_secret_var.set(secret)
-            self._totp_secret_shown = False
-        elif not enabled and self._totp_verified:
-            svc = AuthService()
-            if svc.is_enabled():
-                if not self._require_password("关闭 TOTP"):
-                    self._totp_enabled_var.set(True)
-                    return
+        if enabled:
+            if self._totp_verified:
+                return
+            if not AuthService().is_enabled():
+                messagebox.showwarning("无法启用", "请先设置访问密码，再开启 TOTP 双因素认证。\n\nTOTP 必须与密码配合使用。", parent=self)
+                self._totp_enabled_var.set(False)
+                return
+            if not self._totp_secret_var.get():
+                secret = AuthService.generate_totp_secret()
+                self._totp_secret_var.set(secret)
+                self._totp_secret_shown = False
+        else:
             self._totp_secret_var.set("")
             self._totp_secret_shown = False
             self._totp_verified = False
@@ -583,31 +586,19 @@ class SettingsDialog(tk.Toplevel):
         enabled = self._totp_enabled_var.get()
         verified = self._totp_verified
         state = tk.NORMAL if enabled else tk.DISABLED
-        self._totp_qr_label.config(state=state)
-        self._totp_verify_btn.config(state=state if not verified else tk.DISABLED)
         if verified:
             self._totp_secret_label.config(text="✓ 配置完成", foreground="green")
             self._totp_show_btn.config(state=tk.DISABLED)
             self._totp_gen_btn.config(state=tk.DISABLED)
-            self._totp_status_label.config(text="TOTP 已启用，二维码可继续用于其他设备扫码添加",
+            self._totp_verify_btn.config(state=tk.DISABLED)
+            self._totp_status_label.config(text="TOTP 已启用，可继续用二维码添加其他设备",
                                            foreground="green")
         else:
-            self._totp_gen_btn.config(state=state)
+            self._totp_secret_label.config(state=state)
             self._totp_show_btn.config(state=state)
-            self._update_totp_display()
-
-    def _update_totp_display(self):
-        secret = self._totp_secret_var.get()
-        if not secret:
-            return
-        if self._totp_secret_shown:
-            self._totp_secret_label.config(text=secret)
-            self._totp_show_btn.config(text="隐藏")
-        else:
-            masked = secret[:4] + "*" * (len(secret) - 8) + secret[-4:]
-            self._totp_secret_label.config(text=masked)
-            self._totp_show_btn.config(text="显示")
-        self._generate_qr(secret)
+            self._totp_gen_btn.config(state=state)
+            self._totp_verify_btn.config(state=state)
+        self._update_totp_display()
 
     def _totp_toggle_secret(self):
         self._totp_secret_shown = not self._totp_secret_shown
@@ -643,8 +634,7 @@ class SettingsDialog(tk.Toplevel):
 
     def _totp_generate_secret(self):
         if self._totp_secret_var.get():
-            svc = AuthService()
-            if svc.is_enabled() and not self._require_password("重置密钥"):
+            if not AuthService().is_enabled():
                 return
         secret = AuthService.generate_totp_secret()
         self._totp_secret_var.set(secret)
@@ -1450,9 +1440,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
         s.set_setting("force_password", str(self.force_password_var.get()))
 
-        totp_secret = self._totp_secret_var.get()
-        if self._totp_enabled_var.get() and totp_secret:
-            AuthService().set_totp_secret(totp_secret)
+        if self._totp_enabled_var.get() and self._totp_verified and AuthService().is_enabled():
+            AuthService().set_totp_secret(self._totp_secret_var.get())
         else:
             if s.get_setting("totp_secret", ""):
                 AuthService().set_totp_secret("")
