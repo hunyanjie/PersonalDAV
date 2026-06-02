@@ -10,6 +10,7 @@ from tkinterdnd2 import TkinterDnD, DND_FILES
 from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
+from ui.tabs.smb_tab import SMBTab
 from ui.dialogs.settings_dialog import SettingsDialog
 from services.contact_service import ContactService
 from services.event_service import EventService
@@ -230,10 +231,12 @@ class DAVServerApp:
         self.server_tab = ServerTab(self.notebook, self.settings_service)
         self.contacts_tab = ContactsTab(self.notebook, self.contact_service, self.root)
         self.calendar_tab = CalendarTab(self.notebook, self.event_service, self.settings_service, self.root)
+        self.smb_tab = SMBTab(self.notebook, self.settings_service)
 
         self.notebook.add(self.server_tab, text="服务器")
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
+        self.notebook.add(self.smb_tab, text="SMB 网络")
 
         # 状态栏
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)

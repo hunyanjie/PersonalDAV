@@ -480,65 +480,6 @@ def refresh_*(): ...                 # 数据刷新，末尾调用 self._after_r
 def get_column_width(self, col): ... # 自定义列宽
 ```
 
-### 虚拟滚动集成
-
-`BaseTreeTab.setup_treeview` 不再直接创建 `ttk.Treeview`，而是创建 `VirtualTreeview` 实例：
-
-```python
-self.vtree = VirtualTreeview(list_frame, self.COLUMNS, self.HEADINGS, self.get_column_width)
-self.tree = self.vtree.tree
-```
-
-`self._all_data` 仍是全量格式化数据，但不再逐行插入 Treeview，而是传递给 `self.vtree.set_data(self._all_data)`。
-
-选中状态通过 `self._selected_uids: set[str]` 跨页记忆，`_update_checkboxes()` 只刷新当前可见行。
-
----
-
-## 虚拟滚动系统（VirtualTreeview）
-
-`ui/widgets/virtual_treeview.py`
-
-### 设计目的
-
-解决原生 `ttk.Treeview` 在万条数据时插入/删除/滚动的严重卡顿（O(n) 的 item 管理）。只渲染当前可视窗口内的行，保持界面流畅。
-
-### 滑动窗口
-
-```
-数据列表: [0, 1, 2, 3, ..., 9999]  (10000 条)
-                   ↓
-可视窗口 (PAGE_SIZE=200):
-  _offset ──→ [1000, 1001, ..., 1199]  ← 仅 200 行插入 Treeview
-                   ↓
-           ttk.Treeview (只看到 200 行)
-```
-
-- 窗口位置 `_offset` 随滚动条移动
-- `_render()` 销毁旧窗口行，插入新窗口行
-- 超出行范围行 `total - PAGE_SIZE` 时，滚动条比例 `thumb = PAGE_SIZE / total`
-
-### 公共 API
-
-| 方法 | 说明 |
-|------|------|
-| `set_data(data)` | 设置全量数据并刷新 |
-| `get_data()` | 返回全量数据列表 |
-| `get_count()` | 数据总条数 |
-| `get_visible_iids()` | 当前可视行的 tree item ID 列表 |
-| `idx_of(iid)` / `iid_of(idx)` | 双向查找数据索引 / tree item id |
-| `visible_indices()` | 当前可视数据索引列表 |
-| `index_at(y)` | 根据 Y 坐标获取数据索引 |
-| `scroll_to_index(index)` | 滚动到指定数据索引处 |
-
-### 选中状态跨页
-
-`BaseTreeTab._selected_uids: set[str]` 存储所有已选条目的 UID。每次 `_render()` 后通过 `_update_checkboxes()` 恢复当前页的复选框勾选状态。
-
-### 排序
-
-`_sort_tree_exec()` 排序 `_all_data` 全量列表后调用 `_rerender()` 重新渲染，不操作 Treeview 的 item 移动。
-
 ---
 
 ## 关键设计决策
@@ -1046,6 +987,60 @@ EnhancedTooltip(widget, "提示文字",
 1. 在 `SIMPLE_SETTINGS` 列表末尾添加一行 `SettingDef`
 2. 若需要在新分区（新的 notebook 标签页），在 `__init__` 中创建新 frame 并调用 `_build_simple(new_frame, "新分区名")`
 3. 在读取处通过 `ServicesService().get_setting("键名", "默认值")` 获取
+
+## FTP / SFTP 文件服务
+
+`services/ftp_service.py`
+
+### FTPService（单例）
+
+| 方法 | 说明 |
+|------|------|
+| `start()` | 读取设置启动 FTP（pyftpdlib）和 SFTP（paramiko）后台线程 |
+| `stop()` | 关闭所有连接，停止线程（5 秒超时） |
+| `is_running` | 是否正在运行 |
+
+### 鉴权
+
+`AuthServiceAuthorizer` 将 FTP 登录验证委托给 `AuthService.verify_password`，所有登录用户获得完全读写权限。
+
+`SFTPAuthInterface` 在 paramiko 传输层实现密码认证，使用相同的 AuthService。
+
+### 路径安全
+
+`StubSFTPServer._resolve()` 验证所有路径在 `root` 之下，防止目录遍历攻击。
+
+---
+
+## SMB / CIFS 网络共享
+
+`services/smb_service.py` — 基于 pysmb 库
+
+### SMBService（单例）
+
+| 方法 | 说明 |
+|------|------|
+| `list_shares(server, username, password)` | 列出远程服务器上的共享 |
+| `list_files(server, share, path, username, password)` | 列出共享目录中的文件 |
+| `mount(server, share, mount_point, ...)` | 注册挂载映射（跟踪式，非系统挂载） |
+| `unmount(mount_point)` | 取消挂载映射 |
+| `get_mounted_shares()` | 返回当前所有挂载的共享 |
+
+### SMBTab
+
+`ui/tabs/smb_tab.py` — 在 Notebook 中添加"**SMB 网络**"标签页，提供图形化界面连接远程 SMB 服务器、浏览文件、挂载共享。
+
+---
+
+## mypy 类型覆盖
+
+`mypy.ini` — 分模块管理严格度：
+
+- **新代码**（`services/ftp_service.py`、`services/smb_service.py`、`ui/tabs/smb_tab.py`）强制 `strict = True`
+- **旧代码**逐步补齐类型注解
+- **第三方库**（pyftpdlib、paramiko、pysmb）跳过未安装的 stub
+
+---
 
 ### 添加新模型
 

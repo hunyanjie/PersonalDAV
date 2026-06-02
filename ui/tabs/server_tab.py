@@ -1,9 +1,10 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import threading
 import logging
 from network.dav_server import DAVServer
 from ui.widgets.right_click_menu import RightClickMenu
+from services.ftp_service import FTPService
 from utils.logger import logger, GUIHandler
 
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
@@ -20,6 +21,15 @@ class ServerTab(ttk.Frame):
         self.ssl_cert_var = tk.StringVar(value=self.settings_service.get_setting("ssl_certfile", ""))
         self.ssl_key_var = tk.StringVar(value=self.settings_service.get_setting("ssl_keyfile", ""))
 
+        # FTP/SFTP 服务器相关变量
+        self.ftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ftp_enabled", "True") == "True")
+        self.ftp_port_var = tk.StringVar(value=self.settings_service.get_setting("ftp_port", "21"))
+        self.ftp_root_var = tk.StringVar(value=self.settings_service.get_setting("ftp_root", "./ftp_root"))
+        self.sftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("sftp_enabled", "False") == "True")
+        self.sftp_port_var = tk.StringVar(value=self.settings_service.get_setting("sftp_port", "22"))
+        self.sftp_root_var = tk.StringVar(value=self.settings_service.get_setting("sftp_root", "./sftp_root"))
+
+        self.ftp_service = FTPService()
         self.create_widgets()
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
 
@@ -31,6 +41,12 @@ class ServerTab(ttk.Frame):
         self.ssl_enabled.set(self.settings_service.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var.set(self.settings_service.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(self.settings_service.get_setting("ssl_keyfile", ""))
+        self.ftp_enabled.set(self.settings_service.get_setting("ftp_enabled", "True") == "True")
+        self.ftp_port_var.set(self.settings_service.get_setting("ftp_port", "21"))
+        self.ftp_root_var.set(self.settings_service.get_setting("ftp_root", "./ftp_root"))
+        self.sftp_enabled.set(self.settings_service.get_setting("sftp_enabled", "False") == "True")
+        self.sftp_port_var.set(self.settings_service.get_setting("sftp_port", "22"))
+        self.sftp_root_var.set(self.settings_service.get_setting("sftp_root", "./sftp_root"))
         self._update_info()
 
     def create_widgets(self):
@@ -49,6 +65,38 @@ class ServerTab(ttk.Frame):
 
         self.stop_btn = ttk.Button(port_frame, text="停止服务器", command=self.stop_server, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
+
+        # FTP / SFTP 服务控制
+        ftp_frame = ttk.LabelFrame(self, text="FTP / SFTP 文件服务")
+        ftp_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
+
+        # FTP 设置
+        ftp_row = ttk.Frame(ftp_frame)
+        ftp_row.pack(fill=tk.X, padx=5, pady=2)
+        self.ftp_check = ttk.Checkbutton(ftp_row, text="FTP 服务器", variable=self.ftp_enabled)
+        self.ftp_check.pack(side=tk.LEFT, padx=5)
+        ttk.Label(ftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
+        ttk.Entry(ftp_row, textvariable=self.ftp_port_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(ftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
+        ttk.Entry(ftp_row, textvariable=self.ftp_root_var, width=25).pack(side=tk.LEFT)
+
+        # SFTP 设置
+        sftp_row = ttk.Frame(ftp_frame)
+        sftp_row.pack(fill=tk.X, padx=5, pady=2)
+        self.sftp_check = ttk.Checkbutton(sftp_row, text="SFTP 服务器", variable=self.sftp_enabled)
+        self.sftp_check.pack(side=tk.LEFT, padx=5)
+        ttk.Label(sftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
+        ttk.Entry(sftp_row, textvariable=self.sftp_port_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(sftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
+        ttk.Entry(sftp_row, textvariable=self.sftp_root_var, width=25).pack(side=tk.LEFT)
+
+        self.ftp_start_btn = ttk.Button(ftp_frame, text="启动 FTP/SFTP", command=self.start_ftp_services)
+        self.ftp_start_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        self.ftp_stop_btn = ttk.Button(ftp_frame, text="停止 FTP/SFTP", command=self.stop_ftp_services, state=tk.DISABLED)
+        self.ftp_stop_btn.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.ftp_status_label = ttk.Label(ftp_frame, text="FTP/SFTP 服务器: 已停止")
+        self.ftp_status_label.pack(side=tk.LEFT, padx=10, pady=5)
 
         # 日志显示
         log_frame = ttk.LabelFrame(self, text="运行日志")
@@ -74,6 +122,42 @@ class ServerTab(ttk.Frame):
         self.info_label = ttk.Label(info_frame, text="", justify=tk.LEFT, font=('Consolas', 9))
         self.info_label.pack(padx=5, pady=5)
         self._update_info()
+
+    def _save_ftp_settings(self):
+        self.settings_service.set_setting("ftp_enabled", str(self.ftp_enabled.get()))
+        self.settings_service.set_setting("ftp_port", self.ftp_port_var.get())
+        self.settings_service.set_setting("ftp_root", self.ftp_root_var.get())
+        self.settings_service.set_setting("sftp_enabled", str(self.sftp_enabled.get()))
+        self.settings_service.set_setting("sftp_port", self.sftp_port_var.get())
+        self.settings_service.set_setting("sftp_root", self.sftp_root_var.get())
+
+    def start_ftp_services(self):
+        self._save_ftp_settings()
+        try:
+            if self.ftp_service.start():
+                self.ftp_start_btn.config(state=tk.DISABLED)
+                self.ftp_stop_btn.config(state=tk.NORMAL)
+                self.ftp_status_label.config(text="FTP/SFTP 服务器: 运行中")
+                msg = "FTP/SFTP 服务已启动"
+                logger.info(msg)
+                self.log_message(msg, logging.INFO)
+            else:
+                msg = "FTP/SFTP 服务启动失败（请检查设置）"
+                logger.error(msg)
+                self.log_message(msg, logging.ERROR)
+        except Exception as e:
+            msg = f"FTP/SFTP 启动异常: {e}"
+            logger.error(msg)
+            self.log_message(msg, logging.ERROR)
+
+    def stop_ftp_services(self):
+        self.ftp_service.stop()
+        self.ftp_start_btn.config(state=tk.NORMAL)
+        self.ftp_stop_btn.config(state=tk.DISABLED)
+        self.ftp_status_label.config(text="FTP/SFTP 服务器: 已停止")
+        msg = "FTP/SFTP 服务已停止"
+        logger.info(msg)
+        self.log_message(msg, logging.INFO)
 
     def _update_info(self):
         port = self.port_entry.get() or "8000"
