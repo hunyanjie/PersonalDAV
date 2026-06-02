@@ -1134,14 +1134,14 @@ class EventDialog:
             for d in exdates:
                 ex = ev.add('exdate')
                 if self.allday_var.get():
-                    ex.value = datetime.strptime(d, '%Y-%m-%d').date()
+                    ex.value = [datetime.strptime(d, '%Y-%m-%d').date()]
                 else:
                     dt = datetime.strptime(d, '%Y-%m-%d')
                     if tz_id:
-                        ex.value = pytz.timezone(tz_id).localize(dt)
+                        ex.value = [pytz.timezone(tz_id).localize(dt)]
                         ex.params['TZID'] = [tz_id]
                     else:
-                        ex.value = dt
+                        ex.value = [dt]
         for a in self.alarms:
             al = ev.add('valarm'); al.add('action').value = a['action']; al.add('trigger').value = a['trigger']
             if 'description' in a: al.add('description').value = a['description']
