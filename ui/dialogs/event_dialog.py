@@ -513,10 +513,12 @@ class EventDialog:
         ttk.Label(frame, text="例外日期:").grid(row=9, column=0, sticky="nw", padx=5, pady=5)
         exc_f = ttk.Frame(frame); exc_f.grid(row=9, column=1, columnspan=3, sticky="we", padx=5, pady=5)
         self.exdate_listbox = tk.Listbox(exc_f, height=3, exportselection=False)
+        self.exdate_listbox.bind("<Double-Button-1>", lambda e: self._edit_exdate())
         self.exdate_listbox.pack(fill=tk.X, pady=(0, 3))
         exc_btn_f = ttk.Frame(exc_f); exc_btn_f.pack(fill=tk.X)
-        ttk.Button(exc_btn_f, text="添加日期", command=self._add_exdate, width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(exc_btn_f, text="移除选中", command=self._remove_exdate, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(exc_btn_f, text="添加日期", command=self._add_exdate, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(exc_btn_f, text="编辑", command=self._edit_exdate, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Button(exc_btn_f, text="移除选中", command=self._remove_exdate, width=8).pack(side=tk.LEFT, padx=2)
         ttk.Label(exc_f, text="例外日期在重复事件中跳过", foreground="gray").pack(anchor="w")
 
     def apply_duration(self, dur_str):
@@ -544,6 +546,26 @@ class EventDialog:
             d = cal.get_date()
             if d not in self.exdate_listbox.get(0, tk.END):
                 self.exdate_listbox.insert(tk.END, d)
+            w.destroy()
+        ttk.Button(w, text="确定", command=confirm).pack(pady=5)
+
+    def _edit_exdate(self):
+        sel = self.exdate_listbox.curselection()
+        if not sel: return
+        idx = sel[0]
+        old = self.exdate_listbox.get(idx)
+        from tkcalendar import Calendar
+        w = tk.Toplevel(self.root); w.title("编辑例外日期"); w.grab_set()
+        cal = Calendar(w, date_pattern='yyyy-mm-dd')
+        from datetime import datetime as _dt
+        try: cal.selection_set(_dt.strptime(old, '%Y-%m-%d'))
+        except: pass
+        cal.pack(padx=10, pady=10)
+        def confirm():
+            d = cal.get_date()
+            if d not in self.exdate_listbox.get(0, tk.END):
+                self.exdate_listbox.delete(idx)
+                self.exdate_listbox.insert(idx, d)
             w.destroy()
         ttk.Button(w, text="确定", command=confirm).pack(pady=5)
 
