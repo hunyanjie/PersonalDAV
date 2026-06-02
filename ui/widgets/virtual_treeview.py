@@ -34,6 +34,7 @@ class VirtualTreeview:
         self.tree.configure(yscrollcommand=self._on_tree_scroll)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.frame.pack(fill=tk.BOTH, expand=True)
 
     # ── 公共接口 ────────────────────────────────────────────
 

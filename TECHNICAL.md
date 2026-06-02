@@ -480,6 +480,65 @@ def refresh_*(): ...                 # 数据刷新，末尾调用 self._after_r
 def get_column_width(self, col): ... # 自定义列宽
 ```
 
+### 虚拟滚动集成
+
+`BaseTreeTab.setup_treeview` 不再直接创建 `ttk.Treeview`，而是创建 `VirtualTreeview` 实例：
+
+```python
+self.vtree = VirtualTreeview(list_frame, self.COLUMNS, self.HEADINGS, self.get_column_width)
+self.tree = self.vtree.tree
+```
+
+`self._all_data` 仍是全量格式化数据，但不再逐行插入 Treeview，而是传递给 `self.vtree.set_data(self._all_data)`。
+
+选中状态通过 `self._selected_uids: set[str]` 跨页记忆，`_update_checkboxes()` 只刷新当前可见行。
+
+---
+
+## 虚拟滚动系统（VirtualTreeview）
+
+`ui/widgets/virtual_treeview.py`
+
+### 设计目的
+
+解决原生 `ttk.Treeview` 在万条数据时插入/删除/滚动的严重卡顿（O(n) 的 item 管理）。只渲染当前可视窗口内的行，保持界面流畅。
+
+### 滑动窗口
+
+```
+数据列表: [0, 1, 2, 3, ..., 9999]  (10000 条)
+                   ↓
+可视窗口 (PAGE_SIZE=200):
+  _offset ──→ [1000, 1001, ..., 1199]  ← 仅 200 行插入 Treeview
+                   ↓
+           ttk.Treeview (只看到 200 行)
+```
+
+- 窗口位置 `_offset` 随滚动条移动
+- `_render()` 销毁旧窗口行，插入新窗口行
+- 超出行范围行 `total - PAGE_SIZE` 时，滚动条比例 `thumb = PAGE_SIZE / total`
+
+### 公共 API
+
+| 方法 | 说明 |
+|------|------|
+| `set_data(data)` | 设置全量数据并刷新 |
+| `get_data()` | 返回全量数据列表 |
+| `get_count()` | 数据总条数 |
+| `get_visible_iids()` | 当前可视行的 tree item ID 列表 |
+| `idx_of(iid)` / `iid_of(idx)` | 双向查找数据索引 / tree item id |
+| `visible_indices()` | 当前可视数据索引列表 |
+| `index_at(y)` | 根据 Y 坐标获取数据索引 |
+| `scroll_to_index(index)` | 滚动到指定数据索引处 |
+
+### 选中状态跨页
+
+`BaseTreeTab._selected_uids: set[str]` 存储所有已选条目的 UID。每次 `_render()` 后通过 `_update_checkboxes()` 恢复当前页的复选框勾选状态。
+
+### 排序
+
+`_sort_tree_exec()` 排序 `_all_data` 全量列表后调用 `_rerender()` 重新渲染，不操作 Treeview 的 item 移动。
+
 ---
 
 ## 关键设计决策
@@ -735,47 +794,14 @@ IP 匹配支持三种格式：
 
 WebDAV `_check_auth()` 和 MCP 中间件均在密码/令牌校验前调用此方法，命中则直接放行并记录 `"免密 IP"`。
 
-### TOTP 双因素认证（v2.5+）
+### TOTP 双因素认证（v2.5，已移除）
 
-纯 Python 实现（RFC 6238），无 `pyotp` 等外部依赖。
+TOTP 在 v2.5 开发中实现并随后移除。原因：设置对话框保存后重开时 UI 不刷新（`_on_totp_toggle` 在 `_totp_verified=True` 时直接 return，跳过了 `_update_totp_ui_state`/`_update_totp_display`），且保存时 `AuthService().is_enabled()` 条件不满足导致配置无法持久化。
 
-#### 核心算法
-
-```python
-counter = struct.pack('>Q', int(time.time() / 30))      # 30秒时间步长
-key = base64.b32decode(secret + padding)                 # Base32 解码密钥
-hs = hmac.new(key, counter, hashlib.sha1).digest()       # HMAC-SHA1
-offset = hs[-1] & 0x0F                                   # 动态截断
-code = struct.unpack('>I', hs[offset:offset+4])[0] & 0x7FFFFFFF
-token = f"{code % 1000000:06d}"                          # 6位数字
-```
-
-- 密钥：`secrets.token_bytes(20)` → Base32 编码（32 字符）
-- 验证窗口：`window=1` → 当前 ±1 个时间步长（共 3 个窗口容忍）
-
-#### 集成方式
-
-用户在 WebDAV Basic Auth 密码字段输入 `password:TOTPCODE`，`verify_password()` 自动拆解并分别验证。密码错误优先否决，避免时间步长碰撞泄露信息。
-
-#### 设置页
-
-安全设置选项卡提供：
-- 开关：启用/禁用 TOTP
-- 生成密钥：`AuthService.generate_totp_secret()` → Base32 密钥
-- 复制密钥：点击后密钥可用 Authy/Google Authenticator 扫码（`otpauth://totp/...`）
-- 验证：输入 6 位验证码确认配置正确后保存
-
-#### 存储
-
-| 设置键 | 格式 | 说明 |
-|--------|------|------|
-| `totp_secret` | Base32 字符串 | 空值 = TOTP 未启用 |
-
-#### 安全性说明
-
-- 密码必须先通过，再校验 TOTP；密码错误不泄露 TOTP 信息
-- 时间同步依赖客户端系统时间，±30 秒偏差可接受（window=1）
-- 密钥存储在本地 SQLite 数据库，与密码同等保护级别
+移除范围：
+- `auth_service.py`：全部 TOTP 方法 + `hmac`/`struct`/`time`/`base64` 导入
+- `settings_dialog.py`：全部 TOTP UI（8 个方法）
+- 迁移：`s.set_setting("totp_secret", "")`
 
 ### 协议适配表
 
@@ -904,6 +930,9 @@ pytest tests/ -v
 |------|----------|
 | `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
 | `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
+| `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 |
+| `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪） |
+| `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 |
 | `_run_mcp_tools_check.py` | MCP 全部 16 个工具的内部端到端测试（`python tests/_run_mcp_tools_check.py`） |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议） |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 |
@@ -922,6 +951,48 @@ python tests/run_all.py
 - 每个 `setUp` 清空表数据，测试之间互不干扰
 - 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
 - HTTP 测试使用独立端口（8101、8102），互不冲突
+
+---
+
+## 内存泄漏检测（memory_leak_detector.py）
+
+`utils/memory_leak_detector.py` 提供两种互补的内存泄漏检测方法：
+
+### tracemalloc 快照对比
+
+```python
+from utils.memory_leak_detector import MemoryLeakDetector
+
+d = MemoryLeakDetector()
+d.snapshot()                          # 基准快照
+obj = create_some_widget()
+obj.destroy()
+d.snapshot()                          # 操作后快照
+diff = d.compare()                    # 操作前后的差异
+# diff 包含新增和释放的文件/行号/大小信息
+```
+
+### gc 对象追踪
+
+```python
+d.track(widget_cls)                   # 追踪特定 class 的存活实例
+# 创建销毁后检查存活实例数
+count_before = d.count_instances(widget_cls)
+# assert_equal(count_after, count_before)
+```
+
+### 测试用法
+
+```python
+def test_label_no_leak(self):
+    d = MemoryLeakDetector()
+    d.track(ttk.Label)
+    before = d.count_instances(ttk.Label)
+    labels = [ttk.Label(self.root, text=f"L{i}") for i in range(10)]
+    for lb in labels: lb.destroy()
+    after = d.count_instances(ttk.Label)
+    assert after == before, f"泄漏 {after - before} 个 Label"
+```
 
 ---
 
