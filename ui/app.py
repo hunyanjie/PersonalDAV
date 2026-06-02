@@ -219,6 +219,7 @@ class DAVServerApp:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="帮助", menu=help_menu)
         help_menu.add_command(label="项目地址", command=self.open_project_url)
+        help_menu.add_command(label="检查更新", command=self.check_update_now)
         from ui.dialogs.about_dialog import AboutDialog
         help_menu.add_command(label="关于", command=lambda: AboutDialog(self.root))
 
@@ -258,6 +259,7 @@ class DAVServerApp:
         elif not auto_start and is_auto_start():
             set_auto_start(False)
         self.update_status_bar()
+        self._auto_check_update()
         self._check_cert_renew()
         self._start_periodic_sync()
 
@@ -321,7 +323,10 @@ class DAVServerApp:
         server = self.server_tab.server_instance
         srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
         db_size = self._get_db_size()
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}")
+        update_text = ""
+        if getattr(self, '_pending_update', None):
+            update_text = f" | 📥 v{self._pending_update} 可用"
+        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}{update_text}")
 
     def show_settings(self):
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
@@ -419,6 +424,32 @@ class DAVServerApp:
 
     def _tray_quit(self):
         self._do_quit()
+
+    def check_update_now(self):
+        from utils.update_checker import check_update_async
+        from tkinter import messagebox
+        self.status_bar.config(text="正在检查更新…")
+        def _on_result(r):
+            if r.get("has_update"):
+                msg = f"发现新版本 v{r['latest']}（当前 v{r['current']}）\n\n是否前往下载？"
+                if messagebox.askyesno("发现更新", msg, parent=self.root):
+                    import webbrowser
+                    webbrowser.open(r["url"])
+            else:
+                messagebox.showinfo("检查更新", f"已是最新版本（v{r['current']}）", parent=self.root)
+            self._tick_status_bar()
+        check_update_async(_on_result)
+
+    def _auto_check_update(self):
+        from utils.update_checker import check_update_async
+        s = self.settings_service
+        if s.get_setting("auto_check_update", "True") != "True":
+            return
+        def _on_result(r):
+            if r.get("has_update"):
+                self._pending_update = r["latest"]
+        self._pending_update = None
+        check_update_async(_on_result)
 
     def open_project_url(self):
         """打开项目地址"""
