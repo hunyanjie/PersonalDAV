@@ -394,6 +394,7 @@ class SettingsDialog(tk.Toplevel):
         self._totp_enabled_var = tk.BooleanVar(value=False)
         self._totp_verify_var = tk.StringVar(value="")
         self._totp_secret_shown = False
+        self._totp_verified = False
 
         ttk.Checkbutton(parent, text="启用 TOTP 双因素认证（密码格式: 密码:TOTP验证码）",
                         variable=self._totp_enabled_var,
@@ -476,6 +477,10 @@ class SettingsDialog(tk.Toplevel):
             old_var = tk.StringVar()
             ttk.Entry(dialog, textvariable=old_var, show="*", width=30).grid(row=row, column=1, padx=5)
             row += 1
+            if AuthService().is_totp_enabled():
+                ttk.Label(dialog, text="TOTP 已启用，密码格式: 当前密码:TOTP验证码",
+                          foreground="orange", font=('', 8)).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 5))
+                row += 1
 
         ttk.Label(dialog, text="新密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
         new_var = tk.StringVar()
@@ -516,10 +521,13 @@ class SettingsDialog(tk.Toplevel):
         dialog.title("清除密码")
         dialog.transient(self)
         dialog.grab_set()
-        # dialog.geometry("350x120")
+        # dialog.geometry("350x130")
         ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
         pw_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=5)
+        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=2)
+        if svc.is_totp_enabled():
+            ttk.Label(dialog, text="TOTP 已启用，密码格式: 当前密码:TOTP验证码",
+                      foreground="orange", font=('', 8)).pack(pady=(0, 5))
         def do_clear():
             if not svc.verify_password(pw_var.get()):
                 messagebox.showerror("错误", "密码不正确", parent=dialog)
@@ -557,15 +565,35 @@ class SettingsDialog(tk.Toplevel):
             secret = AuthService.generate_totp_secret()
             self._totp_secret_var.set(secret)
             self._totp_secret_shown = False
-        for w in (self._totp_secret_label, self._totp_show_btn, self._totp_qr_label):
-            w.config(state=tk.NORMAL if enabled else tk.DISABLED)
-        if not enabled:
-            self._totp_secret_label.config(text="(点击开启后自动生成)")
-            self._totp_show_btn.config(text="显示")
-            self._totp_qr_label.config(image="")
+        elif not enabled and self._totp_verified:
+            svc = AuthService()
+            if svc.is_enabled():
+                if not self._require_password("关闭 TOTP"):
+                    self._totp_enabled_var.set(True)
+                    return
+            self._totp_secret_var.set("")
+            self._totp_secret_shown = False
+            self._totp_verified = False
             self._totp_verify_var.set("")
             self._totp_status_label.config(text="")
+            self._totp_qr_label.config(image="")
+        self._update_totp_ui_state()
+
+    def _update_totp_ui_state(self):
+        enabled = self._totp_enabled_var.get()
+        verified = self._totp_verified
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self._totp_qr_label.config(state=state)
+        self._totp_verify_btn.config(state=state if not verified else tk.DISABLED)
+        if verified:
+            self._totp_secret_label.config(text="✓ 配置完成", foreground="green")
+            self._totp_show_btn.config(state=tk.DISABLED)
+            self._totp_gen_btn.config(state=tk.DISABLED)
+            self._totp_status_label.config(text="TOTP 已启用，二维码可继续用于其他设备扫码添加",
+                                           foreground="green")
         else:
+            self._totp_gen_btn.config(state=state)
+            self._totp_show_btn.config(state=state)
             self._update_totp_display()
 
     def _update_totp_display(self):
@@ -585,15 +613,45 @@ class SettingsDialog(tk.Toplevel):
         self._totp_secret_shown = not self._totp_secret_shown
         self._update_totp_display()
 
+    def _require_password(self, action: str) -> bool:
+        svc = AuthService()
+        if not svc.is_enabled():
+            return True
+        dialog = tk.Toplevel(self)
+        dialog.title(f"验证身份 - {action}")
+        dialog.transient(self)
+        dialog.grab_set()
+        ttk.Label(dialog, text="请输入密码以确认操作:").pack(pady=(10, 5))
+        pw_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=2)
+        if svc.is_totp_enabled():
+            ttk.Label(dialog, text="TOTP 已启用，密码格式: 当前密码:TOTP验证码",
+                      foreground="orange", font=('', 8)).pack(pady=(0, 5))
+        result = [False]
+        def do_confirm():
+            if svc.verify_password(pw_var.get()):
+                result[0] = True
+                dialog.destroy()
+            else:
+                messagebox.showerror("错误", "密码不正确", parent=dialog)
+        btn_f = ttk.Frame(dialog)
+        btn_f.pack(pady=10)
+        ttk.Button(btn_f, text="确定", command=do_confirm).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        dialog.wait_window()
+        return result[0]
+
     def _totp_generate_secret(self):
         if self._totp_secret_var.get():
-            if not messagebox.askyesno("确认", "重新生成密钥后，旧密钥将失效，已关联的 APP 需重新添加。确定继续？", parent=self):
+            svc = AuthService()
+            if svc.is_enabled() and not self._require_password("重置密钥"):
                 return
         secret = AuthService.generate_totp_secret()
         self._totp_secret_var.set(secret)
         self._totp_secret_shown = False
+        self._totp_verified = False
         self._totp_enabled_var.set(True)
-        self._update_totp_display()
+        self._update_totp_ui_state()
         if self._totp_verify_var.get():
             self._totp_verify_var.set("")
             self._totp_status_label.config(text="")
@@ -634,7 +692,8 @@ class SettingsDialog(tk.Toplevel):
             self._totp_status_label.config(text="请先生成密钥", foreground="red")
             return
         if AuthService.verify_totp_static(secret, token):
-            self._totp_status_label.config(text="✓ 验证通过，TOTP 配置完成", foreground="green")
+            self._totp_verified = True
+            self._update_totp_ui_state()
         else:
             self._totp_status_label.config(text="✗ 验证码错误，请重试", foreground="red")
 
@@ -1245,6 +1304,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         if totp_secret:
             self._totp_secret_var.set(totp_secret)
             self._totp_enabled_var.set(True)
+            self._totp_verified = True
         else:
             self._totp_enabled_var.set(False)
         self._on_totp_toggle()

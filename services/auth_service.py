@@ -51,11 +51,13 @@ class AuthService:
             return not self.is_password_required()
         if '$' not in stored:
             return False
-        # 支持 password:TOTPCODE 格式
         pw_part = password
         totp_part = ""
         if ':' in password:
-            pw_part, _, totp_part = password.partition(':')
+            *parts, last = password.rsplit(':', 1)
+            if len(last) == 6 and last.isdigit():
+                totp_part = last
+                pw_part = ':'.join(parts)
         salt, pw_hash = stored.split('$', 1)
         computed = hashlib.pbkdf2_hmac('sha256', pw_part.encode('utf-8'), salt.encode('utf-8'), 600000).hex()
         if not secrets.compare_digest(computed, pw_hash):
