@@ -1,23 +1,15 @@
 import unittest
 import gc
-import tkinter as tk
+from tests.conftest import TK_ROOT, TK_AVAILABLE
 
 
+@unittest.skipUnless(TK_AVAILABLE, "tkinter not available")
 class TestMemoryLeak(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.root = tk.Tk()
-        cls.root.withdraw()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.root.destroy()
-        del cls.root
-
     def setUp(self):
         gc.collect()
 
     def assert_no_widget_leak(self, factory_fn, iterations: int = 10):
+        import tkinter as tk
         gc.collect()
         type_counts_before = {}
         for obj in gc.get_objects():
@@ -53,18 +45,16 @@ class TestMemoryLeak(unittest.TestCase):
             self.fail(f"Leaked tkinter widgets after {iterations} cycles: {leaked}")
 
     def test_toplevel_no_leak(self):
+        import tkinter as tk
         def make():
-            d = tk.Toplevel(self.root)
+            d = tk.Toplevel(TK_ROOT)
             tk.Label(d, text="x").pack()
             tk.Button(d, text="ok").pack()
             return d
         self.assert_no_widget_leak(make, iterations=10)
 
     def test_label_no_leak(self):
+        import tkinter as tk
         def make():
-            return tk.Label(self.root, text="test")
+            return tk.Label(TK_ROOT, text="test")
         self.assert_no_widget_leak(make, iterations=100)
-
-
-if __name__ == "__main__":
-    unittest.main()
