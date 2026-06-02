@@ -302,7 +302,7 @@ class DAVServerApp:
 
     def _tick_status_bar(self):
         self.update_status_bar()
-        self.root.after(10000, self._tick_status_bar)
+        self.root.after(100, self._tick_status_bar)
 
     def _format_uptime(self, start: float) -> str:
         elapsed = int(time.time() - start)
