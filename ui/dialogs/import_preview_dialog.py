@@ -41,7 +41,7 @@ class CompareDialog(tk.Toplevel):
     def __init__(self, parent, items):
         super().__init__(parent)
         self.title("对比重复条目")
-        self.geometry("1100x650")
+        # self.geometry("1100x650")
         self.transient(parent)
         self.grab_set()
         self.resizable(True, True)
@@ -426,7 +426,7 @@ class ImportPreviewDialog(tk.Toplevel):
     def __init__(self, parent, import_type, on_import_callback=None, items=None):
         super().__init__(parent)
         self.title(f"导入预览 - {import_type}")
-        self.geometry("900x650")
+        # self.geometry("900x650")
         self.transient(parent)
         self.grab_set()
         self.on_import_callback = on_import_callback

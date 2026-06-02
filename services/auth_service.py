@@ -5,6 +5,7 @@ from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
 from utils.rate_limiter import get_rate_limiter
+from database.db_manager import Database
 
 
 class AuthService:
@@ -171,7 +172,6 @@ class AuthService:
         else:
             logger.warning(parts)
         try:
-            from database.db_manager import Database
             Database().execute(
                 "INSERT INTO auth_logs (timestamp, ip, success, method, detail) VALUES (?, ?, ?, ?, ?)",
                 (datetime.now().isoformat(), client_ip, 1 if success else 0, method, extra)

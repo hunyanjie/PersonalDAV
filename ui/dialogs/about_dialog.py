@@ -8,7 +8,7 @@ class AboutDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title(f"关于 {SOFTWARE_NAME}")
-        self.geometry("480x360")
+        # self.geometry("480x360")
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)

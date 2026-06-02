@@ -41,7 +41,12 @@ class ContactService(BaseService):
                     "vcard": vcard_data
                 }
             except Exception as e:
-                logger.warning(f"vobject 解析失败，切换到鲁棒手动解析: {str(e)}")
+                uid_raw = ""
+                for line in vcard_data.splitlines():
+                    if line.upper().startswith("UID:"):
+                        uid_raw = line[4:].strip()
+                        break
+                logger.warning(f"vobject 解析失败 (UID={uid_raw}), 切换到鲁棒手动解析: {str(e)}")
                 parsed_data = RobustVCardParser.manual_parse(vcard_data)
                 if parsed_data:
                     parsed_data['groups'] = self._extract_categories_from_text(vcard_data)

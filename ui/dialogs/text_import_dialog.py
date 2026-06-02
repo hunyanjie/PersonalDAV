@@ -7,7 +7,7 @@ class TextImportDialog(tk.Toplevel):
     def __init__(self, parent, title):
         super().__init__(parent)
         self.title(title)
-        self.geometry("600x500")
+        # self.geometry("600x500")
         self.transient(parent)
         self.grab_set()
 
@@ -44,14 +44,10 @@ def show_raw_dialog(parent, title, raw_data):
     """显示原始数据对话框"""
     win = tk.Toplevel(parent)
     win.title(f"原始数据 - {title}")
-    win.geometry("600x400")
-    sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
     sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
-    txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+    txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
     RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
-    sb_h.config(command=txt.xview)
     sb_v.config(command=txt.yview)
-    sb_h.pack(side=tk.BOTTOM, fill=tk.X)
     sb_v.pack(side=tk.RIGHT, fill=tk.Y)
     txt.pack(fill=tk.BOTH, expand=True)
     txt.insert(tk.END, raw_data)

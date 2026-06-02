@@ -372,7 +372,7 @@ class DAVServerApp:
         self._show_close_dialog()
 
     def _show_close_dialog(self):
-        dialog = tk.Toplevel(self.root); dialog.title("退出确认"); dialog.geometry("380x200")
+        dialog = tk.Toplevel(self.root); dialog.title("退出确认")  # ; dialog.geometry("380x200")
         dialog.transient(self.root); dialog.grab_set(); dialog.resizable(False, False)
         ttk.Label(dialog, text="关闭窗口时执行的操作：", font=('', 11)).pack(pady=(15, 5))
         var = tk.StringVar(value="tray")

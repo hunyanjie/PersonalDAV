@@ -36,7 +36,7 @@ class DetailedReminderEditor(tk.Toplevel):
     def __init__(self, parent, initial_alarm=None, callback=None):
         super().__init__(parent)
         self.title("编辑提醒" if initial_alarm else "添加提醒")
-        self.geometry("500x550") # 设置固定大小
+        # self.geometry("500x550") # 设置固定大小
         self.transient(parent); self.grab_set()
         self.callback = callback
         self.initial_alarm = initial_alarm
@@ -177,7 +177,7 @@ class EventDialog:
     def __init__(self, parent, initial=None, db=None):
         self.root = tk.Toplevel(parent)
         self.root.title("添加/编辑日历事件")
-        self.root.geometry("900x800")
+        # self.root.geometry("900x800")
         self.root.transient(parent)
         self.root.grab_set()
 
@@ -603,6 +603,7 @@ class EventDialog:
         btn_f = ttk.Frame(frame); btn_f.pack(fill=tk.X, pady=(0, 5))
         ttk.Button(btn_f, text="添加文件", command=self._attach_file).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_f, text="添加链接", command=self._attach_uri).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="编辑选中", command=self._attach_edit).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_f, text="移除选中", command=self._attach_remove).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_f, text="打开选中", command=self._attach_open).pack(side=tk.LEFT, padx=2)
         tree_f = ttk.Frame(frame); tree_f.pack(fill=tk.BOTH, expand=True)
@@ -671,6 +672,39 @@ class EventDialog:
         else:
             import webbrowser
             webbrowser.open(a['uri'])
+
+    def _attach_edit(self):
+        sel = self.attach_tree.selection()
+        if not sel: return
+        idx = self.attach_tree.index(sel[0])
+        if idx < 0 or idx >= len(self.attachments): return
+        a = self.attachments[idx]
+        if a.get('inline'):
+            path = filedialog.askopenfilename(title="选择替换文件", parent=self.root)
+            if not path: return
+            try:
+                with open(path, 'rb') as f:
+                    data = f.read()
+                name = os.path.basename(path)
+                ext = os.path.splitext(name)[1].lower()
+                fmt_map = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+                           '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.doc': 'application/msword',
+                           '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                           '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
+                a['data'] = base64.b64encode(data).decode('ascii')
+                a['filename'] = name
+                a['fmttype'] = fmt_map.get(ext, 'application/octet-stream')
+                a['size'] = len(data)
+                self._attach_refresh()
+            except Exception as e:
+                messagebox.showerror("错误", f"无法替换文件:\n{e}", parent=self.root)
+        else:
+            uri = simpledialog.askstring("编辑链接", "修改附件链接 URL:", initialvalue=a.get('uri', ''), parent=self.root)
+            if uri is not None:
+                a['uri'] = uri
+                a['filename'] = uri
+                self._attach_refresh()
 
     def _attach_refresh(self):
         for item in self.attach_tree.get_children():
@@ -835,7 +869,8 @@ class EventDialog:
             if v.get('sync_timezone') is not None: self.sync_tz_var.set(v.get('sync_timezone'))
         if is_edit_mode:
             try:
-                ical = vobject.readOne(v['ical']); ev = ical.vevent
+                ical = vobject.readOne(v['ical'])
+                ev = ical.vevent if ical.name == 'VCALENDAR' else ical
                 if hasattr(ev, 'summary'): self.summary_var.set(decode_ical_value(ev.summary.value))
                 if hasattr(ev, 'location'): self.location_var.set(decode_ical_value(ev.location.value))
                 if hasattr(ev, 'description'): self.description_text.insert("1.0", decode_ical_value(ev.description.value))
@@ -912,6 +947,8 @@ class EventDialog:
                             self.exdate_listbox.insert(tk.END, str(val))
                 # 解析 ATTACH 附件
                 self.attachments = []
+                seen_inline = set()
+                seen_uri = set()
                 if 'attach' in ev.contents:
                     for att in ev.contents['attach']:
                         a = {'inline': False}
@@ -921,9 +958,20 @@ class EventDialog:
                             a['filename'] = att.params.get('FILENAME', ['attachment.bin'])[0] if hasattr(att, 'params') else 'attachment.bin'
                             a['fmttype'] = att.params.get('FMTTYPE', ['application/octet-stream'])[0] if hasattr(att, 'params') else 'application/octet-stream'
                             a['size'] = int(len(base64.b64decode(a['data'])) * 3 / 4) if a['data'] else 0
+                            key = a['data']
+                            if key in seen_inline:
+                                continue
+                            seen_inline.add(key)
                         else:
-                            a['uri'] = att.value
-                            a['filename'] = att.params.get('FILENAME', [att.value])[0] if hasattr(att, 'params') else att.value
+                            raw = att.value
+                            if len(raw) > 100 and '://' not in raw and not raw.startswith('www.'):
+                                continue
+                            seen_uri_key = raw
+                            if seen_uri_key in seen_uri:
+                                continue
+                            seen_uri.add(seen_uri_key)
+                            a['uri'] = raw
+                            a['filename'] = att.params.get('FILENAME', [raw])[0] if hasattr(att, 'params') else raw
                             a['fmttype'] = att.params.get('FMTTYPE', ['text/uri-list'])[0] if hasattr(att, 'params') else 'text/uri-list'
                             a['size'] = 0
                         self.attachments.append(a)
@@ -943,7 +991,7 @@ class EventDialog:
                         except: pass
                     if hasattr(alarm, 'duration'): alarm_data['duration'] = alarm.duration.value
                     self.alarms.append(alarm_data)
-            except Exception as e: logger.error(f"解析 iCalendar 数据失败: {e}")
+            except Exception as e: logger.error(f"解析 iCalendar 数据失败 (UID={self.uid_var.get()}): {e}")
         self.toggle_allday(); self.toggle_sync_tz(); self.on_status_changed(); self.update_reminder_listbox()
 
     def toggle_allday(self):
@@ -1107,6 +1155,7 @@ class EventDialog:
             if a.get('inline'):
                 att.value = a['data']
                 att.encoding_param = 'BASE64'
+                att.encoded = True
                 att.params['VALUE'] = ['BINARY']
                 if a.get('fmttype') and a['fmttype'] != 'application/octet-stream':
                     att.params['FMTTYPE'] = [a['fmttype']]
@@ -1142,15 +1191,15 @@ class EventDialog:
 
     def show_raw_data(self):
         win = tk.Toplevel(self.root); win.title("原始数据")
-        sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
         sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
-        txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+        txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
         RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
-        sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
-        sb_h.pack(side=tk.BOTTOM, fill=tk.X)
+        sb_v.config(command=txt.yview)
         sb_v.pack(side=tk.RIGHT, fill=tk.Y)
         txt.pack(fill=tk.BOTH, expand=True)
-        txt.insert(tk.END, self.generate_ical()); txt.config(state=tk.DISABLED)
+        content = self.initial.get('ical') or self.generate_ical()
+        txt.insert(tk.END, content)
+        txt.config(state=tk.DISABLED)
 
     def ok(self):
         summary = self.summary_var.get().strip()

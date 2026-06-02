@@ -152,11 +152,11 @@ class CalendarTab(BaseTreeTab):
         self._month_on_select()
 
     def _month_prev(self):
-        self._month_cal.date_add(-30)
+        self._month_cal._prev_month()
         self._refresh_month_view()
 
     def _month_next(self):
-        self._month_cal.date_add(30)
+        self._month_cal._next_month()
         self._refresh_month_view()
 
     def _month_today(self):
@@ -273,12 +273,10 @@ class CalendarTab(BaseTreeTab):
             data = self.db.combine_raw_events(events)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
-            sb_h = ttk.Scrollbar(win, orient=tk.HORIZONTAL)
             sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
-            txt = tk.Text(win, wrap=tk.NONE, xscrollcommand=sb_h.set, yscrollcommand=sb_v.set)
+            txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
             RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
-            sb_h.config(command=txt.xview); sb_v.config(command=txt.yview)
-            sb_h.pack(side=tk.BOTTOM, fill=tk.X)
+            sb_v.config(command=txt.yview)
             sb_v.pack(side=tk.RIGHT, fill=tk.Y)
             txt.pack(fill=tk.BOTH, expand=True)
             txt.insert(tk.END, data); txt.config(state=tk.DISABLED)

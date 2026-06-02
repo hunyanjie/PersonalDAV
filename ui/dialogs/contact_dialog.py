@@ -10,6 +10,7 @@ from ui.widgets.enhanced_tooltip import EnhancedTooltip
 import quopri
 import base64
 import io
+import os
 from PIL import Image, ImageTk
 
 
@@ -19,7 +20,7 @@ class ContactDialog(tk.Toplevel):
     def __init__(self, parent, initial=None, vcard=None, raw_vcard=None):
         super().__init__(parent)
         self.title("添加/编辑联系人")
-        self.geometry("650x750")
+        # self.geometry("650x750")
         self.transient(parent)
         self.grab_set()
 
@@ -168,7 +169,15 @@ class ContactDialog(tk.Toplevel):
         if not path:
             return
         try:
+            size = os.path.getsize(path)
+            if size > 2 * 1024 * 1024:
+                if not messagebox.askyesno("提示", f"图片大小为 {size/1024/1024:.1f}MB，"
+                                            f"将自动缩放为缩略图，建议使用更小的图片。\n\n是否继续？",
+                                            parent=self):
+                    return
             img = Image.open(path)
+            if img.width * img.height > 2000 * 2000:
+                img.thumbnail((1000, 1000), Image.LANCZOS)
             self._set_photo_image(img)
         except Exception as e:
             messagebox.showerror("错误", f"无法加载图片:\n{e}", parent=self)
@@ -191,14 +200,24 @@ class ContactDialog(tk.Toplevel):
         self._photo_bytes = None
         if not self.preserved_photo:
             return
+        self.after_idle(self._process_photo_async)
+
+    def _process_photo_async(self):
+        if not self.preserved_photo:
+            return
         try:
             val = self.preserved_photo.value
             if isinstance(val, str):
                 raw = base64.b64decode(val)
             else:
                 raw = val
+            if len(raw) > 5 * 1024 * 1024:
+                return
             img = Image.open(io.BytesIO(raw))
+            if img.width * img.height > 2000 * 2000:
+                img.thumbnail((1000, 1000), Image.LANCZOS)
             self._set_photo_image(img)
+            self.preserved_photo.value = self._photo_bytes
         except Exception:
             pass
 
@@ -266,16 +285,20 @@ class ContactDialog(tk.Toplevel):
     def show_raw(self):
         if not self.vcard and not self.raw_vcard_data: return
         w = tk.Toplevel(self); w.title("vCard 源码")
-        scroll_h = ttk.Scrollbar(w, orient=tk.HORIZONTAL)
         scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL)
-        t = tk.Text(w, wrap=tk.NONE, xscrollcommand=scroll_h.set, yscrollcommand=scroll_v.set)
+        t = tk.Text(w, wrap=tk.CHAR, yscrollcommand=scroll_v.set)
         RightClickMenu(t, "text", actions=["copy", None, "select_all"])
-        scroll_h.config(command=t.xview); scroll_v.config(command=t.yview)
-        scroll_h.pack(side=tk.BOTTOM, fill=tk.X)
+        scroll_v.config(command=t.yview)
         scroll_v.pack(side=tk.RIGHT, fill=tk.Y)
         t.pack(fill=tk.BOTH, expand=True)
-        content = self.vcard.serialize() if self.vcard else self.raw_vcard_data
-        t.insert(tk.END, content); t.config(state=tk.DISABLED)
+        if self.raw_vcard_data:
+            content = self.raw_vcard_data
+        else:
+            vobject.vcard.wacky_apple_photo_serialize = False
+            content = self.vcard.serialize()
+            vobject.vcard.wacky_apple_photo_serialize = True
+        t.insert(tk.END, content)
+        t.config(state=tk.DISABLED)
 
     def _other_add(self):
         key = self.other_key_var.get().strip()
@@ -406,7 +429,7 @@ class ContactDialog(tk.Toplevel):
         
         # 照片
         if self._photo_bytes:
-            v.add('photo').value = base64.b64encode(self._photo_bytes).decode('ascii')
+            v.add('photo').value = self._photo_bytes
             v.photo.encoding_param = 'b'
             v.photo.type_param = 'PNG'
         elif self.preserved_photo:
@@ -419,7 +442,9 @@ class ContactDialog(tk.Toplevel):
                 try: v.add(k.lower()).value = val
                 except: pass
 
+        vobject.vcard.wacky_apple_photo_serialize = False
         self.result = {'vcard': v.serialize(), 'name': v.fn.value}
+        vobject.vcard.wacky_apple_photo_serialize = True
         self.destroy()
 
     def cancel(self): self.result = None; self.destroy()

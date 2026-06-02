@@ -75,7 +75,7 @@ class SettingsDialog(tk.Toplevel):
     def __init__(self, parent, db_service, on_save_callback):
         super().__init__(parent)
         self.title("设置")
-        self.geometry("800x750")
+        # self.geometry("800x750")
         self.transient(parent)
         self.grab_set()
         self.db = db_service
@@ -279,7 +279,7 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(f, text="同步间隔:").grid(row=3, column=0, sticky="w", padx=5, pady=3)
         self.sync_interval_var = tk.StringVar(value="30")
         ttk.Spinbox(f, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).grid(row=3, column=1, sticky="w", padx=5, pady=3)
-        ttk.Label(f, text="分钟").pack(side=tk.LEFT)
+        ttk.Label(f, text="分钟").grid(row=3, column=2, sticky="w", padx=2)
 
         self.sync_enabled_var = tk.BooleanVar()
         ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
@@ -407,7 +407,7 @@ class SettingsDialog(tk.Toplevel):
         dialog.title("更改密码" if change else "设置密码")
         dialog.transient(self)
         dialog.grab_set()
-        dialog.geometry("400x200")
+        # dialog.geometry("400x200")
 
         row = 0
         if change:
@@ -455,7 +455,7 @@ class SettingsDialog(tk.Toplevel):
         dialog.title("清除密码")
         dialog.transient(self)
         dialog.grab_set()
-        dialog.geometry("350x120")
+        # dialog.geometry("350x120")
         ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
         pw_var = tk.StringVar()
         ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=5)
@@ -483,10 +483,6 @@ class SettingsDialog(tk.Toplevel):
         if not token:
             messagebox.showinfo("提示", "请先设置密码", parent=self)
             return
-        try:
-            dialog.focus_get()
-        except:
-            pass
         self.clipboard_clear()
         self.clipboard_append(token)
         from ui.widgets.toast import Toast
@@ -786,7 +782,7 @@ class SettingsDialog(tk.Toplevel):
                        command=lambda v=t: [entry.delete(0, tk.END), entry.insert(0, v)]).pack(side=tk.LEFT, padx=1)
 
     def add_preset_reminder(self):
-        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set(); dialog.geometry("520x300")
+        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set()  # ; dialog.geometry("520x300")
         ttk.Label(dialog, text="添加预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
         ttk.Label(dialog, text="输入提醒触发时间，新建日程时可双击预设快速添加。", foreground="gray").pack(anchor='w', padx=10)
         ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
@@ -818,7 +814,7 @@ class SettingsDialog(tk.Toplevel):
         lb = self.preset_reminders_listbox if n_sel else self.preset_allday_reminders_listbox
         idx = n_sel[0] if n_sel else a_sel[0]
         cur = lb.get(idx)
-        dialog = tk.Toplevel(self); dialog.title('编辑预设提醒'); dialog.transient(self); dialog.grab_set(); dialog.geometry("520x300")
+        dialog = tk.Toplevel(self); dialog.title('编辑预设提醒'); dialog.transient(self); dialog.grab_set()  # ; dialog.geometry("520x300")
         ttk.Label(dialog, text="编辑预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
         ttk.Label(dialog, text="修改提醒触发时间。", foreground="gray").pack(anchor='w', padx=10)
         ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
@@ -909,7 +905,7 @@ class SettingsDialog(tk.Toplevel):
             messagebox.showerror("生成失败", str(e), parent=self)
 
     def _show_cert_guide(self):
-        win = tk.Toplevel(self); win.title("手动创建自签名证书"); win.geometry("680x520")
+        win = tk.Toplevel(self); win.title("手动创建自签名证书")  # ; win.geometry("680x520")
         win.transient(self); win.grab_set()
 
         text = tk.Text(win, wrap=tk.WORD, padx=10, pady=10)
