@@ -427,18 +427,62 @@ class DAVServerApp:
 
     def check_update_now(self):
         from utils.update_checker import check_update_async
-        from tkinter import messagebox
         self.status_bar.config(text="正在检查更新…")
         def _on_result(r):
-            if r.get("has_update"):
-                msg = f"发现新版本 v{r['latest']}（当前 v{r['current']}）\n\n是否前往下载？"
-                if messagebox.askyesno("发现更新", msg, parent=self.root):
-                    import webbrowser
-                    webbrowser.open(r["url"])
-            else:
-                messagebox.showinfo("检查更新", f"已是最新版本（v{r['current']}）", parent=self.root)
-            self._tick_status_bar()
+            self.root.after(0, lambda: self._show_update_result(r))
         check_update_async(_on_result)
+
+    def _show_update_result(self, r):
+        from tkinter import messagebox, Toplevel, Text, ttk, scrolledtext
+        self._tick_status_bar()
+        if not r.get("has_update"):
+            messagebox.showinfo("检查更新", f"已是最新版本（v{r['current']}）", parent=self.root)
+            return
+
+        releases = r["releases"]
+        latest = r["latest"]
+
+        dialog = Toplevel(self.root)
+        dialog.title(f"发现新版本 v{latest}")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("520x440")
+        dialog.minsize(420, 320)
+
+        ttk.Label(dialog, text=f"当前版本: v{r['current']}  →  最新版本: v{latest}",
+                  font=('', 11)).pack(anchor="w", padx=12, pady=(10, 5))
+
+        ttk.Label(dialog, text="以下版本更新内容:", foreground="gray").pack(
+            anchor="w", padx=12, pady=(0, 5))
+
+        txt = scrolledtext.ScrolledText(dialog, wrap="word", state="normal",
+                                         font=('Consolas', 10), height=14)
+        txt.pack(fill=tk.BOTH, expand=True, padx=12, pady=5)
+
+        for rel in releases:
+            ver = rel["version"]
+            body = rel["body"]
+            is_latest = (ver == latest)
+            tag = f"  ★ v{ver}（最新）" if is_latest else f"  v{ver}"
+            txt.insert(tk.END, tag + "\n", "header")
+            txt.insert(tk.END, body.rstrip() + "\n\n", "body")
+
+        txt.tag_config("header", font=('', 10, 'bold'), foreground="#2563eb")
+        txt.tag_config("body", font=('Consolas', 9), foreground="#374151")
+        txt.config(state="disabled")
+
+        btn_f = ttk.Frame(dialog)
+        btn_f.pack(fill=tk.X, padx=12, pady=(0, 12))
+        ttk.Label(btn_f, text="下载按钮将下载最新版本。",
+                  foreground="gray").pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="下载", command=lambda: self._open_download(r["url"])
+                   ).pack(side=tk.RIGHT, padx=3)
+        ttk.Button(btn_f, text="关闭", command=dialog.destroy).pack(side=tk.RIGHT, padx=3)
+
+    @staticmethod
+    def _open_download(url):
+        import webbrowser
+        webbrowser.open(url)
 
     def _auto_check_update(self):
         from utils.update_checker import check_update_async
@@ -446,10 +490,13 @@ class DAVServerApp:
         if s.get_setting("auto_check_update", "True") != "True":
             return
         def _on_result(r):
-            if r.get("has_update"):
-                self._pending_update = r["latest"]
+            self.root.after(0, lambda: self._on_auto_update_result(r))
         self._pending_update = None
         check_update_async(_on_result)
+
+    def _on_auto_update_result(self, r):
+        if r.get("has_update"):
+            self._pending_update = r["latest"]
 
     def open_project_url(self):
         """打开项目地址"""

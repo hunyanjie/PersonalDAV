@@ -1,20 +1,27 @@
 """
-检查更新：从 GitHub Releases 获取最新版本号
+检查更新：从 GitHub Releases 获取版本信息
 """
 from config import SOFTWARE_VERSION
 from utils.logger import logger
 import json
 import threading
 
-GITHUB_API = "https://api.github.com/repos/hunyanjie/PersonalDAV/releases/latest"
+GITHUB_API = "https://api.github.com/repos/hunyanjie/PersonalDAV/releases?per_page=20"
 DOWNLOAD_URL = "https://github.com/hunyanjie/PersonalDAV/releases/latest"
 
 
 def check_update(timeout=5) -> dict:
     """
     检查是否有新版本
-    返回: {"has_update": bool, "latest": str, "current": str, "url": str, "body": str}
+    返回:
+      has_update: bool  是否有更新
+      latest: str       最新版本号
+      current: str      当前版本号
+      url: str          下载地址
+      releases: list    所有比当前新的 release [{version, body}, ...]
     """
+    result = {"has_update": False, "latest": "", "current": SOFTWARE_VERSION,
+              "url": DOWNLOAD_URL, "releases": []}
     try:
         import urllib.request
         req = urllib.request.Request(
@@ -23,20 +30,30 @@ def check_update(timeout=5) -> dict:
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        latest = data.get("tag_name", "").lstrip("v")
-        body = data.get("body", "")
+
         current = SOFTWARE_VERSION
-        has_update = _compare_versions(latest, current) > 0
-        return {
-            "has_update": has_update,
-            "latest": latest,
-            "current": current,
-            "url": DOWNLOAD_URL,
-            "body": body,
-        }
+        newer = []
+        latest_ver = ""
+        for item in data:
+            tag = item.get("tag_name", "").lstrip("v")
+            body = item.get("body", "")
+            if not tag:
+                continue
+            if _compare_versions(tag, current) > 0:
+                newer.append({"version": tag, "body": body or "(无更新说明)"})
+            if not latest_ver or _compare_versions(tag, latest_ver) > 0:
+                latest_ver = tag
+
+        newer.sort(key=lambda x: [int(p) for p in x["version"].split(".")])
+
+        if newer:
+            result["has_update"] = True
+            result["latest"] = latest_ver
+            result["releases"] = newer
     except Exception as e:
         logger.debug(f"检查更新失败: {e}")
-        return {"has_update": False, "latest": "", "current": SOFTWARE_VERSION, "url": "", "body": ""}
+
+    return result
 
 
 def _compare_versions(v1: str, v2: str) -> int:
@@ -56,7 +73,7 @@ def _compare_versions(v1: str, v2: str) -> int:
 
 
 def check_update_async(callback, timeout=5):
-    """在后台线程检查更新，完成后回调 callback(result_dict)"""
+    """在后台线程检查更新，完成后通过 after(0) 回到主线程回调"""
     def _run():
         result = check_update(timeout)
         if callback:
