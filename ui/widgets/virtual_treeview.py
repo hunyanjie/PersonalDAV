@@ -16,8 +16,6 @@ class VirtualTreeview:
         vtree.frame                   # 容器 Frame（用于 pack）
         vtree.scrollbar               # 滚动条
     """
-    ROW_HEIGHT = 24  # 估算行高（像素）
-
     def __init__(self, parent, columns, headings, column_width_fn):
         self._data = []            # 全量数据
         self._offset = 0           # 当前窗口起始索引
@@ -25,6 +23,7 @@ class VirtualTreeview:
         self._iid_to_idx = {}      # tree item id → 数据索引
         self._col_width_fn = column_width_fn
         self._visible = 20         # 默认可视行数（window 未映射前用这个）
+        self._row_height = 0       # 实际行高（首次 render 时测量）
         self.post_render_hook = None
 
         self.frame = ttk.Frame(parent)
@@ -101,18 +100,29 @@ class VirtualTreeview:
 
     # ── 内部 ────────────────────────────────────────────────
 
+    def _measure_row_height(self):
+        """插入一行临时数据，用 bbox 测量实际行高。"""
+        dummy = self.tree.insert("", tk.END, values=("X",) * 5)
+        self.tree.update_idletasks()
+        b = self.tree.bbox(dummy)
+        self.tree.delete(dummy)
+        self._row_height = b[3] if b and b[3] > 5 else 24
+
     def _get_visible_count(self):
-        """根据 Treeview 实际高度计算可视行数。"""
+        """根据 Treeview 实际高度和实际行高计算可视行数。"""
         h = self.tree.winfo_height()
-        if h > 20:
-            return max(5, h // self.ROW_HEIGHT)
-        return self._visible
+        if h <= 20:
+            return self._visible
+        rh = self._row_height
+        if rh <= 0:
+            rh = 24  # 未测量时回退
+        return max(5, h // rh)
 
     def _on_configure(self, event):
         """窗口尺寸变化时重新计算可视行数，必要时重新渲染。"""
         if event.widget is not self.tree:
             return
-        new = max(5, event.height // self.ROW_HEIGHT)
+        new = max(5, event.height // (self._row_height or 24))
         if new != self._visible:
             self._visible = new
             if self._data:
@@ -120,6 +130,10 @@ class VirtualTreeview:
 
     def _render(self):
         """销毁旧行，插入当前窗口范围内的行。"""
+        # 首次渲染时测量实际行高
+        if self._row_height <= 0:
+            self._measure_row_height()
+
         for iid in list(self._idx_to_iid.values()):
             self.tree.delete(iid)
         self._idx_to_iid.clear()
