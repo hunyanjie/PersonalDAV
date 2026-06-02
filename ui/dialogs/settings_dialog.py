@@ -61,9 +61,7 @@ SIMPLE_SETTINGS = [
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
     # ========== 安全设置 ==========
-    SettingDef("force_password", "强制要求密码（未设密码时拒绝访问）", "check", "安全设置", default=True, db_default="True"),
-    SettingDef("rate_limit_enabled", "启用访问频率限制", "check", "安全设置", default=False, db_default="False"),
-    SettingDef("rate_limit_max", "每分钟最大请求数:", "entry", "安全设置", default="60", width=10),
+    # force_password / rate_limit 手工构建于 create_security_settings
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
                default="当前时间", db_default="current",
                options=["当前时间", "5整数倍", "10整数倍", "15整数倍", "30整数倍"],
@@ -294,7 +292,16 @@ class SettingsDialog(tk.Toplevel):
     # ── 安全设置 ────────────────────────────────────────────────
 
     def create_security_settings(self, parent):
-        pw_f = ttk.LabelFrame(parent, text="访问密码")
+        sub = ttk.Notebook(parent)
+        sub.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        pw_frame = ttk.Frame(sub); sub.add(pw_frame, text="密码验证")
+        ip_frame = ttk.Frame(sub); sub.add(ip_frame, text="IP 控制")
+        totp_frame = ttk.Frame(sub); sub.add(totp_frame, text="TOTP 双因素")
+        rate_frame = ttk.Frame(sub); sub.add(rate_frame, text="频率限制")
+
+        # ── 密码验证 ──
+        pw_f = ttk.LabelFrame(pw_frame, text="访问密码")
         pw_f.pack(fill=tk.X, padx=5, pady=5)
 
         self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
@@ -310,7 +317,11 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
                   foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
 
-        token_f = ttk.LabelFrame(parent, text="MCP 令牌（AI 连接用）")
+        self.force_password_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(pw_frame, text="强制要求密码（未设密码时拒绝访问）",
+                        variable=self.force_password_var).pack(anchor="w", padx=10, pady=5)
+
+        token_f = ttk.LabelFrame(pw_frame, text="MCP 令牌（AI 连接用）")
         token_f.pack(fill=tk.X, padx=5, pady=5)
 
         self._mcp_token_var = tk.StringVar()
@@ -330,7 +341,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(btn_f, text="  更改密码或轮换后旧令牌立即失效。",
                   foreground="gray").pack(side=tk.LEFT)
 
-        ip_f = ttk.LabelFrame(parent, text="IP 访问控制（留空 = 不限制）")
+        # ── IP 控制 ──
+        ip_f = ttk.LabelFrame(ip_frame, text="IP 访问控制（留空 = 不限制）")
         ip_f.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(ip_f, text="白名单（每行一个 IP / CIDR / 通配符）:",
@@ -347,11 +359,10 @@ class SettingsDialog(tk.Toplevel):
                   foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
 
         self._bypass_localhost_var = tk.BooleanVar(value=True)
-        bypass_local_cb = ttk.Checkbutton(parent, text="本机访问免密码",
-                                          variable=self._bypass_localhost_var)
-        bypass_local_cb.pack(anchor="w", padx=10, pady=(5, 0))
+        ttk.Checkbutton(ip_frame, text="本机访问免密码",
+                        variable=self._bypass_localhost_var).pack(anchor="w", padx=10, pady=(5, 0))
 
-        bypass_f = ttk.LabelFrame(parent, text="免密码 IP（以下 IP 访问时不需密码验证）")
+        bypass_f = ttk.LabelFrame(ip_frame, text="免密码 IP（以下 IP 访问时不需密码验证）")
         bypass_f.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符:",
@@ -359,7 +370,8 @@ class SettingsDialog(tk.Toplevel):
         self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
         self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
 
-        rate_f = ttk.LabelFrame(parent, text="访问频率限制")
+        # ── 频率限制 ──
+        rate_f = ttk.LabelFrame(rate_frame, text="访问频率限制")
         rate_f.pack(fill=tk.X, padx=5, pady=5)
 
         self.rate_limit_enabled_var = tk.BooleanVar(value=False)
@@ -372,32 +384,54 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(rate_f, text="超过限制的请求将被返回 429 Too Many Requests",
                   foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
-        totp_f = ttk.LabelFrame(parent, text="TOTP 双因素认证")
-        totp_f.pack(fill=tk.X, padx=5, pady=5)
+        # ── TOTP 双因素 ──
+        self._create_totp_ui(totp_frame)
+
+        self._refresh_auth_ui()
+
+    def _create_totp_ui(self, parent):
         self._totp_secret_var = tk.StringVar(value="")
         self._totp_enabled_var = tk.BooleanVar(value=False)
         self._totp_verify_var = tk.StringVar(value="")
-        ttk.Checkbutton(totp_f, text="启用 TOTP 双因素认证",
-                        variable=self._totp_enabled_var,
-                        command=self._on_totp_toggle).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
-        self._totp_secret_label = ttk.Label(totp_f, text="密钥: (点击「生成密钥」创建)",
-                                            font=('Consolas', 9))
-        self._totp_secret_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 2))
-        btn_f = ttk.Frame(totp_f)
-        btn_f.grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=2)
-        ttk.Button(btn_f, text="生成密钥", command=self._totp_generate_secret, width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_f, text="复制密钥", command=self._totp_copy_secret, width=8).pack(side=tk.LEFT, padx=2)
-        ttk.Label(totp_f, text="验证码（用 Google Authenticator / Authy 等扫码添加后输入）:",
-                  foreground="gray").grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 0))
-        verify_f = ttk.Frame(totp_f)
-        verify_f.grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=2)
-        ttk.Entry(verify_f, textvariable=self._totp_verify_var, width=10).pack(side=tk.LEFT, padx=2)
-        self._totp_verify_btn = ttk.Button(verify_f, text="验证", command=self._totp_verify, width=6)
-        self._totp_verify_btn.pack(side=tk.LEFT, padx=2)
-        self._totp_status_label = ttk.Label(totp_f, text="", foreground="green")
-        self._totp_status_label.grid(row=5, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+        self._totp_secret_shown = False
 
-        self._refresh_auth_ui()
+        ttk.Checkbutton(parent, text="启用 TOTP 双因素认证（密码格式: 密码:TOTP验证码）",
+                        variable=self._totp_enabled_var,
+                        command=self._on_totp_toggle).pack(anchor="w", padx=10, pady=5)
+
+        secret_f = ttk.LabelFrame(parent, text="密钥")
+        secret_f.pack(fill=tk.X, padx=5, pady=5)
+
+        self._totp_secret_label = ttk.Label(secret_f, text="(点击「生成密钥」创建)",
+                                            font=('Consolas', 10))
+        self._totp_secret_label.pack(anchor="w", padx=10, pady=2)
+
+        btn_f = ttk.Frame(secret_f)
+        btn_f.pack(fill=tk.X, padx=5, pady=5)
+        self._totp_gen_btn = ttk.Button(btn_f, text="生成密钥", command=self._totp_generate_secret, width=10)
+        self._totp_gen_btn.pack(side=tk.LEFT, padx=2)
+        self._totp_show_btn = ttk.Button(btn_f, text="显示", command=self._totp_toggle_secret, width=6)
+        self._totp_show_btn.pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="复制", command=self._totp_copy_secret, width=6).pack(side=tk.LEFT, padx=2)
+
+        self._totp_qr_label = ttk.Label(parent, text="")
+        self._totp_qr_label.pack(anchor="center", pady=5)
+
+        verify_f = ttk.LabelFrame(parent, text="验证配置")
+        verify_f.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(verify_f, text="用 Google Authenticator / Authy 等 APP 扫码后输入验证码确认:",
+                  foreground="gray", wraplength=500).pack(anchor="w", padx=5, pady=(5, 0))
+        row_f = ttk.Frame(verify_f)
+        row_f.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Entry(row_f, textvariable=self._totp_verify_var, width=10).pack(side=tk.LEFT, padx=2)
+        self._totp_verify_btn = ttk.Button(row_f, text="验证", command=self._totp_verify, width=6)
+        self._totp_verify_btn.pack(side=tk.LEFT, padx=2)
+        self._totp_status_label = ttk.Label(verify_f, text="", foreground="green")
+        self._totp_status_label.pack(anchor="w", padx=5, pady=(0, 5))
+
+        ttk.Label(parent, text="开启后进入 WebDAV/更改密码/清除密码时需要输入「密码:TOTP验证码」",
+                  foreground="gray", font=('', 8), wraplength=500).pack(anchor="w", padx=10, pady=5)
 
     def _refresh_auth_ui(self):
         svc = AuthService()
@@ -518,21 +552,67 @@ class SettingsDialog(tk.Toplevel):
     # ── TOTP 双因素认证 ──────────────────────────────────────────
 
     def _on_totp_toggle(self):
-        if self._totp_enabled_var.get():
-            self._totp_secret_label.config(foreground="black")
-            self._totp_verify_btn.config(state="normal")
+        enabled = self._totp_enabled_var.get()
+        if enabled and not self._totp_secret_var.get():
+            secret = AuthService.generate_totp_secret()
+            self._totp_secret_var.set(secret)
+            self._totp_secret_shown = False
+        for w in (self._totp_secret_label, self._totp_show_btn, self._totp_qr_label):
+            w.config(state=tk.NORMAL if enabled else tk.DISABLED)
+        if not enabled:
+            self._totp_secret_label.config(text="(点击开启后自动生成)")
+            self._totp_show_btn.config(text="显示")
+            self._totp_qr_label.config(image="")
+            self._totp_verify_var.set("")
+            self._totp_status_label.config(text="")
         else:
-            self._totp_secret_label.config(foreground="gray")
-            self._totp_verify_btn.config(state="disabled")
+            self._update_totp_display()
+
+    def _update_totp_display(self):
+        secret = self._totp_secret_var.get()
+        if not secret:
+            return
+        if self._totp_secret_shown:
+            self._totp_secret_label.config(text=secret)
+            self._totp_show_btn.config(text="隐藏")
+        else:
+            masked = secret[:4] + "*" * (len(secret) - 8) + secret[-4:]
+            self._totp_secret_label.config(text=masked)
+            self._totp_show_btn.config(text="显示")
+        self._generate_qr(secret)
+
+    def _totp_toggle_secret(self):
+        self._totp_secret_shown = not self._totp_secret_shown
+        self._update_totp_display()
+
+    def _totp_generate_secret(self):
+        if self._totp_secret_var.get():
+            if not messagebox.askyesno("确认", "重新生成密钥后，旧密钥将失效，已关联的 APP 需重新添加。确定继续？", parent=self):
+                return
+        secret = AuthService.generate_totp_secret()
+        self._totp_secret_var.set(secret)
+        self._totp_secret_shown = False
+        self._totp_enabled_var.set(True)
+        self._update_totp_display()
+        if self._totp_verify_var.get():
             self._totp_verify_var.set("")
             self._totp_status_label.config(text="")
 
-    def _totp_generate_secret(self):
-        secret = AuthService.generate_totp_secret()
-        self._totp_secret_var.set(secret)
-        self._totp_secret_label.config(text=f"密钥: {secret}", foreground="black")
-        self._totp_enabled_var.set(True)
-        self._on_totp_toggle()
+    def _generate_qr(self, secret):
+        try:
+            import qrcode
+            from io import BytesIO
+            from PIL import Image, ImageTk
+            uri = AuthService.get_totp_provisioning_uri(secret)
+            qr = qrcode.make(uri, box_size=4, border=1)
+            bio = BytesIO()
+            qr.save(bio, format='PNG')
+            bio.seek(0)
+            img = Image.open(bio)
+            self._totp_qr_img = ImageTk.PhotoImage(img)
+            self._totp_qr_label.config(image=self._totp_qr_img)
+        except ImportError:
+            self._totp_qr_label.config(text="（需安装 qrcode 库以显示二维码）")
 
     def _totp_copy_secret(self):
         secret = self._totp_secret_var.get()
@@ -553,7 +633,7 @@ class SettingsDialog(tk.Toplevel):
         if not secret:
             self._totp_status_label.config(text="请先生成密钥", foreground="red")
             return
-        if AuthService().verify_totp(token):
+        if AuthService.verify_totp_static(secret, token):
             self._totp_status_label.config(text="✓ 验证通过，TOTP 配置完成", foreground="green")
         else:
             self._totp_status_label.config(text="✗ 验证码错误，请重试", foreground="red")
@@ -1159,15 +1239,14 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
         self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
+        self.force_password_var.set(s.get_setting("force_password", "True") == "True")
 
         totp_secret = s.get_setting("totp_secret", "")
         if totp_secret:
             self._totp_secret_var.set(totp_secret)
             self._totp_enabled_var.set(True)
-            self._totp_secret_label.config(text=f"密钥: {totp_secret}")
         else:
             self._totp_enabled_var.set(False)
-            self._totp_secret_label.config(text="密钥: (点击「生成密钥」创建)")
         self._on_totp_toggle()
 
         self.data_dir_var.set(s.get_setting("data_dir", ""))
@@ -1309,14 +1388,13 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
+        s.set_setting("force_password", str(self.force_password_var.get()))
 
-        totp_secret = s.get_setting("totp_secret", "")
-        if self._totp_enabled_var.get():
-            secret = self._totp_secret_var.get()
-            if secret and secret != totp_secret:
-                AuthService().set_totp_secret(secret)
+        totp_secret = self._totp_secret_var.get()
+        if self._totp_enabled_var.get() and totp_secret:
+            AuthService().set_totp_secret(totp_secret)
         else:
-            if totp_secret:
+            if s.get_setting("totp_secret", ""):
                 AuthService().set_totp_secret("")
 
         s.set_setting("sync_url", self.sync_url_var.get())

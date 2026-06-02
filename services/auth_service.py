@@ -103,9 +103,13 @@ class AuthService:
         secret = self.get_totp_secret()
         if not secret:
             return True
+        return self.verify_totp_static(secret, token, window)
+
+    @staticmethod
+    def verify_totp_static(secret: str, token: str, window: int = 1) -> bool:
         now = time.time()
         for i in range(-window, window + 1):
-            if secrets.compare_digest(self._totp_token(secret, now + i * 30), token):
+            if secrets.compare_digest(AuthService._totp_token(secret, now + i * 30), token):
                 return True
         return False
 
