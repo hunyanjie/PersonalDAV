@@ -372,6 +372,31 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(rate_f, text="超过限制的请求将被返回 429 Too Many Requests",
                   foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
+        totp_f = ttk.LabelFrame(parent, text="TOTP 双因素认证")
+        totp_f.pack(fill=tk.X, padx=5, pady=5)
+        self._totp_secret_var = tk.StringVar(value="")
+        self._totp_enabled_var = tk.BooleanVar(value=False)
+        self._totp_verify_var = tk.StringVar(value="")
+        ttk.Checkbutton(totp_f, text="启用 TOTP 双因素认证",
+                        variable=self._totp_enabled_var,
+                        command=self._on_totp_toggle).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+        self._totp_secret_label = ttk.Label(totp_f, text="密钥: (点击「生成密钥」创建)",
+                                            font=('Consolas', 9))
+        self._totp_secret_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 2))
+        btn_f = ttk.Frame(totp_f)
+        btn_f.grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=2)
+        ttk.Button(btn_f, text="生成密钥", command=self._totp_generate_secret, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_f, text="复制密钥", command=self._totp_copy_secret, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Label(totp_f, text="验证码（用 Google Authenticator / Authy 等扫码添加后输入）:",
+                  foreground="gray").grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 0))
+        verify_f = ttk.Frame(totp_f)
+        verify_f.grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=2)
+        ttk.Entry(verify_f, textvariable=self._totp_verify_var, width=10).pack(side=tk.LEFT, padx=2)
+        self._totp_verify_btn = ttk.Button(verify_f, text="验证", command=self._totp_verify, width=6)
+        self._totp_verify_btn.pack(side=tk.LEFT, padx=2)
+        self._totp_status_label = ttk.Label(totp_f, text="", foreground="green")
+        self._totp_status_label.grid(row=5, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+
         self._refresh_auth_ui()
 
     def _refresh_auth_ui(self):
@@ -489,6 +514,49 @@ class SettingsDialog(tk.Toplevel):
         self.clipboard_append(token)
         from ui.widgets.toast import Toast
         Toast.show(self, "MCP 令牌已复制到剪贴板")
+
+    # ── TOTP 双因素认证 ──────────────────────────────────────────
+
+    def _on_totp_toggle(self):
+        if self._totp_enabled_var.get():
+            self._totp_secret_label.config(foreground="black")
+            self._totp_verify_btn.config(state="normal")
+        else:
+            self._totp_secret_label.config(foreground="gray")
+            self._totp_verify_btn.config(state="disabled")
+            self._totp_verify_var.set("")
+            self._totp_status_label.config(text="")
+
+    def _totp_generate_secret(self):
+        secret = AuthService.generate_totp_secret()
+        self._totp_secret_var.set(secret)
+        self._totp_secret_label.config(text=f"密钥: {secret}", foreground="black")
+        self._totp_enabled_var.set(True)
+        self._on_totp_toggle()
+
+    def _totp_copy_secret(self):
+        secret = self._totp_secret_var.get()
+        if not secret:
+            messagebox.showinfo("提示", "请先生成密钥", parent=self)
+            return
+        self.clipboard_clear()
+        self.clipboard_append(secret)
+        from ui.widgets.toast import Toast
+        Toast.show(self, "TOTP 密钥已复制到剪贴板")
+
+    def _totp_verify(self):
+        token = self._totp_verify_var.get().strip()
+        if not token:
+            self._totp_status_label.config(text="请输入验证码", foreground="red")
+            return
+        secret = self._totp_secret_var.get()
+        if not secret:
+            self._totp_status_label.config(text="请先生成密钥", foreground="red")
+            return
+        if AuthService().verify_totp(token):
+            self._totp_status_label.config(text="✓ 验证通过，TOTP 配置完成", foreground="green")
+        else:
+            self._totp_status_label.config(text="✗ 验证码错误，请重试", foreground="red")
 
     # ── MCP 服务设置 ────────────────────────────────────────────
 
@@ -1092,6 +1160,16 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
 
+        totp_secret = s.get_setting("totp_secret", "")
+        if totp_secret:
+            self._totp_secret_var.set(totp_secret)
+            self._totp_enabled_var.set(True)
+            self._totp_secret_label.config(text=f"密钥: {totp_secret}")
+        else:
+            self._totp_enabled_var.set(False)
+            self._totp_secret_label.config(text="密钥: (点击「生成密钥」创建)")
+        self._on_totp_toggle()
+
         self.data_dir_var.set(s.get_setting("data_dir", ""))
 
         self.close_action_var.set(s.get_setting("close_action", "ask"))
@@ -1231,6 +1309,15 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
+
+        totp_secret = s.get_setting("totp_secret", "")
+        if self._totp_enabled_var.get():
+            secret = self._totp_secret_var.get()
+            if secret and secret != totp_secret:
+                AuthService().set_totp_secret(secret)
+        else:
+            if totp_secret:
+                AuthService().set_totp_secret("")
 
         s.set_setting("sync_url", self.sync_url_var.get())
         s.set_setting("sync_user", self.sync_user_var.get())
