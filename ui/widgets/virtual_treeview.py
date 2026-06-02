@@ -122,7 +122,7 @@ class VirtualTreeview:
 
         if args[0] == 'moveto':
             frac = float(args[1])
-            self._offset = min(max_off, int(frac * max_off))
+            self._offset = max(0, min(max_off, int(frac * total)))
         elif args[0] == 'scroll':
             n = int(args[1])
             if args[2] == 'units':
@@ -133,11 +133,11 @@ class VirtualTreeview:
         self._render()
 
     def _sync_scrollbar(self):
-        """根据当前偏移量和总数据量更新滚动条。"""
+        """根据 _offset 和总数据量更新滚动条位置。"""
         total = self.get_count()
         if total <= self.PAGE_SIZE:
             self.scrollbar.set(0.0, 1.0)
             return
-        frac = self._offset / (total - self.PAGE_SIZE)
-        thumb = self.PAGE_SIZE / total
-        self.scrollbar.set(frac, min(1.0, frac + thumb))
+        first = self._offset / total
+        last = (self._offset + self.PAGE_SIZE) / total
+        self.scrollbar.set(first, last)
