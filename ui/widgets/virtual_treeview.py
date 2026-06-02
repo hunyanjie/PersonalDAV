@@ -22,8 +22,7 @@ class VirtualTreeview:
         self._idx_to_iid = {}      # 数据索引 → tree item id
         self._iid_to_idx = {}      # tree item id → 数据索引
         self._col_width_fn = column_width_fn
-        self._visible = 20         # 默认可视行数（window 未映射前用这个）
-        self._row_height = 0       # 实际行高（首次 render 时测量）
+        self._visible = 20         # 当前窗口预估行数
         self.post_render_hook = None
 
         self.frame = ttk.Frame(parent)
@@ -66,18 +65,8 @@ class VirtualTreeview:
         return self._idx_to_iid.get(idx)
 
     def get_visible_iids(self):
-        """返回当前可视范围内所有 tree item ID（按行顺序）。"""
-        total = self.get_count()
-        if total == 0:
-            return []
-        page = self._get_visible_count()
-        end = min(self._offset + page, total)
-        result = []
-        for i in range(self._offset, end):
-            iid = self._idx_to_iid.get(i)
-            if iid:
-                result.append(iid)
-        return result
+        """返回当前已渲染的所有 tree item ID（按行顺序）。"""
+        return [self._idx_to_iid[i] for i in sorted(self._idx_to_iid) if self._idx_to_iid[i]]
 
     def visible_indices(self):
         """当前可视范围内的数据索引列表（排序后）。"""
@@ -91,7 +80,7 @@ class VirtualTreeview:
     def scroll_to_index(self, index):
         """滚动到指定数据索引处（使其进入可视窗口）。"""
         total = self.get_count()
-        page = self._get_visible_count()
+        page = max(1, len(self._idx_to_iid))
         if total <= page:
             return
         max_off = total - page
@@ -100,40 +89,15 @@ class VirtualTreeview:
 
     # ── 内部 ────────────────────────────────────────────────
 
-    def _measure_row_height(self):
-        """插入一行临时数据，用 bbox 测量实际行高。"""
-        dummy = self.tree.insert("", tk.END, values=("X",) * 5)
-        self.tree.update_idletasks()
-        b = self.tree.bbox(dummy)
-        self.tree.delete(dummy)
-        self._row_height = b[3] if b and b[3] > 5 else 24
-
-    def _get_visible_count(self):
-        """根据 Treeview 实际高度和实际行高计算可视行数。"""
-        h = self.tree.winfo_height()
-        if h <= 20:
-            return self._visible
-        rh = self._row_height
-        if rh <= 0:
-            rh = 24  # 未测量时回退
-        return max(5, h // rh)
-
     def _on_configure(self, event):
-        """窗口尺寸变化时重新计算可视行数，必要时重新渲染。"""
+        """窗口尺寸变化时重新渲染。"""
         if event.widget is not self.tree:
             return
-        new = max(5, event.height // (self._row_height or 24))
-        if new != self._visible:
-            self._visible = new
-            if self._data:
-                self._render()
+        if self._data:
+            self._render()
 
     def _render(self):
-        """销毁旧行，插入当前窗口范围内的行。"""
-        # 首次渲染时测量实际行高
-        if self._row_height <= 0:
-            self._measure_row_height()
-
+        """销毁旧行，从 _offset 开始插入填满可见区域的行。"""
         for iid in list(self._idx_to_iid.values()):
             self.tree.delete(iid)
         self._idx_to_iid.clear()
@@ -144,13 +108,34 @@ class VirtualTreeview:
             self._sync_scrollbar()
             return
 
-        page = self._get_visible_count()
-        end = min(self._offset + page, total)
-        for i in range(self._offset, end):
-            iid = self.tree.insert("", tk.END, values=self._data[i])
-            self._idx_to_iid[i] = iid
-            self._iid_to_idx[iid] = i
+        tree_h = self.tree.winfo_height()
+        max_render = total - self._offset
+        idx = self._offset
+        end = total
+        while idx < total:
+            iid = self.tree.insert("", tk.END, values=self._data[idx])
+            self._idx_to_iid[idx] = iid
+            self._iid_to_idx[iid] = idx
+            idx += 1
 
+            self.tree.update_idletasks()
+            b = self.tree.bbox(iid)
+            if b:
+                bottom = b[1] + b[3]
+                if bottom > tree_h:
+                    # 超出可见区域，移除最后一行
+                    self.tree.delete(iid)
+                    del self._idx_to_iid[idx - 1]
+                    del self._iid_to_idx[iid]
+                    end = idx - 1
+                    break
+            else:
+                # bbox 不可用时（窗口未映射等）最多渲染 _visible 行
+                if idx - self._offset >= self._visible:
+                    end = idx
+                    break
+
+        self._visible = max(5, end - self._offset)
         self._sync_scrollbar()
         if self.post_render_hook:
             self.post_render_hook()
@@ -158,7 +143,7 @@ class VirtualTreeview:
     def _on_scrollbar(self, *args):
         """滚动条拖动/滚轮回调。"""
         total = self.get_count()
-        page = self._get_visible_count()
+        page = max(1, len(self._idx_to_iid))
         max_off = max(0, total - page)
 
         if args[0] == 'moveto':
@@ -174,9 +159,9 @@ class VirtualTreeview:
         self._render()
 
     def _sync_scrollbar(self):
-        """根据 _offset 和总数据量更新滚动条位置。"""
+        """根据 _offset 和已渲染行数更新滚动条位置。"""
         total = self.get_count()
-        page = self._get_visible_count()
+        page = max(1, len(self._idx_to_iid))
         if total <= page:
             self.scrollbar.set(0.0, 1.0)
             return
