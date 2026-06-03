@@ -7,6 +7,7 @@ from pyftpdlib.authorizers import DummyAuthorizer, AuthenticationFailed
 import paramiko
 from paramiko import ServerInterface, RSAKey
 import socket
+from tftpy import TftpServer
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
@@ -211,8 +212,10 @@ class FTPService:
     _ftp_server: PyFTPD | None
     _sftp_socket: socket.socket | None
     _sftp_key: RSAKey | None
+    _tftp_server: TftpServer | None
     _ftp_thread: threading.Thread | None
     _sftp_thread: threading.Thread | None
+    _tftp_thread: threading.Thread | None
     _stop_event: threading.Event
     _running: bool
 
@@ -231,8 +234,10 @@ class FTPService:
                     self._ftp_server = None
                     self._sftp_socket = None
                     self._sftp_key = None
+                    self._tftp_server = None
                     self._ftp_thread = None
                     self._sftp_thread = None
+                    self._tftp_thread = None
                     self._stop_event = threading.Event()
                     self._running = False
                     event_bus.subscribe(EVENT_SETTINGS_CHANGED, self._on_settings_changed)
@@ -288,6 +293,23 @@ class FTPService:
                 except Exception as e:
                     logger.error(f"Failed to start SFTP server: {e}")
 
+            if settings.get_setting("tftp_enabled", "False") == "True":
+                try:
+                    port = int(settings.get_setting("tftp_port", "69"))
+                    root = settings.get_setting("tftp_root", "./tftp_root")
+                    os.makedirs(root, exist_ok=True)
+                    self._tftp_thread = threading.Thread(
+                        target=self._run_tftp,
+                        args=(port, root),
+                        daemon=True,
+                        name="tftp-server",
+                    )
+                    self._tftp_thread.start()
+                    started_any = True
+                    logger.info(f"TFTP server thread started on port {port}")
+                except Exception as e:
+                    logger.error(f"Failed to start TFTP server: {e}")
+
             if started_any:
                 self._running = True
             return self._running
@@ -315,13 +337,21 @@ class FTPService:
 
             self._sftp_key = None
 
-            for thread in (self._ftp_thread, self._sftp_thread):
+            if self._tftp_server:
+                try:
+                    self._tftp_server.stop()
+                except Exception:
+                    pass
+                self._tftp_server = None
+
+            for thread in (self._ftp_thread, self._sftp_thread, self._tftp_thread):
                 if thread and thread.is_alive():
                     thread.join(timeout=5)
 
             self._ftp_thread = None
             self._sftp_thread = None
-            logger.info("FTP/SFTP services stopped")
+            self._tftp_thread = None
+            logger.info("FTP/SFTP/TFTP services stopped")
 
     @property
     def is_running(self) -> bool:
@@ -381,6 +411,17 @@ class FTPService:
             except Exception:
                 pass
             logger.info("SFTP server stopped")
+
+    def _run_tftp(self, port: int, root: str) -> None:
+        try:
+            server = TftpServer(root)
+            self._tftp_server = server
+            logger.info(f"TFTP server listening on 0.0.0.0:{port}")
+            server.listen("0.0.0.0", port)
+        except Exception as e:
+            logger.error(f"TFTP server error: {e}")
+        finally:
+            logger.info("TFTP server stopped")
 
     def _handle_sftp_client(self, client: socket.socket, addr: tuple[str, int], root: str, auth: AuthService) -> None:
         transport = paramiko.Transport(client)
