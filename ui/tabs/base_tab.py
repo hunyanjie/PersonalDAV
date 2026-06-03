@@ -1,4 +1,4 @@
-"""Treeview 通用操作基类 — 集成虚拟滚动，万条数据无卡顿。"""
+"""Treeview 通用操作基类 — 原生 Treeview + yview 滚动。"""
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
@@ -7,11 +7,10 @@ import threading
 import uuid
 import re
 from ui.widgets.treeview_scroller import TreeviewScroller
-from ui.widgets.virtual_treeview import VirtualTreeview
 
 
 class BaseTreeTab(ttk.Frame):
-    """Treeview 标签页基类 — 封装虚拟滚动 + 通用操作逻辑。"""
+    """Treeview 标签页基类 — 封装通用操作逻辑。"""
 
     COLUMNS = []          # 子类覆盖
     HEADINGS = {}         # 子类覆盖: {'col1': '标题1', ...}
@@ -20,8 +19,9 @@ class BaseTreeTab(ttk.Frame):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.vtree = None         # VirtualTreeview 实例
-        self.tree = None          # self.vtree.tree 的快捷引用
+        self.tree = None
+        self.vscroll = None
+        self.hscroll = None
         self._drag_start = None
         self._drag_item = None
         self._dragging = False
@@ -60,15 +60,32 @@ class BaseTreeTab(ttk.Frame):
         pass
 
     def setup_treeview(self, list_frame, on_edit_callback):
-        """初始化虚拟滚动 Treeview。"""
-        self.vtree = VirtualTreeview(list_frame, self.COLUMNS, self.HEADINGS,
-                                     self.get_column_width)
-        self.tree = self.vtree.tree
+        """初始化标准 Treeview。"""
+        # 创建 Treeview
+        self.tree = ttk.Treeview(list_frame, columns=['selected'] + self.COLUMNS,
+                                 show='headings', selectmode='extended')
+        self.tree.heading('selected', text='✓')
+        self.tree.column('selected', width=30, anchor=tk.CENTER)
 
         for col in self.COLUMNS:
+            width = self.get_column_width(col)
             self.tree.heading(col, text=self.HEADINGS.get(col, col),
                             command=lambda c=col: self.sort_tree(c))
+            self.tree.column(col, width=width)
 
+        # 滚动条
+        self.vscroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.vscroll.set)
+        self.hscroll = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(xscrollcommand=self.hscroll.set)
+
+        self.tree.grid(row=0, column=0, sticky='nsew')
+        self.vscroll.grid(row=0, column=1, sticky='ns')
+        self.hscroll.grid(row=1, column=0, sticky='ew')
+        list_frame.grid_rowconfigure(0, weight=1)
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        # 事件绑定
         self.tree.bind('<ButtonPress-1>', self._on_click)
         self.tree.bind('<B1-Motion>', self._on_drag)
         self.tree.bind('<ButtonRelease-1>', self._on_release)
@@ -82,7 +99,6 @@ class BaseTreeTab(ttk.Frame):
         self.tree.bind("<MouseWheel>", self._on_mousewheel)
 
         self._edit_callback = on_edit_callback
-        self.vtree.post_render_hook = self._update_checkboxes
 
     def get_column_width(self, col):
         """获取列宽 - 子类可覆盖"""
@@ -91,11 +107,10 @@ class BaseTreeTab(ttk.Frame):
 
     def _on_mousewheel(self, event):
         """鼠标滚轮滚动。"""
-        delta = -int(event.delta / 120)
-        self.vtree._on_scrollbar('scroll', delta, 'units')
+        self.tree.yview_scroll(-int(event.delta / 120), 'units')
 
     def _on_click(self, event):
-        """处理点击事件 — 虚拟滚动版本，追踪 _selected_uids。"""
+        """处理点击事件。"""
         region = self.tree.identify("region", event.x, event.y)
         item = self.tree.identify_row(event.y)
         column = self.tree.identify_column(event.x)
@@ -109,11 +124,11 @@ class BaseTreeTab(ttk.Frame):
         if region == "heading":
             return
 
-        # Shift 多选（仅当前可视范围）
+        # Shift 多选
         if event.state & 0x0001:
             if not item:
                 return "break"
-            visible = self.vtree.get_visible_iids()
+            visible = self.tree.get_children()
             if not visible:
                 return "break"
             start_idx = visible.index(self._last_selected or visible[0])
@@ -166,7 +181,7 @@ class BaseTreeTab(ttk.Frame):
         return vals[1] if len(vals) > 1 else None
 
     def _on_drag(self, event):
-        """处理拖拽选多行（仅当前可视范围）。"""
+        """处理拖拽选多行。"""
         self._dragging = True
         TreeviewScroller.handle_drag_scroll(self.tree, event)
 
@@ -176,7 +191,7 @@ class BaseTreeTab(ttk.Frame):
         if not item:
             return
 
-        visible = self.vtree.get_visible_iids()
+        visible = self.tree.get_children()
         if not visible:
             return
         start_idx = visible.index(self._drag_item)
@@ -193,8 +208,8 @@ class BaseTreeTab(ttk.Frame):
         self._dragging = False
 
     def select_all(self, event=None):
-        """全选当前页 — 可通过多页多次 Ctrl+A 全选全部。"""
-        visible = self.vtree.get_visible_iids()
+        """全选当前页。"""
+        visible = self.tree.get_children()
         self._selected_uids.update(self._uid_of(i) for i in visible)
         self.tree.selection_set(visible)
         self._update_checkboxes()
@@ -206,7 +221,7 @@ class BaseTreeTab(ttk.Frame):
 
     def toggle_all_selection(self):
         """切换当前页全选状态。"""
-        visible = self.vtree.get_visible_iids()
+        visible = self.tree.get_children()
         if not visible:
             return
         all_sel = all(i in self.tree.selection() for i in visible)
@@ -225,7 +240,7 @@ class BaseTreeTab(ttk.Frame):
     def _update_checkboxes(self):
         """根据 _selected_uids 刷新当前页复选框和选中高亮。"""
         sel = []
-        for i in self.vtree.get_visible_iids():
+        for i in self.tree.get_children():
             uid = self._uid_of(i)
             selected = uid in self._selected_uids
             vals = list(self.tree.item(i, 'values'))
@@ -292,8 +307,11 @@ class BaseTreeTab(ttk.Frame):
             self._update_sort_arrows()
 
     def _rerender(self):
-        """用当前 _all_data 重建虚拟视图，并恢复选中状态。"""
-        self.vtree.set_data(self._all_data)
+        """用当前 _all_data 重建视图，并恢复选中状态。"""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for row in self._all_data:
+            self.tree.insert("", tk.END, values=row)
         self._update_checkboxes()
 
     def _after_refresh(self):
