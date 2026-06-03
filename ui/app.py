@@ -236,7 +236,7 @@ class DAVServerApp:
         self.notebook.add(self.server_tab, text="服务器")
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
-        self.notebook.add(self.smb_tab, text="SMB 网络")
+        self.notebook.add(self.smb_tab, text="远程文件")
 
         # 状态栏
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)

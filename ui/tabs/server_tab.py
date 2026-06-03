@@ -85,10 +85,13 @@ class ServerTab(ttk.Frame):
         self.ftp_check = ttk.Checkbutton(ftp_row, text="FTP 服务器", variable=self.ftp_enabled)
         self.ftp_check.pack(side=tk.LEFT, padx=5)
         ttk.Label(ftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(ftp_row, textvariable=self.ftp_port_var, width=6).pack(side=tk.LEFT)
+        self.ftp_port_entry = ttk.Entry(ftp_row, textvariable=self.ftp_port_var, width=6)
+        self.ftp_port_entry.pack(side=tk.LEFT)
         ttk.Label(ftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(ftp_row, textvariable=self.ftp_root_var, width=40).pack(side=tk.LEFT, padx=2)
-        ttk.Button(ftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.ftp_root_var)).pack(side=tk.LEFT, padx=2)
+        self.ftp_root_entry = ttk.Entry(ftp_row, textvariable=self.ftp_root_var, width=40)
+        self.ftp_root_entry.pack(side=tk.LEFT, padx=2)
+        self.ftp_browse_btn = ttk.Button(ftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.ftp_root_var))
+        self.ftp_browse_btn.pack(side=tk.LEFT, padx=2)
         self.ftp_path_status = ttk.Label(ftp_row, text="", width=3)
         self.ftp_path_status.pack(side=tk.LEFT, padx=2)
         self.ftp_root_var.trace("w", lambda *a: self._validate_path(self.ftp_root_var, self.ftp_path_status))
@@ -99,10 +102,13 @@ class ServerTab(ttk.Frame):
         self.sftp_check = ttk.Checkbutton(sftp_row, text="SFTP 服务器", variable=self.sftp_enabled)
         self.sftp_check.pack(side=tk.LEFT, padx=5)
         ttk.Label(sftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(sftp_row, textvariable=self.sftp_port_var, width=6).pack(side=tk.LEFT)
+        self.sftp_port_entry = ttk.Entry(sftp_row, textvariable=self.sftp_port_var, width=6)
+        self.sftp_port_entry.pack(side=tk.LEFT)
         ttk.Label(sftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(sftp_row, textvariable=self.sftp_root_var, width=40).pack(side=tk.LEFT, padx=2)
-        ttk.Button(sftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.sftp_root_var)).pack(side=tk.LEFT, padx=2)
+        self.sftp_root_entry = ttk.Entry(sftp_row, textvariable=self.sftp_root_var, width=40)
+        self.sftp_root_entry.pack(side=tk.LEFT, padx=2)
+        self.sftp_browse_btn = ttk.Button(sftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.sftp_root_var))
+        self.sftp_browse_btn.pack(side=tk.LEFT, padx=2)
         self.sftp_path_status = ttk.Label(ftp_row, text="", width=3)
         self.sftp_path_status.pack(side=tk.LEFT, padx=2)
         self.sftp_root_var.trace("w", lambda *a: self._validate_path(self.sftp_root_var, self.sftp_path_status))
@@ -113,10 +119,13 @@ class ServerTab(ttk.Frame):
         self.tftp_check = ttk.Checkbutton(tftp_row, text="TFTP 服务器", variable=self.tftp_enabled)
         self.tftp_check.pack(side=tk.LEFT, padx=5)
         ttk.Label(tftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(tftp_row, textvariable=self.tftp_port_var, width=6).pack(side=tk.LEFT)
+        self.tftp_port_entry = ttk.Entry(tftp_row, textvariable=self.tftp_port_var, width=6)
+        self.tftp_port_entry.pack(side=tk.LEFT)
         ttk.Label(tftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(tftp_row, textvariable=self.tftp_root_var, width=40).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.tftp_root_var)).pack(side=tk.LEFT, padx=2)
+        self.tftp_root_entry = ttk.Entry(tftp_row, textvariable=self.tftp_root_var, width=40)
+        self.tftp_root_entry.pack(side=tk.LEFT, padx=2)
+        self.tftp_browse_btn = ttk.Button(tftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.tftp_root_var))
+        self.tftp_browse_btn.pack(side=tk.LEFT, padx=2)
         self.tftp_path_status = ttk.Label(ftp_row, text="", width=3)
         self.tftp_path_status.pack(side=tk.LEFT, padx=2)
         self.tftp_root_var.trace("w", lambda *a: self._validate_path(self.tftp_root_var, self.tftp_path_status))
@@ -188,6 +197,15 @@ class ServerTab(ttk.Frame):
             self.settings_service.set_setting("tftp_port", self.tftp_port_var.get())
             self.settings_service.set_setting("tftp_root", self.tftp_root_var.get())
 
+    def _set_ftp_config_state(self, disabled: bool):
+        state = tk.DISABLED if disabled else tk.NORMAL
+        for w in (self.ftp_check, self.sftp_check, self.tftp_check,
+                  self.ftp_port_entry, self.sftp_port_entry, self.tftp_port_entry,
+                  self.ftp_root_entry, self.sftp_root_entry, self.tftp_root_entry,
+                  self.ftp_browse_btn, self.sftp_browse_btn, self.tftp_browse_btn,
+                  self.auto_save_check):
+            w.config(state=state)
+
     def start_ftp_services(self):
         checks = []
         if self.ftp_enabled.get():
@@ -212,6 +230,7 @@ class ServerTab(ttk.Frame):
         self._save_ftp_settings()
         try:
             if self.ftp_service.start():
+                self._set_ftp_config_state(True)
                 self.ftp_start_btn.config(state=tk.DISABLED)
                 self.ftp_stop_btn.config(state=tk.NORMAL)
                 self.ftp_status_label.config(text="状态: 运行中")
@@ -229,6 +248,7 @@ class ServerTab(ttk.Frame):
 
     def stop_ftp_services(self):
         self.ftp_service.stop()
+        self._set_ftp_config_state(False)
         self.ftp_start_btn.config(state=tk.NORMAL)
         self.ftp_stop_btn.config(state=tk.DISABLED)
         self.ftp_status_label.config(text="状态: 已停止")
