@@ -10,7 +10,7 @@ from services.settings_service import SettingsService
 from utils.logger import logger
 
 
-class SMBTab(ttk.Frame):
+class RemoteTab(ttk.Frame):
     settings_service: SettingsService
     smb_service: SMBService
     ftp_client: FTPClientService
@@ -252,14 +252,21 @@ class SMBTab(ttk.Frame):
             ).start()
 
     def _browse_smb_thread(self, server: str, share: str, path: str, username: str, password: str) -> None:
-        clean_server = server.split("://")[-1].rsplit(":", 1)[0]
+        clean_server = self._parse_server(server, 445)[0]
         result = self.smb_service.list_files(clean_server, share, path, username, password)
         self.after(0, lambda: self._display_files(result["data"] if result["success"] else []))
 
+    @staticmethod
+    def _parse_server(server_str: str, default_port: int = 21) -> tuple[str, int]:
+        host_part = server_str.split("://")[-1]
+        host_part = host_part.rsplit("@", 1)[-1]
+        parts = host_part.rsplit(":", 1)
+        host = parts[0]
+        port = int(parts[1]) if len(parts) > 1 else default_port
+        return host, port
+
     def _browse_ftp_thread(self, path: str, username: str, password: str) -> None:
-        parts = self._current_server.split("://")[-1].rsplit(":", 1)
-        server = parts[0]
-        port = int(parts[1]) if len(parts) > 1 else 21
+        server, port = self._parse_server(self._current_server)
         result = self.ftp_client.list_dir(
             self._current_protocol.lower(), server, port, username, password, path, encoding=self.encoding_var.get()
         )
@@ -299,14 +306,12 @@ class SMBTab(ttk.Frame):
         password = self.password_var.get()
 
         if self._current_protocol == "SMB":
-            parts = self._current_server.split("://")[-1].rsplit(":", 1)
-            server = parts[0]
+            server = self._parse_server(self._current_server, 445)[0]
             result = self.smb_service.mount(server, self._current_share, mount_point, username, password)
         else:
+            server, port = self._parse_server(self._current_server)
             proto_lower = self._current_protocol.lower()
-            result = self.ftp_client.list_dir(proto_lower,
-                self._current_server.split("://")[-1].rsplit(":", 1)[0],
-                int(self._current_server.split(":")[-1]),
+            result = self.ftp_client.list_dir(proto_lower, server, port,
                 username, password, "/",
                 encoding=self.encoding_var.get())
             result = {"success": True, "data": {"mount_point": mount_point}}
