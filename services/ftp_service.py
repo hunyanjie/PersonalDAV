@@ -1,6 +1,8 @@
 import threading
 import os
 import logging
+import stat as stat_module
+from concurrent.futures import ThreadPoolExecutor
 from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer as PyFTPD
 from pyftpdlib.authorizers import DummyAuthorizer, AuthenticationFailed
@@ -15,6 +17,26 @@ from utils.logger import logger
 
 
 from typing import cast
+
+
+_THUMBNAIL_DIR = ".thumbnails"
+
+
+def _generate_thumbnail(filepath: str, max_size: int = 128) -> str | None:
+    try:
+        from PIL import Image
+        thumb_dir = os.path.join(os.path.dirname(filepath), _THUMBNAIL_DIR)
+        os.makedirs(thumb_dir, exist_ok=True)
+        thumb_path = os.path.join(thumb_dir, os.path.basename(filepath) + ".png")
+        if os.path.exists(thumb_path):
+            return thumb_path
+        img = Image.open(filepath)
+        img.thumbnail((max_size, max_size), Image.LANCZOS)
+        img.save(thumb_path, "PNG")
+        return thumb_path
+    except Exception:
+        return None
+
 
 class AuthServiceAuthorizer:
     def validate_authentication(self, username: str, password: str, handler: object) -> bool:
@@ -42,6 +64,16 @@ class AuthServiceAuthorizer:
 
 
 class LoggedFTPHandler(FTPHandler):  # type: ignore[misc]
+    # 被动模式端口范围
+    passive_ports = range(60000, 60100)
+    # 允许主动模式
+    enable_active_mode = True
+    # 最大并发连接数
+    max_cons = 256
+    max_cons_per_ip = 32
+    # 传输超时（秒）
+    timeout = 300
+
     def on_connect(self) -> None:
         logger.info(f"FTP connection from {self.remote_ip}")
         super().on_connect()
@@ -57,6 +89,19 @@ class LoggedFTPHandler(FTPHandler):  # type: ignore[misc]
     def on_login_failed(self, username: str, password: str) -> None:
         logger.warning(f"FTP login failed from {self.remote_ip}")
         super().on_login_failed(username, password)
+
+    def on_file_received(self, filepath: str) -> None:
+        try:
+            os.chmod(filepath, 0o644)
+        except Exception:
+            pass
+        _generate_thumbnail(filepath)
+        logger.info(f"FTP file received: {filepath}")
+        super().on_file_received(filepath)
+
+    def on_file_sent(self, filepath: str) -> None:
+        logger.info(f"FTP file sent: {filepath}")
+        super().on_file_sent(filepath)
 
 
 class StubSFTPHandle(paramiko.SFTPHandle):  # type: ignore[misc]
@@ -366,7 +411,10 @@ class FTPService:
         try:
             server = PyFTPD(("0.0.0.0", port), handler)
             self._ftp_server = server
-            logger.info(f"FTP server listening on 0.0.0.0:{port}")
+            server.max_cons = 256
+            server.max_cons_per_ip = 32
+            logger.info(f"FTP server listening on 0.0.0.0:{port} "
+                        f"(passive ports 60000-60099, active mode enabled)")
             server.serve_forever()
         except OSError as e:
             logger.error(f"FTP server bind error on port {port}: {e}")

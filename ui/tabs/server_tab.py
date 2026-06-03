@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog
 import threading
 import logging
 import os
+import socket
 from network.dav_server import DAVServer
 from ui.widgets.right_click_menu import RightClickMenu
 from services.ftp_service import FTPService
@@ -52,6 +53,9 @@ class ServerTab(ttk.Frame):
         self.sftp_enabled.set(self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var.set(self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var.set(self.settings_service.get_setting("sftp_root", "./sftp_root"))
+        self.tftp_enabled.set(self.settings_service.get_setting("tftp_enabled", "False") == "True")
+        self.tftp_port_var.set(self.settings_service.get_setting("tftp_port", "69"))
+        self.tftp_root_var.set(self.settings_service.get_setting("tftp_root", "./tftp_root"))
         self._update_info()
 
     def create_widgets(self):
@@ -229,18 +233,51 @@ class ServerTab(ttk.Frame):
         logger.info(msg)
         self.log_message(msg, logging.INFO)
 
+    @staticmethod
+    def _get_local_ips():
+        ips = []
+        try:
+            hostname = socket.gethostname()
+            for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                ip = info[4][0]
+                if ip not in ips and not ip.startswith("127."):
+                    ips.append(ip)
+        except Exception:
+            pass
+        ips.append("127.0.0.1")
+        return ips
+
     def _update_info(self):
         port = self.port_entry.get() or "8000"
         scheme = "https" if self.ssl_enabled.get() else "http"
+        ips = self._get_local_ips()
+        ip_lines = "  ".join(ips[:3])
+
+        ftp_port = self.ftp_port_var.get() or "21"
+        sftp_port = self.sftp_port_var.get() or "22"
+        tftp_port = self.tftp_port_var.get() or "69"
+
+        ftp_enabled = self.ftp_enabled.get()
+        sftp_enabled = self.sftp_enabled.get()
+        tftp_enabled = self.tftp_enabled.get()
+
+        ftp_lines = ""
+        if ftp_enabled:
+            ftp_lines += f"\n  FTP:      ftp://user@{ip_lines}:{ftp_port}"
+        if sftp_enabled:
+            ftp_lines += f"\n  SFTP:     sftp://user@{ip_lines}:{sftp_port}"
+        if tftp_enabled:
+            ftp_lines += f"\n  TFTP:     tftp://{ip_lines}/{tftp_port}"
+
         self.info_label.config(text=f"""CardDAV 配置:
   服务器地址: {scheme}://localhost:{port}/contacts/
-  用户名: (任意)
-  密码: (任意)
+  用户名: (任意)  密码: (任意)
 
 CalDAV 配置:
   服务器地址: {scheme}://localhost:{port}/events/
-  用户名: (任意)
-  密码: (任意)
+  用户名: (任意)  密码: (任意)
+
+文件服务:{ftp_lines}
 
 在浏览器中测试:
   {scheme}://localhost:{port}/ - 查看服务信息
