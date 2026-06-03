@@ -46,9 +46,17 @@ class AuthServiceAuthorizer:
                 return True
             raise AuthenticationFailed("Invalid credentials")
         auth = cast(AuthService, AuthService())
+        if not SettingsService().get_setting("access_password_hash", ""):
+            return True
         if auth.verify_password(password):
             return True
         raise AuthenticationFailed("Invalid credentials")
+
+    def get_msg_login(self, username: str) -> str:
+        return f"Welcome, {username}!"
+
+    def get_msg_quit(self, username: str) -> str:
+        return "Goodbye."
 
     def get_perms(self, username: str) -> str:
         return "elradfmw"
@@ -245,6 +253,8 @@ class SFTPAuthInterface(ServerInterface):  # type: ignore[misc]
         ftp_pass = SettingsService().get_setting("ftp_password", "")
         if ftp_pass:
             return paramiko.AUTH_SUCCESSFUL if password == ftp_pass else paramiko.AUTH_FAILED
+        if not SettingsService().get_setting("access_password_hash", ""):
+            return paramiko.AUTH_SUCCESSFUL
         if self.auth_service.verify_password(password):
             return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
