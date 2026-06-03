@@ -114,17 +114,6 @@ class ServerTab(ttk.Frame):
         self.ftp_path_status.pack(side=tk.LEFT, padx=2)
         self.ftp_root_var.trace("w", lambda *a: self._validate_path(self.ftp_root_var, self.ftp_path_status))
 
-        # FTP 密码 + 编码
-        ftp_extra = ttk.Frame(ftp_frame)
-        ftp_extra.pack(fill=tk.X, padx=5, pady=1)
-        ttk.Label(ftp_extra, text="FTP 独立密码（留空=统一账号）:").pack(side=tk.LEFT, padx=5)
-        self.ftp_password_entry = ttk.Entry(ftp_extra, textvariable=self.ftp_password_var, width=16, show="*")
-        self.ftp_password_entry.pack(side=tk.LEFT, padx=2)
-        ttk.Label(ftp_extra, text="编码:").pack(side=tk.LEFT, padx=5)
-        self.ftp_encoding_combo = ttk.Combobox(ftp_extra, textvariable=self.ftp_encoding_var,
-                                                values=list(SERVER_ENCODINGS), state="readonly", width=10)
-        self.ftp_encoding_combo.pack(side=tk.LEFT, padx=2)
-
         # SFTP 设置
         sftp_row = ttk.Frame(ftp_frame)
         sftp_row.pack(fill=tk.X, padx=5, pady=2)
@@ -138,7 +127,7 @@ class ServerTab(ttk.Frame):
         self.sftp_root_entry.pack(side=tk.LEFT, padx=2)
         self.sftp_browse_btn = ttk.Button(sftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.sftp_root_var))
         self.sftp_browse_btn.pack(side=tk.LEFT, padx=2)
-        self.sftp_path_status = ttk.Label(ftp_row, text="", width=3)
+        self.sftp_path_status = ttk.Label(sftp_row, text="", width=3)
         self.sftp_path_status.pack(side=tk.LEFT, padx=2)
         self.sftp_root_var.trace("w", lambda *a: self._validate_path(self.sftp_root_var, self.sftp_path_status))
 
@@ -155,9 +144,21 @@ class ServerTab(ttk.Frame):
         self.tftp_root_entry.pack(side=tk.LEFT, padx=2)
         self.tftp_browse_btn = ttk.Button(tftp_row, text="浏览...", width=6, command=lambda: self._browse_dir(self.tftp_root_var))
         self.tftp_browse_btn.pack(side=tk.LEFT, padx=2)
-        self.tftp_path_status = ttk.Label(ftp_row, text="", width=3)
+        self.tftp_path_status = ttk.Label(tftp_row, text="", width=3)
         self.tftp_path_status.pack(side=tk.LEFT, padx=2)
         self.tftp_root_var.trace("w", lambda *a: self._validate_path(self.tftp_root_var, self.tftp_path_status))
+
+        # 认证与编码（位于所有协议行下方）
+        auth_row = ttk.Frame(ftp_frame)
+        auth_row.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(auth_row, text="FTP 独立密码:").pack(side=tk.LEFT, padx=5)
+        self.ftp_password_entry = ttk.Entry(auth_row, textvariable=self.ftp_password_var, width=16, show="*")
+        self.ftp_password_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Label(auth_row, text="（留空=统一账号）").pack(side=tk.LEFT, padx=2)
+        ttk.Label(auth_row, text="  编码:").pack(side=tk.LEFT, padx=5)
+        self.ftp_encoding_combo = ttk.Combobox(auth_row, textvariable=self.ftp_encoding_var,
+                                                values=list(SERVER_ENCODINGS), state="readonly", width=10)
+        self.ftp_encoding_combo.pack(side=tk.LEFT, padx=2)
 
         # 自动保存 + 控制按钮
         ctrl_row = ttk.Frame(ftp_frame)
