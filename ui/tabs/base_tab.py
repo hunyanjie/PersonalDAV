@@ -62,7 +62,7 @@ class BaseTreeTab(ttk.Frame):
     def setup_treeview(self, list_frame, on_edit_callback):
         """初始化标准 Treeview。"""
         # 创建 Treeview
-        self.tree = ttk.Treeview(list_frame, columns=['selected'] + self.COLUMNS,
+        self.tree = ttk.Treeview(list_frame, columns=['selected'] + list(self.COLUMNS),
                                  show='headings', selectmode='extended')
         self.tree.heading('selected', text='✓')
         self.tree.column('selected', width=30, anchor=tk.CENTER)
@@ -79,11 +79,9 @@ class BaseTreeTab(ttk.Frame):
         self.hscroll = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
         self.tree.configure(xscrollcommand=self.hscroll.set)
 
-        self.tree.grid(row=0, column=0, sticky='nsew')
-        self.vscroll.grid(row=0, column=1, sticky='ns')
-        self.hscroll.grid(row=1, column=0, sticky='ew')
-        list_frame.grid_rowconfigure(0, weight=1)
-        list_frame.grid_columnconfigure(0, weight=1)
+        self.vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.hscroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # 事件绑定
         self.tree.bind('<ButtonPress-1>', self._on_click)

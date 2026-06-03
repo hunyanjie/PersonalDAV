@@ -15,9 +15,8 @@ import os
 
 class ContactsTab(BaseTreeTab):
     """联系人管理标签页"""
-    COLUMNS = ("selected", "uid", "name", "email", "phone", "groups", "created_at", "updated_at")
+    COLUMNS = ("uid", "name", "email", "phone", "groups", "created_at", "updated_at")
     HEADINGS = {
-        "selected": "✓",
         "uid": "ID",
         "name": "姓名",
         "email": "邮箱",
@@ -41,7 +40,7 @@ class ContactsTab(BaseTreeTab):
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.refresh_contacts)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 100, "name": 150, "email": 200, "phone": 150, "groups": 120, "created_at": 160, "updated_at": 160}
+        widths = {"uid": 100, "name": 150, "email": 200, "phone": 150, "groups": 120, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):

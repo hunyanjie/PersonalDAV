@@ -15,9 +15,8 @@ from utils.encoding_helper import decode_ical_value
 
 class CalendarTab(BaseTreeTab):
     """日历管理标签页"""
-    COLUMNS = ("selected", "uid", "summary", "start", "end", "created_at", "updated_at")
+    COLUMNS = ("uid", "summary", "start", "end", "created_at", "updated_at")
     HEADINGS = {
-        "selected": "✓",
         "uid": "ID",
         "summary": "事件",
         "start": "开始时间",
@@ -42,7 +41,7 @@ class CalendarTab(BaseTreeTab):
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.refresh_events)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 150, "summary": 300, "start": 200, "end": 200, "created_at": 160, "updated_at": 160}
+        widths = {"uid": 150, "summary": 300, "start": 200, "end": 200, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
