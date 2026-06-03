@@ -16,7 +16,6 @@ from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.logger import logger
 
 
-from typing import cast
 
 
 _THUMBNAIL_DIR = ".thumbnails"
@@ -45,11 +44,15 @@ class AuthServiceAuthorizer:
             if password == ftp_pass:
                 return True
             raise AuthenticationFailed("Invalid credentials")
-        auth = cast(AuthService, AuthService())
-        if not SettingsService().get_setting("access_password_hash", ""):
+        stored = SettingsService().get_setting("access_password_hash", "")
+        if not stored:
             return True
-        if auth.verify_password(password):
-            return True
+        if '$' in stored:
+            salt, pw_hash = stored.split('$', 1)
+            from hashlib import pbkdf2_hmac
+            from secrets import compare_digest
+            if compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash):
+                return True
         raise AuthenticationFailed("Invalid credentials")
 
     def get_msg_login(self, username: str) -> str:
@@ -253,10 +256,15 @@ class SFTPAuthInterface(ServerInterface):  # type: ignore[misc]
         ftp_pass = SettingsService().get_setting("ftp_password", "")
         if ftp_pass:
             return paramiko.AUTH_SUCCESSFUL if password == ftp_pass else paramiko.AUTH_FAILED
-        if not SettingsService().get_setting("access_password_hash", ""):
+        stored = SettingsService().get_setting("access_password_hash", "")
+        if not stored:
             return paramiko.AUTH_SUCCESSFUL
-        if self.auth_service.verify_password(password):
-            return paramiko.AUTH_SUCCESSFUL
+        if '$' in stored:
+            salt, pw_hash = stored.split('$', 1)
+            from hashlib import pbkdf2_hmac
+            from secrets import compare_digest
+            if compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash):
+                return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
 
     def check_channel_request(self, kind: str, chanid: int) -> int:
