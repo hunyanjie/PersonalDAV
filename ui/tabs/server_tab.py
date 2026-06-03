@@ -168,13 +168,13 @@ class ServerTab(ttk.Frame):
     def _validate_path(self, var, status_label):
         path = var.get().strip()
         if not path:
-            status_label.config(text="", fg="black")
+            status_label.config(text="", foreground="black")
             return
         expanded = os.path.expanduser(os.path.expandvars(path))
         if os.path.exists(expanded):
-            status_label.config(text="✓", fg="green")
+            status_label.config(text="✓", foreground="green")
         else:
-            status_label.config(text="✗", fg="red")
+            status_label.config(text="✗", foreground="red")
 
     def _save_ftp_settings(self):
         if self.ftp_auto_save.get():
@@ -189,12 +189,15 @@ class ServerTab(ttk.Frame):
             self.settings_service.set_setting("tftp_root", self.tftp_root_var.get())
 
     def start_ftp_services(self):
-        # 验证路径
-        for label, var, name in [
-            ("FTP", self.ftp_root_var, "FTP"),
-            ("SFTP", self.sftp_root_var, "SFTP"),
-            ("TFTP", self.tftp_root_var, "TFTP"),
-        ]:
+        checks = []
+        if self.ftp_enabled.get():
+            checks.append(("FTP", self.ftp_root_var))
+        if self.sftp_enabled.get():
+            checks.append(("SFTP", self.sftp_root_var))
+        if self.tftp_enabled.get():
+            checks.append(("TFTP", self.tftp_root_var))
+
+        for name, var in checks:
             path = var.get().strip()
             if not path:
                 msg = f"{name} 根目录为空"

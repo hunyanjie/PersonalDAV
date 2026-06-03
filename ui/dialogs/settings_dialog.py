@@ -569,9 +569,12 @@ class SettingsDialog(tk.Toplevel):
         for c in cols:
             tree.heading(c, text=c)
             tree.column(c, width=180 if c == "时间" else 140 if c == "IP" else 80)
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=tree.yview)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
         tree.configure(yscrollcommand=scroll.set)
 
         def refresh():
