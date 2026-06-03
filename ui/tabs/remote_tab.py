@@ -7,6 +7,7 @@ from typing import Any
 from services.smb_service import SMBService
 from services.ftp_client_service import FTPClientService
 from services.settings_service import SettingsService
+from services.auth_service import AuthService
 from utils.logger import logger
 
 
@@ -166,6 +167,8 @@ class RemoteTab(ttk.Frame):
         if not server:
             messagebox.showwarning("提示", "请输入服务器地址", parent=self)
             return
+        if server == "0.0.0.0":
+            server = "127.0.0.1"
 
         self.connect_btn.config(state=tk.DISABLED, text="连接中...")
         username = self.username_var.get().strip() or "anonymous"
@@ -188,6 +191,8 @@ class RemoteTab(ttk.Frame):
 
     def _connect_done(self, protocol: str, server: str, port: str, username: str, password: str, result: dict[str, Any]) -> None:
         self.connect_btn.config(state=tk.NORMAL, text="连接")
+        AuthService().log_auth(result["success"], server, f"远程文件/{protocol}",
+                               f"用户={username},端口={port}")
         if not result["success"]:
             messagebox.showerror("连接失败", result.get("error", "未知错误"), parent=self)
             return
