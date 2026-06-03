@@ -40,6 +40,11 @@ def _generate_thumbnail(filepath: str, max_size: int = 128) -> str | None:
 
 class AuthServiceAuthorizer:
     def validate_authentication(self, username: str, password: str, handler: object) -> bool:
+        ftp_pass = SettingsService().get_setting("ftp_password", "")
+        if ftp_pass:
+            if password == ftp_pass:
+                return True
+            raise AuthenticationFailed("Invalid credentials")
         auth = cast(AuthService, AuthService())
         if auth.verify_password(password):
             return True
@@ -237,6 +242,9 @@ class SFTPAuthInterface(ServerInterface):  # type: ignore[misc]
         self.auth_service = auth_service
 
     def check_auth_password(self, username: str, password: str) -> int:
+        ftp_pass = SettingsService().get_setting("ftp_password", "")
+        if ftp_pass:
+            return paramiko.AUTH_SUCCESSFUL if password == ftp_pass else paramiko.AUTH_FAILED
         if self.auth_service.verify_password(password):
             return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
@@ -408,13 +416,15 @@ class FTPService:
         handler: type[FTPHandler] = LoggedFTPHandler
         handler.authorizer = authorizer
         handler.banner = "Welcome to PersonalDAV FTP Server"
+        encoding = SettingsService().get_setting("ftp_encoding", "utf-8")
+        handler.encoding = encoding
         try:
             server = PyFTPD(("0.0.0.0", port), handler)
             self._ftp_server = server
             server.max_cons = 256
             server.max_cons_per_ip = 32
             logger.info(f"FTP server listening on 0.0.0.0:{port} "
-                        f"(passive ports 60000-60099, active mode enabled)")
+                        f"(passive ports 60000-60099, active mode enabled, encoding={encoding})")
             server.serve_forever()
         except OSError as e:
             logger.error(f"FTP server bind error on port {port}: {e}")

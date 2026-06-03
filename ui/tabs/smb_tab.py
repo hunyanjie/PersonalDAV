@@ -31,7 +31,20 @@ class SMBTab(ttk.Frame):
     mounts_tree: ttk.Treeview
 
     PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 990, "SFTP": 22}
-    ENCODINGS = ["utf-8", "gbk", "big5", "shift-jis", "euc-kr", "euc-jp", "iso-8859-1", "latin-1", "ascii"]
+    ENCODINGS = [
+        "utf-8", "utf-16be", "utf-16le", "utf-32be", "utf-32le",
+        "gb2312", "gb18030", "gbk", "big5", "big5-hkscs",
+        "cesu-8", "euc-jp", "euc-kr",
+        "ibm866", "ibm850",
+        "iso-2022-jp", "iso-2022-kr", "iso-8859-1", "iso-8859-2",
+        "iso-8859-3", "iso-8859-4", "iso-8859-5", "iso-8859-6",
+        "iso-8859-7", "iso-8859-8", "iso-8859-9", "iso-8859-10",
+        "iso-8859-13", "iso-8859-14", "iso-8859-15",
+        "koi8-r", "koi8-u",
+        "shift-jis",
+        "cp1250", "cp1251", "cp1252", "cp1253", "cp1254",
+        "cp1255", "cp1256", "cp1257", "cp1258",
+    ]
 
     def __init__(self, parent: ttk.Notebook, settings_service: SettingsService) -> None:
         super().__init__(parent)

@@ -11,6 +11,20 @@ from utils.logger import logger, GUIHandler
 
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 
+
+SERVER_ENCODINGS = [
+    "utf-8", "utf-16be", "utf-16le", "utf-32be", "utf-32le",
+    "gb2312", "gb18030", "gbk", "big5", "big5-hkscs",
+    "cesu-8", "euc-jp", "euc-kr",
+    "ibm866", "ibm850",
+    "iso-2022-jp", "iso-2022-kr", "iso-8859-1",
+    "koi8-r", "koi8-u",
+    "shift-jis",
+    "cp1250", "cp1251", "cp1252", "cp1253", "cp1254",
+    "cp1255", "cp1256", "cp1257", "cp1258",
+]
+
+
 class ServerTab(ttk.Frame):
     """服务器控制标签页"""
     def __init__(self, parent, settings_service):
@@ -28,6 +42,8 @@ class ServerTab(ttk.Frame):
         self.ftp_port_var = tk.StringVar(value=self.settings_service.get_setting("ftp_port", "21"))
         self.ftp_root_var = tk.StringVar(value=self.settings_service.get_setting("ftp_root", "./ftp_root"))
         self.ftp_auto_save = tk.BooleanVar(value=self.settings_service.get_setting("ftp_auto_save", "True") == "True")
+        self.ftp_password_var = tk.StringVar(value=self.settings_service.get_setting("ftp_password", ""))
+        self.ftp_encoding_var = tk.StringVar(value=self.settings_service.get_setting("ftp_encoding", "utf-8"))
         self.sftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var = tk.StringVar(value=self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var = tk.StringVar(value=self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -50,6 +66,8 @@ class ServerTab(ttk.Frame):
         self.ftp_enabled.set(self.settings_service.get_setting("ftp_enabled", "True") == "True")
         self.ftp_port_var.set(self.settings_service.get_setting("ftp_port", "21"))
         self.ftp_root_var.set(self.settings_service.get_setting("ftp_root", "./ftp_root"))
+        self.ftp_password_var.set(self.settings_service.get_setting("ftp_password", ""))
+        self.ftp_encoding_var.set(self.settings_service.get_setting("ftp_encoding", "utf-8"))
         self.sftp_enabled.set(self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var.set(self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var.set(self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -95,6 +113,17 @@ class ServerTab(ttk.Frame):
         self.ftp_path_status = ttk.Label(ftp_row, text="", width=3)
         self.ftp_path_status.pack(side=tk.LEFT, padx=2)
         self.ftp_root_var.trace("w", lambda *a: self._validate_path(self.ftp_root_var, self.ftp_path_status))
+
+        # FTP 密码 + 编码
+        ftp_extra = ttk.Frame(ftp_frame)
+        ftp_extra.pack(fill=tk.X, padx=5, pady=1)
+        ttk.Label(ftp_extra, text="FTP 独立密码（留空=统一账号）:").pack(side=tk.LEFT, padx=5)
+        self.ftp_password_entry = ttk.Entry(ftp_extra, textvariable=self.ftp_password_var, width=16, show="*")
+        self.ftp_password_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Label(ftp_extra, text="编码:").pack(side=tk.LEFT, padx=5)
+        self.ftp_encoding_combo = ttk.Combobox(ftp_extra, textvariable=self.ftp_encoding_var,
+                                                values=list(SERVER_ENCODINGS), state="readonly", width=10)
+        self.ftp_encoding_combo.pack(side=tk.LEFT, padx=2)
 
         # SFTP 设置
         sftp_row = ttk.Frame(ftp_frame)
@@ -190,6 +219,8 @@ class ServerTab(ttk.Frame):
             self.settings_service.set_setting("ftp_enabled", str(self.ftp_enabled.get()))
             self.settings_service.set_setting("ftp_port", self.ftp_port_var.get())
             self.settings_service.set_setting("ftp_root", self.ftp_root_var.get())
+            self.settings_service.set_setting("ftp_password", self.ftp_password_var.get())
+            self.settings_service.set_setting("ftp_encoding", self.ftp_encoding_var.get())
             self.settings_service.set_setting("sftp_enabled", str(self.sftp_enabled.get()))
             self.settings_service.set_setting("sftp_port", self.sftp_port_var.get())
             self.settings_service.set_setting("sftp_root", self.sftp_root_var.get())
@@ -203,6 +234,7 @@ class ServerTab(ttk.Frame):
                   self.ftp_port_entry, self.sftp_port_entry, self.tftp_port_entry,
                   self.ftp_root_entry, self.sftp_root_entry, self.tftp_root_entry,
                   self.ftp_browse_btn, self.sftp_browse_btn, self.tftp_browse_btn,
+                  self.ftp_password_entry, self.ftp_encoding_combo,
                   self.auto_save_check):
             w.config(state=state)
 
@@ -279,6 +311,7 @@ class ServerTab(ttk.Frame):
         ftp_port = self.ftp_port_var.get() or "21"
         sftp_port = self.sftp_port_var.get() or "22"
         tftp_port = self.tftp_port_var.get() or "69"
+        ftp_encoding = self.ftp_encoding_var.get()
 
         ftp_enabled = self.ftp_enabled.get()
         sftp_enabled = self.sftp_enabled.get()
@@ -286,7 +319,7 @@ class ServerTab(ttk.Frame):
 
         ftp_lines = ""
         if ftp_enabled:
-            ftp_lines += f"\n  FTP:      ftp://[账户@]{ip_lines}:{ftp_port}"
+            ftp_lines += f"\n  FTP:      ftp://[账户@]{ip_lines}:{ftp_port}  (编码: {ftp_encoding})"
         if sftp_enabled:
             ftp_lines += f"\n  SFTP:     sftp://[账户@]{ip_lines}:{sftp_port}"
         if tftp_enabled:

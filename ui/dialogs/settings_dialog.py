@@ -537,8 +537,9 @@ class SettingsDialog(tk.Toplevel):
             tree.heading(c, text=c)
             tree.column(c, width=180 if c == "说明" else 100)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).pack(side=tk.RIGHT, fill=tk.Y)
-        tree.configure(yscrollcommand=ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).set)
+        scroll = ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        tree.configure(yscrollcommand=scroll.set)
 
         tool_list = [
             ("server_start(port=8080)", "服务端管理", "启动 DAV 服务器（后台线程）"),
@@ -565,13 +566,12 @@ class SettingsDialog(tk.Toplevel):
     def create_audit_log_viewer(self, parent):
         from services.auth_service import AuthService
         cols = ("时间", "IP", "状态", "协议", "详情")
-        tree = ttk.Treeview(parent, columns=cols, show="headings", height=20)
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=20)
         for c in cols:
             tree.heading(c, text=c)
             tree.column(c, width=180 if c == "时间" else 140 if c == "IP" else 80)
-
-        tree_frame = ttk.Frame(parent)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
