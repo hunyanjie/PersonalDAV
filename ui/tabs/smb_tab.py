@@ -31,6 +31,7 @@ class SMBTab(ttk.Frame):
     mounts_tree: ttk.Treeview
 
     PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 990, "SFTP": 22}
+    ENCODINGS = ["utf-8", "gbk", "big5", "shift-jis", "euc-kr", "euc-jp", "iso-8859-1", "latin-1", "ascii"]
 
     def __init__(self, parent: ttk.Notebook, settings_service: SettingsService) -> None:
         super().__init__(parent)
@@ -47,6 +48,7 @@ class SMBTab(ttk.Frame):
         self.port_var = tk.StringVar(value="445")
         self.username_var = tk.StringVar()
         self.password_var = tk.StringVar()
+        self.encoding_var = tk.StringVar(value="utf-8")
 
         self.create_widgets()
         self.refresh_mounts()
@@ -73,8 +75,13 @@ class SMBTab(ttk.Frame):
         ttk.Label(conn_frame, text="密码:").grid(row=0, column=8, padx=5, pady=5, sticky=tk.W)
         ttk.Entry(conn_frame, textvariable=self.password_var, width=12, show="*").grid(row=0, column=9, padx=5, pady=5, sticky=tk.W)
 
+        ttk.Label(conn_frame, text="编码:").grid(row=0, column=10, padx=5, pady=5, sticky=tk.W)
+        encoding_combo = ttk.Combobox(conn_frame, textvariable=self.encoding_var,
+                                       values=list(self.ENCODINGS), state="readonly", width=8)
+        encoding_combo.grid(row=0, column=11, padx=5, pady=5, sticky=tk.W)
+
         self.connect_btn = ttk.Button(conn_frame, text="连接", command=self.connect)
-        self.connect_btn.grid(row=0, column=10, padx=10, pady=5)
+        self.connect_btn.grid(row=0, column=12, padx=10, pady=5)
 
         browse_frame = ttk.LabelFrame(self, text="文件浏览")
         browse_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 5))
@@ -159,10 +166,11 @@ class SMBTab(ttk.Frame):
         ).start()
 
     def _connect_thread(self, protocol: str, server: str, port: str, username: str, password: str) -> None:
+        proto_lower = protocol.lower()
         if protocol == "SMB":
             result = self.smb_service.list_shares(server, username, password)
         else:
-            result = self.ftp_client.list_dir(protocol, server, int(port), username, password, "/")
+            result = self.ftp_client.list_dir(proto_lower, server, int(port), username, password, "/", encoding=self.encoding_var.get())
         self.after(0, lambda: self._connect_done(protocol, server, port, username, password, result))
 
     def _connect_done(self, protocol: str, server: str, port: str, username: str, password: str, result: dict[str, Any]) -> None:
@@ -171,7 +179,8 @@ class SMBTab(ttk.Frame):
             messagebox.showerror("连接失败", result.get("error", "未知错误"), parent=self)
             return
 
-        self._current_server = f"{protocol}://{server}:{port}"
+        account = f"{username}@" if username and username != "anonymous" else ""
+        self._current_server = f"{protocol}://{account}{server}:{port}"
         self._current_share = ""
         self._current_path = "/"
 
@@ -238,7 +247,9 @@ class SMBTab(ttk.Frame):
         parts = self._current_server.split("://")[-1].rsplit(":", 1)
         server = parts[0]
         port = int(parts[1]) if len(parts) > 1 else 21
-        result = self.ftp_client.list_dir(self._current_protocol, server, port, username, password, path)
+        result = self.ftp_client.list_dir(
+            self._current_protocol.lower(), server, port, username, password, path, encoding=self.encoding_var.get()
+        )
         self.after(0, lambda: self._display_files(result["data"] if result["success"] else []))
 
     def on_double_click(self, event: tk.Event) -> None:
@@ -279,10 +290,12 @@ class SMBTab(ttk.Frame):
             server = parts[0]
             result = self.smb_service.mount(server, self._current_share, mount_point, username, password)
         else:
-            result = self.ftp_client.list_dir(self._current_protocol,
+            proto_lower = self._current_protocol.lower()
+            result = self.ftp_client.list_dir(proto_lower,
                 self._current_server.split("://")[-1].rsplit(":", 1)[0],
                 int(self._current_server.split(":")[-1]),
-                username, password, "/")
+                username, password, "/",
+                encoding=self.encoding_var.get())
             result = {"success": True, "data": {"mount_point": mount_point}}
 
         if not result["success"]:

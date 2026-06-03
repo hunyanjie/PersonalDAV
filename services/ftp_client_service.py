@@ -9,11 +9,11 @@ from utils.logger import logger
 
 class FTPClientService:
 
-    def _connect_ftp(self, host: str, port: int, username: str, password: str, protocol: str) -> FTP | FTP_TLS:
+    def _connect_ftp(self, host: str, port: int, username: str, password: str, protocol: str, encoding: str = "utf-8") -> FTP | FTP_TLS:
         if protocol == "ftps":
-            ftp = FTP_TLS()
+            ftp = FTP_TLS(encoding=encoding)
         else:
-            ftp = FTP()
+            ftp = FTP(encoding=encoding)
         ftp.connect(host, port, timeout=30)
         ftp.login(username, password)
         if protocol == "ftps":
@@ -45,10 +45,10 @@ class FTPClientService:
             "modified": modified,
         }
 
-    def list_dir(self, protocol: str, host: str, port: int, username: str, password: str, path: str) -> dict[str, Any]:
+    def list_dir(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     try:
                         raw = list(ftp.mlsd(path))
@@ -94,10 +94,10 @@ class FTPClientService:
             logger.error(f"FTP list_dir error: {e}")
             return {"success": False, "error": str(e)}
 
-    def download(self, protocol: str, host: str, port: int, username: str, password: str, remote_path: str, local_path: str) -> dict[str, Any]:
+    def download(self, protocol: str, host: str, port: int, username: str, password: str, remote_path: str, local_path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     os.makedirs(os.path.dirname(local_path), exist_ok=True)
                     with open(local_path, "wb") as f:
@@ -123,10 +123,10 @@ class FTPClientService:
             logger.error(f"FTP download error: {e}")
             return {"success": False, "error": str(e)}
 
-    def upload(self, protocol: str, host: str, port: int, username: str, password: str, local_path: str, remote_path: str) -> dict[str, Any]:
+    def upload(self, protocol: str, host: str, port: int, username: str, password: str, local_path: str, remote_path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     with open(local_path, "rb") as f:
                         ftp.storbinary(f"STOR {remote_path}", f)
@@ -150,10 +150,10 @@ class FTPClientService:
             logger.error(f"FTP upload error: {e}")
             return {"success": False, "error": str(e)}
 
-    def delete(self, protocol: str, host: str, port: int, username: str, password: str, path: str) -> dict[str, Any]:
+    def delete(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     ftp.delete(path)
                     return {"success": True, "data": {"path": path}}
@@ -176,10 +176,10 @@ class FTPClientService:
             logger.error(f"FTP delete error: {e}")
             return {"success": False, "error": str(e)}
 
-    def rename(self, protocol: str, host: str, port: int, username: str, password: str, old_path: str, new_path: str) -> dict[str, Any]:
+    def rename(self, protocol: str, host: str, port: int, username: str, password: str, old_path: str, new_path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     ftp.rename(old_path, new_path)
                     return {"success": True, "data": {"old_path": old_path, "new_path": new_path}}
@@ -202,10 +202,10 @@ class FTPClientService:
             logger.error(f"FTP rename error: {e}")
             return {"success": False, "error": str(e)}
 
-    def mkdir(self, protocol: str, host: str, port: int, username: str, password: str, path: str) -> dict[str, Any]:
+    def mkdir(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     ftp.mkd(path)
                     return {"success": True, "data": {"path": path}}
@@ -228,10 +228,10 @@ class FTPClientService:
             logger.error(f"FTP mkdir error: {e}")
             return {"success": False, "error": str(e)}
 
-    def rmdir(self, protocol: str, host: str, port: int, username: str, password: str, path: str) -> dict[str, Any]:
+    def rmdir(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
-                ftp = self._connect_ftp(host, port, username, password, protocol)
+                ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     ftp.rmd(path)
                     return {"success": True, "data": {"path": path}}

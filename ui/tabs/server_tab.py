@@ -286,11 +286,11 @@ class ServerTab(ttk.Frame):
 
         ftp_lines = ""
         if ftp_enabled:
-            ftp_lines += f"\n  FTP:      ftp://user@{ip_lines}:{ftp_port}"
+            ftp_lines += f"\n  FTP:      ftp://[账户@]{ip_lines}:{ftp_port}"
         if sftp_enabled:
-            ftp_lines += f"\n  SFTP:     sftp://user@{ip_lines}:{sftp_port}"
+            ftp_lines += f"\n  SFTP:     sftp://[账户@]{ip_lines}:{sftp_port}"
         if tftp_enabled:
-            ftp_lines += f"\n  TFTP:     tftp://{ip_lines}/{tftp_port}"
+            ftp_lines += f"\n  TFTP:     tftp://{ip_lines}:{tftp_port}"
 
         self.info_label.config(text=f"""CardDAV 配置:
   服务器地址: {scheme}://localhost:{port}/contacts/
