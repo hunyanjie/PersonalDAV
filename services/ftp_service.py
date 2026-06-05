@@ -40,18 +40,24 @@ def _generate_thumbnail(filepath: str, max_size: int = 128) -> str | None:
 class AuthServiceAuthorizer:
     def validate_authentication(self, username: str, password: str, handler: object) -> bool:
         ftp_pass = SettingsService().get_setting("ftp_password", "")
+        client_ip = getattr(handler, 'remote_ip', 'unknown')
         if ftp_pass:
-            if password == ftp_pass:
+            ok = password == ftp_pass
+            AuthService().log_auth(ok, client_ip, "FTP", f"用户={username}")
+            if ok:
                 return True
             raise AuthenticationFailed("Invalid credentials")
         stored = SettingsService().get_setting("access_password_hash", "")
         if not stored:
+            AuthService().log_auth(True, client_ip, "FTP-匿名", f"用户={username}")
             return True
         if '$' in stored:
             salt, pw_hash = stored.split('$', 1)
             from hashlib import pbkdf2_hmac
             from secrets import compare_digest
-            if compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash):
+            ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
+            AuthService().log_auth(ok, client_ip, "FTP", f"用户={username}")
+            if ok:
                 return True
         raise AuthenticationFailed("Invalid credentials")
 
@@ -248,23 +254,28 @@ class StubSFTPServer(paramiko.SFTPServerInterface):  # type: ignore[misc]
 
 
 class SFTPAuthInterface(ServerInterface):  # type: ignore[misc]
-    def __init__(self, auth_service: AuthService) -> None:
+    def __init__(self, auth_service: AuthService, client_ip: str = "unknown") -> None:
         super().__init__()
         self.auth_service = auth_service
+        self.client_ip = client_ip
 
     def check_auth_password(self, username: str, password: str) -> int:
         ftp_pass = SettingsService().get_setting("ftp_password", "")
         if ftp_pass:
-            return paramiko.AUTH_SUCCESSFUL if password == ftp_pass else paramiko.AUTH_FAILED
+            ok = password == ftp_pass
+            AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
+            return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
         stored = SettingsService().get_setting("access_password_hash", "")
         if not stored:
+            AuthService().log_auth(True, self.client_ip, "SFTP-匿名", f"用户={username}")
             return paramiko.AUTH_SUCCESSFUL
         if '$' in stored:
             salt, pw_hash = stored.split('$', 1)
             from hashlib import pbkdf2_hmac
             from secrets import compare_digest
-            if compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash):
-                return paramiko.AUTH_SUCCESSFUL
+            ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
+            AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
+            return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
         return paramiko.AUTH_FAILED
 
     def check_channel_request(self, kind: str, chanid: int) -> int:
@@ -503,7 +514,7 @@ class FTPService:
         transport = paramiko.Transport(client)
         try:
             transport.add_server_key(self._sftp_key)
-            auth_iface = SFTPAuthInterface(auth)
+            auth_iface = SFTPAuthInterface(auth, addr[0])
             transport.start_server(server=auth_iface)
             sftp_server = paramiko.SFTPServer(transport, StubSFTPServer, root)
             sftp_server.serve_forever()
