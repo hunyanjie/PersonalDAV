@@ -1,9 +1,10 @@
+import ctypes
 import threading
 import os
 import logging
 import stat as stat_module
 from concurrent.futures import ThreadPoolExecutor
-from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
 from pyftpdlib.servers import FTPServer as PyFTPD
 from pyftpdlib.authorizers import DummyAuthorizer, AuthenticationFailed
 import paramiko
@@ -442,17 +443,27 @@ class FTPService:
 
     def _run_ftp(self, port: int, root: str) -> None:
         authorizer = AuthServiceAuthorizer()
-        handler: type[FTPHandler] = LoggedFTPHandler
+        settings = SettingsService()
+        use_tls = settings.get_setting("ftps_enabled", "False") == "True"
+        certfile = settings.get_setting("ssl_certfile", "")
+        keyfile = settings.get_setting("ssl_keyfile", "")
+        if use_tls and certfile:
+            handler = type("LoggedTLSFTPHandler", (LoggedFTPHandler, TLS_FTPHandler), {})
+            handler.certfile = certfile
+            handler.keyfile = keyfile or certfile
+        else:
+            handler = LoggedFTPHandler
         handler.authorizer = authorizer
         handler.banner = "Welcome to PersonalDAV FTP Server"
-        encoding = SettingsService().get_setting("ftp_encoding", "utf-8")
+        encoding = settings.get_setting("ftp_encoding", "utf-8")
         handler.encoding = encoding
         try:
             server = PyFTPD(("0.0.0.0", port), handler)
             self._ftp_server = server
             server.max_cons = 256
             server.max_cons_per_ip = 32
-            logger.info(f"FTP server listening on 0.0.0.0:{port} "
+            proto = "FTPS" if use_tls and certfile else "FTP"
+            logger.info(f"{proto} server listening on 0.0.0.0:{port} "
                         f"(passive ports 60000-60099, active mode enabled, encoding={encoding})")
             server.serve_forever()
         except OSError as e:

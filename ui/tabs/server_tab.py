@@ -44,6 +44,8 @@ class ServerTab(ttk.Frame):
         self.ftp_auto_save = tk.BooleanVar(value=self.settings_service.get_setting("ftp_auto_save", "True") == "True")
         self.ftp_password_var = tk.StringVar(value=self.settings_service.get_setting("ftp_password", ""))
         self.ftp_encoding_var = tk.StringVar(value=self.settings_service.get_setting("ftp_encoding", "utf-8"))
+        self.ftps_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ftps_enabled", "False") == "True")
+        self.dav_root_var = tk.StringVar(value=self.settings_service.get_setting("dav_root", "./dav_root"))
         self.sftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var = tk.StringVar(value=self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var = tk.StringVar(value=self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -68,6 +70,8 @@ class ServerTab(ttk.Frame):
         self.ftp_root_var.set(self.settings_service.get_setting("ftp_root", "./ftp_root"))
         self.ftp_password_var.set(self.settings_service.get_setting("ftp_password", ""))
         self.ftp_encoding_var.set(self.settings_service.get_setting("ftp_encoding", "utf-8"))
+        self.ftps_enabled.set(self.settings_service.get_setting("ftps_enabled", "False") == "True")
+        self.dav_root_var.set(self.settings_service.get_setting("dav_root", "./dav_root"))
         self.sftp_enabled.set(self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var.set(self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var.set(self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -93,6 +97,11 @@ class ServerTab(ttk.Frame):
         self.stop_btn = ttk.Button(port_frame, text="停止服务器", command=self.stop_server, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
 
+        ttk.Label(port_frame, text="DAV 目录:").pack(side=tk.LEFT, padx=5)
+        self.dav_root_entry = ttk.Entry(port_frame, textvariable=self.dav_root_var, width=25)
+        self.dav_root_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Button(port_frame, text="浏览...", width=6, command=lambda: self._browse_dir(self.dav_root_var)).pack(side=tk.LEFT, padx=2)
+
         # FTP / SFTP / TFTP 服务控制
         ftp_frame = ttk.LabelFrame(self, text="FTP / SFTP / TFTP 文件服务")
         ftp_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
@@ -102,6 +111,8 @@ class ServerTab(ttk.Frame):
         ftp_row.pack(fill=tk.X, padx=5, pady=2)
         self.ftp_check = ttk.Checkbutton(ftp_row, text="FTP 服务器", variable=self.ftp_enabled)
         self.ftp_check.pack(side=tk.LEFT, padx=5)
+        self.ftps_check = ttk.Checkbutton(ftp_row, text="FTPS(SSL)", variable=self.ftps_enabled)
+        self.ftps_check.pack(side=tk.LEFT, padx=2)
         ttk.Label(ftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.ftp_port_entry = ttk.Entry(ftp_row, textvariable=self.ftp_port_var, width=6)
         self.ftp_port_entry.pack(side=tk.LEFT)
@@ -222,6 +233,7 @@ class ServerTab(ttk.Frame):
             self.settings_service.set_setting("ftp_root", self.ftp_root_var.get())
             self.settings_service.set_setting("ftp_password", self.ftp_password_var.get())
             self.settings_service.set_setting("ftp_encoding", self.ftp_encoding_var.get())
+            self.settings_service.set_setting("ftps_enabled", str(self.ftps_enabled.get()))
             self.settings_service.set_setting("sftp_enabled", str(self.sftp_enabled.get()))
             self.settings_service.set_setting("sftp_port", self.sftp_port_var.get())
             self.settings_service.set_setting("sftp_root", self.sftp_root_var.get())
@@ -236,7 +248,7 @@ class ServerTab(ttk.Frame):
                   self.ftp_root_entry, self.sftp_root_entry, self.tftp_root_entry,
                   self.ftp_browse_btn, self.sftp_browse_btn, self.tftp_browse_btn,
                   self.ftp_password_entry, self.ftp_encoding_combo,
-                  self.auto_save_check):
+                  self.ftps_check, self.auto_save_check):
             w.config(state=state)
 
     def start_ftp_services(self):
@@ -315,12 +327,14 @@ class ServerTab(ttk.Frame):
         ftp_encoding = self.ftp_encoding_var.get()
 
         ftp_enabled = self.ftp_enabled.get()
+        ftps_enabled = self.ftps_enabled.get()
         sftp_enabled = self.sftp_enabled.get()
         tftp_enabled = self.tftp_enabled.get()
 
         ftp_lines = ""
         if ftp_enabled:
-            ftp_lines += f"\n  FTP:      ftp://[账户@]{ip_lines}:{ftp_port}  (编码: {ftp_encoding})"
+            proto = "FTPS" if ftps_enabled else "FTP"
+            ftp_lines += f"\n  {proto}:      {proto.lower()}://[账户@]{ip_lines}:{ftp_port}  (编码: {ftp_encoding})"
         if sftp_enabled:
             ftp_lines += f"\n  SFTP:     sftp://[账户@]{ip_lines}:{sftp_port}"
         if tftp_enabled:
@@ -332,6 +346,10 @@ class ServerTab(ttk.Frame):
 
 CalDAV 配置:
   服务器地址: {scheme}://localhost:{port}/events/
+  用户名: (任意)  密码: (任意)
+
+WebDAV 文件服务:
+  服务器地址: {scheme}://localhost:{port}/dav/
   用户名: (任意)  密码: (任意)
 
 文件服务:{ftp_lines}
@@ -356,6 +374,10 @@ CalDAV 配置:
         self.settings_service.set_setting("ssl_certfile", ssl_cert)
         self.settings_service.set_setting("ssl_keyfile", ssl_key)
 
+        dav_root = self.dav_root_var.get().strip() or "./dav_root"
+        self.settings_service.set_setting("dav_root", dav_root)
+        os.makedirs(os.path.expanduser(os.path.expandvars(dav_root)), exist_ok=True)
+
         try:
             self.server_instance = DAVServer(port, ssl_enabled, ssl_cert, ssl_key)
             self.server_thread = threading.Thread(target=self.server_instance.start, daemon=True)
@@ -368,6 +390,8 @@ CalDAV 配置:
 
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
+        self.port_entry.config(state=tk.DISABLED)
+        self.dav_root_entry.config(state=tk.DISABLED)
         scheme = "HTTPS" if ssl_enabled else "HTTP"
         msg = f"服务器已启动 ({scheme}) 在端口 {port}"
         logger.info(msg)
@@ -380,6 +404,8 @@ CalDAV 配置:
             self.server_instance = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
+            self.port_entry.config(state=tk.NORMAL)
+            self.dav_root_entry.config(state=tk.NORMAL)
             msg = "服务器已停止"
             logger.info(msg)
             self.log_message(msg, logging.INFO)

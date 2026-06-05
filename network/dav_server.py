@@ -2,11 +2,16 @@ import os
 import ssl
 import base64
 import hashlib
+import shutil
+import time
+import email.utils
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from services.contact_service import ContactService
 from services.event_service import EventService
+from services.settings_service import SettingsService
 from utils.logger import logger
 from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION
+from network.webdav_helper import propfind_response, error_xml
 
 class DAVHandler(BaseHTTPRequestHandler):
     """WebDAV 请求处理器"""
@@ -72,12 +77,162 @@ class DAVHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Authorization required")
 
+    # ── WebDAV 文件服务（/dav/ 路径） ───────────────────────────
+
+    @staticmethod
+    def _get_dav_root() -> str:
+        return SettingsService().get_setting("dav_root", "./dav_root")
+
+    def _resolve_dav_path(self, path: str) -> str | None:
+        root = os.path.abspath(self._get_dav_root())
+        clean = os.path.normpath(path.lstrip("/dav").lstrip("/").replace("\\", "/"))
+        abs_path = os.path.normpath(os.path.join(root, clean))
+        if not abs_path.startswith(root):
+            return None
+        return abs_path
+
+    def _list_dav_entries(self, fs_path: str) -> list[dict[str, any]]:
+        entries = []
+        try:
+            for name in sorted(os.listdir(fs_path)):
+                full = os.path.join(fs_path, name)
+                st = os.stat(full)
+                entries.append({
+                    "name": name,
+                    "is_directory": os.path.isdir(full),
+                    "size": st.st_size,
+                    "modified": email.utils.formatdate(timeval=st.st_mtime, localtime=False, usegmt=True),
+                })
+        except OSError:
+            pass
+        return entries
+
+    def _handle_dav_PROPFIND(self) -> None:
+        fs_path = self._resolve_dav_path(self.path)
+        if fs_path is None or not os.path.exists(fs_path):
+            self._send_error(404, "Not found")
+            return
+        if not os.path.isdir(fs_path):
+            self._send_error(400, "PROPFIND on non-collection")
+            return
+
+        entries = self._list_dav_entries(fs_path)
+        body = propfind_response(self.path, entries)
+        self.send_response(207)
+        self.send_header('Content-Type', 'text/xml; charset="utf-8"')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_dav_GET(self) -> None:
+        fs_path = self._resolve_dav_path(self.path)
+        if fs_path is None:
+            self._send_error(404, "Not found")
+            return
+        if os.path.isdir(fs_path):
+            self._send_error(400, "Is a directory, use PROPFIND")
+            return
+        if not os.path.isfile(fs_path):
+            self._send_error(404, "File not found")
+            return
+
+        st = os.stat(fs_path)
+        mime = "application/octet-stream"
+        _, ext = os.path.splitext(fs_path)
+        ext_map = {".txt": "text/plain", ".html": "text/html", ".json": "application/json",
+                   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                   ".gif": "image/gif", ".pdf": "application/pdf", ".xml": "text/xml",
+                   ".zip": "application/zip", ".mp3": "audio/mpeg", ".mp4": "video/mp4",
+                   ".vcf": "text/vcard", ".ics": "text/calendar"}
+        mime = ext_map.get(ext.lower(), "application/octet-stream")
+
+        self.send_response(200)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(st.st_size))
+        self.send_header('Last-Modified', email.utils.formatdate(timeval=st.st_mtime, localtime=False, usegmt=True))
+        self.end_headers()
+        with open(fs_path, "rb") as f:
+            shutil.copyfileobj(f, self.wfile)
+
+    def _handle_dav_PUT(self) -> None:
+        fs_path = self._resolve_dav_path(self.path)
+        if fs_path is None:
+            self._send_error(400, "Invalid path")
+            return
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            os.makedirs(os.path.dirname(fs_path), exist_ok=True)
+            with open(fs_path, "wb") as f:
+                if content_length > 0:
+                    chunk_size = 65536
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(chunk_size, remaining))
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        remaining -= len(chunk)
+            self.send_response(201)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"Created")
+        except Exception as e:
+            self._send_error(500, str(e))
+
+    def _handle_dav_DELETE(self) -> None:
+        fs_path = self._resolve_dav_path(self.path)
+        if fs_path is None or not os.path.exists(fs_path):
+            self._send_error(404, "Not found")
+            return
+        try:
+            if os.path.isdir(fs_path):
+                shutil.rmtree(fs_path)
+            else:
+                os.remove(fs_path)
+            self.send_response(204)
+            self.end_headers()
+        except Exception as e:
+            self._send_error(500, str(e))
+
+    def _handle_dav_MKCOL(self) -> None:
+        fs_path = self._resolve_dav_path(self.path)
+        if fs_path is None:
+            self._send_error(400, "Invalid path")
+            return
+        if os.path.exists(fs_path):
+            self._send_error(405, "Already exists")
+            return
+        try:
+            os.makedirs(fs_path)
+            self.send_response(201)
+            self.end_headers()
+        except Exception as e:
+            self._send_error(500, str(e))
+
+    def _handle_dav_HEAD(self) -> None:
+        fs_path = self._resolve_dav_path(self.path)
+        if fs_path is None or not os.path.exists(fs_path):
+            self._send_error(404)
+            return
+        if os.path.isdir(fs_path):
+            self.send_response(200)
+            self.send_header('Content-Type', 'httpd/unix-directory')
+            self.end_headers()
+            return
+        st = os.stat(fs_path)
+        self.send_response(200)
+        self.send_header('Content-Length', str(st.st_size))
+        self.send_header('Last-Modified', email.utils.formatdate(timeval=st.st_mtime, localtime=False, usegmt=True))
+        self.end_headers()
+
     def do_OPTIONS(self):
         try:
             self.log_message(f"处理OPTIONS请求: {self.path}")
             self.send_response(200)
-            self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND')
-            if self.path.startswith("/contacts/"):
+            self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PUT, DELETE, PROPFIND, MKCOL')
+            if self.path.startswith("/dav"):
+                self.send_header('DAV', '1, 2')
+            elif self.path.startswith("/contacts/"):
                 self.send_header('DAV', '1, 2, addressbook')
             elif self.path.startswith("/events/"):
                 self.send_header('DAV', '1, 2, calendar-access')
@@ -128,8 +283,6 @@ class DAVHandler(BaseHTTPRequestHandler):
                         self.send_header('ETag', self.event_service.get_etag(uid) or '')
                         self.end_headers()
                         self.wfile.write(event.encode('utf-8'))
-                    else:
-                        self._send_error(404, "Event not found")
                 elif self.path == "/events/":
                     self.send_response(200)
                     self.send_header('Content-type', 'text/calendar')
@@ -138,7 +291,7 @@ class DAVHandler(BaseHTTPRequestHandler):
                     calendar_data = self.event_service.combine_raw_events(all_events)
                     self.wfile.write(calendar_data.encode('utf-8'))
                 else:
-                    self._send_error(404)
+                    self._send_error(404, "Event not found")
 
             # 根路径
             elif self.path == "/":
@@ -148,7 +301,12 @@ class DAVHandler(BaseHTTPRequestHandler):
                 content = f"<h1>{SOFTWARE_NAME} v{SOFTWARE_VERSION}</h1><p>{SOFTWARE_DESCRIPTION}</p>"
                 content += "<p>CardDAV endpoint: <a href='/contacts/'>/contacts/</a></p>"
                 content += "<p>CalDAV endpoint: <a href='/events/'>/events/</a></p>"
+                content += "<p>WebDAV endpoint: <a href='/dav/'>/dav/</a></p>"
                 self.wfile.write(content.encode('utf-8'))
+
+            # WebDAV 文件服务
+            elif self.path.startswith("/dav"):
+                self._handle_dav_GET()
             else:
                 self._send_error(404)
         except Exception as e:
@@ -159,6 +317,11 @@ class DAVHandler(BaseHTTPRequestHandler):
             self.log_message(f"处理PUT请求: {self.path}")
             if not self._check_auth():
                 return
+
+            if self.path.startswith("/dav"):
+                self._handle_dav_PUT()
+                return
+
             content_length = int(self.headers['Content-Length'])
             data = self.rfile.read(content_length).decode('utf-8')
 
@@ -207,6 +370,9 @@ class DAVHandler(BaseHTTPRequestHandler):
                 svc = self.event_service
                 ext = '.ics'
                 ctype = 'text/calendar'
+            elif self.path.startswith("/dav"):
+                self._handle_dav_PROPFIND()
+                return
             else:
                 ns = ''
                 rtype = ''
@@ -308,6 +474,20 @@ class DAVHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                 else:
                     self._send_error(404, "Event not found")
+            elif self.path.startswith("/dav"):
+                self._handle_dav_DELETE()
+            else:
+                self._send_error(404)
+        except Exception as e:
+            self._send_error(500, str(e))
+
+    def do_MKCOL(self):
+        try:
+            self.log_message(f"处理MKCOL请求: {self.path}")
+            if not self._check_auth():
+                return
+            if self.path.startswith("/dav"):
+                self._handle_dav_MKCOL()
             else:
                 self._send_error(404)
         except Exception as e:
