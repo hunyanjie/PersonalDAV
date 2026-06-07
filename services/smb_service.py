@@ -2,7 +2,6 @@ import threading
 import os
 import socket
 from typing import Any
-from smb.SMBConnection import SMBConnection
 from utils.logger import logger
 
 
@@ -27,11 +26,12 @@ class SMBService:
         self._mounts = {}
         self._mounts_lock = threading.Lock()
 
-    def _create_connection(self, server: str, username: str, password: str) -> SMBConnection:
-        my_name = socket.gethostname()
+    def _create_connection(self, server: str, username: str, password: str):
+        from smb.SMBConnection import SMBConnection
+        my_name = socket.gethostname()[:15]
         return SMBConnection(username, password, my_name, server, use_ntlm_v2=True)
 
-    def _connect(self, conn: SMBConnection, server: str, timeout: int = 10) -> bool:
+    def _connect(self, conn, server: str, timeout: int = 10) -> bool:
         return conn.connect(server, timeout=timeout)
 
     def list_shares(self, server: str, username: str = "guest", password: str = "") -> dict[str, Any]:
