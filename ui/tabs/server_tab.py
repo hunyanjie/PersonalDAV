@@ -88,6 +88,7 @@ class ServerTab(ttk.Frame):
         inner = ttk.Frame(canvas)
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=inner, anchor="nw", tags="inner")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig("inner", width=e.width))
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
