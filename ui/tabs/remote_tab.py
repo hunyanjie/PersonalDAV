@@ -376,9 +376,10 @@ class RemoteTab(ttk.Frame):
                 return
         else:
             from database.db_manager import Database
+            from utils.crypto import encrypt
             import datetime
             label = f"{self._current_protocol}://{server_raw}:{port_raw}"
-            conn_info = (self._current_protocol, server_raw, port_raw, username, password, encoding, label, datetime.datetime.now().isoformat())
+            conn_info = (self._current_protocol, server_raw, port_raw, username, encrypt(password), encoding, label, datetime.datetime.now().isoformat())
             Database().execute(
                 "INSERT INTO remote_connections (protocol, server, port, username, password, encoding, label, created_at) VALUES (?,?,?,?,?,?,?,?)",
                 conn_info
@@ -482,7 +483,8 @@ class RemoteTab(ttk.Frame):
             messagebox.showerror("错误", "未找到连接记录", parent=self)
             return
         row = rows[0]
-        self._show_connection_editor(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
+        from utils.crypto import decrypt
+        self._show_connection_editor(row[0], row[1], row[2], row[3], row[4], decrypt(row[5]), row[6])
 
     def _show_connection_editor(self, conn_id: int, protocol: str, server: str, port: int,
                                  username: str, password: str, encoding: str):
@@ -525,10 +527,11 @@ class RemoteTab(ttk.Frame):
 
         def save_edit():
             from database.db_manager import Database
+            from utils.crypto import encrypt
             Database().execute(
                 "UPDATE remote_connections SET protocol=?, server=?, port=?, username=?, password=?, encoding=? WHERE id=?",
                 (proto_var.get(), srv_var.get(), int(port_var.get()), user_var.get().strip() or "anonymous",
-                 pw_var.get(), enc_var.get(), conn_id)
+                 encrypt(pw_var.get()), enc_var.get(), conn_id)
             )
             self.refresh_mounts()
             dialog.destroy()
