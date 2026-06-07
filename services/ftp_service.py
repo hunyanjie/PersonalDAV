@@ -9,6 +9,10 @@ from pyftpdlib.servers import FTPServer as PyFTPD
 from pyftpdlib.authorizers import DummyAuthorizer, AuthenticationFailed
 import paramiko
 from paramiko import ServerInterface, RSAKey
+from paramiko.sftp import (
+    SFTP_FLAG_READ, SFTP_FLAG_WRITE, SFTP_FLAG_CREATE,
+    SFTP_FLAG_TRUNC, SFTP_FLAG_APPEND,
+)
 import socket
 from tftpy import TftpServer
 from services.settings_service import SettingsService
@@ -191,18 +195,17 @@ class StubSFTPServer(paramiko.SFTPServerInterface):  # type: ignore[misc]
     def open(self, path: str, flags: int, attr: paramiko.SFTPAttributes) -> StubSFTPHandle | int:
         abs_path = self._resolve(path)
         try:
-            binary_flags: int = os.O_RDONLY
-            if flags & paramiko.SFTP_FLAG_WRITE:
-                binary_flags = os.O_WRONLY
-            if flags & (paramiko.SFTP_FLAG_RDWR | paramiko.SFTP_FLAG_READ | paramiko.SFTP_FLAG_WRITE) == (
-                paramiko.SFTP_FLAG_READ | paramiko.SFTP_FLAG_WRITE
-            ):
+            if flags & SFTP_FLAG_READ and flags & SFTP_FLAG_WRITE:
                 binary_flags = os.O_RDWR
-            if flags & paramiko.SFTP_FLAG_CREAT:
+            elif flags & SFTP_FLAG_WRITE:
+                binary_flags = os.O_WRONLY
+            else:
+                binary_flags = os.O_RDONLY
+            if flags & SFTP_FLAG_CREATE:
                 binary_flags |= os.O_CREAT
-            if flags & paramiko.SFTP_FLAG_TRUNC:
+            if flags & SFTP_FLAG_TRUNC:
                 binary_flags |= os.O_TRUNC
-            if flags & paramiko.SFTP_FLAG_APPEND:
+            if flags & SFTP_FLAG_APPEND:
                 binary_flags |= os.O_APPEND
 
             fd = os.open(abs_path, binary_flags, 0o644)
