@@ -58,6 +58,7 @@ class RemoteTab(ttk.Frame):
         self._current_path = "/"
         self._is_connected = False
         self._sort_state: dict[str, Any] = {"column": "name", "ascending": True}
+        self._heading_text = {"name": "名称", "type": "类型", "size": "大小", "modified": "修改时间"}
 
         self.protocol_var = tk.StringVar(value="SMB")
         self.server_var = tk.StringVar()
@@ -130,7 +131,7 @@ class RemoteTab(ttk.Frame):
         columns = ("name", "type", "size", "modified")
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
         for col in columns:
-            self.tree.heading(col, text={"name": "名称", "type": "类型", "size": "大小", "modified": "修改时间"}[col],
+            self.tree.heading(col, text=self._heading_text[col],
                               command=lambda c=col: self._on_column_click(c))
         self.tree.column("name", width=300)
         self.tree.column("type", width=80)
@@ -236,6 +237,32 @@ class RemoteTab(ttk.Frame):
         for btn in (self.upload_btn, self.download_btn, self.delete_btn, self.rename_btn, self.newdir_btn):
             btn.config(state=tk.DISABLED)
 
+    @staticmethod
+    def _format_date(raw: str) -> str:
+        if not raw:
+            return ""
+        import datetime
+        # SFTP: Unix timestamp (float/int)
+        if isinstance(raw, (int, float)):
+            return datetime.datetime.fromtimestamp(raw).strftime("%Y-%m-%d %H:%M")
+        # FTP MLSD: YYYYMMDDHHMMSS[.sss]
+        if raw.isdigit() or (raw.replace(".", "").isdigit() and len(raw) >= 8):
+            raw_clean = raw.split(".")[0]
+            if len(raw_clean) >= 14:
+                try:
+                    dt = datetime.datetime.strptime(raw_clean[:14], "%Y%m%d%H%M%S")
+                    return dt.strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    pass
+            elif len(raw_clean) == 8:
+                try:
+                    dt = datetime.datetime.strptime(raw_clean, "%Y%m%d")
+                    return dt.strftime("%Y-%m-%d")
+                except ValueError:
+                    pass
+        # Already formatted or unknown format
+        return raw
+
     def _display_files(self, files: list[dict[str, Any]]) -> None:
         self.tree.delete(*self.tree.get_children())
         sorted_files = sorted(
@@ -246,7 +273,7 @@ class RemoteTab(ttk.Frame):
             name = f["name"]
             ftype = "文件夹" if f.get("is_directory") else "文件"
             size = "" if f.get("is_directory") else self._format_size(f.get("size", 0))
-            modified = f.get("modified", "") or ""
+            modified = self._format_date(f.get("modified", ""))
             self.tree.insert("", tk.END, values=(name, ftype, size, modified))
         self._re_sort()
         self.up_btn.config(state=tk.NORMAL if self._current_path != "/" else tk.DISABLED)
@@ -767,7 +794,19 @@ class RemoteTab(ttk.Frame):
             self._sort_state["ascending"] = True
         self._re_sort()
 
+    def _update_heading_arrows(self) -> None:
+        col = self._sort_state["column"]
+        asc = self._sort_state["ascending"]
+        for c in self._heading_text:
+            text = self._heading_text[c]
+            if c == col:
+                arrow = "↑" if asc else "↓"
+                label = "升序" if asc else "降序"
+                text = f"{text} ({arrow}{label})"
+            self.tree.heading(c, text=text)
+
     def _re_sort(self) -> None:
+        self._update_heading_arrows()
         items = self.tree.get_children()
         if not items:
             return
