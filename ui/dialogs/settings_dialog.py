@@ -60,6 +60,14 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
+    SettingDef("ftps_enabled", "启用 FTPS (SSL)", "check", "服务器控制",
+               default=False, db_default="False"),
+    SettingDef("ftp_encoding", "FTP 文件编码:", "combo", "服务器控制",
+               default="utf-8",
+               options=["utf-8", "gbk", "gb2312", "big5", "shift-jis",
+                        "euc-kr", "euc-jp", "cp1252", "iso-8859-1",
+                        "cp1250", "cp1251", "koi8-r"],
+               width=10),
     # ========== 安全设置 ==========
     # force_password / rate_limit 手工构建于 create_security_settings
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
@@ -246,6 +254,18 @@ class SettingsDialog(tk.Toplevel):
         ttk.Checkbutton(body, text="自动续期（证书到期前自动生成新证书）",
                         variable=self._auto_renew_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
+
+        # FTP / WebDAV 设置
+        extra_f = ttk.LabelFrame(parent, text="FTP / WebDAV 设置")
+        extra_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(extra_f, text="WebDAV 根目录:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.dav_root_var = tk.StringVar()
+        ttk.Entry(extra_f, textvariable=self.dav_root_var, width=40).grid(row=0, column=1, sticky="w", padx=2)
+        ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_dir(self.dav_root_var)).grid(row=0, column=2, padx=2)
+        ttk.Label(extra_f, text="FTP 独立密码:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.ftp_password_var = tk.StringVar()
+        ttk.Entry(extra_f, textvariable=self.ftp_password_var, width=20, show="*").grid(row=1, column=1, sticky="w", padx=2)
+        ttk.Label(extra_f, text="（留空=统一账号）").grid(row=1, column=2, sticky="w", padx=2)
 
         # 备份与恢复
         bk_f = CollapsibleFrame(parent, text="备份与恢复")
@@ -532,31 +552,43 @@ class SettingsDialog(tk.Toplevel):
         tools = ttk.LabelFrame(parent, text="可用工具列表")
         tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         cols = ("工具名", "类别", "说明")
-        tree = ttk.Treeview(tools, columns=cols, show="headings", height=14)
+        tree = ttk.Treeview(tools, columns=cols, show="headings", height=20)
         for c in cols:
             tree.heading(c, text=c)
-            tree.column(c, width=180 if c == "说明" else 100)
+            tree.column(c, width=200 if c == "说明" else 100)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll = ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         tree.configure(yscrollcommand=scroll.set)
 
         tool_list = [
-            ("server_start(port=8080)", "服务端管理", "启动 DAV 服务器（后台线程）"),
+            ("server_start(port)", "服务端管理", "启动 DAV 服务器"),
             ("server_stop()", "服务端管理", "停止 DAV 服务器"),
-            ("server_status()", "服务端管理", "查询 DAV 服务器运行状态"),
-            ("list_contacts()", "联系人", "列出所有联系人 uid + 姓名"),
-            ("get_contact(uid)", "联系人", "获取联系人完整 vCard 数据"),
-            ("create_contact(vcard_data)", "联系人", "从 vCard 创建联系人"),
-            ("update_contact(uid, vcard)", "联系人", "覆盖更新联系人"),
+            ("server_status()", "服务端管理", "查询 DAV 服务器状态"),
+            ("list_contacts()", "联系人", "列出所有联系人"),
+            ("get_contact(uid)", "联系人", "获取联系人 vCard"),
+            ("create_contact(vcard)", "联系人", "从 vCard 创建联系人"),
+            ("update_contact(uid, vcard)", "联系人", "更新联系人"),
             ("delete_contact(uid)", "联系人", "删除联系人"),
-            ("list_events()", "日历", "列出所有事件 uid + 标题 + 时间"),
-            ("get_event(uid)", "日历", "获取事件完整 iCalendar 数据"),
-            ("create_event(ical_data)", "日历", "从 iCal 创建事件"),
-            ("update_event(uid, ical)", "日历", "覆盖更新事件"),
+            ("list_events()", "日历", "列出所有事件"),
+            ("get_event(uid)", "日历", "获取事件 iCalendar"),
+            ("create_event(ical)", "日历", "从 iCal 创建事件"),
+            ("update_event(uid, ical)", "日历", "更新事件"),
             ("delete_event(uid)", "日历", "删除事件"),
-            ("get_config()", "系统", "返回软件配置与数据统计"),
-            ("dav_health_check(url)", "系统", "验证 DAV 端点是否正常"),
+            ("get_config()", "系统", "返回系统配置"),
+            ("dav_health_check(url)", "系统", "验证 DAV 端点"),
+            ("ftp_servers_start()", "文件服务", "启动 FTP/SFTP/TFTP"),
+            ("ftp_servers_stop()", "文件服务", "停止文件传输服务"),
+            ("ftp_servers_status()", "文件服务", "查询文件服务状态"),
+            ("ftp_list_dir(...)", "远程文件", "浏览 FTP/FTPS 目录"),
+            ("ftp_download(...)", "远程文件", "从远程下载文件"),
+            ("ftp_upload(...)", "远程文件", "上传文件到远程"),
+            ("ftp_delete(...)", "远程文件", "删除远程文件"),
+            ("ftp_rename(...)", "远程文件", "重命名远程文件"),
+            ("ftp_mkdir(...)", "远程文件", "远程创建目录"),
+            ("ftp_rmdir(...)", "远程文件", "远程删除目录"),
+            ("smb_list_shares(...)", "远程文件", "列出 SMB 共享"),
+            ("smb_list_files(...)", "远程文件", "浏览 SMB 共享"),
         ]
         for name, cat, desc in tool_list:
             tree.insert("", tk.END, values=(name, cat, desc))
@@ -908,6 +940,11 @@ class SettingsDialog(tk.Toplevel):
                 self.ssl_key_var.set(path)
             self._update_cert_info()
 
+    def _browse_dir(self, var):
+        path = filedialog.askdirectory(title="选择目录", parent=self)
+        if path:
+            var.set(os.path.normpath(path))
+
     def _generate_cert(self):
         dir_path = filedialog.askdirectory(title="选择证书保存目录", parent=self)
         if not dir_path:
@@ -1116,6 +1153,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self.close_action_var.set(s.get_setting("close_action", "ask"))
 
+        self.dav_root_var.set(s.get_setting("dav_root", "./dav_root"))
+        self.ftp_password_var.set(s.get_setting("ftp_password", ""))
+
         self.sync_url_var.set(s.get_setting("sync_url", ""))
         self.sync_user_var.set(s.get_setting("sync_user", ""))
         self.sync_password_var.set(s.get_setting("sync_password", ""))
@@ -1252,6 +1292,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
         s.set_setting("force_password", str(self.force_password_var.get()))
+
+        s.set_setting("dav_root", self.dav_root_var.get())
+        s.set_setting("ftp_password", self.ftp_password_var.get())
 
         s.set_setting("sync_url", self.sync_url_var.get())
         s.set_setting("sync_user", self.sync_user_var.get())
