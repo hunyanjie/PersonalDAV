@@ -597,6 +597,14 @@ class SettingsDialog(tk.Toplevel):
 
     def create_audit_log_viewer(self, parent):
         from services.auth_service import AuthService
+        filter_var = tk.StringVar(value="全部")
+        filter_frame = ttk.Frame(parent)
+        filter_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
+        ttk.Label(filter_frame, text="协议筛选:").pack(side=tk.LEFT, padx=2)
+        filter_combo = ttk.Combobox(filter_frame, textvariable=filter_var, state="readonly", width=12,
+                                    values=["全部", "WebDAV", "FTP", "FTPS", "SFTP", "MCP"])
+        filter_combo.pack(side=tk.LEFT, padx=2)
+
         cols = ("时间", "IP", "状态", "协议", "详情")
         tree_frame = ttk.Frame(parent)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -609,14 +617,18 @@ class SettingsDialog(tk.Toplevel):
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         tree.configure(yscrollcommand=scroll.set)
 
-        def refresh():
+        def refresh(*_):
             tree.delete(*tree.get_children())
-            for log in AuthService().get_auth_logs(500):
+            proto = filter_var.get()
+            logs = AuthService().get_auth_logs_filtered(protocol="" if proto == "全部" else proto, limit=500)
+            for log in logs:
                 tag = "success" if log["success"] else "failure"
                 status = "成功" if log["success"] else "失败"
                 tree.insert("", tk.END, values=(log["time"], log["ip"], status, log["method"], log["detail"]), tags=(tag,))
             tree.tag_configure("success", foreground="green")
             tree.tag_configure("failure", foreground="red")
+
+        filter_combo.bind("<<ComboboxSelected>>", refresh)
 
         btn_f = ttk.Frame(parent)
         btn_f.pack(fill=tk.X, padx=5, pady=(0, 5))

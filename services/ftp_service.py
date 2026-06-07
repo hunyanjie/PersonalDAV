@@ -40,24 +40,27 @@ def _generate_thumbnail(filepath: str, max_size: int = 128) -> str | None:
 
 class AuthServiceAuthorizer:
     def validate_authentication(self, username: str, password: str, handler: object) -> bool:
+        from pyftpdlib.handlers import TLS_FTPHandler
+        is_ftps = isinstance(handler, TLS_FTPHandler)
+        proto = "FTPS" if is_ftps else "FTP"
         ftp_pass = SettingsService().get_setting("ftp_password", "")
         client_ip = getattr(handler, 'remote_ip', 'unknown')
         if ftp_pass:
             ok = password == ftp_pass
-            AuthService().log_auth(ok, client_ip, "FTP", f"用户={username}")
+            AuthService().log_auth(ok, client_ip, proto, f"用户={username}")
             if ok:
                 return True
             raise AuthenticationFailed("Invalid credentials")
         stored = SettingsService().get_setting("access_password_hash", "")
         if not stored:
-            AuthService().log_auth(True, client_ip, "FTP-匿名", f"用户={username}")
+            AuthService().log_auth(True, client_ip, f"{proto}-匿名", f"用户={username}")
             return True
         if '$' in stored:
             salt, pw_hash = stored.split('$', 1)
             from hashlib import pbkdf2_hmac
             from secrets import compare_digest
             ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
-            AuthService().log_auth(ok, client_ip, "FTP", f"用户={username}")
+            AuthService().log_auth(ok, client_ip, proto, f"用户={username}")
             if ok:
                 return True
         raise AuthenticationFailed("Invalid credentials")
