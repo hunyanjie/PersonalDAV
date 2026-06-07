@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 import json
@@ -22,6 +23,13 @@ class Database:
             return
         self._initialized = True
         self.db_path = db_path
+        if os.path.isfile(db_path):
+            try:
+                bak = db_path + ".bak"
+                import shutil
+                shutil.copy2(db_path, bak)
+            except Exception as e:
+                logger.warning(f"数据库自动备份失败: {e}")
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA busy_timeout = 5000;")
         self.conn.execute("PRAGMA journal_mode = WAL;")  # 开启 WAL 模式提高并发性能
