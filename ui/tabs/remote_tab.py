@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import threading
 import logging
 import os
@@ -56,6 +56,7 @@ class RemoteTab(ttk.Frame):
         self._current_server = ""
         self._current_share = ""
         self._current_path = "/"
+        self._is_connected = False
 
         self.protocol_var = tk.StringVar(value="SMB")
         self.server_var = tk.StringVar()
@@ -106,6 +107,19 @@ class RemoteTab(ttk.Frame):
         self.up_btn = ttk.Button(toolbar, text="返回上级", command=self.go_up, state=tk.DISABLED)
         self.up_btn.pack(side=tk.LEFT, padx=2)
 
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=2)
+
+        self.upload_btn = ttk.Button(toolbar, text="上传", command=self.upload_file, state=tk.DISABLED)
+        self.upload_btn.pack(side=tk.LEFT, padx=2)
+        self.download_btn = ttk.Button(toolbar, text="下载", command=self.download_file, state=tk.DISABLED)
+        self.download_btn.pack(side=tk.LEFT, padx=2)
+        self.delete_btn = ttk.Button(toolbar, text="删除", command=self.delete_file, state=tk.DISABLED)
+        self.delete_btn.pack(side=tk.LEFT, padx=2)
+        self.rename_btn = ttk.Button(toolbar, text="重命名", command=self.rename_file, state=tk.DISABLED)
+        self.rename_btn.pack(side=tk.LEFT, padx=2)
+        self.newdir_btn = ttk.Button(toolbar, text="新建文件夹", command=self.new_folder, state=tk.DISABLED)
+        self.newdir_btn.pack(side=tk.LEFT, padx=2)
+
         self.path_label = ttk.Label(toolbar, text="/")
         self.path_label.pack(side=tk.LEFT, padx=10)
 
@@ -129,6 +143,7 @@ class RemoteTab(ttk.Frame):
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.tree.bind("<Double-1>", self.on_double_click)
+        self.tree.bind("<Button-3>", self._show_tree_context_menu)
 
         mounts_frame = ttk.LabelFrame(self, text="已挂载的共享 / 连接记录")
         mounts_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
@@ -201,6 +216,7 @@ class RemoteTab(ttk.Frame):
         self._current_server = f"{protocol}://{account}{server}:{port}"
         self._current_share = ""
         self._current_path = "/"
+        self._is_connected = True
 
         if protocol == "SMB":
             self.list_shares(result["data"])
@@ -215,6 +231,8 @@ class RemoteTab(ttk.Frame):
         self.path_label.config(text="/")
         self.up_btn.config(state=tk.DISABLED)
         self.mount_btn.config(state=tk.DISABLED)
+        for btn in (self.upload_btn, self.download_btn, self.delete_btn, self.rename_btn, self.newdir_btn):
+            btn.config(state=tk.DISABLED)
 
     def _display_files(self, files: list[dict[str, Any]]) -> None:
         self.tree.delete(*self.tree.get_children())
@@ -229,6 +247,11 @@ class RemoteTab(ttk.Frame):
             self.tree.insert("", tk.END, values=(name, ftype, size, modified))
         self.up_btn.config(state=tk.NORMAL if self._current_path != "/" else tk.DISABLED)
         self.mount_btn.config(state=tk.NORMAL)
+        self.upload_btn.config(state=tk.NORMAL)
+        self.download_btn.config(state=tk.NORMAL)
+        self.delete_btn.config(state=tk.NORMAL)
+        self.rename_btn.config(state=tk.NORMAL)
+        self.newdir_btn.config(state=tk.NORMAL)
 
     def browse_share(self, share: str, path: str = "/") -> None:
         self._current_share = share
@@ -242,6 +265,7 @@ class RemoteTab(ttk.Frame):
         self.tree.insert("", tk.END, values=("(加载中...)", "", "", ""))
         self.up_btn.config(state=tk.DISABLED)
         self.mount_btn.config(state=tk.DISABLED)
+        self._set_ops_state(True)
 
         if self._current_protocol == "SMB":
             threading.Thread(
@@ -333,6 +357,178 @@ class RemoteTab(ttk.Frame):
         if result["success"]:
             for m in result["data"]:
                 self.mounts_tree.insert("", tk.END, values=("SMB", m["server"], m["share"], m["mount_point"]))
+
+    # ── 文件操作 ─────────────────────────────────────────────────
+
+    def _is_ftp_connected(self) -> bool:
+        return self._is_connected and self._current_protocol != "SMB"
+
+    def _get_selected_name(self) -> str | None:
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        return self.tree.item(sel[0], "values")[0]
+
+    def _get_selected_path(self) -> str | None:
+        name = self._get_selected_name()
+        if not name:
+            return None
+        return self._current_path.rstrip("/") + "/" + name
+
+    def _set_ops_state(self, disabled: bool):
+        state = tk.DISABLED if disabled else tk.NORMAL
+        for btn in (self.upload_btn, self.download_btn, self.delete_btn, self.rename_btn, self.newdir_btn):
+            btn.config(state=state)
+
+    def _show_tree_context_menu(self, event):
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        self.tree.selection_set(item)
+        if not self._is_ftp_connected():
+            return
+        menu = tk.Menu(self.tree, tearoff=0)
+        values = self.tree.item(item, "values")
+        ftype = values[1]
+        is_file = ftype == "文件"
+        if is_file:
+            menu.add_command(label="下载", command=self.download_file)
+            menu.add_command(label="上传到此目录", command=self.upload_file)
+        if not is_file:
+            menu.add_command(label="上传到此目录", command=self.upload_file)
+        menu.add_command(label="删除", command=self.delete_file)
+        menu.add_command(label="重命名", command=self.rename_file)
+        menu.add_separator()
+        menu.add_command(label="复制路径", command=lambda: self._copy_path(values[0]))
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+
+    def _copy_path(self, name: str):
+        path = self._current_path.rstrip("/") + "/" + name
+        self.clipboard_clear()
+        self.clipboard_append(path)
+
+    def upload_file(self) -> None:
+        if not self._is_ftp_connected():
+            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持上传", parent=self)
+            return
+        file_path = filedialog.askopenfilename(title="选择要上传的文件")
+        if not file_path:
+            return
+        remote_name = os.path.basename(file_path)
+        remote_path = self._current_path.rstrip("/") + "/" + remote_name
+        self._set_ops_state(True)
+        threading.Thread(target=self._upload_thread, args=(file_path, remote_path), daemon=True).start()
+
+    def _upload_thread(self, local: str, remote: str) -> None:
+        server, port = self._parse_server(self._current_server)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        result = self.ftp_client.upload(
+            self._current_protocol.lower(), server, port, username, password, local, remote,
+            encoding=self.encoding_var.get()
+        )
+        self.after(0, lambda: self._op_done(result, "上传"))
+
+    def download_file(self) -> None:
+        name = self._get_selected_name()
+        if not name:
+            return
+        if not self._is_ftp_connected():
+            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持下载", parent=self)
+            return
+        remote_path = self._current_path.rstrip("/") + "/" + name
+        save_path = filedialog.asksaveasfilename(title="保存到", initialfile=name)
+        if not save_path:
+            return
+        self._set_ops_state(True)
+        threading.Thread(target=self._download_thread, args=(remote_path, save_path), daemon=True).start()
+
+    def _download_thread(self, remote: str, local: str) -> None:
+        server, port = self._parse_server(self._current_server)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        result = self.ftp_client.download(
+            self._current_protocol.lower(), server, port, username, password, remote, local,
+            encoding=self.encoding_var.get()
+        )
+        self.after(0, lambda: self._op_done(result, "下载"))
+
+    def delete_file(self) -> None:
+        path = self._get_selected_path()
+        if not path:
+            return
+        if not self._is_ftp_connected():
+            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持删除", parent=self)
+            return
+        if not messagebox.askyesno("确认删除", f"确定要删除 {path} 吗？", parent=self):
+            return
+        self._set_ops_state(True)
+        threading.Thread(target=self._delete_thread, args=(path,), daemon=True).start()
+
+    def _delete_thread(self, path: str) -> None:
+        server, port = self._parse_server(self._current_server)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        result = self.ftp_client.delete(
+            self._current_protocol.lower(), server, port, username, password, path,
+            encoding=self.encoding_var.get()
+        )
+        self.after(0, lambda: self._op_done(result, "删除"))
+
+    def rename_file(self) -> None:
+        old_path = self._get_selected_path()
+        if not old_path:
+            return
+        if not self._is_ftp_connected():
+            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持重命名", parent=self)
+            return
+        name = self._get_selected_name()
+        new_name = simpledialog.askstring("重命名", "新名称:", initialvalue=name, parent=self)
+        if not new_name:
+            return
+        new_path = self._current_path.rstrip("/") + "/" + new_name
+        self._set_ops_state(True)
+        threading.Thread(target=self._rename_thread, args=(old_path, new_path), daemon=True).start()
+
+    def _rename_thread(self, old: str, new: str) -> None:
+        server, port = self._parse_server(self._current_server)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        result = self.ftp_client.rename(
+            self._current_protocol.lower(), server, port, username, password, old, new,
+            encoding=self.encoding_var.get()
+        )
+        self.after(0, lambda: self._op_done(result, "重命名"))
+
+    def new_folder(self) -> None:
+        if not self._is_ftp_connected():
+            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持新建文件夹", parent=self)
+            return
+        dir_name = simpledialog.askstring("新建文件夹", "文件夹名称:", parent=self)
+        if not dir_name:
+            return
+        new_path = self._current_path.rstrip("/") + "/" + dir_name
+        self._set_ops_state(True)
+        threading.Thread(target=self._mkdir_thread, args=(new_path,), daemon=True).start()
+
+    def _mkdir_thread(self, path: str) -> None:
+        server, port = self._parse_server(self._current_server)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        result = self.ftp_client.mkdir(
+            self._current_protocol.lower(), server, port, username, password, path,
+            encoding=self.encoding_var.get()
+        )
+        self.after(0, lambda: self._op_done(result, "新建文件夹"))
+
+    def _op_done(self, result: dict[str, Any], op_name: str) -> None:
+        if result["success"]:
+            logger.info(f"远程文件 {op_name} 成功")
+            self.browse_share(self._current_share, self._current_path)
+        else:
+            self._set_ops_state(False)
+            messagebox.showerror(f"{op_name}失败", result.get("error", "未知错误"), parent=self)
 
     @staticmethod
     def _format_size(size: float | int) -> str:
