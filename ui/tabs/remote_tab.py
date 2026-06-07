@@ -271,7 +271,7 @@ class RemoteTab(ttk.Frame):
         )
         for f in sorted_files:
             name = f["name"]
-            ftype = "文件夹" if f.get("is_directory") else "文件"
+            ftype = "文件夹" if f.get("is_directory") else (os.path.splitext(name)[1].lstrip(".").upper() or "文件")
             size = "" if f.get("is_directory") else self._format_size(f.get("size", 0))
             modified = self._format_date(f.get("modified", ""))
             self.tree.insert("", tk.END, values=(name, ftype, size, modified))
