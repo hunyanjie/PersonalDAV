@@ -81,8 +81,22 @@ class ServerTab(ttk.Frame):
         self._update_info()
 
     def create_widgets(self):
+        # 可滚动容器
+        canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        inner = ttk.Frame(canvas)
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=inner, anchor="nw", tags="inner")
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+
         # 端口设置
-        port_frame = ttk.LabelFrame(self, text="服务器控制")
+        port_frame = ttk.LabelFrame(inner, text="服务器控制")
         port_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
 
         ttk.Label(port_frame, text="端口号:").pack(side=tk.LEFT, padx=5, pady=10)
@@ -103,7 +117,7 @@ class ServerTab(ttk.Frame):
         ttk.Button(port_frame, text="浏览...", width=6, command=lambda: self._browse_dir(self.dav_root_var)).pack(side=tk.LEFT, padx=2)
 
         # FTP / SFTP / TFTP 服务控制
-        ftp_frame = ttk.LabelFrame(self, text="FTP / SFTP / TFTP 文件服务")
+        ftp_frame = ttk.LabelFrame(inner, text="FTP / SFTP / TFTP 文件服务")
         ftp_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
 
         # FTP 设置
@@ -186,7 +200,7 @@ class ServerTab(ttk.Frame):
         self.ftp_status_label.pack(side=tk.LEFT, padx=10)
 
         # 日志显示
-        log_frame = ttk.LabelFrame(self, text="运行日志")
+        log_frame = ttk.LabelFrame(inner, text="运行日志")
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
 
         self.log_text = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD)
@@ -203,7 +217,7 @@ class ServerTab(ttk.Frame):
         self.log_text.config(yscrollcommand=scrollbar.set)
 
         # 客户端配置信息
-        info_frame = ttk.LabelFrame(self, text="客户端配置信息")
+        info_frame = ttk.LabelFrame(inner, text="客户端配置信息")
         info_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
 
         self.info_label = ttk.Label(info_frame, text="", justify=tk.LEFT, font=('Consolas', 9))
