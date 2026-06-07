@@ -1,20 +1,12 @@
+from __future__ import annotations
+
 import ctypes
 import threading
 import os
 import logging
 import stat as stat_module
 from concurrent.futures import ThreadPoolExecutor
-from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
-from pyftpdlib.servers import FTPServer as PyFTPD
-from pyftpdlib.authorizers import DummyAuthorizer, AuthenticationFailed
-import paramiko
-from paramiko import ServerInterface, RSAKey
-from paramiko.sftp import (
-    SFTP_FLAG_READ, SFTP_FLAG_WRITE, SFTP_FLAG_CREATE,
-    SFTP_FLAG_TRUNC, SFTP_FLAG_APPEND,
-)
 import socket
-from tftpy import TftpServer
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
@@ -45,6 +37,7 @@ def _generate_thumbnail(filepath: str, max_size: int = 128) -> str | None:
 class AuthServiceAuthorizer:
     def validate_authentication(self, username: str, password: str, handler: object) -> bool:
         from pyftpdlib.handlers import TLS_FTPHandler
+        from pyftpdlib.authorizers import AuthenticationFailed
         is_ftps = isinstance(handler, TLS_FTPHandler)
         proto = "FTPS" if is_ftps else "FTP"
         ftp_pass = SettingsService().get_setting("ftp_password", "")
@@ -67,6 +60,7 @@ class AuthServiceAuthorizer:
             AuthService().log_auth(ok, client_ip, proto, f"用户={username}")
             if ok:
                 return True
+        from pyftpdlib.authorizers import AuthenticationFailed
         raise AuthenticationFailed("Invalid credentials")
 
     def get_msg_login(self, username: str) -> str:
@@ -93,215 +87,223 @@ class AuthServiceAuthorizer:
         pass
 
 
-class LoggedFTPHandler(FTPHandler):  # type: ignore[misc]
-    # 被动模式端口范围
-    passive_ports = range(60000, 60100)
-    # 允许主动模式
-    enable_active_mode = True
-    # 最大并发连接数
-    max_cons = 256
-    max_cons_per_ip = 32
-    # 传输超时（秒）
-    timeout = 300
+def _make_ftp_handler():
+    from pyftpdlib.handlers import FTPHandler
 
-    def on_connect(self) -> None:
-        logger.info(f"FTP connection from {self.remote_ip}")
-        super().on_connect()
+    class LoggedFTPHandler(FTPHandler):  # type: ignore[misc]
+        passive_ports = range(60000, 60100)
+        enable_active_mode = True
+        max_cons = 256
+        max_cons_per_ip = 32
+        timeout = 300
 
-    def on_disconnect(self) -> None:
-        logger.info(f"FTP disconnection from {self.remote_ip}")
-        super().on_disconnect()
+        def on_connect(self) -> None:
+            logger.info(f"FTP connection from {self.remote_ip}")
+            super().on_connect()
 
-    def on_login(self, username: str) -> None:
-        logger.info(f"FTP login success from {self.remote_ip}")
-        super().on_login(username)
+        def on_disconnect(self) -> None:
+            logger.info(f"FTP disconnection from {self.remote_ip}")
+            super().on_disconnect()
 
-    def on_login_failed(self, username: str, password: str) -> None:
-        logger.warning(f"FTP login failed from {self.remote_ip}")
-        super().on_login_failed(username, password)
+        def on_login(self, username: str) -> None:
+            logger.info(f"FTP login success from {self.remote_ip}")
+            super().on_login(username)
 
-    def on_file_received(self, filepath: str) -> None:
-        try:
-            os.chmod(filepath, 0o644)
-        except Exception:
-            pass
-        _generate_thumbnail(filepath)
-        logger.info(f"FTP file received: {filepath}")
-        super().on_file_received(filepath)
+        def on_login_failed(self, username: str, password: str) -> None:
+            logger.warning(f"FTP login failed from {self.remote_ip}")
+            super().on_login_failed(username, password)
 
-    def on_file_sent(self, filepath: str) -> None:
-        logger.info(f"FTP file sent: {filepath}")
-        super().on_file_sent(filepath)
+        def on_file_received(self, filepath: str) -> None:
+            try:
+                os.chmod(filepath, 0o644)
+            except Exception:
+                pass
+            _generate_thumbnail(filepath)
+            logger.info(f"FTP file received: {filepath}")
+            super().on_file_received(filepath)
 
+        def on_file_sent(self, filepath: str) -> None:
+            logger.info(f"FTP file sent: {filepath}")
+            super().on_file_sent(filepath)
 
-class StubSFTPHandle(paramiko.SFTPHandle):  # type: ignore[misc]
-    fileobj: int
-
-    def __init__(self, fileobj: int) -> None:
-        super().__init__()
-        self.fileobj = fileobj
-
-    def read(self, offset: int, length: int) -> bytes:
-        os.lseek(self.fileobj, offset, os.SEEK_SET)
-        return os.read(self.fileobj, length)
-
-    def write(self, offset: int, data: bytes) -> int:
-        os.lseek(self.fileobj, offset, os.SEEK_SET)
-        return os.write(self.fileobj, data)
-
-    def close(self) -> int:
-        os.close(self.fileobj)
-        return paramiko.SFTP_OK
+    return LoggedFTPHandler
 
 
-class StubSFTPServer(paramiko.SFTPServerInterface):  # type: ignore[misc]
-    def __init__(self, server: paramiko.ServerInterface, *, root: str = "") -> None:
-        super().__init__(server)
-        self.root: str = os.path.abspath(root)
+def _make_sftp_classes():
+    import paramiko
+    from paramiko.sftp import (
+        SFTP_FLAG_READ, SFTP_FLAG_WRITE, SFTP_FLAG_CREATE,
+        SFTP_FLAG_TRUNC, SFTP_FLAG_APPEND,
+    )
 
-    def _resolve(self, path: str) -> str:
-        abs_path = os.path.normpath(os.path.join(self.root, path.lstrip("/")))
-        if not abs_path.startswith(self.root):
-            raise PermissionError("Path traversal denied")
-        return abs_path
+    class StubSFTPHandle(paramiko.SFTPHandle):  # type: ignore[misc]
+        fileobj: int
 
-    def list_folder(self, path: str) -> list[paramiko.SFTPAttributes] | int:
-        abs_path = self._resolve(path)
-        try:
-            entries: list[paramiko.SFTPAttributes] = []
-            for name in os.listdir(abs_path):
-                full = os.path.join(abs_path, name)
-                attr = paramiko.SFTPAttributes.from_stat(os.stat(full))
-                attr.filename = name
-                entries.append(attr)
-            return entries
-        except OSError:
-            return paramiko.SFTP_FAILURE
+        def __init__(self, fileobj: int) -> None:
+            super().__init__()
+            self.fileobj = fileobj
 
-    def stat(self, path: str) -> paramiko.SFTPAttributes | int:
-        abs_path = self._resolve(path)
-        try:
-            return paramiko.SFTPAttributes.from_stat(os.stat(abs_path))
-        except OSError:
-            return paramiko.SFTP_FAILURE
+        def read(self, offset: int, length: int) -> bytes:
+            os.lseek(self.fileobj, offset, os.SEEK_SET)
+            return os.read(self.fileobj, length)
 
-    def lstat(self, path: str) -> paramiko.SFTPAttributes | int:
-        abs_path = self._resolve(path)
-        try:
-            return paramiko.SFTPAttributes.from_stat(os.lstat(abs_path))
-        except OSError:
-            return paramiko.SFTP_FAILURE
+        def write(self, offset: int, data: bytes) -> int:
+            os.lseek(self.fileobj, offset, os.SEEK_SET)
+            return os.write(self.fileobj, data)
 
-    def open(self, path: str, flags: int, attr: paramiko.SFTPAttributes) -> StubSFTPHandle | int:
-        abs_path = self._resolve(path)
-        try:
-            if flags & SFTP_FLAG_READ and flags & SFTP_FLAG_WRITE:
-                binary_flags = os.O_RDWR
-            elif flags & SFTP_FLAG_WRITE:
-                binary_flags = os.O_WRONLY
-            else:
-                binary_flags = os.O_RDONLY
-            if flags & SFTP_FLAG_CREATE:
-                binary_flags |= os.O_CREAT
-            if flags & SFTP_FLAG_TRUNC:
-                binary_flags |= os.O_TRUNC
-            if flags & SFTP_FLAG_APPEND:
-                binary_flags |= os.O_APPEND
-
-            fd = os.open(abs_path, binary_flags, 0o644)
-            if attr and attr.st_mode:
-                os.chmod(abs_path, attr.st_mode & 0o777)
-            return StubSFTPHandle(fd)
-        except OSError:
-            return paramiko.SFTP_FAILURE
-
-    def read(self, handle: StubSFTPHandle, offset: int, length: int) -> bytes | int:
-        return handle.read(offset, length)
-
-    def write(self, handle: StubSFTPHandle, offset: int, data: bytes) -> int:
-        return handle.write(offset, data)
-
-    def close(self, handle: StubSFTPHandle) -> int:
-        return handle.close()
-
-    def remove(self, path: str) -> int:
-        abs_path = self._resolve(path)
-        try:
-            os.remove(abs_path)
+        def close(self) -> int:
+            os.close(self.fileobj)
             return paramiko.SFTP_OK
-        except OSError:
-            return paramiko.SFTP_FAILURE
 
-    def mkdir(self, path: str, attr: paramiko.SFTPAttributes) -> int:
-        abs_path = self._resolve(path)
-        try:
-            os.makedirs(abs_path, exist_ok=True)
-            if attr and attr.st_mode:
-                os.chmod(abs_path, attr.st_mode & 0o777)
-            return paramiko.SFTP_OK
-        except OSError:
-            return paramiko.SFTP_FAILURE
+    class StubSFTPServer(paramiko.SFTPServerInterface):  # type: ignore[misc]
+        def __init__(self, server: paramiko.ServerInterface, *, root: str = "") -> None:
+            super().__init__(server)
+            self.root: str = os.path.abspath(root)
 
-    def rmdir(self, path: str) -> int:
-        abs_path = self._resolve(path)
-        try:
-            os.rmdir(abs_path)
-            return paramiko.SFTP_OK
-        except OSError:
-            return paramiko.SFTP_FAILURE
+        def _resolve(self, path: str) -> str:
+            abs_path = os.path.normpath(os.path.join(self.root, path.lstrip("/")))
+            if not abs_path.startswith(self.root):
+                raise PermissionError("Path traversal denied")
+            return abs_path
 
-    def rename(self, oldpath: str, newpath: str) -> int:
-        old_abs = self._resolve(oldpath)
-        new_abs = self._resolve(newpath)
-        try:
-            os.rename(old_abs, new_abs)
-            return paramiko.SFTP_OK
-        except OSError:
-            return paramiko.SFTP_FAILURE
+        def list_folder(self, path: str) -> list[paramiko.SFTPAttributes] | int:
+            abs_path = self._resolve(path)
+            try:
+                entries: list[paramiko.SFTPAttributes] = []
+                for name in os.listdir(abs_path):
+                    full = os.path.join(abs_path, name)
+                    attr = paramiko.SFTPAttributes.from_stat(os.stat(full))
+                    attr.filename = name
+                    entries.append(attr)
+                return entries
+            except OSError:
+                return paramiko.SFTP_FAILURE
 
+        def stat(self, path: str) -> paramiko.SFTPAttributes | int:
+            abs_path = self._resolve(path)
+            try:
+                return paramiko.SFTPAttributes.from_stat(os.stat(abs_path))
+            except OSError:
+                return paramiko.SFTP_FAILURE
 
-class SFTPAuthInterface(ServerInterface):  # type: ignore[misc]
-    def __init__(self, auth_service: AuthService, client_ip: str = "unknown") -> None:
-        super().__init__()
-        self.auth_service = auth_service
-        self.client_ip = client_ip
+        def lstat(self, path: str) -> paramiko.SFTPAttributes | int:
+            abs_path = self._resolve(path)
+            try:
+                return paramiko.SFTPAttributes.from_stat(os.lstat(abs_path))
+            except OSError:
+                return paramiko.SFTP_FAILURE
 
-    def check_auth_password(self, username: str, password: str) -> int:
-        ftp_pass = SettingsService().get_setting("ftp_password", "")
-        if ftp_pass:
-            ok = password == ftp_pass
-            AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
-            return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
-        stored = SettingsService().get_setting("access_password_hash", "")
-        if not stored:
-            AuthService().log_auth(True, self.client_ip, "SFTP-匿名", f"用户={username}")
-            return paramiko.AUTH_SUCCESSFUL
-        if '$' in stored:
-            salt, pw_hash = stored.split('$', 1)
-            from hashlib import pbkdf2_hmac
-            from secrets import compare_digest
-            ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
-            AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
-            return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
-        return paramiko.AUTH_FAILED
+        def open(self, path: str, flags: int, attr: paramiko.SFTPAttributes) -> StubSFTPHandle | int:
+            abs_path = self._resolve(path)
+            try:
+                if flags & SFTP_FLAG_READ and flags & SFTP_FLAG_WRITE:
+                    binary_flags = os.O_RDWR
+                elif flags & SFTP_FLAG_WRITE:
+                    binary_flags = os.O_WRONLY
+                else:
+                    binary_flags = os.O_RDONLY
+                if flags & SFTP_FLAG_CREATE:
+                    binary_flags |= os.O_CREAT
+                if flags & SFTP_FLAG_TRUNC:
+                    binary_flags |= os.O_TRUNC
+                if flags & SFTP_FLAG_APPEND:
+                    binary_flags |= os.O_APPEND
 
-    def check_channel_request(self, kind: str, chanid: int) -> int:
-        if kind == "session":
-            return paramiko.OPEN_SUCCEEDED
-        return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
+                fd = os.open(abs_path, binary_flags, 0o644)
+                if attr and attr.st_mode:
+                    os.chmod(abs_path, attr.st_mode & 0o777)
+                return StubSFTPHandle(fd)
+            except OSError:
+                return paramiko.SFTP_FAILURE
 
-    def get_allowed_auths(self, username: str) -> str:
-        return "password"
+        def read(self, handle: StubSFTPHandle, offset: int, length: int) -> bytes | int:
+            return handle.read(offset, length)
+
+        def write(self, handle: StubSFTPHandle, offset: int, data: bytes) -> int:
+            return handle.write(offset, data)
+
+        def close(self, handle: StubSFTPHandle) -> int:
+            return handle.close()
+
+        def remove(self, path: str) -> int:
+            abs_path = self._resolve(path)
+            try:
+                os.remove(abs_path)
+                return paramiko.SFTP_OK
+            except OSError:
+                return paramiko.SFTP_FAILURE
+
+        def mkdir(self, path: str, attr: paramiko.SFTPAttributes) -> int:
+            abs_path = self._resolve(path)
+            try:
+                os.makedirs(abs_path, exist_ok=True)
+                if attr and attr.st_mode:
+                    os.chmod(abs_path, attr.st_mode & 0o777)
+                return paramiko.SFTP_OK
+            except OSError:
+                return paramiko.SFTP_FAILURE
+
+        def rmdir(self, path: str) -> int:
+            abs_path = self._resolve(path)
+            try:
+                os.rmdir(abs_path)
+                return paramiko.SFTP_OK
+            except OSError:
+                return paramiko.SFTP_FAILURE
+
+        def rename(self, oldpath: str, newpath: str) -> int:
+            old_abs = self._resolve(oldpath)
+            new_abs = self._resolve(newpath)
+            try:
+                os.rename(old_abs, new_abs)
+                return paramiko.SFTP_OK
+            except OSError:
+                return paramiko.SFTP_FAILURE
+
+    class SFTPAuthInterface(paramiko.ServerInterface):  # type: ignore[misc]
+        def __init__(self, auth_service: AuthService, client_ip: str = "unknown") -> None:
+            super().__init__()
+            self.auth_service = auth_service
+            self.client_ip = client_ip
+
+        def check_auth_password(self, username: str, password: str) -> int:
+            ftp_pass = SettingsService().get_setting("ftp_password", "")
+            if ftp_pass:
+                ok = password == ftp_pass
+                AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
+                return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
+            stored = SettingsService().get_setting("access_password_hash", "")
+            if not stored:
+                AuthService().log_auth(True, self.client_ip, "SFTP-匿名", f"用户={username}")
+                return paramiko.AUTH_SUCCESSFUL
+            if '$' in stored:
+                salt, pw_hash = stored.split('$', 1)
+                from hashlib import pbkdf2_hmac
+                from secrets import compare_digest
+                ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
+                AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
+                return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
+            return paramiko.AUTH_FAILED
+
+        def check_channel_request(self, kind: str, chanid: int) -> int:
+            if kind == "session":
+                return paramiko.OPEN_SUCCEEDED
+            return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
+
+        def get_allowed_auths(self, username: str) -> str:
+            return "password"
+
+    return StubSFTPHandle, StubSFTPServer, SFTPAuthInterface
 
 
 class FTPService:
     _instance: "FTPService | None" = None
     _lock = threading.Lock()
 
-    _ftp_server: PyFTPD | None
+    _ftp_server: object | None
     _sftp_socket: socket.socket | None
-    _sftp_key: RSAKey | None
-    _tftp_server: TftpServer | None
+    _sftp_key: object | None
+    _tftp_server: object | None
     _ftp_thread: threading.Thread | None
     _sftp_thread: threading.Thread | None
     _tftp_thread: threading.Thread | None
@@ -366,6 +368,7 @@ class FTPService:
 
             if settings.get_setting("sftp_enabled", "False") == "True":
                 try:
+                    from paramiko import RSAKey
                     port = int(settings.get_setting("sftp_port", "22"))
                     root = settings.get_setting("sftp_root", "./sftp_root")
                     os.makedirs(root, exist_ok=True)
@@ -448,11 +451,15 @@ class FTPService:
             return self._running
 
     def _run_ftp(self, port: int, root: str) -> None:
+        from pyftpdlib.handlers import TLS_FTPHandler
+        from pyftpdlib.servers import FTPServer as PyFTPD
+
         authorizer = AuthServiceAuthorizer()
         settings = SettingsService()
         use_tls = settings.get_setting("ftps_enabled", "False") == "True"
         certfile = settings.get_setting("ssl_certfile", "")
         keyfile = settings.get_setting("ssl_keyfile", "")
+        LoggedFTPHandler = _make_ftp_handler()
         if use_tls and certfile:
             handler = type("LoggedTLSFTPHandler", (LoggedFTPHandler, TLS_FTPHandler), {})
             handler.certfile = certfile
@@ -517,6 +524,7 @@ class FTPService:
             logger.info("SFTP server stopped")
 
     def _run_tftp(self, port: int, root: str) -> None:
+        from tftpy import TftpServer
         try:
             server = TftpServer(root)
             self._tftp_server = server
@@ -528,6 +536,8 @@ class FTPService:
             logger.info("TFTP server stopped")
 
     def _handle_sftp_client(self, client: socket.socket, addr: tuple[str, int], root: str, auth: AuthService) -> None:
+        import paramiko
+        _, StubSFTPServer, SFTPAuthInterface = _make_sftp_classes()
         transport = paramiko.Transport(client)
         try:
             transport.add_server_key(self._sftp_key)
