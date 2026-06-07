@@ -290,12 +290,12 @@ class RemoteTab(ttk.Frame):
 
         if ftype == "共享":
             self.browse_share(name, "/")
-        elif self._current_share:
+        elif self._current_share or self._current_server:
             path = self._current_path.rstrip("/") + "/" + name
             self.browse_share(self._current_share, path)
 
     def go_up(self) -> None:
-        if not self._current_share or self._current_path == "/":
+        if (not self._current_share and not self._current_server) or self._current_path == "/":
             return
         parent = "/".join(self._current_path.rstrip("/").split("/")[:-1]) or "/"
         if not parent.startswith("/"):
