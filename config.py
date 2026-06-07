@@ -2,7 +2,7 @@
 软件配置与元数据
 """
 
-SOFTWARE_NAME = "PrivateDAV"
+SOFTWARE_NAME = "PersonalDAV"
 SOFTWARE_DESCRIPTION = "全能 DAV 服务 (CardDAV + CalDAV + WebDAV)"
 SOFTWARE_VERSION = "2.5"
 SOFTWARE_AUTHOR = "hunyanjie"
