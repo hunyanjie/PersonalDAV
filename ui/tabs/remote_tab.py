@@ -31,7 +31,7 @@ class RemoteTab(ttk.Frame):
     tree: ttk.Treeview
     mounts_tree: ttk.Treeview
 
-    PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 990, "SFTP": 22}
+    PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 21, "SFTP": 22}
     ENCODINGS = [
         "utf-8", "utf-16be", "utf-16le", "utf-32be", "utf-32le",
         "gb2312", "gb18030", "gbk", "big5", "big5-hkscs",

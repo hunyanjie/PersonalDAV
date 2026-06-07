@@ -45,6 +45,11 @@ class FTPClientService:
             "modified": modified,
         }
 
+    @staticmethod
+    def _error_msg(e: Exception, fallback: str = "") -> str:
+        msg = str(e) or type(e).__name__ or ""
+        return msg or fallback or "未知错误"
+
     def list_dir(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
             if protocol in ("ftp", "ftps"):
@@ -92,16 +97,18 @@ class FTPClientService:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
             logger.error(f"FTP list_dir error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}
 
     def download(self, protocol: str, host: str, port: int, username: str, password: str, remote_path: str, local_path: str, encoding: str = "utf-8") -> dict[str, Any]:
+        tmp_path = local_path + ".tmp"
         try:
             if protocol in ("ftp", "ftps"):
                 ftp = self._connect_ftp(host, port, username, password, protocol, encoding)
                 try:
                     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    with open(local_path, "wb") as f:
+                    with open(tmp_path, "wb") as f:
                         ftp.retrbinary(f"RETR {remote_path}", f.write)
+                    os.replace(tmp_path, local_path)
                     return {"success": True, "data": {"local_path": local_path}}
                 finally:
                     try:
@@ -112,7 +119,8 @@ class FTPClientService:
                 transport, sftp = self._connect_sftp(host, port, username, password)
                 try:
                     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    sftp.get(remote_path, local_path)
+                    sftp.get(remote_path, tmp_path)
+                    os.replace(tmp_path, local_path)
                     return {"success": True, "data": {"local_path": local_path}}
                 finally:
                     sftp.close()
@@ -120,8 +128,12 @@ class FTPClientService:
             else:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
             logger.error(f"FTP download error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}
 
     def upload(self, protocol: str, host: str, port: int, username: str, password: str, local_path: str, remote_path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
@@ -148,7 +160,7 @@ class FTPClientService:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
             logger.error(f"FTP upload error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}
 
     def delete(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
@@ -174,7 +186,7 @@ class FTPClientService:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
             logger.error(f"FTP delete error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}
 
     def rename(self, protocol: str, host: str, port: int, username: str, password: str, old_path: str, new_path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
@@ -200,7 +212,7 @@ class FTPClientService:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
             logger.error(f"FTP rename error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}
 
     def mkdir(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
@@ -226,7 +238,7 @@ class FTPClientService:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
             logger.error(f"FTP mkdir error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}
 
     def rmdir(self, protocol: str, host: str, port: int, username: str, password: str, path: str, encoding: str = "utf-8") -> dict[str, Any]:
         try:
@@ -252,4 +264,4 @@ class FTPClientService:
                 return {"success": False, "error": f"Unsupported protocol: {protocol}"}
         except Exception as e:
             logger.error(f"FTP rmdir error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": self._error_msg(e)}

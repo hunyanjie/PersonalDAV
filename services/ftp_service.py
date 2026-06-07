@@ -151,8 +151,8 @@ class StubSFTPHandle(paramiko.SFTPHandle):  # type: ignore[misc]
 
 
 class StubSFTPServer(paramiko.SFTPServerInterface):  # type: ignore[misc]
-    def __init__(self, transport: paramiko.Transport, root: str) -> None:
-        super().__init__(transport)
+    def __init__(self, server: paramiko.ServerInterface, *, root: str = "") -> None:
+        super().__init__(server)
         self.root: str = os.path.abspath(root)
 
     def _resolve(self, path: str) -> str:
@@ -529,9 +529,9 @@ class FTPService:
         try:
             transport.add_server_key(self._sftp_key)
             auth_iface = SFTPAuthInterface(auth, addr[0])
+            transport.set_subsystem_handler("sftp", paramiko.SFTPServer, sftp_si=StubSFTPServer, root=root)
             transport.start_server(server=auth_iface)
-            sftp_server = paramiko.SFTPServer(transport, StubSFTPServer, root)
-            sftp_server.serve_forever()
+            transport.join()
             logger.info(f"SFTP client disconnected: {addr[0]}:{addr[1]}")
         except Exception as e:
             logger.error(f"SFTP client error [{addr[0]}]: {e}")
