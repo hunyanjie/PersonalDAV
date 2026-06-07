@@ -112,9 +112,9 @@ class RemoteTab(ttk.Frame):
 
         self.upload_btn = ttk.Button(toolbar, text="上传", command=self.upload_file, state=tk.DISABLED)
         self.upload_btn.pack(side=tk.LEFT, padx=2)
-        self.download_btn = ttk.Button(toolbar, text="下载", command=self.download_file, state=tk.DISABLED)
+        self.download_btn = ttk.Button(toolbar, text="下载", command=self.download_selected, state=tk.DISABLED)
         self.download_btn.pack(side=tk.LEFT, padx=2)
-        self.delete_btn = ttk.Button(toolbar, text="删除", command=self.delete_file, state=tk.DISABLED)
+        self.delete_btn = ttk.Button(toolbar, text="删除", command=self.delete_selected, state=tk.DISABLED)
         self.delete_btn.pack(side=tk.LEFT, padx=2)
         self.rename_btn = ttk.Button(toolbar, text="重命名", command=self.rename_file, state=tk.DISABLED)
         self.rename_btn.pack(side=tk.LEFT, padx=2)
@@ -168,6 +168,7 @@ class RemoteTab(ttk.Frame):
 
         ttk.Button(mounts_btn_frame, text="刷新列表", command=self.refresh_mounts).pack(side=tk.LEFT, padx=2)
         self.mounts_tree.bind("<Double-1>", self._on_mounts_double_click)
+        self.mounts_tree.bind("<Button-3>", self._show_mounts_context_menu)
 
     def _on_protocol_change(self, event=None) -> None:
         proto = self.protocol_var.get()
@@ -391,6 +392,149 @@ class RemoteTab(ttk.Frame):
         self.password_var.set("")
         self.connect()
 
+    def _show_mounts_context_menu(self, event):
+        item = self.mounts_tree.identify_row(event.y)
+        sel = self.mounts_tree.selection()
+        if item:
+            if item not in sel:
+                self.mounts_tree.selection_set(item)
+        sel = self.mounts_tree.selection()
+        has_sel = bool(sel)
+        is_single = len(sel) == 1
+
+        menu = tk.Menu(self.mounts_tree, tearoff=0)
+        has_ftp_entry = False
+        if is_single and has_sel:
+            values = self.mounts_tree.item(sel[0], "values")
+            if values and values[0] != "SMB":
+                has_ftp_entry = True
+                menu.add_command(label="连接", command=lambda: self._mounts_connect(sel[0]))
+                menu.add_command(label="编辑", command=lambda: self._mounts_edit(sel[0]))
+            elif values and values[0] == "SMB":
+                menu.add_command(label="连接", state=tk.DISABLED)
+                menu.add_command(label="编辑", state=tk.DISABLED)
+        else:
+            menu.add_command(label="连接", state=tk.DISABLED)
+            menu.add_command(label="编辑", state=tk.DISABLED)
+        if has_sel:
+            menu.add_command(label="删除" + (f" ({len(sel)})" if len(sel) > 1 else ""),
+                             command=self._mounts_delete_selected)
+        else:
+            menu.add_command(label="删除", state=tk.DISABLED)
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+
+    def _mounts_connect(self, item):
+        values = self.mounts_tree.item(item, "values")
+        if not values or values[0] == "SMB":
+            return
+        proto, server_port, username = values[0], values[1], values[2]
+        if ":" in server_port:
+            server, port_str = server_port.rsplit(":", 1)
+        else:
+            server, port_str = server_port, "21"
+        self.protocol_var.set(proto)
+        self.server_var.set(server)
+        self.port_var.set(port_str)
+        self.username_var.set(username if username != "anonymous" else "")
+        self.password_var.set("")
+        self.connect()
+
+    def _mounts_edit(self, item):
+        values = self.mounts_tree.item(item, "values")
+        if not values or values[0] == "SMB":
+            return
+        from database.db_manager import Database
+        proto, server_port, username = values[0], values[1], values[2]
+        server = server_port.rsplit(":", 1)[0] if ":" in server_port else server_port
+        rows = Database().query(
+            "SELECT id, protocol, server, port, username, password, encoding, label FROM remote_connections WHERE protocol=? AND server=? AND username=? ORDER BY id DESC LIMIT 1",
+            (proto, server, username)
+        )
+        if not rows:
+            messagebox.showerror("错误", "未找到连接记录", parent=self)
+            return
+        row = rows[0]
+        self._show_connection_editor(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
+
+    def _show_connection_editor(self, conn_id: int, protocol: str, server: str, port: int,
+                                 username: str, password: str, encoding: str):
+        dialog = tk.Toplevel(self)
+        dialog.title(f"编辑连接 - {protocol}://{server}")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        from utils.window_utils import center_window
+        center_window(dialog, self)
+
+        f = ttk.Frame(dialog, padding=15)
+        f.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(f, text="协议:").grid(row=0, column=0, sticky="w", pady=3)
+        proto_var = tk.StringVar(value=protocol)
+        ttk.Combobox(f, textvariable=proto_var, values=["FTP", "FTPS", "SFTP"],
+                     state="readonly", width=8).grid(row=0, column=1, sticky="w", padx=5)
+
+        ttk.Label(f, text="服务器:").grid(row=1, column=0, sticky="w", pady=3)
+        srv_var = tk.StringVar(value=server)
+        ttk.Entry(f, textvariable=srv_var, width=25).grid(row=1, column=1, padx=5)
+
+        ttk.Label(f, text="端口:").grid(row=2, column=0, sticky="w", pady=3)
+        port_var = tk.StringVar(value=str(port))
+        ttk.Entry(f, textvariable=port_var, width=8).grid(row=2, column=1, sticky="w", padx=5)
+
+        ttk.Label(f, text="用户名:").grid(row=3, column=0, sticky="w", pady=3)
+        user_var = tk.StringVar(value=username if username != "anonymous" else "")
+        ttk.Entry(f, textvariable=user_var, width=20).grid(row=3, column=1, padx=5)
+
+        ttk.Label(f, text="密码:").grid(row=4, column=0, sticky="w", pady=3)
+        pw_var = tk.StringVar(value=password)
+        ttk.Entry(f, textvariable=pw_var, width=20, show="*").grid(row=4, column=1, padx=5)
+
+        ttk.Label(f, text="编码:").grid(row=5, column=0, sticky="w", pady=3)
+        enc_var = tk.StringVar(value=encoding)
+        ttk.Combobox(f, textvariable=enc_var, values=list(self.ENCODINGS),
+                     state="readonly", width=10).grid(row=5, column=1, sticky="w", padx=5)
+
+        def save_edit():
+            from database.db_manager import Database
+            Database().execute(
+                "UPDATE remote_connections SET protocol=?, server=?, port=?, username=?, password=?, encoding=? WHERE id=?",
+                (proto_var.get(), srv_var.get(), int(port_var.get()), user_var.get().strip() or "anonymous",
+                 pw_var.get(), enc_var.get(), conn_id)
+            )
+            self.refresh_mounts()
+            dialog.destroy()
+
+        btn_f = ttk.Frame(f)
+        btn_f.grid(row=6, column=0, columnspan=2, pady=(10, 0))
+        ttk.Button(btn_f, text="保存", command=save_edit).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    def _mounts_delete_selected(self):
+        sel = self.mounts_tree.selection()
+        if not sel:
+            return
+        if not messagebox.askyesno("确认删除", f"确定要删除 {len(sel)} 条记录吗？", parent=self):
+            return
+        from database.db_manager import Database
+        for item in sel:
+            values = self.mounts_tree.item(item, "values")
+            if not values:
+                continue
+            if values[0] == "SMB":
+                mount_point = values[3] if len(values) > 3 else ""
+                if mount_point:
+                    self.smb_service.unmount(mount_point)
+            else:
+                proto, server_port, username = values[0], values[1], values[2]
+                server = server_port.rsplit(":", 1)[0] if ":" in server_port else server_port
+                Database().execute(
+                    "DELETE FROM remote_connections WHERE protocol=? AND server=? AND username=?",
+                    (proto, server, username)
+                )
+        self.refresh_mounts()
+
     # ── 文件操作 ─────────────────────────────────────────────────
 
     def _is_ftp_connected(self) -> bool:
@@ -415,24 +559,38 @@ class RemoteTab(ttk.Frame):
 
     def _show_tree_context_menu(self, event):
         item = self.tree.identify_row(event.y)
-        if not item:
-            return
-        self.tree.selection_set(item)
-        if not self._is_ftp_connected():
-            return
+        sel = self.tree.selection()
+        if item:
+            if item not in sel:
+                self.tree.selection_set(item)
+        sel = self.tree.selection()
+        has_sel = bool(sel)
+        sel_names = [self.tree.item(i, "values")[0] for i in sel if self.tree.item(i, "values")]
+        sel_types = [self.tree.item(i, "values")[1] for i in sel if len(self.tree.item(i, "values")) > 1]
+        has_file = any(t == "文件" for t in sel_types)
+        single_mode = len(sel) == 1
+
         menu = tk.Menu(self.tree, tearoff=0)
-        values = self.tree.item(item, "values")
-        ftype = values[1]
-        is_file = ftype == "文件"
-        if is_file:
-            menu.add_command(label="下载", command=self.download_file)
-            menu.add_command(label="上传到此目录", command=self.upload_file)
-        if not is_file:
-            menu.add_command(label="上传到此目录", command=self.upload_file)
-        menu.add_command(label="删除", command=self.delete_file)
-        menu.add_command(label="重命名", command=self.rename_file)
-        menu.add_separator()
-        menu.add_command(label="复制路径", command=lambda: self._copy_path(values[0]))
+
+        if self._is_ftp_connected():
+            if has_file:
+                menu.add_command(label="下载" + (f" ({len(sel)})" if len(sel) > 1 else ""),
+                                 command=self.download_selected)
+            elif has_sel:
+                menu.add_command(label="下载所选", state=tk.DISABLED)
+            menu.add_separator()
+            menu.add_command(label="删除所选" + (f" ({len(sel)})" if len(sel) > 1 else ""),
+                             state=tk.NORMAL if has_sel else tk.DISABLED,
+                             command=self.delete_selected)
+            if single_mode and has_sel:
+                menu.add_command(label="重命名", command=self.rename_file)
+            else:
+                menu.add_command(label="重命名", state=tk.DISABLED)
+            menu.add_separator()
+            if single_mode and has_sel:
+                menu.add_command(label="复制路径",
+                                 command=lambda n=sel_names[0]: self._copy_path(n))
+        menu.add_command(label="上传到此目录", command=self.upload_file)
         menu.tk_popup(event.x_root, event.y_root)
         menu.grab_release()
 
@@ -463,51 +621,79 @@ class RemoteTab(ttk.Frame):
         )
         self.after(0, lambda: self._op_done(result, "上传"))
 
-    def download_file(self) -> None:
-        name = self._get_selected_name()
-        if not name:
-            return
+    def download_selected(self) -> None:
         if not self._is_ftp_connected():
             messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持下载", parent=self)
             return
-        remote_path = self._current_path.rstrip("/") + "/" + name
-        save_path = filedialog.asksaveasfilename(title="保存到", initialfile=name)
-        if not save_path:
+        sel = self.tree.selection()
+        if not sel:
             return
+        targets = []
+        for item in sel:
+            values = self.tree.item(item, "values")
+            if len(values) >= 2 and values[1] == "文件":
+                remote = self._current_path.rstrip("/") + "/" + values[0]
+                targets.append((values[0], remote))
+        if not targets:
+            messagebox.showinfo("提示", "没有选中可下载的文件", parent=self)
+            return
+        if len(targets) == 1:
+            name, remote = targets[0]
+            save = filedialog.asksaveasfilename(title="保存到", initialfile=name, parent=self)
+            if not save:
+                return
+            files_to_dl = [(save, remote)]
+        else:
+            save_dir = filedialog.askdirectory(title="选择保存目录", parent=self)
+            if not save_dir:
+                return
+            files_to_dl = [(os.path.join(save_dir, name), remote) for name, remote in targets]
         self._set_ops_state(True)
-        threading.Thread(target=self._download_thread, args=(remote_path, save_path), daemon=True).start()
+        threading.Thread(target=self._download_all_thread, args=(files_to_dl,), daemon=True).start()
 
-    def _download_thread(self, remote: str, local: str) -> None:
+    def _download_all_thread(self, files: list[tuple[str, str]]) -> None:
         server, port = self._parse_server(self._current_server)
         username = self.username_var.get().strip() or "anonymous"
         password = self.password_var.get()
-        result = self.ftp_client.download(
-            self._current_protocol.lower(), server, port, username, password, remote, local,
-            encoding=self.encoding_var.get()
-        )
-        self.after(0, lambda: self._op_done(result, "下载"))
+        encoding = self.encoding_var.get()
+        proto = self._current_protocol.lower()
+        ok = 0
+        for local, remote in files:
+            r = self.ftp_client.download(proto, server, port, username, password, remote, local, encoding)
+            if r["success"]:
+                ok += 1
+        self.after(0, lambda: self._multi_op_done(ok, len(files), "下载"))
 
-    def delete_file(self) -> None:
-        path = self._get_selected_path()
-        if not path:
-            return
+    def delete_selected(self) -> None:
         if not self._is_ftp_connected():
             messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持删除", parent=self)
             return
-        if not messagebox.askyesno("确认删除", f"确定要删除 {path} 吗？", parent=self):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        paths = []
+        for item in sel:
+            values = self.tree.item(item, "values")
+            if not values:
+                continue
+            paths.append(self._current_path.rstrip("/") + "/" + values[0])
+        label = "\n".join(paths[:5])
+        if len(paths) > 5:
+            label += f"\n... 等 {len(paths)} 项"
+        if not messagebox.askyesno("确认删除", f"确定要删除以下 {len(paths)} 项吗？\n{label}", parent=self):
             return
         self._set_ops_state(True)
-        threading.Thread(target=self._delete_thread, args=(path,), daemon=True).start()
+        threading.Thread(target=self._delete_all_thread, args=(paths,), daemon=True).start()
 
-    def _delete_thread(self, path: str) -> None:
+    def _delete_all_thread(self, paths: list[str]) -> None:
         server, port = self._parse_server(self._current_server)
         username = self.username_var.get().strip() or "anonymous"
         password = self.password_var.get()
-        result = self.ftp_client.delete(
-            self._current_protocol.lower(), server, port, username, password, path,
-            encoding=self.encoding_var.get()
-        )
-        self.after(0, lambda: self._op_done(result, "删除"))
+        encoding = self.encoding_var.get()
+        proto = self._current_protocol.lower()
+        ok = sum(1 for p in paths
+                 if self.ftp_client.delete(proto, server, port, username, password, p, encoding)["success"])
+        self.after(0, lambda: self._multi_op_done(ok, len(paths), "删除"))
 
     def rename_file(self) -> None:
         old_path = self._get_selected_path()
@@ -562,6 +748,14 @@ class RemoteTab(ttk.Frame):
         else:
             self._set_ops_state(False)
             messagebox.showerror(f"{op_name}失败", result.get("error", "未知错误"), parent=self)
+
+    def _multi_op_done(self, ok: int, total: int, op_name: str) -> None:
+        logger.info(f"远程文件 {op_name}: {ok}/{total} 成功")
+        if ok == total:
+            self.browse_share(self._current_share, self._current_path)
+        else:
+            self._set_ops_state(False)
+            messagebox.showwarning(f"{op_name}结果", f"{ok}/{total} 项{op_name}成功", parent=self)
 
     # ── 表头排序 ─────────────────────────────────────────────────
 
