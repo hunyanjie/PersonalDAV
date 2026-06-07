@@ -245,6 +245,8 @@ class CalendarTab(BaseTreeTab):
                 disp_summary = decode_ical_value(summary) if summary else summary
                 self._all_data.append((" ", uid, disp_summary, start, end, created_at, updated_at))
         self._rerender()
+        if self._view_var.get() == "月视图":
+            self._refresh_month_view()
 
     def add_event(self):
         dialog = EventDialog(self.app_root, db=self.settings)
