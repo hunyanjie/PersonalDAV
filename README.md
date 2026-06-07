@@ -18,7 +18,10 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
 - 📂 **FTP / FTPS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
 - 🌐 **SMB / CIFS 网络共享** — 连接远程 SMB 服务器，浏览目录、挂载共享
-- 🖥️ **友好的GUI** — 图形界面操作，支持拖拽导入
+- 🌐 **WebDAV 文件服务 `/dav/`** — 通过 WebDAV 协议远程管理文件，支持 PROPFIND/GET/PUT/DELETE/MKCOL
+- 🗂️ **远程文件浏览器** — 图形化浏览 FTP/FTPS/SFTP/SMB 远程文件，支持上传下载删除重命名
+- 📅 **日历月视图** — 按月份查看日程，点击日期查看详细事件，支持年份/月份下拉框快速跳转
+- 🖥️ **友好的GUI** — 图形界面操作，支持拖拽导入，所有窗口居中显示
 - 💾 **本地存储** — 使用SQLite存储数据，无需额外配置
 - 🔍 **类型安全** — 新代码强制 mypy --strict，持续提升代码质量
 - 🌐 **跨平台** — 支持Windows、macOS和Linux
@@ -54,7 +57,7 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试（13 项）→ MCP 内部工具测试（16 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）。
+依次执行：pytest 单元测试（23 项）→ MCP 内部工具测试（32 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）。
 
 ## 使用指南
 
@@ -124,7 +127,7 @@ python tests/run_all.py
 
 ## MCP 可用工具
 
-MCP 服务提供 15 个工具供 AI 调用：
+MCP 服务提供 32 个工具供 AI 调用：
 
 | 工具 | 说明 |
 |------|------|
@@ -134,7 +137,13 @@ MCP 服务提供 15 个工具供 AI 调用：
 | `list_events` / `get_event` | 查看事件列表和详情 |
 | `create_event` / `update_event` / `delete_event` | 事件增删改 |
 | `get_config` | 查询软件配置和统计数据 |
-| `dav_health_check` | 验证 DAV 服务器是否正常工作 |
+| `dav_health_check` | 验证 DAV 服务器是否正常工作（含 `/dav/` 端点） |
+| `ftp_servers_start` / `ftp_servers_stop` / `ftp_servers_status` | 管理 FTP/SFTP/TFTP 文件服务器启停和状态 |
+| `ftp_list_dir` / `ftp_download` / `ftp_upload` | 远程 FTP/SFTP 目录浏览、文件下载和上传 |
+| `ftp_delete` / `ftp_rename` / `ftp_mkdir` / `ftp_rmdir` | 远程 FTP/SFTP 文件/目录删除、重命名、创建、移除 |
+| `smb_list_shares` / `smb_list_files` | 查看 SMB 服务器上的共享目录和文件列表 |
+| `dav_list_files` / `dav_upload` / `dav_download` | WebDAV 文件浏览、上传、下载 |
+| `dav_delete` / `dav_mkdir` | WebDAV 文件删除和目录创建 |
 
 ## 技术栈
 
