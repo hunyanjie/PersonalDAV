@@ -57,6 +57,7 @@ class RemoteTab(ttk.Frame):
         self._current_share = ""
         self._current_path = "/"
         self._is_connected = False
+        self._sort_state: dict[str, Any] = {"column": "name", "ascending": True}
 
         self.protocol_var = tk.StringVar(value="SMB")
         self.server_var = tk.StringVar()
@@ -128,10 +129,9 @@ class RemoteTab(ttk.Frame):
 
         columns = ("name", "type", "size", "modified")
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
-        self.tree.heading("name", text="名称")
-        self.tree.heading("type", text="类型")
-        self.tree.heading("size", text="大小")
-        self.tree.heading("modified", text="修改时间")
+        for col in columns:
+            self.tree.heading(col, text={"name": "名称", "type": "类型", "size": "大小", "modified": "修改时间"}[col],
+                              command=lambda c=col: self._on_column_click(c))
         self.tree.column("name", width=300)
         self.tree.column("type", width=80)
         self.tree.column("size", width=100)
@@ -237,15 +237,17 @@ class RemoteTab(ttk.Frame):
 
     def _display_files(self, files: list[dict[str, Any]]) -> None:
         self.tree.delete(*self.tree.get_children())
-        for f in files:
+        sorted_files = sorted(
+            (f for f in files if f.get("name", "") not in (".", "..")),
+            key=lambda f: (0 if f.get("is_directory") else 1, (f.get("name") or "").lower())
+        )
+        for f in sorted_files:
             name = f["name"]
-            if name in (".", ".."):
-                continue
-            is_dir = f["is_directory"]
-            ftype = "文件夹" if is_dir else "文件"
-            size = "" if is_dir else self._format_size(f.get("size", 0))
+            ftype = "文件夹" if f.get("is_directory") else "文件"
+            size = "" if f.get("is_directory") else self._format_size(f.get("size", 0))
             modified = f.get("modified", "") or ""
             self.tree.insert("", tk.END, values=(name, ftype, size, modified))
+        self._re_sort()
         self.up_btn.config(state=tk.NORMAL if self._current_path != "/" else tk.DISABLED)
         self.mount_btn.config(state=tk.NORMAL)
         self.upload_btn.config(state=tk.NORMAL)
@@ -560,6 +562,56 @@ class RemoteTab(ttk.Frame):
         else:
             self._set_ops_state(False)
             messagebox.showerror(f"{op_name}失败", result.get("error", "未知错误"), parent=self)
+
+    # ── 表头排序 ─────────────────────────────────────────────────
+
+    def _on_column_click(self, col: str) -> None:
+        if self._sort_state["column"] == col:
+            self._sort_state["ascending"] = not self._sort_state["ascending"]
+        else:
+            self._sort_state["column"] = col
+            self._sort_state["ascending"] = True
+        self._re_sort()
+
+    def _re_sort(self) -> None:
+        items = self.tree.get_children()
+        if not items:
+            return
+        col = self._sort_state["column"]
+        asc = self._sort_state["ascending"]
+        col_index = {"name": 0, "type": 1, "size": 2, "modified": 3}.get(col, 0)
+
+        def sort_key(item):
+            values = self.tree.item(item, "values")
+            val = values[col_index] if col_index < len(values) else ""
+            ftype = values[1] if len(values) > 1 else ""
+            is_dir = ftype == "文件夹"
+            if col == "type":
+                return (0 if is_dir else 1, (values[0] or "").lower())
+            if col == "size":
+                raw = val
+                num = self._parse_size(raw) if raw else -1
+                return (0 if is_dir else 1, num if asc else -num)
+            comp = (val or "").lower()
+            return (0 if is_dir else 1, comp)
+
+        sorted_items = sorted(items, key=sort_key, reverse=not asc)
+        for i, item in enumerate(sorted_items):
+            self.tree.move(item, "", i)
+
+    @staticmethod
+    def _parse_size(size_str: str) -> float:
+        units = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4, "PB": 1024**5}
+        parts = size_str.split()
+        if len(parts) == 2:
+            try:
+                return float(parts[0]) * units.get(parts[1], 1)
+            except (ValueError, KeyError):
+                return 0
+        try:
+            return float(size_str)
+        except ValueError:
+            return 0
 
     @staticmethod
     def _format_size(size: float | int) -> str:
