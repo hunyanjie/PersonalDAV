@@ -455,7 +455,7 @@ class MCPServer:
   </D:prop>
 </D:propfind>""".encode("utf-8")
                 try:
-                    import lxml.etree as ET
+                    import xml.etree.ElementTree as ET
                     req = urllib.request.Request(f"{base_url}/contacts/", data=propfind_body, method="PROPFIND")
                     req.add_header("Content-Type", "text/xml; charset=utf-8")
                     req.add_header("Depth", "0")
