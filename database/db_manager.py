@@ -88,7 +88,7 @@ class Database:
         for table in ['contacts', 'events']:
             for col in ['created_at', 'updated_at']:
                 try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
-                except: pass
+                except Exception: pass
 
         # 远程连接表（FTP/FTPS/SFTP 保存的连接）
         c.execute('''CREATE TABLE IF NOT EXISTS remote_connections
@@ -104,7 +104,7 @@ class Database:
 
         # 迁移: 联系人分组
         try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
-        except: pass
+        except Exception: pass
 
         # 初始数据填充 (仅在表为空时)
         c.execute("SELECT COUNT(*) FROM settings")

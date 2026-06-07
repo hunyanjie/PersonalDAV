@@ -1,6 +1,7 @@
 import quopri
 import base64
 import re
+from utils.logger import logger
 
 def should_encode(text: str) -> bool:
     """判断字符串是否包含非 ASCII 字符，决定是否需要编码"""
@@ -46,15 +47,15 @@ def decode_ical_value(value) -> str:
             # 将软换行 (=\n) 转换为实际换行，再解码 QP
             text = text.replace('=\n', '').replace('=\r\n', '')
             return quopri.decodestring(text.encode('utf-8')).decode('utf-8', errors='replace')
-        except:
-            pass
+        except Exception:
+            logger.debug("QP 解码失败，尝试其他方式")
 
     # 尝试解码 base64
     if 'ENCODING=BASE64' in text:
         try:
             text = re.sub(r'ENCODING=BASE64:', '', text)
             return base64.b64decode(text).decode('utf-8', errors='replace')
-        except:
-            pass
+        except Exception:
+            logger.debug("Base64 解码失败，尝试其他方式")
 
     return text

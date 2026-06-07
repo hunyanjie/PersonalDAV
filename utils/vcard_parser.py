@@ -73,7 +73,8 @@ class RobustVCardParser:
                     if charset != "utf-8" and strategy == cls._default_strategy:
                         try:
                             value = value.encode('latin1').decode(charset, errors="replace")
-                        except: pass
+                        except Exception:
+                            logger.debug("vCard CHARSET 编码转换失败")
 
                     properties[name] = {"value": value, "params": params}
                     current_property = name

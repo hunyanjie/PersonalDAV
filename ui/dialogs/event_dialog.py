@@ -125,7 +125,8 @@ class DetailedReminderEditor(tk.Toplevel):
             try:
                 local_dt = tr.astimezone(pytz.timezone(TimezoneHelper.get_local_timezone_id()))
                 self.abs_d.set_date(local_dt.date()); self.abs_h.set(local_dt.strftime("%H")); self.abs_m.set(local_dt.strftime("%M"))
-            except: pass
+            except Exception:
+                logger.debug("闹钟时间解析失败")
         elif isinstance(tr, timedelta):
             self.trig_type_var.set("relative")
             sec = abs(tr.total_seconds())
@@ -160,7 +161,8 @@ class DetailedReminderEditor(tk.Toplevel):
             try:
                 rc = int(self.rep_v.get() or 0)
                 if rc > 0: new_a['repeat'] = rc; new_a['duration'] = timedelta(minutes=int(self.dur_v.get() or 15))
-            except: pass
+            except Exception:
+                logger.debug("忽略异常")
             
             if self.callback: self.callback(new_a)
             self.destroy()
@@ -323,7 +325,8 @@ class EventDialog:
             if m_m: mins = int(m_m.group(1))
             if days or hours or mins:
                 return -timedelta(days=days, hours=hours, minutes=mins)
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
         return None
 
     def create_widgets(self):
@@ -539,7 +542,8 @@ class EventDialog:
             self.end_date.set_date(end_dt.date())
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
 
     def _add_exdate(self):
         from tkcalendar import Calendar
@@ -563,7 +567,8 @@ class EventDialog:
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         from datetime import datetime as _dt
         try: cal.selection_set(_dt.strptime(old, '%Y-%m-%d'))
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
         cal.pack(padx=10, pady=10)
         def confirm():
             d = cal.get_date()
@@ -587,7 +592,8 @@ class EventDialog:
             self.end_date.set_date(end_dt.date())
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
 
     def create_reminder_tab(self):
         main_frame = ttk.Frame(self.reminder_tab)
@@ -953,7 +959,8 @@ class EventDialog:
                     if 'UNTIL' in parts:
                         self.end_cond_var.set('按日期结束')
                         try: self.end_date_entry.set_date(parser.parse(parts['UNTIL']).date())
-                        except: pass
+                        except Exception:
+                            logger.debug("忽略异常")
                     elif 'COUNT' in parts: self.end_cond_var.set('按次数结束'); self.end_count_var.set(parts['COUNT'])
                     else: self.end_cond_var.set('永不结束')
                 # 解析 EXDATE 例外日期
@@ -1014,7 +1021,8 @@ class EventDialog:
                     if hasattr(alarm, 'attendee'): alarm_data['attendee'] = alarm.attendee.value
                     if hasattr(alarm, 'repeat'): 
                         try: alarm_data['repeat'] = int(alarm.repeat.value)
-                        except: pass
+                        except Exception:
+                            logger.debug("忽略异常")
                     if hasattr(alarm, 'duration'): alarm_data['duration'] = alarm.duration.value
                     self.alarms.append(alarm_data)
             except Exception as e: logger.error(f"解析 iCalendar 数据失败 (UID={self.uid_var.get()}): {e}")
@@ -1197,7 +1205,8 @@ class EventDialog:
             seq = int(self.sequence_var.get() or "0")
             if self.initial.get('ical'): seq += 1
             ev.add('sequence').value = str(seq)
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
         if self.url_var.get().strip(): ev.add('url').value = self.url_var.get().strip()
 
         # 保存自定义扩展状态
@@ -1212,7 +1221,8 @@ class EventDialog:
                 k, v = field.get('key', '').strip(), field.get('value', '').strip()
                 if k and k.upper() not in STANDARD_ICAL_FIELDS:
                     try: ev.add(k.lower()).value = v
-                    except: pass
+                    except Exception:
+                        logger.debug("忽略异常")
         return cal.serialize()
 
     def show_raw_data(self):

@@ -96,6 +96,6 @@ class WebDAVImportLogic:
                 try:
                     if os.path.exists(path):
                         os.remove(path)
-                except:
-                    pass
+                except Exception:
+                    logger.debug("清理下载临时文件失败")
             self.active_downloads.clear()
