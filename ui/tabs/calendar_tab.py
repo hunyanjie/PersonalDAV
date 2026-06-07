@@ -72,7 +72,7 @@ class CalendarTab(BaseTreeTab):
         self._year_var = tk.StringVar()
         self._month_var = tk.StringVar()
         current_year = date.today().year
-        years = [str(y) for y in range(current_year - 10, current_year + 11)]
+        years = [str(y) for y in range(current_year - 50, current_year + 51)]
         self._year_combo = ttk.Combobox(nav_f, textvariable=self._year_var, values=years, width=6, state="readonly")
         self._year_combo.pack(side=tk.LEFT, padx=2)
         self._month_names = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"]
@@ -88,6 +88,11 @@ class CalendarTab(BaseTreeTab):
                                     date_pattern='yyyy-mm-dd', showweeknumbers=False)
         self._month_cal.pack(fill=tk.X, padx=5, pady=5)
         self._month_cal.bind("<<CalendarSelected>>", self._month_on_select)
+        for meth in ('_prev_month', '_next_month', '_prev_year', '_next_year'):
+            orig = getattr(self._month_cal, meth)
+            def _wrap(m=orig):
+                return lambda: [m(), self._sync_month_combos()]
+            setattr(self._month_cal, meth, _wrap())
 
         ev_f = ttk.LabelFrame(self._month_frame, text="选定日事件")
         ev_f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -120,8 +125,6 @@ class CalendarTab(BaseTreeTab):
         ttk.Button(self._btn_frame, text="同步", command=self._sync_events).pack(side=tk.LEFT, padx=2)
         ttk.Button(self._btn_frame, text="刷新列表", command=self.refresh_events).pack(side=tk.RIGHT, padx=10)
 
-        self.after(1500, self._poll_month_sync)
-
     def _sync_events(self):
         from services.sync_service import SyncService
         svc = SyncService()
@@ -148,17 +151,15 @@ class CalendarTab(BaseTreeTab):
             self._agenda_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
     def _sync_month_combos(self):
-        cal_date = self._month_cal.selection_get()
-        if cal_date:
-            self._year_var.set(str(cal_date.year))
-            self._month_var.set(self._month_names[cal_date.month - 1])
+        self._year_var.set(str(self._month_cal._date.year))
+        self._month_var.set(self._month_names[self._month_cal._date.month - 1])
 
     def _refresh_month_view(self):
         cal_date = self._month_cal.selection_get()
         self._sync_month_combos()
         self._month_cal.calevent_remove('all')
         for ev in getattr(self, '_all_data', []):
-            uid, summary, start, end, *_ = ev
+            _, uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
                 self._month_cal.calevent_create(dt.date(), summary[:20], 'event')
@@ -188,17 +189,6 @@ class CalendarTab(BaseTreeTab):
         except Exception:
             pass
 
-    def _poll_month_sync(self):
-        cal_date = self._month_cal.selection_get()
-        if cal_date:
-            ym = (cal_date.year, cal_date.month)
-            if ym != getattr(self, '_last_ym', None):
-                self._last_ym = ym
-                self._sync_month_combos()
-                self._month_events_listbox.delete(0, tk.END)
-                self._month_event_uids.clear()
-        self.after(1500, self._poll_month_sync)
-
     def _month_on_select(self, event=None):
         self._sync_month_combos()
         self._month_events_listbox.delete(0, tk.END)
@@ -210,7 +200,7 @@ class CalendarTab(BaseTreeTab):
         if not cal_date:
             return
         for ev in getattr(self, '_all_data', []):
-            uid, summary, start, end, *_ = ev
+            _, uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
                 if dt.date() == cal_date:
