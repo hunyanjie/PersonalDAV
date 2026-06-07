@@ -40,27 +40,9 @@ class AuthServiceAuthorizer:
         from pyftpdlib.authorizers import AuthenticationFailed
         is_ftps = isinstance(handler, TLS_FTPHandler)
         proto = "FTPS" if is_ftps else "FTP"
-        ftp_pass = SettingsService().get_setting("ftp_password", "")
         client_ip = getattr(handler, 'remote_ip', 'unknown')
-        if ftp_pass:
-            ok = password == ftp_pass
-            AuthService().log_auth(ok, client_ip, proto, f"用户={username}")
-            if ok:
-                return True
-            raise AuthenticationFailed("Invalid credentials")
-        stored = SettingsService().get_setting("access_password_hash", "")
-        if not stored:
-            AuthService().log_auth(True, client_ip, f"{proto}-匿名", f"用户={username}")
+        if AuthService().verify_ftp_password(password, username, client_ip, proto):
             return True
-        if '$' in stored:
-            salt, pw_hash = stored.split('$', 1)
-            from hashlib import pbkdf2_hmac
-            from secrets import compare_digest
-            ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
-            AuthService().log_auth(ok, client_ip, proto, f"用户={username}")
-            if ok:
-                return True
-        from pyftpdlib.authorizers import AuthenticationFailed
         raise AuthenticationFailed("Invalid credentials")
 
     def get_msg_login(self, username: str) -> str:
@@ -267,23 +249,8 @@ def _make_sftp_classes():
             self.client_ip = client_ip
 
         def check_auth_password(self, username: str, password: str) -> int:
-            ftp_pass = SettingsService().get_setting("ftp_password", "")
-            if ftp_pass:
-                ok = password == ftp_pass
-                AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
-                return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
-            stored = SettingsService().get_setting("access_password_hash", "")
-            if not stored:
-                AuthService().log_auth(True, self.client_ip, "SFTP-匿名", f"用户={username}")
-                return paramiko.AUTH_SUCCESSFUL
-            if '$' in stored:
-                salt, pw_hash = stored.split('$', 1)
-                from hashlib import pbkdf2_hmac
-                from secrets import compare_digest
-                ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
-                AuthService().log_auth(ok, self.client_ip, "SFTP", f"用户={username}")
-                return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
-            return paramiko.AUTH_FAILED
+            ok = AuthService().verify_ftp_password(password, username, self.client_ip, "SFTP")
+            return paramiko.AUTH_SUCCESSFUL if ok else paramiko.AUTH_FAILED
 
         def check_channel_request(self, kind: str, chanid: int) -> int:
             if kind == "session":
