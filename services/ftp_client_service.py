@@ -2,7 +2,6 @@ import os
 import stat
 import time
 from ftplib import FTP, FTP_TLS, error_perm
-import paramiko
 from typing import Any
 from utils.logger import logger
 
@@ -20,7 +19,8 @@ class FTPClientService:
             ftp.prot_p()
         return ftp
 
-    def _connect_sftp(self, host: str, port: int, username: str, password: str) -> tuple[paramiko.Transport, paramiko.SFTPClient]:
+    def _connect_sftp(self, host: str, port: int, username: str, password: str) -> tuple:
+        import paramiko
         transport = paramiko.Transport((host, port))
         transport.connect(username=username, password=password)
         sftp = paramiko.SFTPClient.from_transport(transport)
