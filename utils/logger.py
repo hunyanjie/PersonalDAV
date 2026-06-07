@@ -1,7 +1,7 @@
 import logging
 import queue
 from logging.handlers import RotatingFileHandler
-from config import DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL
+from config import SOFTWARE_NAME, DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL
 
 class GUIHandler(logging.Handler):
     log_queue: queue.Queue
@@ -50,4 +50,4 @@ def setup_logger(name: str = __name__, level: int | None = None, log_file: str |
     return logger
 
 # 创建全局 logger 实例
-logger = setup_logger("PrivateDAV")
+logger = setup_logger(SOFTWARE_NAME)
