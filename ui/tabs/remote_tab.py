@@ -167,6 +167,7 @@ class RemoteTab(ttk.Frame):
         self.mount_btn.pack(side=tk.LEFT, padx=2)
 
         ttk.Button(mounts_btn_frame, text="刷新列表", command=self.refresh_mounts).pack(side=tk.LEFT, padx=2)
+        self.mounts_tree.bind("<Double-1>", self._on_mounts_double_click)
 
     def _on_protocol_change(self, event=None) -> None:
         proto = self.protocol_var.get()
@@ -330,25 +331,30 @@ class RemoteTab(ttk.Frame):
         if not self._current_server:
             return
 
-        mount_point = f"/mnt/{self._current_protocol.lower()}/{self._current_share or 'root'}"
+        server_raw = self.server_var.get().strip()
+        port_raw = int(self.port_var.get().strip() or "21")
         username = self.username_var.get().strip() or "anonymous"
         password = self.password_var.get()
+        encoding = self.encoding_var.get()
 
         if self._current_protocol == "SMB":
+            mount_point = f"/mnt/smb/{self._current_share or 'root'}"
             server = self._parse_server(self._current_server, 445)[0]
             result = self.smb_service.mount(server, self._current_share, mount_point, username, password)
+            if not result["success"]:
+                messagebox.showerror("失败", result.get("error", "未知错误"), parent=self)
+                return
         else:
-            server, port = self._parse_server(self._current_server)
-            proto_lower = self._current_protocol.lower()
-            result = self.ftp_client.list_dir(proto_lower, server, port,
-                username, password, "/",
-                encoding=self.encoding_var.get())
-            result = {"success": True, "data": {"mount_point": mount_point}}
+            from database.db_manager import Database
+            import datetime
+            label = f"{self._current_protocol}://{server_raw}:{port_raw}"
+            conn_info = (self._current_protocol, server_raw, port_raw, username, password, encoding, label, datetime.datetime.now().isoformat())
+            Database().execute(
+                "INSERT INTO remote_connections (protocol, server, port, username, password, encoding, label, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                conn_info
+            )
 
-        if not result["success"]:
-            messagebox.showerror("失败", result.get("error", "未知错误"), parent=self)
-            return
-        messagebox.showinfo("成功", f"已保存连接: {mount_point}", parent=self)
+        messagebox.showinfo("成功", f"已保存连接", parent=self)
         self.refresh_mounts()
 
     def refresh_mounts(self) -> None:
@@ -357,6 +363,31 @@ class RemoteTab(ttk.Frame):
         if result["success"]:
             for m in result["data"]:
                 self.mounts_tree.insert("", tk.END, values=("SMB", m["server"], m["share"], m["mount_point"]))
+        from database.db_manager import Database
+        for row in Database().query("SELECT protocol, server, port, username, label FROM remote_connections ORDER BY id DESC"):
+            proto, srv, port, user, label = row
+            self.mounts_tree.insert("", tk.END, values=(proto, f"{srv}:{port}", user, label))
+
+    def _on_mounts_double_click(self, event):
+        item = self.mounts_tree.selection()
+        if not item:
+            return
+        values = self.mounts_tree.item(item[0], "values")
+        proto = values[0]
+        if proto == "SMB":
+            return
+        server_port = values[1]
+        username = values[2]
+        if ":" in server_port:
+            server, port_str = server_port.rsplit(":", 1)
+        else:
+            server, port_str = server_port, "21"
+        self.protocol_var.set(proto)
+        self.server_var.set(server)
+        self.port_var.set(port_str)
+        self.username_var.set(username if username != "anonymous" else "")
+        self.password_var.set("")
+        self.connect()
 
     # ── 文件操作 ─────────────────────────────────────────────────
 
