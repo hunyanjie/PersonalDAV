@@ -28,6 +28,7 @@ SIMPLE_SETTINGS = [
     # ========== MCP 设置 ==========
     SettingDef("mcp_enabled", "启用 MCP 服务", "check", "MCP 服务", default=False, db_default="False"),
     SettingDef("mcp_port", "MCP 服务端口:", "entry", "MCP 服务", default="8100", width=10),
+    SettingDef("auto_check_update", "启动时自动检查更新", "check", "基本设置", default=True, db_default="True"),
     SettingDef("mcp_readonly", "只读模式（禁止写操作）", "check", "MCP 服务", default=False, db_default="False"),
 
     # ========== 基本设置 ==========
@@ -59,9 +60,16 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
+    SettingDef("ftps_enabled", "启用 FTPS (SSL)", "check", "服务器控制",
+               default=False, db_default="False"),
+    SettingDef("ftp_encoding", "FTP 文件编码:", "combo", "服务器控制",
+               default="utf-8",
+               options=["utf-8", "gbk", "gb2312", "big5", "shift-jis",
+                        "euc-kr", "euc-jp", "cp1252", "iso-8859-1",
+                        "cp1250", "cp1251", "koi8-r"],
+               width=10),
     # ========== 安全设置 ==========
-    SettingDef("rate_limit_enabled", "启用访问频率限制", "check", "安全设置", default=False, db_default="False"),
-    SettingDef("rate_limit_max", "每分钟最大请求数:", "entry", "安全设置", default="60", width=10),
+    # force_password / rate_limit 手工构建于 create_security_settings
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
                default="当前时间", db_default="current",
                options=["当前时间", "5整数倍", "10整数倍", "15整数倍", "30整数倍"],
@@ -109,6 +117,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_frame, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
 
         self.load_settings()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     # ── 声明式引擎 ──────────────────────────────────────────────
 
@@ -247,6 +257,18 @@ class SettingsDialog(tk.Toplevel):
                         variable=self._auto_renew_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
 
+        # FTP / WebDAV 设置
+        extra_f = ttk.LabelFrame(parent, text="FTP / WebDAV 设置")
+        extra_f.pack(fill=tk.X, padx=5, pady=2)
+        ttk.Label(extra_f, text="WebDAV 根目录:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.dav_root_var = tk.StringVar()
+        ttk.Entry(extra_f, textvariable=self.dav_root_var, width=40).grid(row=0, column=1, sticky="w", padx=2)
+        ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_dir(self.dav_root_var)).grid(row=0, column=2, padx=2)
+        ttk.Label(extra_f, text="FTP 独立密码:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.ftp_password_var = tk.StringVar()
+        ttk.Entry(extra_f, textvariable=self.ftp_password_var, width=20, show="*").grid(row=1, column=1, sticky="w", padx=2)
+        ttk.Label(extra_f, text="（留空=统一账号）").grid(row=1, column=2, sticky="w", padx=2)
+
         # 备份与恢复
         bk_f = CollapsibleFrame(parent, text="备份与恢复")
         bk_f.pack(fill=tk.X, padx=5, pady=2)
@@ -292,7 +314,15 @@ class SettingsDialog(tk.Toplevel):
     # ── 安全设置 ────────────────────────────────────────────────
 
     def create_security_settings(self, parent):
-        pw_f = ttk.LabelFrame(parent, text="访问密码")
+        sub = ttk.Notebook(parent)
+        sub.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        pw_frame = ttk.Frame(sub); sub.add(pw_frame, text="密码验证")
+        ip_frame = ttk.Frame(sub); sub.add(ip_frame, text="IP 控制")
+        rate_frame = ttk.Frame(sub); sub.add(rate_frame, text="频率限制")
+
+        # ── 密码验证 ──
+        pw_f = ttk.LabelFrame(pw_frame, text="访问密码")
         pw_f.pack(fill=tk.X, padx=5, pady=5)
 
         self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
@@ -308,7 +338,11 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
                   foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
 
-        token_f = ttk.LabelFrame(parent, text="MCP 令牌（AI 连接用）")
+        self.force_password_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(pw_frame, text="强制要求密码（未设密码时拒绝访问）",
+                        variable=self.force_password_var).pack(anchor="w", padx=10, pady=5)
+
+        token_f = ttk.LabelFrame(pw_frame, text="MCP 令牌（AI 连接用）")
         token_f.pack(fill=tk.X, padx=5, pady=5)
 
         self._mcp_token_var = tk.StringVar()
@@ -328,7 +362,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(btn_f, text="  更改密码或轮换后旧令牌立即失效。",
                   foreground="gray").pack(side=tk.LEFT)
 
-        ip_f = ttk.LabelFrame(parent, text="IP 访问控制（留空 = 不限制）")
+        # ── IP 控制 ──
+        ip_f = ttk.LabelFrame(ip_frame, text="IP 访问控制（留空 = 不限制）")
         ip_f.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(ip_f, text="白名单（每行一个 IP / CIDR / 通配符）:",
@@ -345,11 +380,10 @@ class SettingsDialog(tk.Toplevel):
                   foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
 
         self._bypass_localhost_var = tk.BooleanVar(value=True)
-        bypass_local_cb = ttk.Checkbutton(parent, text="本机访问免密码",
-                                          variable=self._bypass_localhost_var)
-        bypass_local_cb.pack(anchor="w", padx=10, pady=(5, 0))
+        ttk.Checkbutton(ip_frame, text="本机访问免密码",
+                        variable=self._bypass_localhost_var).pack(anchor="w", padx=10, pady=(5, 0))
 
-        bypass_f = ttk.LabelFrame(parent, text="免密码 IP（以下 IP 访问时不需密码验证）")
+        bypass_f = ttk.LabelFrame(ip_frame, text="免密码 IP（以下 IP 访问时不需密码验证）")
         bypass_f.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符:",
@@ -357,7 +391,8 @@ class SettingsDialog(tk.Toplevel):
         self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
         self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
 
-        rate_f = ttk.LabelFrame(parent, text="访问频率限制")
+        # ── 频率限制 ──
+        rate_f = ttk.LabelFrame(rate_frame, text="访问频率限制")
         rate_f.pack(fill=tk.X, padx=5, pady=5)
 
         self.rate_limit_enabled_var = tk.BooleanVar(value=False)
@@ -371,6 +406,8 @@ class SettingsDialog(tk.Toplevel):
                   foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
         self._refresh_auth_ui()
+
+
 
     def _refresh_auth_ui(self):
         svc = AuthService()
@@ -455,10 +492,10 @@ class SettingsDialog(tk.Toplevel):
         dialog.title("清除密码")
         dialog.transient(self)
         dialog.grab_set()
-        # dialog.geometry("350x120")
+        # dialog.geometry("350x130")
         ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
         pw_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=5)
+        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=2)
         def do_clear():
             if not svc.verify_password(pw_var.get()):
                 messagebox.showerror("错误", "密码不正确", parent=dialog)
@@ -488,6 +525,8 @@ class SettingsDialog(tk.Toplevel):
         from ui.widgets.toast import Toast
         Toast.show(self, "MCP 令牌已复制到剪贴板")
 
+
+
     # ── MCP 服务设置 ────────────────────────────────────────────
 
     def create_mcp_settings(self, parent):
@@ -515,30 +554,43 @@ class SettingsDialog(tk.Toplevel):
         tools = ttk.LabelFrame(parent, text="可用工具列表")
         tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         cols = ("工具名", "类别", "说明")
-        tree = ttk.Treeview(tools, columns=cols, show="headings", height=14)
+        tree = ttk.Treeview(tools, columns=cols, show="headings", height=20)
         for c in cols:
             tree.heading(c, text=c)
-            tree.column(c, width=180 if c == "说明" else 100)
+            tree.column(c, width=200 if c == "说明" else 100)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).pack(side=tk.RIGHT, fill=tk.Y)
-        tree.configure(yscrollcommand=ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview).set)
+        scroll = ttk.Scrollbar(tools, orient=tk.VERTICAL, command=tree.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        tree.configure(yscrollcommand=scroll.set)
 
         tool_list = [
-            ("server_start(port=8080)", "服务端管理", "启动 DAV 服务器（后台线程）"),
+            ("server_start(port)", "服务端管理", "启动 DAV 服务器"),
             ("server_stop()", "服务端管理", "停止 DAV 服务器"),
-            ("server_status()", "服务端管理", "查询 DAV 服务器运行状态"),
-            ("list_contacts()", "联系人", "列出所有联系人 uid + 姓名"),
-            ("get_contact(uid)", "联系人", "获取联系人完整 vCard 数据"),
-            ("create_contact(vcard_data)", "联系人", "从 vCard 创建联系人"),
-            ("update_contact(uid, vcard)", "联系人", "覆盖更新联系人"),
+            ("server_status()", "服务端管理", "查询 DAV 服务器状态"),
+            ("list_contacts()", "联系人", "列出所有联系人"),
+            ("get_contact(uid)", "联系人", "获取联系人 vCard"),
+            ("create_contact(vcard)", "联系人", "从 vCard 创建联系人"),
+            ("update_contact(uid, vcard)", "联系人", "更新联系人"),
             ("delete_contact(uid)", "联系人", "删除联系人"),
-            ("list_events()", "日历", "列出所有事件 uid + 标题 + 时间"),
-            ("get_event(uid)", "日历", "获取事件完整 iCalendar 数据"),
-            ("create_event(ical_data)", "日历", "从 iCal 创建事件"),
-            ("update_event(uid, ical)", "日历", "覆盖更新事件"),
+            ("list_events()", "日历", "列出所有事件"),
+            ("get_event(uid)", "日历", "获取事件 iCalendar"),
+            ("create_event(ical)", "日历", "从 iCal 创建事件"),
+            ("update_event(uid, ical)", "日历", "更新事件"),
             ("delete_event(uid)", "日历", "删除事件"),
-            ("get_config()", "系统", "返回软件配置与数据统计"),
-            ("dav_health_check(url)", "系统", "验证 DAV 端点是否正常"),
+            ("get_config()", "系统", "返回系统配置"),
+            ("dav_health_check(url)", "系统", "验证 DAV 端点"),
+            ("ftp_servers_start()", "文件服务", "启动 FTP/SFTP/TFTP"),
+            ("ftp_servers_stop()", "文件服务", "停止文件传输服务"),
+            ("ftp_servers_status()", "文件服务", "查询文件服务状态"),
+            ("ftp_list_dir(...)", "远程文件", "浏览 FTP/FTPS 目录"),
+            ("ftp_download(...)", "远程文件", "从远程下载文件"),
+            ("ftp_upload(...)", "远程文件", "上传文件到远程"),
+            ("ftp_delete(...)", "远程文件", "删除远程文件"),
+            ("ftp_rename(...)", "远程文件", "重命名远程文件"),
+            ("ftp_mkdir(...)", "远程文件", "远程创建目录"),
+            ("ftp_rmdir(...)", "远程文件", "远程删除目录"),
+            ("smb_list_shares(...)", "远程文件", "列出 SMB 共享"),
+            ("smb_list_files(...)", "远程文件", "浏览 SMB 共享"),
         ]
         for name, cat, desc in tool_list:
             tree.insert("", tk.END, values=(name, cat, desc))
@@ -547,24 +599,38 @@ class SettingsDialog(tk.Toplevel):
 
     def create_audit_log_viewer(self, parent):
         from services.auth_service import AuthService
+        filter_var = tk.StringVar(value="全部")
+        filter_frame = ttk.Frame(parent)
+        filter_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
+        ttk.Label(filter_frame, text="协议筛选:").pack(side=tk.LEFT, padx=2)
+        filter_combo = ttk.Combobox(filter_frame, textvariable=filter_var, state="readonly", width=12,
+                                    values=["全部", "WebDAV", "FTP", "FTPS", "SFTP", "MCP"])
+        filter_combo.pack(side=tk.LEFT, padx=2)
+
         cols = ("时间", "IP", "状态", "协议", "详情")
-        tree = ttk.Treeview(parent, columns=cols, show="headings", height=20)
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=20)
         for c in cols:
             tree.heading(c, text=c)
             tree.column(c, width=180 if c == "时间" else 140 if c == "IP" else 80)
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=tree.yview)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
         tree.configure(yscrollcommand=scroll.set)
 
-        def refresh():
+        def refresh(*_):
             tree.delete(*tree.get_children())
-            for log in AuthService().get_auth_logs(500):
+            proto = filter_var.get()
+            logs = AuthService().get_auth_logs_filtered(protocol="" if proto == "全部" else proto, limit=500)
+            for log in logs:
                 tag = "success" if log["success"] else "failure"
                 status = "成功" if log["success"] else "失败"
                 tree.insert("", tk.END, values=(log["time"], log["ip"], status, log["method"], log["detail"]), tags=(tag,))
             tree.tag_configure("success", foreground="green")
             tree.tag_configure("failure", foreground="red")
+
+        filter_combo.bind("<<ComboboxSelected>>", refresh)
 
         btn_f = ttk.Frame(parent)
         btn_f.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -888,6 +954,11 @@ class SettingsDialog(tk.Toplevel):
                 self.ssl_key_var.set(path)
             self._update_cert_info()
 
+    def _browse_dir(self, var):
+        path = filedialog.askdirectory(title="选择目录", parent=self)
+        if path:
+            var.set(os.path.normpath(path))
+
     def _generate_cert(self):
         dir_path = filedialog.askdirectory(title="选择证书保存目录", parent=self)
         if not dir_path:
@@ -905,8 +976,10 @@ class SettingsDialog(tk.Toplevel):
             messagebox.showerror("生成失败", str(e), parent=self)
 
     def _show_cert_guide(self):
-        win = tk.Toplevel(self); win.title("手动创建自签名证书")  # ; win.geometry("680x520")
+        win = tk.Toplevel(self); win.title("手动创建自签名证书")
         win.transient(self); win.grab_set()
+        from utils.window_utils import center_window
+        center_window(win, self)
 
         text = tk.Text(win, wrap=tk.WORD, padx=10, pady=10)
         scroll = ttk.Scrollbar(win, command=text.yview)
@@ -1024,6 +1097,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
     def load_settings(self):
         s = self.db
         self._load_simple()
+        s.set_setting("totp_secret", "")
 
         for key, lb in [('preset_reminders', self.preset_reminders_listbox),
                         ('preset_allday_reminders', self.preset_allday_reminders_listbox)]:
@@ -1089,10 +1163,14 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
         self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
+        self.force_password_var.set(s.get_setting("force_password", "True") == "True")
 
         self.data_dir_var.set(s.get_setting("data_dir", ""))
 
         self.close_action_var.set(s.get_setting("close_action", "ask"))
+
+        self.dav_root_var.set(s.get_setting("dav_root", "./dav_root"))
+        self.ftp_password_var.set(s.get_setting("ftp_password", ""))
 
         self.sync_url_var.set(s.get_setting("sync_url", ""))
         self.sync_user_var.set(s.get_setting("sync_user", ""))
@@ -1229,6 +1307,10 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
         s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
         s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
+        s.set_setting("force_password", str(self.force_password_var.get()))
+
+        s.set_setting("dav_root", self.dav_root_var.get())
+        s.set_setting("ftp_password", self.ftp_password_var.get())
 
         s.set_setting("sync_url", self.sync_url_var.get())
         s.set_setting("sync_user", self.sync_user_var.get())

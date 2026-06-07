@@ -6,12 +6,17 @@
 |------|------|------|
 | 语言 | Python 3.10+ | 类型注解、dataclass、match 语句 |
 | GUI | tkinter / ttk / tkinterdnd2 | 桌面界面、原生控件、文件拖放 |
-| 日历控件 | tkcalendar (DateEntry) | 日期选择器 |
+| 日历控件 | tkcalendar (Calendar) | 日历月视图、日期选择 |
 | 数据库 | SQLite3（内置） | 本地存储，WAL 模式，单文件 |
 | iCalendar | vobject / python-dateutil | iCalendar 解析/生成 |
 | vCard | vobject + 自研 RobustVCardParser | vCard 解析/生成（含 QP/Base64 回退） |
 | 时区 | pytz / tzlocal / Babel | 时区计算、本地化名称 |
 | 网络 | http.server（内置） | CardDAV/CalDAV HTTP 服务器 |
+| FTP 服务 | pyftpdlib | FTP/FTPS 服务器 |
+| SFTP 服务 | paramiko | SFTP 服务器 |
+| TFTP 服务 | tftpy | TFTP 服务器 |
+| FTP 客户端 | ftplib + paramiko | 远程 FTP/FTPS/SFTP 文件浏览 |
+| SMB 客户端 | pysmb | SMB/CIFS 网络共享浏览 |
 | WebDAV 客户端 | webdavclient3 | 远程 WebDAV 导入 |
 | HTTP 请求 | requests | URL 导入 |
 | 国际化 | locale / Babel | 系统语言检测、时区名称本地化 |
@@ -42,26 +47,38 @@ PersonalDAV/
 │   ├── event_service.py       # EventService 单例
 │   ├── settings_service.py    # SettingsService 单例
 │   ├── auth_service.py        # AuthService 统一鉴权（密码/IP控制/日志）
+│   ├── ftp_service.py         # FTPService 单例（FTP/FTPS/SFTP/TFTP 服务器）
+│   ├── ftp_client_service.py  # FTP/FTPS/SFTP 客户端（stateless 方法）
+│   ├── smb_service.py         # SMBService 单例（SMB 客户端）
 │   └── mcp_server.py          # MCPServer（MCP SSE 协议服务器）
 ├── network/                   # 网络层
-│   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV 端点）
-│   └── dav_client.py          # WebDAV 客户端导入
+│   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV/WebDAV 端点）
+│   ├── dav_client.py          # WebDAV 客户端导入
+│   └── webdav_helper.py       # WebDAV XML 响应构建（multistatus/propfind/error）
 ├── utils/                     # 工具层
 │   ├── event_bus.py           # EventBus 观察者模式
 │   ├── timezone_helper.py     # TimezoneHelper 可定制时区格式化
 │   ├── encoding_helper.py     # QP/Base64 编解码
 │   ├── vcard_parser.py        # RobustVCardParser 回退解析（策略模式）
+│   ├── window_utils.py        # center_window() 窗口居中工具
 │   └── logger.py              # 日志系统（RotatingFile + GUI 输出）
 ├── tests/                     # 单元测试
 │   ├── test_config.py         # 配置常量验证
-│   └── test_base_service.py   # BaseService 核心方法测试
+│   ├── test_base_service.py   # BaseService 核心方法测试
+│   ├── test_fuzzing.py        # 325 个模糊变异子测试
+│   ├── test_memory_leak.py    # 内存泄漏检测（tracemalloc + gc）
+│   ├── test_ui_snapshot.py    # UI 快照截图对比测试
+│   ├── test_mcp_auth_http.py  # MCP 鉴权 HTTP 测试
+│   ├── _run_mcp_tools_check.py    # MCP 内部工具端到端测试
+│   └── _run_mcp_http_check.py     # MCP HTTP/SSE 端到端测试
 └── ui/                        # 视图层
     ├── app.py                 # DAVServerApp 主应用类
     ├── tabs/
     │   ├── base_tab.py        # BaseTreeTab 泛型 Treeview 基类（搜索/排序/多选）
     │   ├── contacts_tab.py    # ContactsTab
-    │   ├── calendar_tab.py    # CalendarTab
-    │   └── server_tab.py      # ServerTab
+    │   ├── calendar_tab.py    # CalendarTab（含月视图）
+    │   ├── server_tab.py      # ServerTab（FTP/SFTP/TFTP/WebDAV 控制）
+    │   └── remote_tab.py      # RemoteTab（多协议远程文件浏览器）
     ├── dialogs/
     │   ├── settings_dialog.py    # 声明式设置对话框
     │   ├── event_dialog.py       # 事件编辑对话框
@@ -449,6 +466,10 @@ class PlainStrategy(DecodingStrategy): ...
 settings (key TEXT PRIMARY KEY, value TEXT)
 contacts (selected, uid, full_name, email, phone, vcard, id, created_at, updated_at)
 events   (selected, uid, summary, dtstart, dtend, ical, id, created_at, updated_at)
+auth_logs (id INTEGER PRIMARY KEY, client_ip, method, ...)
+remote_connections (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label TEXT, host TEXT, port INTEGER, username TEXT,
+                    password TEXT, protocol TEXT, encoding TEXT)
 ```
 
 - `selected` 是运行时列（UI 复选框），不参与 INSERT
@@ -516,6 +537,15 @@ def get_column_width(self, col): ... # 自定义列宽
 | `att.encoded = True` + `encoding_param='BASE64'` | 阻止 TextBehavior 对已 base64 的 ATTACH 值二次编码 |
 | `_load_photo_from_vcard` 延迟到 `after_idle` 异步执行 | 避免大图同步处理阻塞主线程界面响应 |
 | `show_raw` 优先使用 DB 缓存的 raw 数据而非 `serialize()` | 避免 vCard 带大 PHOTO/iCal 带大 ATTACH 时重序列化卡顿 |
+| `_parse_server()` 自动补全协议和剥离 `user@` 前缀 | 用户可输入 `ftp://user@host`、`sftp://host`、`host` 等多种格式 |
+| FTO/FTPS 编码选择（combo 列入 32 种编码） | 解决中文服务器文件名乱码问题 |
+| `ftp_password` 独立存储且优先于 WebDAV 密码 | 允许 FTP 用户使用不同于 WebDAV 的密码 |
+| FTPS 日志通过 `isinstance(handler, TLS_FTPHandler)` 标记 | 实现同端口同时支持 FTP 和 FTPS 的日志区分 |
+| `remote_connections` 表持久化 FTP 连接 | 防止程序重启后连接信息丢失 |
+| Canvas 滚动画布 + `itemconfig(inner_window, width=e.width)` | 确保滚动容器内框宽度与画布同步，避免水平填充异常 |
+| Calendar 月视图通过 monkey-patch `_prev_month` 等 4 个方法同步下拉框 | 无需轮询，Calendar 内置导航点击后立即同步 |
+| 多选下载单文件走 save 对话框、多文件走 save 目录 | 单文件给出默认文件名，多文件批量下载到文件夹 |
+| WebDAV `/dav/` 使用 `xml.etree.ElementTree` 手动构建 XML | 零外部依赖，避免引入重量级 `wsgidav` |
 
 ---
 
@@ -735,6 +765,15 @@ IP 匹配支持三种格式：
 
 WebDAV `_check_auth()` 和 MCP 中间件均在密码/令牌校验前调用此方法，命中则直接放行并记录 `"免密 IP"`。
 
+### TOTP 双因素认证（v2.5，已移除）
+
+TOTP 在 v2.5 开发中实现并随后移除。原因：设置对话框保存后重开时 UI 不刷新（`_on_totp_toggle` 在 `_totp_verified=True` 时直接 return，跳过了 `_update_totp_ui_state`/`_update_totp_display`），且保存时 `AuthService().is_enabled()` 条件不满足导致配置无法持久化。
+
+移除范围：
+- `auth_service.py`：全部 TOTP 方法 + `hmac`/`struct`/`time`/`base64` 导入
+- `settings_dialog.py`：全部 TOTP UI（8 个方法）
+- 迁移：`s.set_setting("totp_secret", "")`
+
 ### 协议适配表
 
 | 服务 | 认证方式 | 凭证来源 |
@@ -781,7 +820,9 @@ class MCPServer:
 
 `start()` 通过 `uvicorn.Server` 在 daemon 线程中运行，`stop()` 设置 `should_exit = True`。
 
-### 暴露的工具
+### 暴露的工具（共 32 个）
+
+#### DAV 核心工具（15 个）
 
 | 工具 | 类别 | 说明 |
 |------|------|------|
@@ -799,7 +840,44 @@ class MCPServer:
 | `update_event(uid, ical_data)` | 日历 | 强制覆盖更新事件 |
 | `delete_event(uid)` | 日历 | 删除事件 |
 | `get_config()` | 系统 | 返回配置（名称/版本/数量等） |
-| `dav_health_check(base_url)` | 系统 | OPTIONS + PROPFIND + GET 端点验证 |
+| `dav_health_check(base_url)` | 系统 | OPTIONS + PROPFIND + GET 端点验证（含 `/dav/`） |
+
+#### FTP/SFTP 服务器管理（3 个）
+
+| 工具 | 说明 |
+|------|------|
+| `ftp_servers_start()` | 启动 FTP/FTPS/SFTP/TFTP 文件传输服务 |
+| `ftp_servers_stop()` | 停止所有文件传输服务 |
+| `ftp_servers_status()` | 查询文件服务运行状态 |
+
+#### FTP/SFTP 文件操作（7 个）
+
+| 工具 | 说明 |
+|------|------|
+| `ftp_list_dir(host, port, username, password, path, protocol, encoding)` | 浏览远程目录 |
+| `ftp_download(host, ..., remote_path, local_path)` | 下载远程文件到本地 |
+| `ftp_upload(host, ..., local_path, remote_path)` | 上传本地文件到远程 |
+| `ftp_delete(host, ..., path)` | 删除远程文件 |
+| `ftp_rename(host, ..., old_path, new_path)` | 重命名远程文件或目录 |
+| `ftp_mkdir(host, ..., path)` | 创建远程目录 |
+| `ftp_rmdir(host, ..., path)` | 删除远程空目录 |
+
+#### SMB 浏览（2 个）
+
+| 工具 | 说明 |
+|------|------|
+| `smb_list_shares(host, username, password)` | 列出 SMB 共享 |
+| `smb_list_files(host, share, path, username, password)` | 列出 SMB 目录文件 |
+
+#### WebDAV 文件操作（5 个）
+
+| 工具 | 说明 |
+|------|------|
+| `dav_list_files(base_url)` | 列出 WebDAV 目录 |
+| `dav_upload(base_url, local_path, remote_path)` | 上传文件到 WebDAV |
+| `dav_download(base_url, remote_path, local_path)` | 从 WebDAV 下载文件 |
+| `dav_delete(base_url, path)` | 删除 WebDAV 文件/目录 |
+| `dav_mkdir(base_url, path)` | 创建 WebDAV 目录 |
 
 所有写入操作使用 `publish=False`（不触发 tkinter 事件循环），GUI 通过标签切换自动刷新。
 
@@ -853,16 +931,19 @@ python -m services.mcp_server --port 8100
 运行方式：
 
 ```bash
-pytest tests/ -v
+pytest tests/ -v -q
 ```
 
-### 测试结构
+### 测试结构（共 23 项，325 个子测试）
 
 | 文件 | 测试内容 |
 |------|----------|
 | `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
 | `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
-| `_run_mcp_tools_check.py` | MCP 全部 16 个工具的内部端到端测试（`python tests/_run_mcp_tools_check.py`） |
+| `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 |
+| `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪） |
+| `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 |
+| `_run_mcp_tools_check.py` | MCP 全部 32 个工具的内部端到端测试（`python tests/_run_mcp_tools_check.py`） |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议） |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 |
 
@@ -880,6 +961,48 @@ python tests/run_all.py
 - 每个 `setUp` 清空表数据，测试之间互不干扰
 - 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
 - HTTP 测试使用独立端口（8101、8102），互不冲突
+
+---
+
+## 内存泄漏检测（memory_leak_detector.py）
+
+`utils/memory_leak_detector.py` 提供两种互补的内存泄漏检测方法：
+
+### tracemalloc 快照对比
+
+```python
+from utils.memory_leak_detector import MemoryLeakDetector
+
+d = MemoryLeakDetector()
+d.snapshot()                          # 基准快照
+obj = create_some_widget()
+obj.destroy()
+d.snapshot()                          # 操作后快照
+diff = d.compare()                    # 操作前后的差异
+# diff 包含新增和释放的文件/行号/大小信息
+```
+
+### gc 对象追踪
+
+```python
+d.track(widget_cls)                   # 追踪特定 class 的存活实例
+# 创建销毁后检查存活实例数
+count_before = d.count_instances(widget_cls)
+# assert_equal(count_after, count_before)
+```
+
+### 测试用法
+
+```python
+def test_label_no_leak(self):
+    d = MemoryLeakDetector()
+    d.track(ttk.Label)
+    before = d.count_instances(ttk.Label)
+    labels = [ttk.Label(self.root, text=f"L{i}") for i in range(10)]
+    for lb in labels: lb.destroy()
+    after = d.count_instances(ttk.Label)
+    assert after == before, f"泄漏 {after - before} 个 Label"
+```
 
 ---
 
@@ -933,6 +1056,253 @@ EnhancedTooltip(widget, "提示文字",
 1. 在 `SIMPLE_SETTINGS` 列表末尾添加一行 `SettingDef`
 2. 若需要在新分区（新的 notebook 标签页），在 `__init__` 中创建新 frame 并调用 `_build_simple(new_frame, "新分区名")`
 3. 在读取处通过 `ServicesService().get_setting("键名", "默认值")` 获取
+
+## FTP / FTPS / SFTP 文件服务
+
+`services/ftp_service.py`
+
+### FTPService（单例）
+
+| 方法 | 说明 |
+|------|------|
+| `start()` | 读取设置启动 FTP（pyftpdlib）、FTPS（TLS_FTPHandler）和 SFTP（paramiko）后台线程 |
+| `stop()` | 关闭所有连接，停止线程（5 秒超时） |
+| `is_running` | 是否正在运行 |
+
+### 鉴权
+
+`AuthServiceAuthorizer` 将 FTP 登录验证委托给 `AuthService.verify_password`，所有登录用户获得完全读写权限。
+
+`SFTPAuthInterface` 在 paramiko 传输层实现密码认证，使用相同的 AuthService。
+
+### 路径安全
+
+`StubSFTPServer._resolve()` 验证所有路径在 `root` 之下，防止目录遍历攻击。
+
+### FTPS（FTP+SSL）
+
+使用 `TLS_FTPHandler`（pyftpdlib 内置），复用 DAV 服务器的 SSL 证书和密钥。在服务器标签页通过"启用 FTPS"复选框控制。
+
+### 编码选择
+
+FTP 控制 `ftp_encoding` 设置（默认为 `utf-8`），下拉框含 32 种编码。SFTP 始终使用 UTF-8。
+
+### 独立 FTP 密码
+
+`ftp_password` 设置覆盖 WebDAV 密码用于 FTP/SFTP 登录；为空时回退到直接使用密码哈希比较。
+
+### 匿名登录
+
+未设密码时 FTP 允许匿名登录，`force_password` 设置不影响 FTP 匿名访问。
+
+---
+
+## FTP / SFTP 客户端服务
+
+`services/ftp_client_service.py` — stateless 工具函数，每次调用创建独立连接。
+
+### 支持的协议
+
+| 协议 | 实现 | 端口默认值 |
+|------|------|-----------|
+| `FTP` | `ftplib.FTP` | 21 |
+| `FTPS` | `ftplib.FTP_TLS` | 21 |
+| `SFTP` | `paramiko.SFTPClient` | 22 |
+
+### 所有方法接受 encoding 参数
+
+| 方法 | 说明 |
+|------|------|
+| `list_dir(host, port, username, password, path, protocol, encoding)` | 列出目录 |
+| `download(host, port, ..., remote_path, local_path)` | 下载文件 |
+| `upload(host, port, ..., local_path, remote_path)` | 上传文件 |
+| `delete(host, port, ..., path)` | 删除文件 |
+| `rename(host, port, ..., old_path, new_path)` | 重命名文件或目录 |
+| `mkdir(host, port, ..., path)` | 创建目录 |
+| `rmdir(host, port, ..., path)` | 删除空目录 |
+
+---
+
+## SMB / CIFS 网络共享
+
+`services/smb_service.py` — 基于 pysmb 库
+
+### SMBService（单例）
+
+| 方法 | 说明 |
+|------|------|
+| `list_shares(server, username, password)` | 列出远程服务器上的共享 |
+| `list_files(server, share, path, username, password)` | 列出共享目录中的文件 |
+| `mount(server, share, mount_point, ...)` | 注册挂载映射（跟踪式，非系统挂载） |
+| `unmount(mount_point)` | 取消挂载映射 |
+| `get_mounted_shares()` | 返回当前所有挂载的共享 |
+
+### RemoteTab（远程文件浏览器）
+
+`ui/tabs/remote_tab.py` — 由原 `smb_tab.py` 重命名扩展而来，支持多协议（SMB / FTP / FTPS / SFTP）。
+
+#### 连接管理
+
+- 服务器地址格式：`protocol://user@host`（协议可选，默认 SMB）
+- 账户格式：`user@host` 自动解析，PS：密码可选
+- 连接存储：`remote_connections` 数据库表持久化，启动时自动加载
+- 挂载树双击重连
+
+#### 文件操作
+
+- 上传、下载（单文件 save 对话框 / 多选 save 目录）、删除、重命名、新建文件夹
+- 所有操作在后台线程执行，界面不卡死
+- 操作期间禁用文件操作按钮
+
+#### 右键菜单
+
+- 文件树右键：上传到此目录（空区域）、下载/删除/重命名（选中项）
+- 挂载树右键：连接/编辑/删除（多选批量删除）
+- 菜单项状态自适应：重命名仅单选可用，下载仅文件可用，删除要求有选中
+
+#### 表头排序
+
+点击列标题切换升降序，默认排序：文件夹优先再按名称。`_parse_size()` 数值化文件大小列用于排序。
+
+---
+
+## WebDAV 辅助模块
+
+`network/webdav_helper.py` — 手动构建 WebDAV XML 响应，不依赖 `wsgidav`。
+
+### 函数
+
+| 函数 | 说明 |
+|------|------|
+| `propfind_xml(resource_type, etag, content_type, content_length, href, ...)` | 构建单个 PROPFIND 响应 XML |
+| `multistatus_xml(responses)` | 包裹多状态 XML 响应 |
+| `error_xml(namespace, message)` | 构建 DAV 错误响应 |
+
+---
+
+## 窗口居中工具
+
+`utils/window_utils.py`
+
+```python
+from utils.window_utils import center_window
+center_window(window, width=600, height=400)
+```
+
+### 原理
+
+在窗口 IDLE 就绪后（`after_idle`），获取屏幕宽高和窗口宽高，计算偏移量后设置 `geometry("+x+y")`。支持指定宽度/高度，不指定时使用窗口当前尺寸。
+
+### 应用位置
+
+已应用于 10+ 个窗口/对话框：设置、事件编辑、联系人编辑、关于、导入预览、文本导入、WebDAV 导入、证书引导、关闭确认、检查更新。
+
+---
+
+## 审计日志协议筛选
+
+`services/auth_service.py` — `get_auth_logs_filtered(protocol="")` 使用 SQL `LIKE` 过滤。
+
+| 协议 | SQL 条件 |
+|------|----------|
+| WebDAV | `method LIKE '%WebDAV%'` |
+| FTP | `method LIKE '%FTP%' AND method NOT LIKE '%FTPS%'` |
+| FTPS | `method LIKE '%FTPS%'`（通过 `isinstance(handler, TLS_FTPHandler)` 标记） |
+| SFTP | `method LIKE '%SFTP%'` |
+| MCP | `method LIKE '%MCP%'` |
+
+在设置对话框审计日志查看器中通过下拉框选择。
+
+---
+
+## Calendar 月视图
+
+`ui/tabs/calendar_tab.py` — CalendarTab 支持"议程"和"月视图"两种模式。
+
+### 月视图组件
+
+- **tkcalendar Calendar** 控件显示月份，带内置翻月/翻年按钮
+- **年月下拉框**（`ttk.Combobox`）替代静态标签，支持年份（±50 年）和月份选择
+- **选定日事件列表**（`tk.Listbox`）显示选中日期的事件
+- **导航同步**：通过 monkey-patch Calendar 的 `_prev_month` / `_next_month` / `_prev_year` / `_next_year` 方法，确保下拉框与 Calendar 显示同步
+
+### 关键方法
+
+| 方法 | 说明 |
+|------|------|
+| `_refresh_month_view()` | 刷新日历事件圆点和选定日列表 |
+| `_sync_month_combos()` | 从 Calendar._date 同步下拉框 |
+| `_month_prev()` / `_month_next()` | 上月/下月 |
+| `_month_today()` | 跳回今天 |
+| `_month_combo_changed()` | 下拉框选择触发跳转 |
+| `_month_on_select()` | 点击日期更新事件列表 |
+
+### 搜索过滤
+
+月视图下搜索框输入时，`apply_filter` 末尾自动调用 `_refresh_month_view()`，使日历事件圆点和选定日列表同步过滤。
+
+---
+
+## 多个表头排序
+
+`BaseTreeTab.sort_tree(col)` **三态排序**：
+
+1. **首次点击** → 升序，表头显示 `列名 (↑升序)`
+2. **再次点击同列** → 降序，表头显示 `列名 (↓降序)`
+3. **第三次点击同列** → 取消排序，恢复默认顺序
+
+**默认排序**：`DEFAULT_SORT_COL` 和 `DEFAULT_SORT_REV` 指定。远程文件表默认：文件夹优先再按名称。
+
+**文件大小列**：远程文件通过 `_parse_size()` 将 `"1.2 MB"` 解析为字节数用于数值比较。
+
+---
+
+## 多选下载/删除
+
+### 下载
+
+- **单文件** → `asksaveasfilename` 保存对话框，用户选择路径
+- **多文件/目录** → `askdirectory` 选择目标目录，依次下载所有选中文件
+- 线程中执行，完成后显示成功数量
+
+### 删除
+
+- 弹出确认对话框列出待删除文件（`"\n".join(paths)`）
+- 确认后在后台线程逐条删除
+- 完成后刷新文件列表
+
+---
+
+## Canvas 滚动容器
+
+`ui/tabs/server_tab.py` 使用 `Canvas` + `Scrollbar` 包裹所有服务器设置控件以防止内容溢出：
+
+```python
+canvas = tk.Canvas(self)
+scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=canvas.yview)
+inner = ttk.Frame(canvas)
+canvas.create_window((0, 0), window=inner, anchor="nw")
+
+# 内框宽度随画布同步扩展
+inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.width))
+```
+
+- `inner.bind("<Configure>")` 更新 `scrollregion`，确保滚动范围正确
+- `canvas.bind("<Configure>")` 同步内框宽度，避免水平填充异常
+- 运行中端口和 DAV 根路径控件通过 `state=tk.DISABLED` 防止修改
+
+---
+
+## mypy 类型覆盖
+
+`mypy.ini` — 分模块管理严格度：
+
+- **新代码**（`services/ftp_service.py`、`services/smb_service.py`、`services/ftp_client_service.py`、`ui/tabs/remote_tab.py`、`network/webdav_helper.py`、`utils/window_utils.py`）强制 `strict = True`
+- **旧代码**逐步补齐类型注解
+- **第三方库**（pyftpdlib、paramiko、pysmb）跳过未安装的 stub
+
+---
 
 ### 添加新模型
 

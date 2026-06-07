@@ -36,10 +36,15 @@ class AuthService:
     def is_enabled(self) -> bool:
         return bool(SettingsService().get_setting("access_password_hash", ""))
 
+    def is_password_required(self) -> bool:
+        if self.is_enabled():
+            return True
+        return SettingsService().get_setting("force_password", "True") == "True"
+
     def verify_password(self, password: str) -> bool:
         stored = SettingsService().get_setting("access_password_hash", "")
         if not stored:
-            return True
+            return not self.is_password_required()
         if '$' not in stored:
             return False
         salt, pw_hash = stored.split('$', 1)
@@ -62,7 +67,7 @@ class AuthService:
         return hashlib.sha256(seed.encode('utf-8')).hexdigest()
 
     def verify_mcp_token(self, token: str) -> bool:
-        if not self.is_enabled():
+        if not self.is_password_required():
             return True
         return secrets.compare_digest(self.get_mcp_token(), token)
 
@@ -178,6 +183,25 @@ class AuthService:
             )
         except Exception:
             pass
+
+    def get_auth_logs_filtered(self, protocol: str = "", limit: int = 500) -> list[dict]:
+        try:
+            if protocol:
+                rows = Database().query(
+                    "SELECT timestamp, ip, success, method, detail FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
+                    (f"%{protocol}%", limit)
+                )
+            else:
+                rows = Database().query(
+                    "SELECT timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                    (limit,)
+                )
+            return [
+                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or ""}
+                for r in rows
+            ]
+        except Exception:
+            return []
 
     def get_auth_logs(self, limit: int = 200) -> list[dict]:
         try:

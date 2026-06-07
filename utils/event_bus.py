@@ -1,45 +1,41 @@
 import weakref
 import logging
+from typing import Any
+
 
 class EventBus:
-    """全局事件总线 - 实现观察者模式 (Observer Pattern) - 支持弱引用且兼容绑定方法"""
-    _instance = None
+    _instance: "EventBus | None" = None
+    _subscribers: dict[str, set[weakref.ReferenceType | weakref.WeakMethod]]  # type: ignore[type-arg]
 
-    def __new__(cls):
-        if not cls._instance:
-            cls._instance = super(EventBus, cls).__new__(cls)
+    def __new__(cls) -> "EventBus":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
             cls._instance._subscribers = {}
         return cls._instance
 
-    def subscribe(self, event_type, callback):
-        """订阅事件 - 自动识别普通函数与绑定方法"""
+    def subscribe(self, event_type: str, callback: Any) -> None:
         if event_type not in self._subscribers:
             self._subscribers[event_type] = set()
-        
-        # 针对绑定方法（如 self.update_status_bar）使用 WeakMethod
+
         if hasattr(callback, '__self__') and hasattr(callback, '__func__'):
-            ref = weakref.WeakMethod(callback)
+            ref: Any = weakref.WeakMethod(callback)
         else:
             ref = weakref.ref(callback)
-            
+
         self._subscribers[event_type].add(ref)
 
-    def publish(self, event_type, *args, **kwargs):
-        """发布事件 - 自动清理已失效的引用"""
+    def publish(self, event_type: str, *args: Any, **kwargs: Any) -> None:
         if event_type in self._subscribers:
-            dead_refs = set()
-            # 复制一份以防迭代时修改
+            dead_refs: set[Any] = set()
             for ref in list(self._subscribers[event_type]):
                 callback = ref()
                 if callback is not None:
                     try:
                         callback(*args, **kwargs)
                     except Exception as e:
-                        logging.getLogger("PrivateDAV").error(f"EventBus 回调执行失败: {str(e)}")
+                        logging.getLogger("PrivateDAV").error(f"EventBus 回调执行失败: {e}")
                 else:
                     dead_refs.add(ref)
-            
-            # 清理失效的弱引用
             self._subscribers[event_type] -= dead_refs
 
 # 定义事件常量

@@ -28,6 +28,10 @@ def main():
     root = TkinterDnD.Tk()
     app = DAVServerApp(root, cli_port=args.port, cli_log_level=args.log_level)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    # root.geometry("960x720")
+    # root.minsize(800, 600)
+    from utils.window_utils import center_window
+    center_window(root)
     root.mainloop()
 
 if __name__ == "__main__":

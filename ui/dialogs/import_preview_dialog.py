@@ -51,6 +51,8 @@ class CompareDialog(tk.Toplevel):
         self._sel_right = min(1, len(items) - 1)
         self._build_ui()
         self._update_displays()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     def _analyze(self):
         item_kvs = []
@@ -441,6 +443,8 @@ class ImportPreviewDialog(tk.Toplevel):
 
         self._build_bottom()
         self._update_count()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     def _prepare_items(self, raw_items):
         items = []

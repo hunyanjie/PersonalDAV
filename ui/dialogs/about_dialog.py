@@ -40,3 +40,5 @@ AI 集成: MCP (Model Context Protocol)"""
         link.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/hunyanjie/PersonalDAV"))
 
         ttk.Button(frame, text="确定", command=self.destroy).pack(pady=(10, 0))
+        from utils.window_utils import center_window
+        center_window(self, parent)

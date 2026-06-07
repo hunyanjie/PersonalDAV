@@ -15,9 +15,8 @@ import os
 
 class ContactsTab(BaseTreeTab):
     """联系人管理标签页"""
-    COLUMNS = ("selected", "uid", "name", "email", "phone", "groups", "created_at", "updated_at")
+    COLUMNS = ("uid", "name", "email", "phone", "groups", "created_at", "updated_at")
     HEADINGS = {
-        "selected": "✓",
         "uid": "ID",
         "name": "姓名",
         "email": "邮箱",
@@ -41,7 +40,7 @@ class ContactsTab(BaseTreeTab):
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.refresh_contacts)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 100, "name": 150, "email": 200, "phone": 150, "groups": 120, "created_at": 160, "updated_at": 160}
+        widths = {"uid": 100, "name": 150, "email": 200, "phone": 150, "groups": 120, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
@@ -114,16 +113,16 @@ class ContactsTab(BaseTreeTab):
             messagebox.showerror("同步失败", str(e), parent=self)
 
     def refresh_contacts(self):
-        """刷新联系人列表"""
-        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        self._all_data = self.db.get_list_data()
+        """刷新联系人列表（虚拟滚动版）。"""
+        raw = self.db.get_list_data()
+        self._all_raw = raw
         self._update_group_filter()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
 
     def _update_group_filter(self):
         groups = set()
-        for c in self._all_data:
+        for c in self._all_raw:
             uid, name, emails, phones, gs, created_at, updated_at = c
             if gs:
                 for g in gs.split(';'):
@@ -139,22 +138,17 @@ class ContactsTab(BaseTreeTab):
         self.apply_filter(query)
 
     def apply_filter(self, query):
-        """执行过滤显示"""
-        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        for item in self.tree.get_children(): self.tree.delete(item)
-
+        """执行过滤（虚拟滚动版 — 只过滤数据，不操作 Treeview）。"""
         selected_group = self._group_filter_var.get()
-        for contact in self._all_data:
+        self._all_data = []
+        for contact in self._all_raw:
             uid, name, emails, phones, gs, created_at, updated_at = contact
             match = not query or any(query in str(v).lower() for v in contact)
-            
             if match and (selected_group == "全部" or (gs and selected_group in gs.split(';'))):
-                sel = "✓" if uid in selected_uids else " "
                 disp_emails = emails.replace(";", "; ") if emails else ""
                 disp_phones = phones.replace(";", "; ") if phones else ""
-
-                item_id = self.tree.insert("", tk.END, values=(sel, uid, name, disp_emails, disp_phones, gs, created_at, updated_at))
-                if sel == "✓": self.tree.selection_add(item_id)
+                self._all_data.append((" ", uid, name, disp_emails, disp_phones, gs, created_at, updated_at))
+        self._rerender()
 
     def add_contact(self):
         dialog = ContactDialog(self.app_root)
@@ -163,9 +157,9 @@ class ContactsTab(BaseTreeTab):
             self.refresh_contacts()
 
     def edit_contact(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uid = self.tree.item(sel[0])['values'][1]
+        uids = list(self._selected_uids)
+        if not uids: return
+        uid = uids[0]
         data = self.db.get_by_uid(uid)
         if data:
             try:
@@ -196,14 +190,7 @@ class ContactsTab(BaseTreeTab):
                 self.refresh_contacts()
 
     def delete_contact(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uids = []
-        for i in sel:
-            try:
-                uids.append(self.tree.item(i)['values'][1])
-            except:
-                continue
+        uids = list(self._selected_uids)
         if not uids: return
         if messagebox.askyesno("确认", f"确定删除选中的 {len(uids)} 个联系人吗？"):
             for uid in uids:
@@ -215,11 +202,12 @@ class ContactsTab(BaseTreeTab):
         self.delete_contact()
 
     def show_raw(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uids = [self.tree.item(i)['values'][1] for i in sel]
+        uids = list(self._selected_uids)
+        if not uids:
+            messagebox.showinfo("提示", "请先选中要查看原始数据的联系人", parent=self)
+            return
         raws = self.db.get_selected_raw(uids)
-        data = ''.join(raws) if len(sel) > 1 else raws[0]
+        data = ''.join(raws) if len(uids) > 1 else raws[0]
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
             sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
@@ -258,19 +246,20 @@ class ContactsTab(BaseTreeTab):
         return items
 
     def export_selected(self):
-        sel = self.tree.selection()
-        if not sel:
+        uids = list(self._selected_uids)
+        if not uids:
             messagebox.showinfo("提示", "请先选择要导出的联系人", parent=self)
             return
-        uids = [self.tree.item(i)['values'][1] for i in sel]
         vcards = self.db.get_selected_raw(uids)
 
-        # 单选时预填文件名
         initial = ""
-        if len(sel) == 1:
-            name = self.tree.item(sel[0])['values'][2]  # 姓名列
+        if len(uids) == 1:
+            name = ""
+            for row in self._all_data:
+                if row[1] == uids[0]:  # uid 在第 2 列
+                    name = row[2]      # 姓名在第 3 列
+                    break
             if name:
-                # 清理文件名中的非法字符
                 import re
                 name = re.sub(r'[<>:"/\\|?*]', '_', name)
                 initial = name

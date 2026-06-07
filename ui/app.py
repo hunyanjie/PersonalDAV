@@ -10,6 +10,7 @@ from tkinterdnd2 import TkinterDnD, DND_FILES
 from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
+from ui.tabs.remote_tab import RemoteTab
 from ui.dialogs.settings_dialog import SettingsDialog
 from services.contact_service import ContactService
 from services.event_service import EventService
@@ -219,6 +220,7 @@ class DAVServerApp:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="帮助", menu=help_menu)
         help_menu.add_command(label="项目地址", command=self.open_project_url)
+        help_menu.add_command(label="检查更新", command=self.check_update_now)
         from ui.dialogs.about_dialog import AboutDialog
         help_menu.add_command(label="关于", command=lambda: AboutDialog(self.root))
 
@@ -229,10 +231,12 @@ class DAVServerApp:
         self.server_tab = ServerTab(self.notebook, self.settings_service)
         self.contacts_tab = ContactsTab(self.notebook, self.contact_service, self.root)
         self.calendar_tab = CalendarTab(self.notebook, self.event_service, self.settings_service, self.root)
+        self.smb_tab = RemoteTab(self.notebook, self.settings_service)
 
         self.notebook.add(self.server_tab, text="服务器")
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
+        self.notebook.add(self.smb_tab, text="远程文件")
 
         # 状态栏
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)
@@ -258,6 +262,7 @@ class DAVServerApp:
         elif not auto_start and is_auto_start():
             set_auto_start(False)
         self.update_status_bar()
+        self._auto_check_update()
         self._check_cert_renew()
         self._start_periodic_sync()
 
@@ -321,7 +326,10 @@ class DAVServerApp:
         server = self.server_tab.server_instance
         srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
         db_size = self._get_db_size()
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}")
+        update_text = ""
+        if getattr(self, '_pending_update', None):
+            update_text = f" | 📥 新版本 v{self._pending_update} 可用"
+        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}{update_text}")
 
     def show_settings(self):
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
@@ -372,8 +380,10 @@ class DAVServerApp:
         self._show_close_dialog()
 
     def _show_close_dialog(self):
-        dialog = tk.Toplevel(self.root); dialog.title("退出确认")  # ; dialog.geometry("380x200")
+        from utils.window_utils import center_window
+        dialog = tk.Toplevel(self.root); dialog.title("退出确认")
         dialog.transient(self.root); dialog.grab_set(); dialog.resizable(False, False)
+        center_window(dialog, self.root)
         ttk.Label(dialog, text="关闭窗口时执行的操作：", font=('', 11)).pack(pady=(15, 5))
         var = tk.StringVar(value="tray")
         ttk.Radiobutton(dialog, text="退出程序", variable=var, value="exit").pack(anchor="w", padx=40, pady=2)
@@ -419,6 +429,81 @@ class DAVServerApp:
 
     def _tray_quit(self):
         self._do_quit()
+
+    def check_update_now(self):
+        from utils.update_checker import check_update_async
+        self.status_bar.config(text="正在检查更新…")
+        def _on_result(r):
+            self.root.after(0, lambda: self._show_update_result(r))
+        check_update_async(_on_result)
+
+    def _show_update_result(self, r):
+        from tkinter import messagebox, Toplevel, Text, ttk, scrolledtext
+        self._tick_status_bar()
+        if not r.get("has_update"):
+            messagebox.showinfo("检查更新", f"已是最新版本（v{r['current']}）", parent=self.root)
+            return
+
+        releases = r["releases"]
+        latest = r["latest"]
+
+        dialog = Toplevel(self.root)
+        dialog.title(f"发现新版本 v{latest}")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("520x440")
+        dialog.minsize(420, 320)
+        from utils.window_utils import center_window
+        center_window(dialog, self.root)
+
+        ttk.Label(dialog, text=f"当前版本: v{r['current']}  →  最新版本: v{latest}",
+                  font=('', 11)).pack(anchor="w", padx=12, pady=(10, 5))
+
+        ttk.Label(dialog, text="以下版本更新内容:", foreground="gray").pack(
+            anchor="w", padx=12, pady=(0, 5))
+
+        txt = scrolledtext.ScrolledText(dialog, wrap="word", state="normal",
+                                         font=('Consolas', 10), height=14)
+        txt.pack(fill=tk.BOTH, expand=True, padx=12, pady=5)
+
+        for rel in releases:
+            ver = rel["version"]
+            body = rel["body"]
+            is_latest = (ver == latest)
+            tag = f"  ★ v{ver}（最新）" if is_latest else f"  v{ver}"
+            txt.insert(tk.END, tag + "\n", "header")
+            txt.insert(tk.END, body.rstrip() + "\n\n", "body")
+
+        txt.tag_config("header", font=('', 10, 'bold'), foreground="#2563eb")
+        txt.tag_config("body", font=('Consolas', 9), foreground="#374151")
+        txt.config(state="disabled")
+
+        btn_f = ttk.Frame(dialog)
+        btn_f.pack(fill=tk.X, padx=12, pady=(0, 12))
+        ttk.Label(btn_f, text="下载按钮将下载最新版本。",
+                  foreground="gray").pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="下载", command=lambda: self._open_download(r["url"])
+                   ).pack(side=tk.RIGHT, padx=3)
+        ttk.Button(btn_f, text="关闭", command=dialog.destroy).pack(side=tk.RIGHT, padx=3)
+
+    @staticmethod
+    def _open_download(url):
+        import webbrowser
+        webbrowser.open(url)
+
+    def _auto_check_update(self):
+        from utils.update_checker import check_update_async
+        s = self.settings_service
+        if s.get_setting("auto_check_update", "True") != "True":
+            return
+        def _on_result(r):
+            self.root.after(0, lambda: self._on_auto_update_result(r))
+        self._pending_update = None
+        check_update_async(_on_result)
+
+    def _on_auto_update_result(self, r):
+        if r.get("has_update"):
+            self._pending_update = r["latest"]
 
     def open_project_url(self):
         """打开项目地址"""

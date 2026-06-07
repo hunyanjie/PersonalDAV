@@ -27,11 +27,15 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION, DEFAUL
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.auth_service import AuthService
+from services.ftp_service import FTPService
+from services.ftp_client_service import FTPClientService
+from services.smb_service import SMBService
 from network.dav_server import DAVServer
 from utils.logger import logger
 
 CONTACT_SVC = ContactService()
 EVENT_SVC = EventService()
+FTP_SVC = FTPService()
 
 
 def _make_contact_summary(uid: str) -> dict[str, Any]:
@@ -91,12 +95,12 @@ class _AuthASGIMiddleware:
         if not svc.check_rate_limit(client_ip):
             return await _send_json(send, 429, {"error": "too many requests"})
 
-        if not svc.is_enabled():
+        if svc.ip_bypasses_auth(client_ip):
+            svc.log_auth(True, client_ip, "MCP", "免密 IP")
             await self.app(scope, receive, send)
             return
 
-        if svc.ip_bypasses_auth(client_ip):
-            svc.log_auth(True, client_ip, "MCP", "免密 IP")
+        if not svc.is_password_required():
             await self.app(scope, receive, send)
             return
 
@@ -428,6 +432,8 @@ class MCPServer:
                     ("root", "GET", f"{base_url}/", {}),
                     ("options_contacts", "OPTIONS", f"{base_url}/contacts/", {}),
                     ("options_events", "OPTIONS", f"{base_url}/events/", {}),
+                    ("options_dav", "OPTIONS", f"{base_url}/dav/", {}),
+                    ("get_dav", "GET", f"{base_url}/dav/", {}),
                 ]
                 for name, method, url, extra in checks:
                     try:
@@ -475,6 +481,328 @@ class MCPServer:
                 return _safe_json(results)
             except Exception as e:
                 logger.exception("MCP 异常: dav_health_check")
+                return _safe_json({"error": str(e)})
+
+
+                # ── WebDAV 文件服务 ─────────────────────────────────────────
+
+        def _webdav_request(method: str, url: str, data: bytes | None = None,
+                            headers: dict | None = None) -> dict:
+            """向本地 WebDAV 端点发送请求并解析响应"""
+            req = urllib.request.Request(url, data=data, method=method)
+            if headers:
+                for k, v in headers.items():
+                    req.add_header(k, v)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    body = r.read()
+                    return {"success": True, "status": r.status, "body": body}
+            except urllib.error.HTTPError as e:
+                body = e.read()
+                return {"success": False, "status": e.code, "body": body, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        def _dav_propfind(path: str, base_url: str = "http://localhost:8080") -> list[dict]:
+            """PROPFIND 解析 /dav/ 目录"""
+            url = f"{base_url.rstrip('/')}/dav/{path.lstrip('/')}"
+            propfind_body = b"""<?xml version="1.0" encoding="utf-8"?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:resourcetype/>
+    <D:getetag/>
+    <D:getcontentlength/>
+    <D:getcontenttype/>
+    <D:getlastmodified/>
+  </D:prop>
+</D:propfind>"""
+            result = _webdav_request("PROPFIND", url, propfind_body,
+                                     {"Content-Type": "text/xml; charset=utf-8", "Depth": "1"})
+            if not result["success"]:
+                return []
+            try:
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(result["body"])
+                ns = {"D": "DAV:"}
+                entries = []
+                for resp in root.findall(".//D:response", ns):
+                    href = resp.findtext("D:href", "", ns)
+                    if href.rstrip("/") == url.rstrip("/") or href.rstrip("/") == url.rstrip("/") + "/":
+                        continue
+                    name = href.rstrip("/").rsplit("/", 1)[-1] if "/" in href else href
+                    props = resp.find("D:propstat/D:prop", ns)
+                    is_dir = props is not None and props.find("D:resourcetype/D:collection", ns) is not None
+                    size = ""
+                    modified = ""
+                    if props is not None:
+                        size_el = props.find("D:getcontentlength", ns)
+                        if size_el is not None and size_el.text:
+                            size = int(size_el.text)
+                        mod_el = props.find("D:getlastmodified", ns)
+                        if mod_el is not None and mod_el.text:
+                            modified = mod_el.text
+                    entries.append({
+                        "name": urllib.parse.unquote(name),
+                        "is_directory": is_dir,
+                        "size": size,
+                        "modified": modified,
+                    })
+                return entries
+            except Exception:
+                return []
+
+        @mcp.tool(description="列出 WebDAV (/dav/) 目录下的文件")
+        def dav_list_files(path: str = "/", base_url: str = "http://localhost:8080") -> str:
+            logger.info(f"MCP 调用: dav_list_files path={path}")
+            try:
+                entries = _dav_propfind(path, base_url)
+                return _safe_json({"success": True, "data": entries})
+            except Exception as e:
+                logger.exception("MCP 异常: dav_list_files")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="上传文件到 WebDAV (/dav/) 目录")
+        def dav_upload(local_path: str, remote_path: str, base_url: str = "http://localhost:8080") -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: dav_upload {local_path} -> {remote_path}")
+            try:
+                if not os.path.isfile(local_path):
+                    return _safe_json({"error": f"本地文件不存在: {local_path}"})
+                url = f"{base_url.rstrip('/')}/dav/{remote_path.lstrip('/')}"
+                with open(local_path, "rb") as f:
+                    data = f.read()
+                result = _webdav_request("PUT", url, data)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: dav_upload")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="从 WebDAV (/dav/) 下载文件到本地")
+        def dav_download(remote_path: str, local_path: str, base_url: str = "http://localhost:8080") -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: dav_download {remote_path} -> {local_path}")
+            try:
+                url = f"{base_url.rstrip('/')}/dav/{remote_path.lstrip('/')}"
+                result = _webdav_request("GET", url)
+                if not result["success"]:
+                    return _safe_json(result)
+                os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+                with open(local_path, "wb") as f:
+                    f.write(result["body"])
+                return _safe_json({"success": True, "local_path": local_path})
+            except Exception as e:
+                logger.exception("MCP 异常: dav_download")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="删除 WebDAV (/dav/) 上的文件或目录")
+        def dav_delete(path: str, base_url: str = "http://localhost:8080") -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: dav_delete {path}")
+            try:
+                url = f"{base_url.rstrip('/')}/dav/{path.lstrip('/')}"
+                result = _webdav_request("DELETE", url)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: dav_delete")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="在 WebDAV (/dav/) 上创建目录")
+        def dav_mkdir(path: str, base_url: str = "http://localhost:8080") -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: dav_mkdir {path}")
+            try:
+                url = f"{base_url.rstrip('/')}/dav/{path.lstrip('/')}"
+                result = _webdav_request("MKCOL", url)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: dav_mkdir")
+                return _safe_json({"error": str(e)})
+
+
+        # ── 文件传输服务管理 ─────────────────────────────────────
+
+        @mcp.tool(description="启动 FTP/SFTP/TFTP 文件传输服务")
+        def ftp_servers_start() -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info("MCP 调用: ftp_servers_start")
+            try:
+                ok = FTP_SVC.start()
+                logger.info(f"MCP 返回: ftp_servers_start -> {ok}")
+                return _safe_json({"success": ok})
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_servers_start")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="停止 FTP/SFTP/TFTP 文件传输服务")
+        def ftp_servers_stop() -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info("MCP 调用: ftp_servers_stop")
+            try:
+                FTP_SVC.stop()
+                logger.info("MCP 返回: ftp_servers_stop -> 已停止")
+                return _safe_json({"success": True})
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_servers_stop")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="查询 FTP/SFTP/TFTP 服务运行状态")
+        def ftp_servers_status() -> str:
+            try:
+                result = {"running": FTP_SVC.is_running}
+                logger.debug(f"MCP 调用: ftp_servers_status -> {result}")
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_servers_status")
+                return _safe_json({"error": str(e)})
+
+        # ── 远程文件管理 ─────────────────────────────────────────
+
+        @mcp.tool(description="浏览远程 FTP/FTPS 目录")
+        def ftp_list_dir(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", path: str = "/", protocol: str = "ftp",
+            encoding: str = "utf-8"
+        ) -> str:
+            logger.info(f"MCP 调用: ftp_list_dir {protocol}://{host}:{port}{path}")
+            try:
+                client = FTPClientService()
+                result = client.list_dir(protocol, host, port, username, password, path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_list_dir")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="从远程 FTP/SFTP 服务器下载文件")
+        def ftp_download(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", remote_path: str = "", local_path: str = "",
+            protocol: str = "ftp", encoding: str = "utf-8"
+        ) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: ftp_download {protocol}://{host}:{port}{remote_path}")
+            try:
+                client = FTPClientService()
+                result = client.download(protocol, host, port, username, password, remote_path, local_path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_download")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="上传文件到远程 FTP/SFTP 服务器")
+        def ftp_upload(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", local_path: str = "", remote_path: str = "",
+            protocol: str = "ftp", encoding: str = "utf-8"
+        ) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: ftp_upload {protocol}://{host}:{port}{remote_path}")
+            try:
+                client = FTPClientService()
+                result = client.upload(protocol, host, port, username, password, local_path, remote_path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_upload")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="删除远程 FTP/SFTP 文件")
+        def ftp_delete(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", path: str = "", protocol: str = "ftp",
+            encoding: str = "utf-8"
+        ) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: ftp_delete {protocol}://{host}:{port}{path}")
+            try:
+                client = FTPClientService()
+                result = client.delete(protocol, host, port, username, password, path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_delete")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="重命名远程 FTP/SFTP 文件或目录")
+        def ftp_rename(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", old_path: str = "", new_path: str = "",
+            protocol: str = "ftp", encoding: str = "utf-8"
+        ) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: ftp_rename {protocol}://{host}:{port} {old_path} -> {new_path}")
+            try:
+                client = FTPClientService()
+                result = client.rename(protocol, host, port, username, password, old_path, new_path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_rename")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="在远程 FTP/SFTP 服务器创建目录")
+        def ftp_mkdir(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", path: str = "", protocol: str = "ftp",
+            encoding: str = "utf-8"
+        ) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: ftp_mkdir {protocol}://{host}:{port}{path}")
+            try:
+                client = FTPClientService()
+                result = client.mkdir(protocol, host, port, username, password, path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_mkdir")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="删除远程 FTP/SFTP 服务器上的空目录")
+        def ftp_rmdir(
+            host: str, port: int = 21, username: str = "anonymous",
+            password: str = "", path: str = "", protocol: str = "ftp",
+            encoding: str = "utf-8"
+        ) -> str:
+            if _check_readonly():
+                return _safe_json({"error": "只读模式下不支持此操作"})
+            logger.info(f"MCP 调用: ftp_rmdir {protocol}://{host}:{port}{path}")
+            try:
+                client = FTPClientService()
+                result = client.rmdir(protocol, host, port, username, password, path, encoding)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: ftp_rmdir")
+                return _safe_json({"error": str(e)})
+
+        # ── SMB 远程文件管理 ─────────────────────────────────────
+
+        @mcp.tool(description="列出 SMB 服务器上的共享目录")
+        def smb_list_shares(host: str, username: str = "guest", password: str = "") -> str:
+            logger.info(f"MCP 调用: smb_list_shares {host}")
+            try:
+                svc = SMBService()
+                result = svc.list_shares(host, username, password)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: smb_list_shares")
+                return _safe_json({"error": str(e)})
+
+        @mcp.tool(description="列出 SMB 共享中的文件和目录")
+        def smb_list_files(host: str, share: str = "", path: str = "/",
+                           username: str = "guest", password: str = "") -> str:
+            logger.info(f"MCP 调用: smb_list_files {host}/{share}{path}")
+            try:
+                svc = SMBService()
+                result = svc.list_files(host, share, path, username, password)
+                return _safe_json(result)
+            except Exception as e:
+                logger.exception("MCP 异常: smb_list_files")
                 return _safe_json({"error": str(e)})
 
 

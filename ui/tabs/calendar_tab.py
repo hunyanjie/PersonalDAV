@@ -15,9 +15,8 @@ from utils.encoding_helper import decode_ical_value
 
 class CalendarTab(BaseTreeTab):
     """日历管理标签页"""
-    COLUMNS = ("selected", "uid", "summary", "start", "end", "created_at", "updated_at")
+    COLUMNS = ("uid", "summary", "start", "end", "created_at", "updated_at")
     HEADINGS = {
-        "selected": "✓",
         "uid": "ID",
         "summary": "事件",
         "start": "开始时间",
@@ -42,7 +41,7 @@ class CalendarTab(BaseTreeTab):
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.refresh_events)
 
     def get_column_width(self, col):
-        widths = {"selected": 30, "uid": 150, "summary": 300, "start": 200, "end": 200, "created_at": 160, "updated_at": 160}
+        widths = {"uid": 150, "summary": 300, "start": 200, "end": 200, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
@@ -70,8 +69,17 @@ class CalendarTab(BaseTreeTab):
         cal_top = ttk.Frame(self._month_frame); cal_top.pack(fill=tk.X, padx=5, pady=5)
         nav_f = ttk.Frame(cal_top); nav_f.pack(side=tk.LEFT)
         ttk.Button(nav_f, text="◀", width=3, command=self._month_prev).pack(side=tk.LEFT, padx=1)
-        self._month_label = ttk.Label(nav_f, text="", font=('', 11, 'bold'))
-        self._month_label.pack(side=tk.LEFT, padx=10)
+        self._year_var = tk.StringVar()
+        self._month_var = tk.StringVar()
+        current_year = date.today().year
+        years = [str(y) for y in range(current_year - 50, current_year + 51)]
+        self._year_combo = ttk.Combobox(nav_f, textvariable=self._year_var, values=years, width=6, state="readonly")
+        self._year_combo.pack(side=tk.LEFT, padx=2)
+        self._month_names = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"]
+        self._month_combo = ttk.Combobox(nav_f, textvariable=self._month_var, values=self._month_names, width=5, state="readonly")
+        self._month_combo.pack(side=tk.LEFT, padx=2)
+        self._year_combo.bind("<<ComboboxSelected>>", self._month_combo_changed)
+        self._month_combo.bind("<<ComboboxSelected>>", self._month_combo_changed)
         ttk.Button(nav_f, text="▶", width=3, command=self._month_next).pack(side=tk.LEFT, padx=1)
         ttk.Button(cal_top, text="今天", command=self._month_today).pack(side=tk.RIGHT)
 
@@ -80,6 +88,11 @@ class CalendarTab(BaseTreeTab):
                                     date_pattern='yyyy-mm-dd', showweeknumbers=False)
         self._month_cal.pack(fill=tk.X, padx=5, pady=5)
         self._month_cal.bind("<<CalendarSelected>>", self._month_on_select)
+        for meth in ('_prev_month', '_next_month', '_prev_year', '_next_year'):
+            orig = getattr(self._month_cal, meth)
+            def _wrap(m=orig):
+                return lambda: [m(), self._sync_month_combos()]
+            setattr(self._month_cal, meth, _wrap())
 
         ev_f = ttk.LabelFrame(self._month_frame, text="选定日事件")
         ev_f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -137,12 +150,16 @@ class CalendarTab(BaseTreeTab):
             self._month_frame.pack_forget()
             self._agenda_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
+    def _sync_month_combos(self):
+        self._year_var.set(str(self._month_cal._date.year))
+        self._month_var.set(self._month_names[self._month_cal._date.month - 1])
+
     def _refresh_month_view(self):
         cal_date = self._month_cal.selection_get()
-        self._month_label.config(text=cal_date.strftime("%Y 年 %m 月") if cal_date else "")
+        self._sync_month_combos()
         self._month_cal.calevent_remove('all')
         for ev in getattr(self, '_all_data', []):
-            uid, summary, start, end, *_ = ev
+            _, uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
                 self._month_cal.calevent_create(dt.date(), summary[:20], 'event')
@@ -163,7 +180,17 @@ class CalendarTab(BaseTreeTab):
         self._month_cal.selection_set(date.today())
         self._refresh_month_view()
 
+    def _month_combo_changed(self, event=None):
+        try:
+            y = int(self._year_var.get())
+            m = self._month_names.index(self._month_var.get()) + 1
+            self._month_cal.selection_set(date(y, m, 1))
+            self._refresh_month_view()
+        except Exception:
+            pass
+
     def _month_on_select(self, event=None):
+        self._sync_month_combos()
         self._month_events_listbox.delete(0, tk.END)
         self._month_event_uids.clear()
         try:
@@ -173,7 +200,7 @@ class CalendarTab(BaseTreeTab):
         if not cal_date:
             return
         for ev in getattr(self, '_all_data', []):
-            uid, summary, start, end, *_ = ev
+            _, uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
                 if dt.date() == cal_date:
@@ -202,29 +229,24 @@ class CalendarTab(BaseTreeTab):
                 self.refresh_events()
 
     def refresh_events(self):
-        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        self._all_data = self.db.get_list_data()
+        raw = self.db.get_list_data()
+        self._all_raw = raw
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
         if self._view_var.get() == "月视图":
             self._refresh_month_view()
 
     def apply_filter(self, query):
-        selected_uids = {self.tree.item(i)['values'][1] for i in self.tree.selection() if self.tree.exists(i)}
-        for item in self.tree.get_children(): self.tree.delete(item)
-
-        for event in self._all_data:
+        self._all_data = []
+        for event in self._all_raw:
             uid, summary, start, end, created_at, updated_at = event
             match = not query or any(query in str(v).lower() for v in event)
-
             if match:
-                sel = "✓" if uid in selected_uids else " "
-                disp_summary = summary
-                if disp_summary:
-                    disp_summary = decode_ical_value(disp_summary)
-
-                item_id = self.tree.insert("", tk.END, values=(sel, uid, disp_summary, start, end, created_at, updated_at))
-                if sel == "✓": self.tree.selection_add(item_id)
+                disp_summary = decode_ical_value(summary) if summary else summary
+                self._all_data.append((" ", uid, disp_summary, start, end, created_at, updated_at))
+        self._rerender()
+        if self._view_var.get() == "月视图":
+            self._refresh_month_view()
 
     def add_event(self):
         dialog = EventDialog(self.app_root, db=self.settings)
@@ -233,9 +255,9 @@ class CalendarTab(BaseTreeTab):
             self.refresh_events()
 
     def edit_event(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uid = self.tree.item(sel[0])['values'][1]
+        uids = list(self._selected_uids)
+        if not uids: return
+        uid = uids[0]
         data = self.db.get_by_uid(uid)
         if data:
             init = {'uid': uid, 'ical': data}
@@ -245,14 +267,7 @@ class CalendarTab(BaseTreeTab):
                 self.refresh_events()
 
     def delete_event(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uids = []
-        for i in sel:
-            try:
-                uids.append(self.tree.item(i)['values'][1])
-            except:
-                continue
+        uids = list(self._selected_uids)
         if not uids: return
         if messagebox.askyesno("确认", f"确定删除选中的 {len(uids)} 个事件吗？"):
             for uid in uids:
@@ -263,11 +278,12 @@ class CalendarTab(BaseTreeTab):
         self.delete_event()
 
     def show_raw(self):
-        sel = self.tree.selection()
-        if not sel: return
-        uids = [self.tree.item(i)['values'][1] for i in sel]
+        uids = list(self._selected_uids)
+        if not uids:
+            messagebox.showinfo("提示", "请先选中要查看原始数据的事件", parent=self)
+            return
         events = self.db.get_selected_raw(uids)
-        if len(sel) == 1:
+        if len(uids) == 1:
             data = events[0]
         else:
             data = self.db.combine_raw_events(events)
@@ -317,16 +333,19 @@ class CalendarTab(BaseTreeTab):
         return items
 
     def export_selected(self):
-        sel = self.tree.selection()
-        if not sel:
+        uids = list(self._selected_uids)
+        if not uids:
             messagebox.showinfo("提示", "请先选择要导出的事件", parent=self)
             return
-        uids = [self.tree.item(i)['values'][1] for i in sel]
         events = self.db.get_selected_raw(uids)
 
         initial = ""
-        if len(sel) == 1:
-            summary = self.tree.item(sel[0])['values'][2]
+        if len(uids) == 1:
+            summary = ""
+            for row in self._all_data:
+                if row[1] == uids[0]:
+                    summary = row[2]
+                    break
             if summary:
                 summary = str(summary)
                 import re

@@ -32,6 +32,8 @@ class ContactDialog(tk.Toplevel):
 
         self.create_widgets()
         self.set_initial_values()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.wait_window(self)

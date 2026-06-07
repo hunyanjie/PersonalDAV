@@ -82,6 +82,18 @@ class Database:
                 try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
                 except: pass
 
+        # 远程连接表（FTP/FTPS/SFTP 保存的连接）
+        c.execute('''CREATE TABLE IF NOT EXISTS remote_connections
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      protocol TEXT,
+                      server TEXT,
+                      port INTEGER,
+                      username TEXT,
+                      password TEXT,
+                      encoding TEXT,
+                      label TEXT,
+                      created_at TEXT)''')
+
         # 迁移: 联系人分组
         try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
         except: pass
