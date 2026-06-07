@@ -3,7 +3,7 @@ import config
 
 class TestConfig(unittest.TestCase):
     def test_software_name(self):
-        self.assertEqual(config.SOFTWARE_NAME, "PrivateDAV")
+        self.assertEqual(config.SOFTWARE_NAME, "PersonalDAV")
 
     def test_version_not_empty(self):
         self.assertTrue(len(config.SOFTWARE_VERSION) > 0)

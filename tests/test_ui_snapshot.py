@@ -15,7 +15,7 @@ class TestUiSnapshot(unittest.TestCase):
     def test_about_dialog_title(self):
         from ui.dialogs.about_dialog import AboutDialog
         dlg = AboutDialog(ROOT)
-        self.assertEqual(dlg.title(), "关于 PrivateDAV")
+        self.assertEqual(dlg.title(), "关于 PersonalDAV")
         dlg.destroy()
 
     def test_settings_dialog_title(self):
