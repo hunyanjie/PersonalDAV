@@ -380,8 +380,10 @@ class DAVServerApp:
         self._show_close_dialog()
 
     def _show_close_dialog(self):
-        dialog = tk.Toplevel(self.root); dialog.title("退出确认")  # ; dialog.geometry("380x200")
+        from utils.window_utils import center_window
+        dialog = tk.Toplevel(self.root); dialog.title("退出确认")
         dialog.transient(self.root); dialog.grab_set(); dialog.resizable(False, False)
+        center_window(dialog, self.root)
         ttk.Label(dialog, text="关闭窗口时执行的操作：", font=('', 11)).pack(pady=(15, 5))
         var = tk.StringVar(value="tray")
         ttk.Radiobutton(dialog, text="退出程序", variable=var, value="exit").pack(anchor="w", padx=40, pady=2)
@@ -451,6 +453,8 @@ class DAVServerApp:
         dialog.grab_set()
         dialog.geometry("520x440")
         dialog.minsize(420, 320)
+        from utils.window_utils import center_window
+        center_window(dialog, self.root)
 
         ttk.Label(dialog, text=f"当前版本: v{r['current']}  →  最新版本: v{latest}",
                   font=('', 11)).pack(anchor="w", padx=12, pady=(10, 5))

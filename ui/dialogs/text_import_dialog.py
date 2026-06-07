@@ -12,6 +12,8 @@ class TextImportDialog(tk.Toplevel):
         self.grab_set()
 
         self.create_widgets()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     def create_widgets(self):
         f = ttk.Frame(self); f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)

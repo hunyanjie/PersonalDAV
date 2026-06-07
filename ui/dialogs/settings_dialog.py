@@ -117,6 +117,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_frame, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
 
         self.load_settings()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     # ── 声明式引擎 ──────────────────────────────────────────────
 
@@ -974,8 +976,10 @@ class SettingsDialog(tk.Toplevel):
             messagebox.showerror("生成失败", str(e), parent=self)
 
     def _show_cert_guide(self):
-        win = tk.Toplevel(self); win.title("手动创建自签名证书")  # ; win.geometry("680x520")
+        win = tk.Toplevel(self); win.title("手动创建自签名证书")
         win.transient(self); win.grab_set()
+        from utils.window_utils import center_window
+        center_window(win, self)
 
         text = tk.Text(win, wrap=tk.WORD, padx=10, pady=10)
         scroll = ttk.Scrollbar(win, command=text.yview)

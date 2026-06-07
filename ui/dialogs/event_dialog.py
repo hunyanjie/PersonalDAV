@@ -42,6 +42,8 @@ class DetailedReminderEditor(tk.Toplevel):
         self.initial_alarm = initial_alarm
         self.create_widgets()
         if initial_alarm: self.load_data(initial_alarm)
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     def create_widgets(self):
         main_f = ttk.Frame(self); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -214,6 +216,8 @@ class EventDialog:
         self.toggle_allday()
         self.toggle_sync_tz()
         self.on_status_changed()
+        from utils.window_utils import center_window
+        center_window(self.root, parent)
         self.update_reminder_listbox()
 
         self.root.protocol("WM_DELETE_WINDOW", self.cancel)

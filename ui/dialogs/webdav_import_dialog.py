@@ -31,6 +31,8 @@ class WebDAVImportDialog(tk.Toplevel):
         }
         
         self.create_widgets()
+        from utils.window_utils import center_window
+        center_window(self, parent)
 
     def create_widgets(self):
         notebook = ttk.Notebook(self)
