@@ -16,6 +16,7 @@ class BaseTreeTab(ttk.Frame):
     HEADINGS = {}         # 子类覆盖: {'col1': '标题1', ...}
     DEFAULT_SORT_COL = ''     # 默认排序列（子类可覆盖）
     DEFAULT_SORT_REV = False  # 默认排序方向
+    PAGE_SIZE = 500       # 虚拟滚动窗口大小
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -31,6 +32,7 @@ class BaseTreeTab(ttk.Frame):
         self._user_sort = False
         self._all_data = []       # 全量数据列表（已过滤）
         self._selected_uids = set()  # 跨页记住选中状态
+        self._scroll_offset = 0   # 虚拟滚动偏移量
         self.app_root = None
         self._import_type = ''
 
@@ -83,6 +85,10 @@ class BaseTreeTab(ttk.Frame):
         self.hscroll.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        # 虚拟滚动 — 替换滚动条命令 + Treeview 的 yscrollcommand
+        self.vscroll.config(command=self._vsb_handler)
+        self.tree.configure(yscrollcommand=self._on_tree_scroll)
+
         # 事件绑定
         self.tree.bind('<ButtonPress-1>', self._on_click)
         self.tree.bind('<B1-Motion>', self._on_drag)
@@ -95,6 +101,12 @@ class BaseTreeTab(ttk.Frame):
         self.tree.bind("<Control-a>", self.select_all)
         self.tree.bind("<Delete>", lambda e: self.delete_selected())
         self.tree.bind("<MouseWheel>", self._on_mousewheel)
+        self.tree.bind("<Up>", self._on_virtual_up)
+        self.tree.bind("<Down>", self._on_virtual_down)
+        self.tree.bind("<Prior>", self._on_virtual_pageup)
+        self.tree.bind("<Next>", self._on_virtual_pagedown)
+        self.tree.bind("<Home>", self._on_virtual_home)
+        self.tree.bind("<End>", self._on_virtual_end)
 
         self._edit_callback = on_edit_callback
 
@@ -104,8 +116,169 @@ class BaseTreeTab(ttk.Frame):
         return widths.get(col, 100)
 
     def _on_mousewheel(self, event):
-        """鼠标滚轮滚动。"""
-        self.tree.yview_scroll(-int(event.delta / 120), 'units')
+        """鼠标滚轮滚动（支持虚拟滚动）。"""
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            self.tree.yview_scroll(-int(event.delta / 120), 'units')
+            return
+        step = -int(event.delta / 120)
+        new_offset = self._scroll_offset + step
+        new_offset = max(0, min(n - self.PAGE_SIZE, new_offset))
+        if new_offset != self._scroll_offset:
+            self._scroll_offset = new_offset
+            self._render_window()
+
+    # ── 虚拟滚动核心 ──
+
+    def _vsb_handler(self, *args):
+        """拦截滚动条操作，转发到虚拟滚动逻辑。"""
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            self.tree.yview(*args)
+            return
+        cmd = args[0]
+        if cmd == 'moveto':
+            frac = float(args[1])
+            max_off = max(0, n - self.PAGE_SIZE)
+            self._scroll_offset = round(frac * max_off)
+            self._render_window()
+        elif cmd == 'scroll':
+            amount = int(args[1])
+            what = args[2]
+            step = amount * self.PAGE_SIZE if what == 'pages' else amount
+            self._scroll_offset = max(0, min(n - self.PAGE_SIZE, self._scroll_offset + step))
+            self._render_window()
+
+    def _on_tree_scroll(self, first, last):
+        """忽略 Treeview 内部滚动（虚拟滚动下由 _sync_scrollbar 管理）。"""
+        if len(self._all_data) <= self.PAGE_SIZE:
+            self.vscroll.set(first, last)
+
+    def _render_window(self):
+        """用当前 _scroll_offset 渲染 Treeview 窗口。"""
+        n = len(self._all_data)
+        if n == 0:
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+            self._sync_scrollbar()
+            self._update_checkboxes()
+            return
+        end = min(self._scroll_offset + self.PAGE_SIZE, n)
+        window_data = self._all_data[self._scroll_offset:end]
+        existing = self.tree.get_children()
+        for i, item_id in enumerate(existing):
+            if i < len(window_data):
+                self.tree.item(item_id, values=window_data[i])
+        for i in range(len(existing), len(window_data)):
+            self.tree.insert("", tk.END, values=window_data[i])
+        for item_id in existing[len(window_data):]:
+            self.tree.delete(item_id)
+        self._sync_scrollbar()
+        self._update_checkboxes()
+
+    def _sync_scrollbar(self):
+        """更新滚动条位置以反映虚拟数据集的大小。"""
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            self.vscroll.set(0, 1)
+        else:
+            off = self._scroll_offset
+            vis = min(self.PAGE_SIZE, n)
+            start = off / max(1, n - vis)
+            end = (off + vis) / max(1, n)
+            self.vscroll.set(start, end)
+
+    def _handle_drag_scroll_virtual(self, event):
+        """拖拽时的边缘自动滚动（虚拟滚动版本）。"""
+        h = self.tree.winfo_height()
+        if h <= 0:
+            return
+        rel_y = event.y / h
+        n = len(self._all_data)
+        if rel_y < 0.1:
+            new_off = max(0, self._scroll_offset - 1)
+            if new_off != self._scroll_offset:
+                self._scroll_offset = new_off
+                self._render_window()
+        elif rel_y > 0.9:
+            new_off = min(n - self.PAGE_SIZE, self._scroll_offset + 1)
+            if new_off != self._scroll_offset:
+                self._scroll_offset = new_off
+                self._render_window()
+
+    # ── 键盘导航（虚拟滚动） ──
+
+    def _on_virtual_up(self, event):
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            return
+        sel = self.tree.selection()
+        if not sel:
+            return
+        visible = self.tree.get_children()
+        if not visible:
+            return
+        if sel[0] == visible[0] and self._scroll_offset > 0:
+            self._scroll_offset -= 1
+            self._render_window()
+            self.tree.selection_set(self.tree.get_children()[0])
+            self._update_checkboxes()
+            return "break"
+
+    def _on_virtual_down(self, event):
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            return
+        sel = self.tree.selection()
+        if not sel:
+            return
+        visible = self.tree.get_children()
+        if not visible:
+            return
+        if sel[0] == visible[-1] and self._scroll_offset < n - self.PAGE_SIZE:
+            self._scroll_offset += 1
+            self._render_window()
+            self.tree.selection_set(self.tree.get_children()[-1])
+            self._update_checkboxes()
+            return "break"
+
+    def _on_virtual_pageup(self, event):
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            return
+        self._scroll_offset = max(0, self._scroll_offset - self.PAGE_SIZE)
+        self._render_window()
+        return "break"
+
+    def _on_virtual_pagedown(self, event):
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            return
+        self._scroll_offset = min(n - self.PAGE_SIZE, self._scroll_offset + self.PAGE_SIZE)
+        self._render_window()
+        return "break"
+
+    def _on_virtual_home(self, event):
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            return
+        self._scroll_offset = 0
+        self._render_window()
+        self.tree.selection_set(self.tree.get_children()[0] if self.tree.get_children() else ())
+        self._update_checkboxes()
+        return "break"
+
+    def _on_virtual_end(self, event):
+        n = len(self._all_data)
+        if n <= self.PAGE_SIZE:
+            return
+        self._scroll_offset = n - self.PAGE_SIZE
+        self._render_window()
+        items = self.tree.get_children()
+        if items:
+            self.tree.selection_set(items[-1])
+            self._update_checkboxes()
+        return "break"
 
     def _on_click(self, event):
         """处理点击事件。"""
@@ -179,9 +352,13 @@ class BaseTreeTab(ttk.Frame):
         return vals[1] if len(vals) > 1 else None
 
     def _on_drag(self, event):
-        """处理拖拽选多行。"""
+        """处理拖拽选多行（支持虚拟滚动）。"""
         self._dragging = True
-        TreeviewScroller.handle_drag_scroll(self.tree, event)
+        n = len(self._all_data)
+        if n > self.PAGE_SIZE:
+            self._handle_drag_scroll_virtual(event)
+        else:
+            TreeviewScroller.handle_drag_scroll(self.tree, event)
 
         if not self._drag_item:
             return
@@ -192,8 +369,11 @@ class BaseTreeTab(ttk.Frame):
         visible = self.tree.get_children()
         if not visible:
             return
-        start_idx = visible.index(self._drag_item)
-        curr_idx = visible.index(item)
+        try:
+            start_idx = visible.index(self._drag_item)
+            curr_idx = visible.index(item)
+        except ValueError:
+            return
         selected = visible[min(start_idx, curr_idx):max(start_idx, curr_idx)+1]
         self._selected_uids = {self._uid_of(i) for i in selected}
         self.tree.selection_set(selected)
@@ -305,12 +485,9 @@ class BaseTreeTab(ttk.Frame):
             self._update_sort_arrows()
 
     def _rerender(self):
-        """用当前 _all_data 重建视图，并恢复选中状态。"""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        for row in self._all_data:
-            self.tree.insert("", tk.END, values=row)
-        self._update_checkboxes()
+        """用当前 _all_data 重建虚拟滚动视图。"""
+        self._scroll_offset = 0
+        self._render_window()
 
     def _after_refresh(self):
         """数据刷新后恢复排序状态 — 子类 refresh_* 末尾调用。"""
