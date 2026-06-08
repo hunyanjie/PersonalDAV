@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from ui.widgets.toast import Toast, filedialog, simpledialog
+from ui.widgets.toast import Toast
+from ui.dialogs.confirm_dialog import ConfirmDialog, filedialog, simpledialog
 import threading
 import os
 from typing import Any
@@ -165,7 +166,7 @@ class RemoteFileOps:
         label = "\n".join(paths[:5])
         if len(paths) > 5:
             label += f"\n... 等 {len(paths)} 项"
-        if not messagebox.askyesno("确认删除", f"确定要删除以下 {len(paths)} 项吗？\n{label}", parent=self.tab):
+        if not ConfirmDialog.ask(self.tab, "确认删除", f"确定要删除以下 {len(paths)} 项吗？\n{label}"):
             return
         self.set_ops_state(True)
         threading.Thread(target=self._delete_all_thread, args=(paths,), daemon=True).start()

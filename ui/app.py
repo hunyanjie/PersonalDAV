@@ -200,7 +200,8 @@ class DAVServerApp:
 
     def on_settings_saved(self, ssl_toggled=False):
         if ssl_toggled and self.server_tab.server_instance is not None:
-            if messagebox.askyesno("重启服务器", "HTTPS 设置已更改，是否立即重启服务器以生效？"):
+            from ui.dialogs.confirm_dialog import ConfirmDialog
+            if ConfirmDialog.ask(self.root, "重启服务器", "HTTPS 设置已更改，是否立即重启服务器以生效？"):
                 self.server_tab.stop_server()
                 self.server_tab.start_server()
             else:

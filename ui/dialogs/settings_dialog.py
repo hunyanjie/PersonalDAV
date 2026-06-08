@@ -12,6 +12,7 @@ from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTION
 from services.auth_service import AuthService
 from datetime import datetime
 from utils.validators import validate_port
+from ui.dialogs.confirm_dialog import ConfirmDialog
 
 
 SIMPLE_SETTINGS = [
@@ -780,7 +781,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
-        if not messagebox.askyesno("确认重置", "确定要重置所有设置吗？\n此操作无法撤销。", parent=self):
+        if not ConfirmDialog.ask(self, "确认重置", "确定要重置所有设置吗？\n此操作无法撤销。"):
             return
         self.db.reset_all()
         self._reset_simple()
@@ -837,9 +838,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             title="从备份恢复", filetypes=[("ZIP 文件", "*.zip")], parent=self)
         if not path:
             return
-        if not messagebox.askyesno("确认恢复",
-                                    "恢复将替换当前数据库和设置，\n"
-                                    "程序需要重启才能生效。确定继续？", parent=self):
+        if not ConfirmDialog.ask(self, "确认恢复",
+                                  "恢复将替换当前数据库和设置，\n"
+                                  "程序需要重启才能生效。确定继续？"):
             return
         from utils.backup import import_backup
         if import_backup(path):
@@ -854,9 +855,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         if Database._vacuum_in_progress:
             messagebox.showinfo("提示", "数据库压缩已在运行中，请等待完成。", parent=self)
             return
-        if not messagebox.askyesno("压缩数据库",
-                                    "压缩将重写整个数据库以释放空闲空间。\n"
-                                    "期间程序响应会变慢，确定继续？", parent=self):
+        if not ConfirmDialog.ask(self, "压缩数据库",
+                                  "压缩将重写整个数据库以释放空闲空间。\n"
+                                  "期间程序响应会变慢，确定继续？"):
             return
 
         progress = tk.Toplevel(self)

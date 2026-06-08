@@ -13,6 +13,7 @@ import io
 import os
 from PIL import Image, ImageTk
 from ui.widgets.toast import Toast
+from ui.dialogs.confirm_dialog import ConfirmDialog
 
 
 class ContactDialog(tk.Toplevel):
@@ -174,9 +175,8 @@ class ContactDialog(tk.Toplevel):
         try:
             size = os.path.getsize(path)
             if size > 2 * 1024 * 1024:
-                if not messagebox.askyesno("提示", f"图片大小为 {size/1024/1024:.1f}MB，"
-                                            f"将自动缩放为缩略图，建议使用更小的图片。\n\n是否继续？",
-                                            parent=self):
+                if not ConfirmDialog.ask(self, "提示",
+                    f"图片大小为 {size/1024/1024:.1f}MB，将自动缩放为缩略图，建议使用更小的图片。\n\n是否继续？"):
                     return
             img = Image.open(path)
             if img.width * img.height > 2000 * 2000:
@@ -340,7 +340,7 @@ class ContactDialog(tk.Toplevel):
         if not sel:
             Toast.warning(self, "请选择要删除的字段")
             return
-        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self):
+        if not ConfirmDialog.ask(self, "确认", f"确定删除选中的 {len(sel)} 个字段?"):
             return
         indices = sorted([self.other_tree.index(i) for i in sel], reverse=True)
         for idx in indices:

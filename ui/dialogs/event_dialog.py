@@ -15,6 +15,7 @@ from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
 from utils import attachment_store
+from ui.dialogs.confirm_dialog import ConfirmDialog
 from models.constants import (
     STATUS_MAPPING, STATUS_REV_MAPPING,
     TRANSPARENCY_MAPPING, TRANSPARENCY_REV_MAPPING,
@@ -703,7 +704,7 @@ class EventDialog:
         if not sel:
             Toast.warning(self.root, "请选择要删除的字段")
             return
-        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self.root):
+        if not ConfirmDialog.ask(self.root, "确认", f"确定删除选中的 {len(sel)} 个字段?"):
             return
         indices = sorted([self.other_tree.index(i) for i in sel], reverse=True)
         for idx in indices:
