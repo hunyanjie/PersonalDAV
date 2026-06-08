@@ -23,6 +23,7 @@ class Database:
             return
         self._initialized = True
         self.db_path = db_path
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         if os.path.isfile(db_path):
             try:
                 bak = db_path + ".bak"

@@ -1141,7 +1141,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                 if lb.get(i) in sel_str.split(';'): lb.selection_set(i)
 
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
-        self.log_path_var.set(s.get_setting("log_file_path", "dav_server.log"))
+        self.log_path_var.set(s.get_setting("log_file_path", "log/dav_server.log"))
         self.log_level_var.set(s.get_setting("log_level", "INFO"))
         self.tz_fmt_var.set(s.get_setting("timezone_format",
             "{offset} - {city} ({tz_id}) {localized}{local_tag}"))
@@ -1165,7 +1165,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
         self.force_password_var.set(s.get_setting("force_password", "True") == "True")
 
-        self.data_dir_var.set(s.get_setting("data_dir", ""))
+        self.data_dir_var.set(s.get_setting("data_dir", "data"))
 
         self.close_action_var.set(s.get_setting("close_action", "ask"))
 
@@ -1200,7 +1200,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.custom_default_allday_reminders_listbox.delete(0, tk.END)
 
         self.enable_log_file_var.set(False)
-        self.log_path_var.set("dav_server.log")
+        self.log_path_var.set("log/dav_server.log")
         self.log_level_var.set("INFO")
         self.tz_fmt_var.set("{offset} - {city} ({tz_id}) {localized}{local_tag}")
         TimezoneHelper.set_format(self.tz_fmt_var.get())
