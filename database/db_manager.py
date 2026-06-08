@@ -1,4 +1,5 @@
 import os
+import hashlib
 import sqlite3
 import threading
 import json
@@ -103,6 +104,22 @@ class Database:
             for col in ['created_at', 'updated_at']:
                 try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
                 except Exception: pass
+
+        # 迁移: 为 auth_logs 添加哈希链列
+        for col in ['prev_hash', 'hash']:
+            try: c.execute(f"ALTER TABLE auth_logs ADD COLUMN {col} TEXT DEFAULT ''")
+            except Exception: pass
+        # 回填现有行的哈希链
+        missing = c.execute("SELECT COUNT(*) FROM auth_logs WHERE hash IS NULL OR hash = ''").fetchone()[0]
+        if missing:
+            existing = c.execute("SELECT id, timestamp, ip, success, method, detail FROM auth_logs ORDER BY id ASC").fetchall()
+            prev = "0"
+            for row in existing:
+                data = f"{prev}|{row[1]}|{row[2]}|{row[3]}|{row[4] or ''}|{row[5] or ''}"
+                h = hashlib.sha256(data.encode('utf-8')).hexdigest()
+                c.execute("UPDATE auth_logs SET prev_hash=?, hash=? WHERE id=?", (prev, h, row[0]))
+                prev = h
+            logger.info(f"已回填 {missing} 条审计日志的哈希链")
 
         # 远程连接表（FTP/FTPS/SFTP 保存的连接）
         c.execute('''CREATE TABLE IF NOT EXISTS remote_connections

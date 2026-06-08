@@ -196,7 +196,17 @@ class AuthService:
             logger.warning(f"[{client_ip}] 频率限制已触发 ({max_req}/分钟)")
         return allowed
 
-    # ── 鉴权日志（统一入口，后续可扩展 UA、浏览器指纹等） ──────
+    # ── 鉴权日志（防抵赖哈希链） ────────────────────────────────
+
+    @staticmethod
+    def _get_last_hash() -> str:
+        row = Database().query_one("SELECT hash FROM auth_logs ORDER BY id DESC LIMIT 1")
+        return row[0] if row else "0"
+
+    @staticmethod
+    def _compute_hash(prev_hash: str, timestamp: str, ip: str, success: int, method: str, detail: str) -> str:
+        data = f"{prev_hash}|{timestamp}|{ip}|{success}|{method}|{detail}"
+        return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def log_auth(self, success: bool, client_ip: str, method: str = "", extra: str = ""):
         status = "登录成功" if success else "登录失败"
@@ -210,12 +220,30 @@ class AuthService:
         else:
             logger.warning(parts)
         try:
+            ts = datetime.now().isoformat()
+            succ = 1 if success else 0
+            prev_hash = self._get_last_hash()
+            h = self._compute_hash(prev_hash, ts, client_ip, succ, method, extra)
             Database().execute(
-                "INSERT INTO auth_logs (timestamp, ip, success, method, detail) VALUES (?, ?, ?, ?, ?)",
-                (datetime.now().isoformat(), client_ip, 1 if success else 0, method, extra)
+                "INSERT INTO auth_logs (timestamp, ip, success, method, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (ts, client_ip, succ, method, extra, prev_hash, h)
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"写入鉴权日志失败: {e}")
+
+    @staticmethod
+    def verify_auth_chain() -> list[dict]:
+        rows = Database().query("SELECT id, timestamp, ip, success, method, detail, prev_hash, hash FROM auth_logs ORDER BY id ASC")
+        broken = []
+        prev = "0"
+        for r in rows:
+            expected = AuthService._compute_hash(prev, r[1], r[2], r[3], r[4] or "", r[5] or "")
+            if expected != r[7]:
+                broken.append({"id": r[0], "expected": expected, "actual": r[7]})
+            prev = r[7]
+            if r[6] != "0" and r[6] != prev:
+                broken.append({"id": r[0], "type": "prev_hash_mismatch", "expected_prev": prev, "stored_prev": r[6]})
+        return broken
 
     def get_auth_logs_filtered(self, protocol: str = "", limit: int = 500) -> list[dict]:
         try:
