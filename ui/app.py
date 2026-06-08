@@ -141,6 +141,15 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.status_bar_mgr.refresh)
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.status_bar_mgr.refresh)
 
+    def _show_setup_wizard(self):
+        completed = self.settings_service.get_setting("setup_wizard_completed", "")
+        if completed == "1":
+            return
+        from ui.dialogs.setup_wizard import SetupWizard
+        wiz = SetupWizard(self.root)
+        self.root.wait_window(wiz)
+        self.settings_service.set_setting("setup_wizard_completed", "1")
+
     def _deferred_startup(self):
         self._sync_mcp_server()
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
