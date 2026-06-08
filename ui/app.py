@@ -209,7 +209,7 @@ class DAVServerApp:
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         set_auto_start(auto_start)
         from ui.widgets.toast import Toast
-        Toast.show(self.root, "设置已保存")
+        Toast.success(self.root, "设置已保存")
 
     def _sync_mcp_server(self):
         enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"

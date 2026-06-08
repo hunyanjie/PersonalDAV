@@ -828,7 +828,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         from utils.backup import export_backup
         if export_backup(path):
             from ui.widgets.toast import Toast
-            Toast.show(self, f"备份已导出到:\n{path}", duration=4000)
+            Toast.success(self, f"备份已导出到:\n{path}")
         else:
             messagebox.showerror("备份失败", "导出过程中发生错误，请查看日志。", parent=self)
 

@@ -670,7 +670,7 @@ class EventDialog:
         key = self.other_key_var.get().strip()
         value = self.other_val_var.get().strip()
         if not key:
-            messagebox.showwarning("提示", "键不能为空", parent=self.root)
+            Toast.warning(self.root, "键不能为空")
             return
         self.other_fields.append({"key": key.upper(), "value": value})
         self._other_refresh()
@@ -678,13 +678,13 @@ class EventDialog:
     def _other_update(self):
         sel = self.other_tree.selection()
         if len(sel) != 1:
-            messagebox.showinfo("提示", "请选择一个字段", parent=self.root)
+            Toast.warning(self.root, "请选择一个字段")
             return
         idx = self.other_tree.index(sel[0])
         key = self.other_key_var.get().strip()
         value = self.other_val_var.get().strip()
         if not key:
-            messagebox.showwarning("提示", "键不能为空", parent=self.root)
+            Toast.warning(self.root, "键不能为空")
             return
         self.other_fields[idx] = {"key": key.upper(), "value": value}
         self._other_refresh()
@@ -692,7 +692,7 @@ class EventDialog:
     def _other_edit(self):
         sel = self.other_tree.selection()
         if len(sel) != 1:
-            messagebox.showinfo("提示", "请选择一个字段", parent=self.root)
+            Toast.warning(self.root, "请选择一个字段")
             return
         idx = self.other_tree.index(sel[0])
         self.other_key_var.set(self.other_fields[idx]['key'])
@@ -701,7 +701,7 @@ class EventDialog:
     def _other_delete(self):
         sel = self.other_tree.selection()
         if not sel:
-            messagebox.showinfo("提示", "请选择要删除的字段", parent=self.root)
+            Toast.warning(self.root, "请选择要删除的字段")
             return
         if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self.root):
             return
@@ -902,7 +902,7 @@ class EventDialog:
     def edit_reminder(self):
         s = self.reminder_listbox.curselection()
         if s: self._edit_reminder(s[0])
-        else: messagebox.showwarning("提示", "请先选择要编辑的提醒", parent=self.root)
+        else: Toast.warning(self.root, "请先选择要编辑的提醒")
 
     def _open_reminder_editor(self, initial_alarm=None, callback=None):
         """打开提醒编辑器对话框 (精细化)"""

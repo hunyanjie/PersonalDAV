@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
+from tkinter import ttk, messagebox
+from ui.widgets.toast import Toast, filedialog, simpledialog
 import threading
 import os
 from typing import Any
@@ -82,7 +83,7 @@ class RemoteFileOps:
 
     def upload_file(self):
         if not self.is_ftp_connected():
-            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持上传", parent=self.tab)
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持上传")
             return
         file_path = filedialog.askopenfilename(title="选择要上传的文件")
         if not file_path:
@@ -105,7 +106,7 @@ class RemoteFileOps:
 
     def download_selected(self):
         if not self.is_ftp_connected():
-            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持下载", parent=self.tab)
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持下载")
             return
         sel = self.tab.tree.selection()
         if not sel:
@@ -117,7 +118,7 @@ class RemoteFileOps:
                 remote = self.tab._current_path.rstrip("/") + "/" + values[0]
                 targets.append((values[0], remote))
         if not targets:
-            messagebox.showinfo("提示", "没有选中可下载的文件", parent=self.tab)
+            Toast.warning(self.tab, "没有选中可下载的文件")
             return
         if len(targets) == 1:
             name, remote = targets[0]
@@ -150,7 +151,7 @@ class RemoteFileOps:
 
     def delete_selected(self):
         if not self.is_ftp_connected():
-            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持删除", parent=self.tab)
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持删除")
             return
         sel = self.tab.tree.selection()
         if not sel:
@@ -186,7 +187,7 @@ class RemoteFileOps:
         if not old_path:
             return
         if not self.is_ftp_connected():
-            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持重命名", parent=self.tab)
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持重命名")
             return
         name = self.get_selected_name()
         new_name = simpledialog.askstring("重命名", "新名称:", initialvalue=name, parent=self.tab)
@@ -209,7 +210,7 @@ class RemoteFileOps:
 
     def new_folder(self):
         if not self.is_ftp_connected():
-            messagebox.showinfo("提示", "仅 FTP/FTPS/SFTP 协议支持新建文件夹", parent=self.tab)
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持新建文件夹")
             return
         dir_name = simpledialog.askstring("新建文件夹", "文件夹名称:", parent=self.tab)
         if not dir_name:
@@ -243,4 +244,4 @@ class RemoteFileOps:
             self.tab.browse_share(self.tab._current_share, self.tab._current_path)
         else:
             self.set_ops_state(False)
-            messagebox.showwarning(f"{op_name}结果", f"{ok}/{total} 项{op_name}成功", parent=self.tab)
+            Toast.warning(self.tab, f"{ok}/{total} 项{op_name}成功")

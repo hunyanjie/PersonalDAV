@@ -195,7 +195,7 @@ class SecuritySettingsSection:
         AuthService().rotate_mcp_token()
         self._refresh()
         from ui.widgets.toast import Toast
-        Toast.show(self._parent_frame, "MCP 令牌已轮换，旧令牌立即失效")
+        Toast.success(self._parent_frame, "MCP 令牌已轮换，旧令牌立即失效")
 
     def _copy_mcp_token(self):
         token = AuthService().get_mcp_token()
@@ -205,7 +205,7 @@ class SecuritySettingsSection:
         self._parent_frame.clipboard_clear()
         self._parent_frame.clipboard_append(token)
         from ui.widgets.toast import Toast
-        Toast.show(self._parent_frame, "MCP 令牌已复制到剪贴板")
+        Toast.success(self._parent_frame, "MCP 令牌已复制到剪贴板")
 
     def load(self):
         s = self.dialog.db
