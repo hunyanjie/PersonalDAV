@@ -38,7 +38,7 @@ PersonalDAV/
 │   └── log/
 │       └── dav_server.log     # 日志文件（启用时）
 ├── mcp_tools/                 # MCP 工具模块（v2.6 拆分）
-│   ├── _state.py              # 共享状态（服务实例单例）
+│   ├── _state.py              # 共享状态（服务实例惰性 getter，首次调用时创建）
 │   ├── helpers.py             # JSON 序列化 / 摘要辅助函数
 │   ├── server_tools.py        # DAV 服务器启停（start/stop/status）
 │   ├── contact_tools.py       # 联系人 CRUD + create_contact_v2
@@ -515,6 +515,21 @@ class Database:
 
 每次 `Database.__init__()` 启动时自动复制 `dav_data.db` → `dav_data.db.bak`。
 
+### 数据库压缩（v2.7）
+
+```python
+def vacuum_full(self) -> int | None:
+    """完整 VACUUM 重写数据库，释放所有空闲空间。
+    
+    安全说明：SQLite VACUUM 创建临时文件 → 复制数据 → 原子替换原文件。
+    若中途崩溃或断电，原文件不受影响。
+    """
+```
+
+- **自动压缩（启动时）**：`_vacuum_if_needed()` 在空闲页超过总页数 50% 且多于 100 页时自动执行全量 `VACUUM`（v2.7 改用全量 VACUUM 替代原 incremental_vacuum，后者对分散空闲页无效）
+- **手动压缩**：在设置 → 备份与恢复中点击「压缩数据库」按钮，后台线程执行，模态进度窗防止重复操作
+- **防重入**：`Database._vacuum_in_progress` 类级别标志，`vacuum_full()` 自身不通过 `execute()` 方法（避免 `threading.Lock` 不可重入死锁），直接操作 `self.conn.cursor()`
+
 ---
 
 ## UI Treeview 基类（BaseTreeTab）
@@ -896,7 +911,7 @@ class MCPServer:
     def is_running(self) -> bool                             # 查询运行状态
 ```
 
-`start()` 通过 `uvicorn.Server` 在 daemon 线程中运行，`stop()` 设置 `should_exit = True`。
+`start()` 在 daemon 线程中依次执行：工具注册 → `sse_app()` 构建 → `uvicorn.Server.run()`，调用后立即返回，不阻塞主线程。`stop()` 设置 `should_exit = True`。
 
 ### 暴露的工具（共 33 个）
 
@@ -967,7 +982,7 @@ v2.6 将工具从 `services/mcp_server.py`（824 行）拆分为 7 个独立模�
 ```
 mcp_tools/
 ├── __init__.py       # 导出 all_tools 列表
-├── _state.py         # get/set_server_app 全局单例
+├── _state.py         # 惰性 getter：get_contact_svc / get_event_svc / get_ftp_svc
 ├── helpers.py        # serialize_model / make_summary
 ├── server_tools.py   # 3 个工具
 ├── contact_tools.py  # 6 个工具（含 create_contact_v2）
@@ -979,6 +994,15 @@ mcp_tools/
 ```
 
 优势：职责清晰、可单独测试、无需启动完整 GUI。
+
+### 启动优化（v2.7）
+
+v2.7 进一步优化启动速度：
+
+1. **工具注册延迟到 `start()` 时**：`MCPServer.__init__()` 不再调用 `_register_tools()`，仅在 `start()` 方法中注册。创建 MCPServer 对象几乎零成本。
+2. **后台线程注册**：`start()` 将工具注册 + `sse_app()` 构建 + `uvicorn.Server.run()` 全部放入后台 `daemon` 线程执行，`start()` 瞬间返回，不阻塞主线程。
+3. **惰性服务实例化**：`mcp_tools/_state.py` 的 `CONTACT_SVC` / `EVENT_SVC` / `FTP_SVC` 改为 `get_contact_svc()` / `get_event_svc()` / `get_ftp_svc()` 惰性 getter，首次调用时才创建单例。
+4. **防重复注册**：`_tools_registered` 标记确保 `_register_tools()` 只执行一次。
 
 ### 鉴权中间件
 
@@ -992,16 +1016,27 @@ MCP 服务器通过 `_AuthASGIMiddleware`（原生 ASGI 中间件，兼容 SSE �
 
 所有鉴权事件（成功/失败/拒绝/免密）统一通过 `AuthService.log_auth()` 写入日志。
 
-### 集成方式
+### 集成方式（v2.7 惰性创建）
 
 ```python
-# app.py — 自动启停
-self.mcp_server = MCPServer()
+# app.py — 自动启停（v2.7：MCPServer 惰性创建）
+self.mcp_server = None
 self._sync_mcp_server()           # 读取 mcp_enabled 设置决定启停
 event_bus.subscribe(EVENT_SETTINGS_CHANGED, self._sync_mcp_server)
+
+def _sync_mcp_server(self):
+    enabled = ...
+    if enabled:
+        if self.mcp_server is None:
+            from services.mcp_server import MCPServer
+            self.mcp_server = MCPServer()  # 轻量：只创建 FastMCP，不注册工具
+        if not self.mcp_server.is_running:
+            self.mcp_server.start(...)     # 后台线程：注册 + SSE + uvicorn
+    elif self.mcp_server is not None and self.mcp_server.is_running:
+        self.mcp_server.stop()
 ```
 
-用户在设置界面勾选「启用 MCP 服务」→ 保存后，`EVENT_SETTINGS_CHANGED` 被发布，`_sync_mcp_server()` 动态启动或停止后台服务器。
+用户在设置界面勾选「启用 MCP 服务」→ 保存后，`EVENT_SETTINGS_CHANGED` 被发布，`_sync_mcp_server()` 动态启动或停止后台服务器。启用前 MCPServer 对象不存在，零内存开销。
 
 ### 独立运行
 
