@@ -1,4 +1,4 @@
-from mcp_tools._state import CONTACT_SVC
+from mcp_tools._state import get_contact_svc
 from mcp_tools.helpers import safe_json, check_readonly, make_contact_summary
 from utils.logger import logger
 
@@ -8,7 +8,7 @@ def register(mcp):
     def list_contacts() -> str:
         logger.info("MCP 调用: list_contacts")
         try:
-            items = CONTACT_SVC.get_list_data()
+            items = get_contact_svc().get_list_data()
             result = []
             for row in items:
                 result.append({"uid": row[0], "full_name": row[1], "email": row[2], "phone": row[3]})
@@ -22,7 +22,7 @@ def register(mcp):
     def get_contact(uid: str) -> str:
         logger.info(f"MCP 调用: get_contact uid={uid}")
         try:
-            raw = CONTACT_SVC.get_by_uid(uid)
+            raw = get_contact_svc().get_by_uid(uid)
             if raw is None:
                 logger.warning(f"MCP 返回: get_contact -> 联系人 {uid} 不存在")
                 return safe_json({"error": f"联系人 {uid} 不存在"})
@@ -40,7 +40,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info(f"MCP 调用: create_contact vcard_data({len(vcard_data)}B)")
         try:
-            uid, op = CONTACT_SVC.add_contact(vcard_data, publish=False)
+            uid, op = get_contact_svc().add_contact(vcard_data, publish=False)
             if uid is None:
                 logger.error(f"MCP 返回: create_contact -> 失败: {op}")
                 return safe_json({"error": op})
@@ -56,7 +56,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info(f"MCP 调用: update_contact uid={uid} vcard_data({len(vcard_data)}B)")
         try:
-            uid, op = CONTACT_SVC.add_contact(vcard_data, force=True, publish=False)
+            uid, op = get_contact_svc().add_contact(vcard_data, force=True, publish=False)
             if uid is None:
                 logger.error(f"MCP 返回: update_contact -> 失败: {op}")
                 return safe_json({"error": op})
@@ -72,7 +72,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info(f"MCP 调用: delete_contact uid={uid}")
         try:
-            ok = CONTACT_SVC.delete(uid)
+            ok = get_contact_svc().delete(uid)
             logger.info(f"MCP 返回: delete_contact -> uid={uid} deleted={ok}")
             return safe_json({"uid": uid, "deleted": ok})
         except Exception as e:
@@ -91,7 +91,7 @@ def register(mcp):
             if phone:
                 vcard += f"TEL:{phone}\n"
             vcard += "END:VCARD"
-            uid, op = CONTACT_SVC.add_contact(vcard, publish=False)
+            uid, op = get_contact_svc().add_contact(vcard, publish=False)
             if uid is None:
                 logger.error(f"MCP 返回: create_contact_v2 -> 失败: {op}")
                 return safe_json({"error": op})

@@ -2,16 +2,11 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import uuid
 import pytz
-import vobject
 import re
 import os
 import base64
 from datetime import datetime, timedelta
 from dateutil import parser
-from babel.dates import get_timezone_name
-from tzlocal import get_localzone
-import locale
-import quopri
 from tkcalendar import DateEntry
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
@@ -19,9 +14,8 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
-from utils.encoding_helper import smart_quoted_printable_encode, should_encode, decode_ical_value
 from models.constants import (
-    STANDARD_ICAL_FIELDS, STATUS_MAPPING, STATUS_REV_MAPPING,
+    STATUS_MAPPING, STATUS_REV_MAPPING,
     TRANSPARENCY_MAPPING, TRANSPARENCY_REV_MAPPING,
     REPEAT_OPTIONS, WEEKDAYS, WEEKDAYS_RRULE, END_CONDITIONS,
     ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING,
@@ -30,143 +24,8 @@ from models.constants import (
     REMINDER_STRING_MAPPING,
 )
 import json
-
-class DetailedReminderEditor(tk.Toplevel):
-    """精细化提醒编辑器 (独立窗口)"""
-    def __init__(self, parent, initial_alarm=None, callback=None):
-        super().__init__(parent)
-        self.title("编辑提醒" if initial_alarm else "添加提醒")
-        # self.geometry("500x550") # 设置固定大小
-        self.transient(parent); self.grab_set()
-        self.callback = callback
-        self.initial_alarm = initial_alarm
-        self.create_widgets()
-        if initial_alarm: self.load_data(initial_alarm)
-        from utils.window_utils import center_window
-        center_window(self, parent)
-
-    def create_widgets(self):
-        main_f = ttk.Frame(self); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # 1. 基础设置
-        basic_f = ttk.LabelFrame(main_f, text="提醒基本设置"); basic_f.pack(fill=tk.X, pady=5)
-        ttk.Label(basic_f, text="提醒类型:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        self.rem_type_var = tk.StringVar(value="显示")
-        ttk.Combobox(basic_f, textvariable=self.rem_type_var, values=["显示", "声音", "邮件"], state="readonly", width=10).grid(row=0, column=1, sticky="w", padx=5)
-        
-        ttk.Label(basic_f, text="触发方式:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.trig_type_var = tk.StringVar(value="relative")
-        ttk.Radiobutton(basic_f, text="提前时间", variable=self.trig_type_var, value="relative").grid(row=1, column=1, sticky="w", padx=5)
-        ttk.Radiobutton(basic_f, text="指定时间", variable=self.trig_type_var, value="absolute").grid(row=1, column=2, sticky="w", padx=5)
-        
-        # 提前时间 Frame
-        self.rel_f = ttk.Frame(basic_f); self.rel_f.grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-        self.days_v = tk.StringVar(value="0"); self.hours_v = tk.StringVar(value="0"); self.mins_v = tk.StringVar(value="15")
-        ttk.Label(self.rel_f, text="天:").pack(side=tk.LEFT)
-        ttk.Spinbox(self.rel_f, from_=0, to=365, textvariable=self.days_v, width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Label(self.rel_f, text="时:").pack(side=tk.LEFT)
-        ttk.Spinbox(self.rel_f, from_=0, to=23, textvariable=self.hours_v, width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Label(self.rel_f, text="分:").pack(side=tk.LEFT)
-        ttk.Spinbox(self.rel_f, from_=0, to=59, textvariable=self.mins_v, width=3).pack(side=tk.LEFT, padx=2)
-        
-        # 指定时间 Frame
-        self.abs_f = ttk.Frame(basic_f); self.abs_f.grid(row=3, column=0, columnspan=3, sticky="w", padx=5, pady=5); self.abs_f.grid_remove()
-        self.abs_d = DateEntry(self.abs_f, date_pattern='yyyy-mm-dd', width=12); self.abs_d.pack(side=tk.LEFT, padx=2)
-        self.abs_h = ttk.Combobox(self.abs_f, width=3, values=[f"{h:02d}" for h in range(24)], state="readonly"); self.abs_h.pack(side=tk.LEFT, padx=2); self.abs_h.set("09")
-        ttk.Label(self.abs_f, text=":").pack(side=tk.LEFT)
-        self.abs_m = ttk.Combobox(self.abs_f, width=3, values=[f"{m:02d}" for m in range(0, 60, 5)], state="readonly"); self.abs_m.pack(side=tk.LEFT, padx=2); self.abs_m.set("00")
-        tz_list = TimezoneHelper.get_localized_timezones()
-        self.abs_tz_v = tk.StringVar(value=TimezoneHelper.get_timezone_display_name(TimezoneHelper.get_local_timezone_id()))
-        ttk.Combobox(self.abs_f, textvariable=self.abs_tz_v, values=tz_list, width=25, state="readonly").pack(side=tk.LEFT, padx=2)
-
-        def toggle_t(*args):
-            if self.trig_type_var.get() == "relative": self.rel_f.grid(); self.abs_f.grid_remove()
-            else: self.rel_f.grid_remove(); self.abs_f.grid()
-        self.trig_type_var.trace("w", toggle_t)
-
-        rep_f = ttk.Frame(basic_f); rep_f.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-        self.rep_v = tk.StringVar(value="0"); self.dur_v = tk.StringVar(value="15")
-        ttk.Label(rep_f, text="重复次数:").pack(side=tk.LEFT)
-        ttk.Spinbox(rep_f, from_=0, to=99, textvariable=self.rep_v, width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Label(rep_f, text="间隔(分):").pack(side=tk.LEFT, padx=(10,0))
-        ttk.Spinbox(rep_f, from_=1, to=1440, textvariable=self.dur_v, width=5).pack(side=tk.LEFT, padx=2)
-
-        # 2. 详情设置
-        ext_f = ttk.LabelFrame(main_f, text="提醒内容详情"); ext_f.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        disp_f = ttk.Frame(ext_f); disp_f.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(disp_f, text="描述:").pack(side=tk.LEFT)
-        self.desc_t = tk.Text(disp_f, height=3, width=40); self.desc_t.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5); RightClickMenu(self.desc_t, "text")
-        
-        self.audio_f = ttk.Frame(ext_f); self.audio_f.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(self.audio_f, text="音频:").pack(side=tk.LEFT)
-        self.attach_v = tk.StringVar(); ttk.Entry(self.audio_f, textvariable=self.attach_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        
-        self.mail_f = ttk.Frame(ext_f); self.mail_f.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(self.mail_f, text="收件人:").pack(side=tk.LEFT)
-        self.mail_to_v = tk.StringVar(); ttk.Entry(self.mail_f, textvariable=self.mail_to_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        ttk.Label(self.mail_f, text="主题:").pack(side=tk.LEFT)
-        self.mail_sub_v = tk.StringVar(); ttk.Entry(self.mail_f, textvariable=self.mail_sub_v).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-
-        def update_ext_ui(*args):
-            t = self.rem_type_var.get()
-            for f, target in [(self.audio_f, "声音"), (self.mail_f, "邮件")]:
-                if t == target: f.pack(fill=tk.X, padx=5, pady=2)
-                else: f.pack_forget()
-        self.rem_type_var.trace("w", update_ext_ui); update_ext_ui()
-        
-        ttk.Button(main_f, text="保存提醒", command=self.save).pack(pady=10)
-
-    def load_data(self, a):
-        self.rem_type_var.set(ALARM_ACTION_REV_MAPPING.get(a.get('action'), "显示"))
-        tr = a.get('trigger')
-        if isinstance(tr, datetime):
-            self.trig_type_var.set("absolute")
-            try:
-                local_dt = tr.astimezone(pytz.timezone(TimezoneHelper.get_local_timezone_id()))
-                self.abs_d.set_date(local_dt.date()); self.abs_h.set(local_dt.strftime("%H")); self.abs_m.set(local_dt.strftime("%M"))
-            except Exception:
-                logger.debug("闹钟时间解析失败")
-        elif isinstance(tr, timedelta):
-            self.trig_type_var.set("relative")
-            sec = abs(tr.total_seconds())
-            self.days_v.set(int(sec // 86400)); self.hours_v.set(int((sec % 86400) // 3600)); self.mins_v.set(int((sec % 3600) // 60))
-        if 'description' in a: self.desc_t.insert("1.0", a['description'])
-        if 'attach' in a: self.attach_v.set(a['attach'])
-        if 'attendee' in a: self.mail_to_v.set(a['attendee'])
-        if 'summary' in a: self.mail_sub_v.set(a['summary'])
-        if 'repeat' in a: self.rep_v.set(a['repeat'])
-        if 'duration' in a:
-            d = a['duration']
-            if isinstance(d, timedelta): self.dur_v.set(str(int(d.total_seconds() // 60)))
-            elif isinstance(d, str) and 'PT' in d: self.dur_v.set(d.replace('PT', '').replace('M', ''))
-
-    def save(self):
-        try:
-            act = ALARM_ACTION_MAPPING.get(self.rem_type_var.get(), "DISPLAY")
-            if self.trig_type_var.get() == "relative":
-                d, h, m = int(self.days_v.get() or 0), int(self.hours_v.get() or 0), int(self.mins_v.get() or 0)
-                trig = -timedelta(days=d, hours=h, minutes=m)
-            else:
-                try: 
-                    tz_id = TimezoneHelper.extract_tz_id(self.abs_tz_v.get())
-                    dt_naive = datetime.combine(self.abs_d.get_date(), datetime.strptime(f"{self.abs_h.get()}:{self.abs_m.get()}", "%H:%M").time())
-                    trig = pytz.timezone(tz_id).localize(dt_naive).astimezone(pytz.UTC)
-                except Exception: messagebox.showerror("错误", "时间格式非法", parent=self); return
-            
-            new_a = {'action': act, 'trigger': trig, 'description': self.desc_t.get("1.0", "end-1c").strip()}
-            if self.attach_v.get(): new_a['attach'] = self.attach_v.get()
-            if self.mail_to_v.get(): new_a['attendee'] = self.mail_to_v.get()
-            if self.mail_sub_v.get(): new_a['summary'] = self.mail_sub_v.get()
-            try:
-                rc = int(self.rep_v.get() or 0)
-                if rc > 0: new_a['repeat'] = rc; new_a['duration'] = timedelta(minutes=int(self.dur_v.get() or 15))
-            except Exception:
-                logger.debug("忽略异常")
-            
-            if self.callback: self.callback(new_a)
-            self.destroy()
-        except Exception as e: messagebox.showerror("保存失败", f"数据验证未通过: {e}", parent=self)
+from ui.dialogs.detailed_reminder_editor import DetailedReminderEditor
+from services.ical_builder import parse_ical_event, build_ical
 
 class EventDialog:
     """日历事件编辑对话框 - 1:1 深度还原，Flawless 架构演进版"""
@@ -901,130 +760,65 @@ class EventDialog:
             if v.get('sync_timezone') is not None: self.sync_tz_var.set(v.get('sync_timezone'))
         if is_edit_mode:
             try:
-                ical = vobject.readOne(v['ical'])
-                ev = ical.vevent if ical.name == 'VCALENDAR' else ical
-                if hasattr(ev, 'summary'): self.summary_var.set(decode_ical_value(ev.summary.value))
-                if hasattr(ev, 'location'): self.location_var.set(decode_ical_value(ev.location.value))
-                if hasattr(ev, 'description'): self.description_text.insert("1.0", decode_ical_value(ev.description.value))
-                if hasattr(ev, 'categories'): self.categories_var.set(decode_ical_value(",".join(ev.categories.value) if hasattr(ev.categories, 'value') else ev.categories.value))
-                if hasattr(ev, 'priority'):
-                    p = int(ev.priority.value); self.priority_var.set(p); self.priority_label.config(text=f" {p} ")
-                if hasattr(ev, 'organizer'): self.organizer_var.set(decode_ical_value(ev.organizer.value))
-                if hasattr(ev, 'status'): self.status_var.set(self.STATUS_REV_MAPPING.get(ev.status.value, "已确认"))
-                if hasattr(ev, 'url'): self.url_var.set(decode_ical_value(ev.url.value))
-                if hasattr(ev, 'sequence'): self.sequence_var.set(str(ev.sequence.value))
-                
-                # 恢复自定义扩展状态 (使用 contents[key][0] 安全读取带连字符的属性)
-                if 'x-force-reminder' in ev.contents: self.force_reminder_var.set(ev.contents['x-force-reminder'][0].value == "1")
-                if 'x-sync-tz' in ev.contents: self.sync_tz_var.set(ev.contents['x-sync-tz'][0].value == "1")
-                if 'x-allday' in ev.contents: self.allday_var.set(ev.contents['x-allday'][0].value == "1")
-                
-                self.attendee_text.delete("1.0", tk.END); attendee_values = set()
-                if hasattr(ev, 'attendee_list'):
-                    for a in ev.attendee_list:
-                        val = decode_ical_value(a.value); attendee_values.add(val)
-                elif hasattr(ev, 'attendee'):
-                    val = decode_ical_value(ev.attendee.value); attendee_values.add(val)
-                if attendee_values: self.attendee_text.insert("1.0", "\n".join(sorted(list(attendee_values))))
-                standard = STANDARD_ICAL_FIELDS
-                for child in ev.contents.values():
-                    for item in child:
-                        name = item.name.upper()
-                        if name not in standard:
-                            self.other_fields.append({"key": name, "value": str(item.value)})
-                self._other_refresh()
-                if hasattr(ev, 'dtstart'):
-                    dt = ev.dtstart.value
-                    if isinstance(dt, datetime):
-                        self.start_date.set_date(dt.date()); self.start_hour.set(f"{dt.hour:02d}"); self.start_minute.set(f"{dt.minute:02d}")
-                        if 'TZID' in ev.dtstart.params:
-                            tzid = ev.dtstart.params['TZID'][0]; display = TimezoneHelper.get_timezone_display_name(tzid); self.start_tz_var.set(display)
-                    else: self.start_date.set_date(dt); self.allday_var.set(True)
-                if hasattr(ev, 'dtend'):
-                    dt = ev.dtend.value
-                    if isinstance(dt, datetime):
-                        self.end_date.set_date(dt.date()); self.end_hour.set(f"{dt.hour:02d}"); self.end_minute.set(f"{dt.minute:02d}")
-                        if 'TZID' in ev.dtend.params:
-                            tzid = ev.dtend.params['TZID'][0]; display = TimezoneHelper.get_timezone_display_name(tzid); self.end_tz_var.set(display)
-                    else: self.end_date.set_date(dt - timedelta(days=1))
-                if hasattr(ev, 'rrule'):
-                    rrule_str = ev.rrule.value; parts = dict(item.split('=') for item in rrule_str.split(';') if '=' in item)
-                    freq = parts.get('FREQ'); interval = parts.get('INTERVAL', '1')
-                    if freq == 'DAILY' and interval == '1': self.repeat_var.set('每天')
-                    elif freq == 'WEEKLY' and interval == '1': self.repeat_var.set('每周')
-                    elif freq == 'WEEKLY' and interval == '2': self.repeat_var.set('每两周')
-                    elif freq == 'MONTHLY' and interval == '1': self.repeat_var.set('每月')
-                    elif freq == 'YEARLY' and interval == '1': self.repeat_var.set('每年')
-                    else: self.repeat_var.set('自定义'); self.custom_repeat_data = {'freq': freq, 'interval': interval}
-                    if 'UNTIL' in parts:
-                        self.end_cond_var.set('按日期结束')
-                        try: self.end_date_entry.set_date(parser.parse(parts['UNTIL']).date())
-                        except Exception:
-                            logger.debug("忽略异常")
-                    elif 'COUNT' in parts: self.end_cond_var.set('按次数结束'); self.end_count_var.set(parts['COUNT'])
-                    else: self.end_cond_var.set('永不结束')
-                # 解析 EXDATE 例外日期
+                parsed = parse_ical_event(v['ical'])
+                if 'summary' in parsed: self.summary_var.set(parsed['summary'])
+                if 'location' in parsed: self.location_var.set(parsed['location'])
+                if 'description' in parsed: self.description_text.insert("1.0", parsed['description'])
+                if 'categories' in parsed: self.categories_var.set(parsed['categories'])
+                if 'priority' in parsed:
+                    p = parsed['priority']; self.priority_var.set(p); self.priority_label.config(text=f" {p} ")
+                if 'organizer' in parsed: self.organizer_var.set(parsed['organizer'])
+                if 'status' in parsed: self.status_var.set(STATUS_REV_MAPPING.get(parsed['status'], "已确认"))
+                if 'url' in parsed: self.url_var.set(parsed['url'])
+                if 'sequence' in parsed: self.sequence_var.set(str(parsed['sequence']))
+                if parsed.get('force_reminder'): self.force_reminder_var.set(True)
+                if parsed.get('sync_tz'): self.sync_tz_var.set(True)
+                if parsed.get('allday'): self.allday_var.set(True)
+                if 'attendees' in parsed:
+                    self.attendee_text.delete("1.0", tk.END)
+                    if parsed['attendees']:
+                        self.attendee_text.insert("1.0", "\n".join(parsed['attendees']))
+                if 'other_fields' in parsed:
+                    self.other_fields = parsed['other_fields']
+                    self._other_refresh()
+                dtstart = parsed.get('dtstart')
+                if dtstart is not None:
+                    if isinstance(dtstart, datetime):
+                        self.start_date.set_date(dtstart.date())
+                        self.start_hour.set(f"{dtstart.hour:02d}")
+                        self.start_minute.set(f"{dtstart.minute:02d}")
+                        if parsed.get('start_tzid'):
+                            self.start_tz_var.set(TimezoneHelper.get_timezone_display_name(parsed['start_tzid']))
+                    else:
+                        self.start_date.set_date(dtstart)
+                        self.allday_var.set(True)
+                dtend = parsed.get('dtend')
+                if dtend is not None:
+                    if isinstance(dtend, datetime):
+                        self.end_date.set_date(dtend.date())
+                        self.end_hour.set(f"{dtend.hour:02d}")
+                        self.end_minute.set(f"{dtend.minute:02d}")
+                        if parsed.get('end_tzid'):
+                            self.end_tz_var.set(TimezoneHelper.get_timezone_display_name(parsed['end_tzid']))
+                    else:
+                        self.end_date.set_date(dtend)
+                if 'repeat' in parsed:
+                    self.repeat_var.set(parsed['repeat'])
+                    if parsed.get('custom_repeat'):
+                        self.custom_repeat_data = parsed['custom_repeat']
+                if 'end_cond' in parsed:
+                    self.end_cond_var.set(parsed['end_cond'])
+                if 'end_count' in parsed:
+                    self.end_count_var.set(parsed['end_count'])
+                if 'end_date' in parsed:
+                    try: self.end_date_entry.set_date(parsed['end_date'])
+                    except Exception: pass
                 self.exdate_listbox.delete(0, tk.END)
-                if 'exdate' in ev.contents:
-                    for ex in ev.contents['exdate']:
-                        val = ex.value
-                        if isinstance(val, list):
-                            for v in val:
-                                if isinstance(v, datetime):
-                                    self.exdate_listbox.insert(tk.END, v.strftime('%Y-%m-%d'))
-                                else:
-                                    self.exdate_listbox.insert(tk.END, str(v))
-                        elif isinstance(val, datetime):
-                            self.exdate_listbox.insert(tk.END, val.strftime('%Y-%m-%d'))
-                        else:
-                            self.exdate_listbox.insert(tk.END, str(val))
-                # 解析 ATTACH 附件
-                self.attachments = []
-                seen_inline = set()
-                seen_uri = set()
-                if 'attach' in ev.contents:
-                    for att in ev.contents['attach']:
-                        a = {'inline': False}
-                        if hasattr(att, 'encoding_param') and att.encoding_param == 'BASE64':
-                            a['inline'] = True
-                            a['data'] = att.value
-                            a['filename'] = att.params.get('FILENAME', ['attachment.bin'])[0] if hasattr(att, 'params') else 'attachment.bin'
-                            a['fmttype'] = att.params.get('FMTTYPE', ['application/octet-stream'])[0] if hasattr(att, 'params') else 'application/octet-stream'
-                            a['size'] = int(len(base64.b64decode(a['data'])) * 3 / 4) if a['data'] else 0
-                            key = a['data']
-                            if key in seen_inline:
-                                continue
-                            seen_inline.add(key)
-                        else:
-                            raw = att.value
-                            if len(raw) > 100 and '://' not in raw and not raw.startswith('www.'):
-                                continue
-                            seen_uri_key = raw
-                            if seen_uri_key in seen_uri:
-                                continue
-                            seen_uri.add(seen_uri_key)
-                            a['uri'] = raw
-                            a['filename'] = att.params.get('FILENAME', [raw])[0] if hasattr(att, 'params') else raw
-                            a['fmttype'] = att.params.get('FMTTYPE', ['text/uri-list'])[0] if hasattr(att, 'params') else 'text/uri-list'
-                            a['size'] = 0
-                        self.attachments.append(a)
+                for d in parsed.get('exdates', []):
+                    self.exdate_listbox.insert(tk.END, d)
+                self.attachments = parsed.get('attachments', [])
                 self._attach_refresh()
-                self.alarms = []; valarms = ev.contents.get('valarm', [])
-                if not valarms: valarms = [c for c in ev.getChildren() if c.name.upper() == 'VALARM']
-                for alarm in valarms:
-                    trigger = alarm.trigger.value if hasattr(alarm, 'trigger') else None
-                    if trigger is None: continue
-                    alarm_data = {'action': alarm.action.value if hasattr(alarm, 'action') else 'DISPLAY', 'trigger': trigger}
-                    if hasattr(alarm, 'attach'): alarm_data['attach'] = alarm.attach.value
-                    if hasattr(alarm, 'summary'): alarm_data['summary'] = alarm.summary.value
-                    if hasattr(alarm, 'description'): alarm_data['description'] = alarm.description.value
-                    if hasattr(alarm, 'attendee'): alarm_data['attendee'] = alarm.attendee.value
-                    if hasattr(alarm, 'repeat'): 
-                        try: alarm_data['repeat'] = int(alarm.repeat.value)
-                        except Exception:
-                            logger.debug("忽略异常")
-                    if hasattr(alarm, 'duration'): alarm_data['duration'] = alarm.duration.value
-                    self.alarms.append(alarm_data)
+                self.alarms = parsed.get('alarms', [])
             except Exception as e: logger.error(f"解析 iCalendar 数据失败 (UID={self.uid_var.get()}): {e}")
         self.toggle_allday(); self.toggle_sync_tz(); self.on_status_changed(); self.update_reminder_listbox()
 
@@ -1141,89 +935,65 @@ class EventDialog:
         self.preset_allday_reminders_listbox.delete(0, tk.END)
         for p in allday_presets: self.preset_allday_reminders_listbox.insert(tk.END, p)
 
-    def generate_ical(self):
-        cal = vobject.iCalendar(); cal.add('version').value = self.version_var.get(); cal.add('prodid').value = f"-//{SOFTWARE_NAME}//{SOFTWARE_VERSION}//ZH-CN"; ev = cal.add('vevent'); ev.add('uid').value = self.uid_var.get(); ev.add('summary').value = self.summary_var.get()
-        if self.location_var.get(): ev.add('location').value = self.location_var.get()
-        if self.description_text.get("1.0", "end-1c").strip(): ev.add('description').value = self.description_text.get("1.0", "end-1c").strip()
-        ev.add('status').value = self.STATUS_MAPPING.get(self.status_var.get(), "CONFIRMED")
-        if self.allday_var.get(): ev.add('dtstart').value = self.start_date.get_date(); ev.add('dtend').value = self.end_date.get_date() + timedelta(days=1); ev.add('X-ALLDAY').value = "1"
+    def _collect_form_data(self):
+        """将 UI 控件值收集为表单字典"""
+        data = {
+            'uid': self.uid_var.get(),
+            'summary': self.summary_var.get(),
+            'version': self.version_var.get(),
+            'status': self.STATUS_MAPPING.get(self.status_var.get(), "CONFIRMED"),
+            'is_edit': bool(self.initial.get('ical')),
+            'allday': self.allday_var.get(),
+            'priority': self.priority_var.get(),
+            'transparency': self.TRANSPARENCY_MAPPING.get(self.transparency_var.get(), "OPAQUE"),
+            'sequence': self.sequence_var.get() or "0",
+            'repeat': self.repeat_var.get(),
+            'custom_repeat': self.custom_repeat_data,
+            'end_cond': self.end_cond_var.get(),
+            'end_count': self.end_count_var.get(),
+            'force_reminder': self.force_reminder_var.get(),
+            'sync_tz': self.sync_tz_var.get(),
+            'alarms': self.alarms,
+            'attachments': self.attachments,
+            'other_fields': self.other_fields,
+        }
+        loc = self.location_var.get()
+        if loc: data['location'] = loc
+        desc = self.description_text.get("1.0", "end-1c").strip()
+        if desc: data['description'] = desc
+        if self.organizer_var.get(): data['organizer'] = self.organizer_var.get()
+        if self.url_var.get().strip(): data['url'] = self.url_var.get().strip()
+        if self.categories_var.get(): data['categories'] = self.categories_var.get()
+
+        attendees = []
+        for line in self.attendee_text.get("1.0", "end-1c").split('\n'):
+            if line.strip(): attendees.append(line.strip())
+        data['attendees'] = attendees
+
+        if self.allday_var.get():
+            data['start_date'] = self.start_date.get_date()
+            data['end_date'] = self.end_date.get_date()
         else:
-            s_tz = pytz.timezone(TimezoneHelper.extract_tz_id(self.start_tz_var.get())); e_tz = pytz.timezone(TimezoneHelper.extract_tz_id(self.end_tz_var.get())); ev.add('dtstart').value = s_tz.localize(datetime.combine(self.start_date.get_date(), datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M").time())); ev.add('dtend').value = e_tz.localize(datetime.combine(self.end_date.get_date(), datetime.strptime(f"{self.end_hour.get()}:{self.end_minute.get()}", "%H:%M").time()))
-            if s_tz.zone != "UTC": ev.dtstart.params['TZID'] = [s_tz.zone]
-            if e_tz.zone != "UTC": ev.dtend.params['TZID'] = [e_tz.zone]
-        r_opt = self.repeat_var.get()
-        if r_opt != "不重复":
-            rrule = FREQ_MAPPING.get(r_opt, "")
-            if r_opt == "自定义" and self.custom_repeat_data: rrule = f"FREQ={self.custom_repeat_data['freq']};INTERVAL={self.custom_repeat_data['interval']}"
-            if rrule:
-                cond = self.end_cond_var.get()
-                if cond == "按日期结束": rrule += f";UNTIL={self.end_date_entry.get_date().strftime('%Y%m%dT235959Z')}"
-                elif cond == "按次数结束": rrule += f";COUNT={self.end_count_var.get()}"
-                ev.add('rrule').value = rrule
+            from datetime import time as dttime
+            data['start_datetime'] = datetime.combine(
+                self.start_date.get_date(),
+                datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M").time())
+            data['end_datetime'] = datetime.combine(
+                self.end_date.get_date(),
+                datetime.strptime(f"{self.end_hour.get()}:{self.end_minute.get()}", "%H:%M").time())
+            data['start_tzid'] = TimezoneHelper.extract_tz_id(self.start_tz_var.get())
+            data['end_tzid'] = TimezoneHelper.extract_tz_id(self.end_tz_var.get())
+
+        if self.repeat_var.get() != "不重复" and self.end_cond_var.get() == "按日期结束":
+            data['end_date_entry'] = self.end_date_entry.get_date()
+
         exdates = self.exdate_listbox.get(0, tk.END)
-        if exdates:
-            tz_id = None
-            if not self.allday_var.get():
-                tz_id = TimezoneHelper.extract_tz_id(self.start_tz_var.get())
-            for d in exdates:
-                ex = ev.add('exdate')
-                if self.allday_var.get():
-                    ex.value = [datetime.strptime(d, '%Y-%m-%d').date()]
-                else:
-                    dt = datetime.strptime(d, '%Y-%m-%d')
-                    if tz_id:
-                        ex.value = [pytz.timezone(tz_id).localize(dt)]
-                        ex.params['TZID'] = [tz_id]
-                    else:
-                        ex.value = [dt]
-        for a in self.alarms:
-            al = ev.add('valarm'); al.add('action').value = a['action']; al.add('trigger').value = a['trigger']
-            if 'description' in a: al.add('description').value = a['description']
-            if 'attach' in a: al.add('attach').value = a['attach']
-            if 'attendee' in a: al.add('attendee').value = a['attendee']
-            if 'summary' in a: al.add('summary').value = a['summary']
-            if 'repeat' in a: al.add('repeat').value = str(a['repeat']); al.add('duration').value = a['duration']
-        # 写入 ATTACH 附件
-        for a in self.attachments:
-            att = ev.add('attach')
-            if a.get('inline'):
-                att.value = a['data']
-                att.encoding_param = 'BASE64'
-                att.encoded = True
-                att.params['VALUE'] = ['BINARY']
-                if a.get('fmttype') and a['fmttype'] != 'application/octet-stream':
-                    att.params['FMTTYPE'] = [a['fmttype']]
-                if a.get('filename'):
-                    att.params['FILENAME'] = [a['filename']]
-            else:
-                att.value = a.get('uri', '')
-                if a.get('fmttype') and a['fmttype'] != 'text/uri-list':
-                    att.params['FMTTYPE'] = [a['fmttype']]
-        ev.add('priority').value = str(self.priority_var.get()); ev.add('transp').value = self.TRANSPARENCY_MAPPING.get(self.transparency_var.get(), "OPAQUE")
-        if self.organizer_var.get(): ev.add('organizer').value = str(self.organizer_var.get())
-        try:
-            seq = int(self.sequence_var.get() or "0")
-            if self.initial.get('ical'): seq += 1
-            ev.add('sequence').value = str(seq)
-        except Exception:
-            logger.debug("忽略异常")
-        if self.url_var.get().strip(): ev.add('url').value = self.url_var.get().strip()
+        if exdates: data['exdates'] = list(exdates)
 
-        # 保存自定义扩展状态
-        if self.force_reminder_var.get(): ev.add('x-force-reminder').value = "1"
-        if self.sync_tz_var.get(): ev.add('x-sync-tz').value = "1"
+        return data
 
-        if hasattr(self, 'attendee_text'):
-            for line in self.attendee_text.get("1.0", "end-1c").split('\n'):
-                if line.strip(): ev.add('attendee').value = line.strip()
-        if hasattr(self, 'other_fields'):
-            for field in self.other_fields:
-                k, v = field.get('key', '').strip(), field.get('value', '').strip()
-                if k and k.upper() not in STANDARD_ICAL_FIELDS:
-                    try: ev.add(k.lower()).value = v
-                    except Exception:
-                        logger.debug("忽略异常")
-        return cal.serialize()
+    def generate_ical(self):
+        return build_ical(self._collect_form_data())
 
     def show_raw_data(self):
         win = tk.Toplevel(self.root); win.title("原始数据")
@@ -1250,14 +1020,3 @@ class EventDialog:
     def set_start_now(self): self.start_date.set_date(datetime.now())
     def set_end_now(self):
         n = datetime.now() + timedelta(hours=1); self.end_date.set_date(n); self.end_hour.set(f"{n.hour:02d}"); self.end_minute.set("00")
-
-def save_alarm_trigger(trig):
-    if isinstance(trig, timedelta): return {'type': 'td', 'seconds': trig.total_seconds()}
-    if isinstance(trig, datetime): return {'type': 'dt', 'iso': trig.isoformat()}
-    return trig
-
-def load_alarm_trigger(trig_data):
-    if isinstance(trig_data, dict):
-        if trig_data.get('type') == 'td': return timedelta(seconds=trig_data['seconds'])
-        if trig_data.get('type') == 'dt': return datetime.fromisoformat(trig_data['iso'])
-    return trig_data

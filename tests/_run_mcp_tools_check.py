@@ -7,6 +7,7 @@ import logging
 logger.setLevel(logging.WARNING)
 
 srv = MCPServer()
+srv._register_tools()
 
 async def test():
     mcp = srv._mcp

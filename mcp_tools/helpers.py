@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from services.settings_service import SettingsService
-from mcp_tools._state import CONTACT_SVC, EVENT_SVC
+from mcp_tools._state import get_contact_svc, get_event_svc
 from utils.logger import logger
 
 
@@ -19,7 +19,7 @@ def check_readonly() -> bool:
 
 
 def make_contact_summary(uid: str) -> dict[str, Any]:
-    raw = CONTACT_SVC.get_by_uid(uid)
+    raw = get_contact_svc().get_by_uid(uid)
     if not raw:
         return {"uid": uid, "error": "not found"}
     try:
@@ -34,7 +34,7 @@ def make_contact_summary(uid: str) -> dict[str, Any]:
 
 
 def make_event_summary(uid: str) -> dict[str, Any]:
-    raw = EVENT_SVC.get_by_uid(uid)
+    raw = get_event_svc().get_by_uid(uid)
     if not raw:
         return {"uid": uid, "error": "not found"}
     try:

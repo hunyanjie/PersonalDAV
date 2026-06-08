@@ -17,6 +17,7 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
+- 🗜️ **数据库压缩** — 删除数据后空闲空间不浪费，可在设置页手动压缩或启动时自动整理
 - 🛡️ **IP 访问控制** — 白名单/黑名单/CIDR/通配符，支持本机免密码
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
 - 📂 **FTP / FTPS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
@@ -34,7 +35,6 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 ### 前提条件
 
 - Python 3.10+
-- 所需的Python库：请参考`requirements.txt`
 
 ### 安装步骤
 
@@ -46,7 +46,12 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 
 2. 安装依赖：
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
+   ```
+
+   如需开发（运行测试），额外安装：
+   ```bash
+   pip install -e ".[dev]"
    ```
 
 3. 运行程序：

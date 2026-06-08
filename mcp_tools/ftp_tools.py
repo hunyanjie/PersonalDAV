@@ -1,4 +1,4 @@
-from mcp_tools._state import FTP_SVC
+from mcp_tools._state import get_ftp_svc
 from mcp_tools.helpers import safe_json, check_readonly
 from services.ftp_client_service import FTPClientService
 from utils.logger import logger
@@ -11,7 +11,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info("MCP 调用: ftp_servers_start")
         try:
-            ok = FTP_SVC.start()
+            ok = get_ftp_svc().start()
             logger.info(f"MCP 返回: ftp_servers_start -> {ok}")
             return safe_json({"success": ok})
         except Exception as e:
@@ -24,7 +24,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info("MCP 调用: ftp_servers_stop")
         try:
-            FTP_SVC.stop()
+            get_ftp_svc().stop()
             logger.info("MCP 返回: ftp_servers_stop -> 已停止")
             return safe_json({"success": True})
         except Exception as e:
@@ -34,7 +34,7 @@ def register(mcp):
     @mcp.tool(description="查询 FTP/SFTP/TFTP 服务运行状态")
     def ftp_servers_status() -> str:
         try:
-            result = {"running": FTP_SVC.is_running}
+            result = {"running": get_ftp_svc().is_running}
             logger.debug(f"MCP 调用: ftp_servers_status -> {result}")
             return safe_json(result)
         except Exception as e:

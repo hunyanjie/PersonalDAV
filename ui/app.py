@@ -1,26 +1,23 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import queue
-from database.db_manager import Database
-import logging
 import time
 import os
 import webbrowser
-from tkinterdnd2 import TkinterDnD, DND_FILES
 from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
 from ui.tabs.remote_tab import RemoteTab
-from ui.dialogs.settings_dialog import SettingsDialog
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
-from utils.logger import GUIHandler, logger
+from utils.logger import logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
-from services.mcp_server import MCPServer
-from utils.auto_start import set_auto_start, is_auto_start
-from ui.tray_manager import TrayManager
+from ui.logging_manager import LoggingManager
+from ui.drag_drop_handler import DragDropHandler
+from ui.status_bar_manager import StatusBarManager
+
 
 class DAVServerApp:
     """主应用程序类"""
@@ -40,41 +37,32 @@ class DAVServerApp:
         TimezoneHelper.set_format(fmt)
         self.contact_service = ContactService()
         self.event_service = EventService()
-        
-        # 初始化队列用于日志
-        self.log_queue = queue.Queue()
-        self.file_handler = None
-        self.setup_logging()
 
-        # MCP 服务器（需在 create_widgets 前初始化，因为状态栏用到它）
-        self.mcp_server = MCPServer()
+        self.log_queue = queue.Queue()
+        self.logging_manager = LoggingManager(self.settings_service, self.log_queue)
+        self.logging_manager.setup()
+
+        self.mcp_server = None
         self.start_time = time.time()
 
         self.create_widgets()
 
-        # 周期性刷新状态栏（运行时长实时更新）
-        self._tick_status_bar()
+        self.status_bar_mgr.tick(self.root)
 
-        # 延迟执行非关键启动任务，让窗口先显示
         self.root.after_idle(self._deferred_startup)
 
-        # 启动日志处理循环
         self.root.after(100, self.process_log_queue)
 
-        # 注册全局快捷键
         self.root.bind("<Delete>", self.on_global_delete)
         self.root.bind("<Control-a>", self.on_global_select_all)
 
-        # 注册全局文件拖拽
-        self.setup_global_dnd()
+        self.dnd_handler = DragDropHandler(self.root, self.notebook, self.contacts_tab, self.calendar_tab)
+        self.dnd_handler.setup()
 
-        # 绑定标签页切换事件
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
-        # 订阅设置变更事件
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.on_settings_changed)
 
-        # 托盘图标（pystray 不可用时静默降级）
         self._tray = None
         self._tray_available = False
         try:
@@ -83,134 +71,36 @@ class DAVServerApp:
         except ImportError:
             self._tray_available = False
         if self._tray_available:
+            from ui.tray_manager import TrayManager
             self._tray = TrayManager(self.root, on_show=self._tray_show, on_quit=self._tray_quit)
             self._tray.start()
 
     def on_global_delete(self, event):
-        """全局删除快捷键：自动识别当前活动的标签页并执行删除"""
         current_tab = self.notebook.nametowidget(self.notebook.select())
         if hasattr(current_tab, 'delete_selected'):
             current_tab.delete_selected()
 
     def on_global_select_all(self, event):
-        """全局全选快捷键"""
         current_tab = self.notebook.nametowidget(self.notebook.select())
         if hasattr(current_tab, 'select_all'):
             current_tab.select_all(event)
 
-    def setup_global_dnd(self):
-        """设置全局文件拖拽支持"""
-        try:
-            self.root.drop_target_register(DND_FILES)
-            self.root.dnd_bind('<<Drop>>', self.handle_drop)
-        except Exception as e:
-            logger.warning(f"无法注册全局拖拽: {e}")
-
-    def handle_drop(self, event):
-        """处理文件拖拽事件 — 解析后走预览对话框"""
-        import os
-        files = []
-
-        if isinstance(event.data, (list, tuple)):
-            files = [f for f in event.data if os.path.exists(f)]
-        else:
-            raw_paths = event.data
-            if raw_paths.startswith('{') and raw_paths.endswith('}'):
-                raw_paths = raw_paths[1:-1]
-                possible_paths = raw_paths.split('} {')
-                for path in possible_paths:
-                    if os.path.exists(path):
-                        files.append(path)
-            else:
-                if os.path.exists(raw_paths):
-                    files.append(raw_paths)
-                else:
-                    possible_paths = raw_paths.split()
-                    for path in possible_paths:
-                        if os.path.exists(path):
-                            files.append(path)
-
-        if not files: return
-
-        tab_text = self.notebook.tab(self.notebook.select(), "text")
-
-        if tab_text not in ["联系人", "日历"]:
-            messagebox.showinfo("提示", "请切换到联系人或日历标签页进行导入")
-            return
-
-        tab = self.contacts_tab if tab_text == "联系人" else self.calendar_tab
-
-        all_data = []
-        for f in files:
-            try:
-                with open(f, 'r', encoding='utf-8') as fh:
-                    all_data.append(fh.read())
-            except Exception as e:
-                messagebox.showerror("错误", f"读取文件失败 {f}: {e}")
-                return
-
-        data = "\n".join(all_data)
-        items = tab._parse_data_to_items(data)
-        if not items:
-            label = "vCard" if tab_text == "联系人" else "iCalendar"
-            messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=tab)
-            return
-
-        from ui.dialogs.import_preview_dialog import ImportPreviewDialog
-        dialog = ImportPreviewDialog(tab, tab._import_type,
-            on_import_callback=lambda sel: tab._import_selected(sel, "拖拽文件"),
-            items=items)
-        self.root.wait_window(dialog)
-
     def on_tab_changed(self, event):
-        """标签页切换时自动刷新列表"""
         current_tab = self.notebook.select()
         tab_text = self.notebook.tab(current_tab, "text")
-
         if tab_text == "联系人":
             self.contacts_tab.refresh_contacts()
         elif tab_text == "日历":
             self.calendar_tab.refresh_events()
 
-    def setup_logging(self):
-        """配置 GUI 日志处理器，挂在 app 的 logger 上（非根日志器）"""
-        gui_handler = GUIHandler(self.log_queue)
-        logger.addHandler(gui_handler)
-        self._setup_file_logging()
-
-    def _setup_file_logging(self):
-        """根据设置配置日志文件（挂载到 app logger 上）"""
-        enable_file = self.settings_service.get_setting("enable_log_file", "False") == "True"
-
-        if self.file_handler:
-            logger.removeHandler(self.file_handler)
-            self.file_handler = None
-
-        if enable_file:
-            log_file = self.settings_service.get_setting("log_file_path", "log/dav_server.log")
-            from utils.path_helper import resolve_data_path
-            log_file = resolve_data_path(log_file)
-            log_level = self.settings_service.get_setting("log_level", "INFO")
-
-            try:
-                self.file_handler = logging.FileHandler(log_file, encoding='utf-8')
-                self.file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-                self.file_handler.setLevel(getattr(logging, log_level, logging.INFO))
-                logger.addHandler(self.file_handler)
-                logger.info(f"日志文件已启用，路径: {log_file}，级别: {log_level}")
-            except Exception as e:
-                logger.warning(f"无法创建日志文件: {e}")
-
     def on_settings_changed(self, *args):
-        """设置变更时重新配置日志并同步 MCP 服务"""
-        self._setup_file_logging()
+        self.logging_manager.reconfigure()
         self._sync_mcp_server()
 
     def create_widgets(self):
-        # 菜单栏
         self.menu_bar = tk.Menu(self.root)
         self.root.config(menu=self.menu_bar)
-        
+
         file_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="文件", menu=file_menu)
         file_menu.add_command(label="设置", command=self.show_settings)
@@ -224,7 +114,6 @@ class DAVServerApp:
         from ui.dialogs.about_dialog import AboutDialog
         help_menu.add_command(label="关于", command=lambda: AboutDialog(self.root))
 
-        # 选项卡
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -238,30 +127,31 @@ class DAVServerApp:
         self.notebook.add(self.calendar_tab, text="日历")
         self.notebook.add(self.smb_tab, text="远程文件")
 
-        # 状态栏
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # 初始刷新状态栏
-        self.update_status_bar()
-        
-        # 订阅事件以更新状态栏
-        event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.update_status_bar)
-        event_bus.subscribe(EVENT_EVENTS_CHANGED, self.update_status_bar)
-        event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.update_status_bar)
-        event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.update_status_bar)
+
+        self.status_bar_mgr = StatusBarManager(
+            self.status_bar, self.contact_service, self.event_service,
+            self.mcp_server, self.server_tab)
+
+        self.status_bar_mgr.refresh()
+
+        event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.status_bar_mgr.refresh)
+        event_bus.subscribe(EVENT_EVENTS_CHANGED, self.status_bar_mgr.refresh)
+        event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.status_bar_mgr.refresh)
+        event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.status_bar_mgr.refresh)
 
     def _deferred_startup(self):
-        """窗口显示后执行的非关键启动任务"""
         self._sync_mcp_server()
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
             self.server_tab.start_server()
+        from utils.auto_start import set_auto_start, is_auto_start
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         if auto_start and not is_auto_start():
             set_auto_start(True)
         elif not auto_start and is_auto_start():
             set_auto_start(False)
-        self.update_status_bar()
+        self.status_bar_mgr.refresh()
         self._auto_check_update()
         self._check_cert_renew()
         self._start_periodic_sync()
@@ -292,46 +182,8 @@ class DAVServerApp:
                 except Exception as e:
                     logger.error(f"SSL证书自动续期失败: {e}")
 
-    def _get_db_size(self) -> str:
-        try:
-            db = Database()
-            size = os.path.getsize(db.db_path)
-            if size < 1024:
-                return f"{size}B"
-            elif size < 1024 * 1024:
-                return f"{size / 1024:.0f}KB"
-            else:
-                return f"{size / 1024 / 1024:.1f}MB"
-        except Exception:
-            return "?"
-
-    def _tick_status_bar(self):
-        self.update_status_bar()
-        self.root.after(100, self._tick_status_bar)
-
-    def _format_uptime(self, start: float) -> str:
-        elapsed = int(time.time() - start)
-        h, m = divmod(elapsed, 3600)
-        m, s = divmod(m, 60)
-        if h:
-            return f"{h}h{m}m"
-        elif m:
-            return f"{m}m{s}s"
-        return f"{s}s"
-
-    def update_status_bar(self, *args):
-        c_count = self.contact_service.count()
-        e_count = self.event_service.count()
-        mcp = "MCP 运行中" if self.mcp_server.is_running else "MCP 已关闭"
-        server = self.server_tab.server_instance
-        srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
-        db_size = self._get_db_size()
-        update_text = ""
-        if getattr(self, '_pending_update', None):
-            update_text = f" | 📥 新版本 v{self._pending_update} 可用"
-        self.status_bar.config(text=f"联系人: {c_count} | 事件: {e_count} | DB: {db_size} | MCP: {mcp} | 服务器: {srv}{update_text}")
-
     def show_settings(self):
+        from ui.dialogs.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
 
@@ -342,7 +194,7 @@ class DAVServerApp:
                 self.server_tab.start_server()
             else:
                 messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
-        # 同步系统自启动状态
+        from utils.auto_start import set_auto_start
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         set_auto_start(auto_start)
         from ui.widgets.toast import Toast
@@ -350,20 +202,18 @@ class DAVServerApp:
 
     def _sync_mcp_server(self):
         enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"
-        if enabled and not self.mcp_server.is_running:
-            port = int(self.settings_service.get_setting("mcp_port", "8100"))
-            self.mcp_server.start(port=port)
-        elif not enabled and self.mcp_server.is_running:
+        if enabled:
+            if self.mcp_server is None:
+                from services.mcp_server import MCPServer
+                self.mcp_server = MCPServer()
+            if not self.mcp_server.is_running:
+                port = int(self.settings_service.get_setting("mcp_port", "8100"))
+                self.mcp_server.start(port=port)
+        elif self.mcp_server is not None and self.mcp_server.is_running:
             self.mcp_server.stop()
 
     def process_log_queue(self):
-        """将队列中的日志刷新到 UI，附带级别信息用于着色"""
-        try:
-            while not self.log_queue.empty():
-                levelno, msg = self.log_queue.get_nowait()
-                self.server_tab.log_message(msg, levelno)
-        except queue.Empty:
-            pass
+        self.logging_manager.process_queue(self.server_tab)
         self.root.after(100, self.process_log_queue)
 
     def on_closing(self):
@@ -409,9 +259,11 @@ class DAVServerApp:
 
     def _do_quit(self):
         self.server_tab.stop_server()
-        self.mcp_server.stop()
+        if self.mcp_server is not None:
+            self.mcp_server.stop()
         if hasattr(self, '_tray'):
             self._tray.stop()
+        from database.db_manager import Database
         Database().close()
         self.root.destroy()
 
@@ -438,8 +290,8 @@ class DAVServerApp:
         check_update_async(_on_result)
 
     def _show_update_result(self, r):
-        from tkinter import messagebox, Toplevel, Text, ttk, scrolledtext
-        self._tick_status_bar()
+        from tkinter import Toplevel, scrolledtext
+        self.status_bar_mgr.tick(self.root)
         if not r.get("has_update"):
             messagebox.showinfo("检查更新", f"已是最新版本（v{r['current']}）", parent=self.root)
             return
@@ -488,7 +340,6 @@ class DAVServerApp:
 
     @staticmethod
     def _open_download(url):
-        import webbrowser
         webbrowser.open(url)
 
     def _auto_check_update(self):
@@ -498,13 +349,12 @@ class DAVServerApp:
             return
         def _on_result(r):
             self.root.after(0, lambda: self._on_auto_update_result(r))
-        self._pending_update = None
+        self.status_bar_mgr.set_pending_update(None)
         check_update_async(_on_result)
 
     def _on_auto_update_result(self, r):
         if r.get("has_update"):
-            self._pending_update = r["latest"]
+            self.status_bar_mgr.set_pending_update(r["latest"])
 
     def open_project_url(self):
-        """打开项目地址"""
         webbrowser.open("https://github.com/hunyanjie/PersonalDAV")

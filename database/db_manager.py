@@ -1,4 +1,5 @@
 import os
+import hashlib
 import sqlite3
 import threading
 import json
@@ -10,6 +11,7 @@ class Database:
     """数据库管理类 (单例模式)"""
     _instance = None
     _lock = threading.Lock()
+    _vacuum_in_progress = False
 
     def __new__(cls, db_path=DEFAULT_DB_PATH):
         if not cls._instance:
@@ -27,15 +29,29 @@ class Database:
         if os.path.isfile(db_path):
             try:
                 bak = db_path + ".bak"
-                import shutil
-                shutil.copy2(db_path, bak)
+                if not os.path.isfile(bak) or os.path.getmtime(db_path) > os.path.getmtime(bak):
+                    import shutil
+                    shutil.copy2(db_path, bak)
             except Exception as e:
                 logger.warning(f"数据库自动备份失败: {e}")
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA busy_timeout = 5000;")
-        self.conn.execute("PRAGMA journal_mode = WAL;")  # 开启 WAL 模式提高并发性能
-        self.conn.execute("PRAGMA synchronous = NORMAL;") # 配合 WAL 提高写入速度
+        self.conn.execute("PRAGMA journal_mode = WAL;")
+        self.conn.execute("PRAGMA synchronous = NORMAL;")
+        self.conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
         self.create_tables()
+        self._vacuum_if_needed()
+
+    def _vacuum_if_needed(self):
+        try:
+            page_count = self.query_one("PRAGMA page_count")[0]
+            freelist = self.query_one("PRAGMA freelist_count")[0]
+            if freelist > page_count * 0.5 and freelist > 100:
+                self.execute("VACUUM")
+                new_pages = self.query_one("PRAGMA page_count")[0]
+                logger.info(f"数据库自动压缩完成: {page_count} -> {new_pages} 页 (释放 {page_count - new_pages} 页)")
+        except Exception:
+            pass
 
     @contextmanager
     def transaction(self):
@@ -90,6 +106,22 @@ class Database:
             for col in ['created_at', 'updated_at']:
                 try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
                 except Exception: pass
+
+        # 迁移: 为 auth_logs 添加哈希链列
+        for col in ['prev_hash', 'hash']:
+            try: c.execute(f"ALTER TABLE auth_logs ADD COLUMN {col} TEXT DEFAULT ''")
+            except Exception: pass
+        # 回填现有行的哈希链
+        missing = c.execute("SELECT COUNT(*) FROM auth_logs WHERE hash IS NULL OR hash = ''").fetchone()[0]
+        if missing:
+            existing = c.execute("SELECT id, timestamp, ip, success, method, detail FROM auth_logs ORDER BY id ASC").fetchall()
+            prev = "0"
+            for row in existing:
+                data = f"{prev}|{row[1]}|{row[2]}|{row[3]}|{row[4] or ''}|{row[5] or ''}"
+                h = hashlib.sha256(data.encode('utf-8')).hexdigest()
+                c.execute("UPDATE auth_logs SET prev_hash=?, hash=? WHERE id=?", (prev, h, row[0]))
+                prev = h
+            logger.info(f"已回填 {missing} 条审计日志的哈希链")
 
         # 远程连接表（FTP/FTPS/SFTP 保存的连接）
         c.execute('''CREATE TABLE IF NOT EXISTS remote_connections
@@ -173,6 +205,36 @@ class Database:
             else:
                 c.execute(query)
             return c.fetchone()
+
+    def vacuum_full(self) -> int | None:
+        """完整 VACUUM 重写数据库，释放所有空闲空间。返回释放的字节数，失败返回 None。
+
+        安全说明：SQLite VACUUM 创建临时文件 → 复制数据 → 原子替换原文件。
+        若中途崩溃或断电，原文件不受影响。
+        """
+        if self._vacuum_in_progress:
+            logger.warning("数据库压缩已在运行中，忽略重复请求")
+            return None
+        self._vacuum_in_progress = True
+        try:
+            with self._lock:
+                c = self.conn.cursor()
+                c.execute("PRAGMA page_count")
+                old_pages = c.fetchone()[0]
+                c.execute("PRAGMA page_size")
+                page_size = c.fetchone()[0]
+                c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                c.execute("VACUUM")
+                c.execute("PRAGMA page_count")
+                new_pages = c.fetchone()[0]
+            saved = (old_pages - new_pages) * page_size
+            logger.info(f"数据库压缩完成: {old_pages} -> {new_pages} 页, 释放 {saved / 1024:.1f} KB")
+            return saved
+        except Exception as e:
+            logger.error(f"数据库压缩失败: {e}")
+            return None
+        finally:
+            self._vacuum_in_progress = False
 
     def close(self):
         """关闭数据库连接"""

@@ -26,6 +26,8 @@ class BaseService:
         return getattr(entity, self._raw_field) if entity else None
 
     def get_list_data(self) -> list[tuple[Any, ...]]:
+        if hasattr(self.repo, 'get_selected_columns') and self._list_fields:
+            return self.repo.get_selected_columns(list(self._list_fields))
         return [tuple(getattr(c, f) for f in self._list_fields) for c in self.repo.get_all()]
 
     def get_all_raw(self) -> list[str]:
