@@ -11,6 +11,7 @@ class Database:
     """数据库管理类 (单例模式)"""
     _instance = None
     _lock = threading.Lock()
+    _vacuum_in_progress = False
 
     def __new__(cls, db_path=DEFAULT_DB_PATH):
         if not cls._instance:
@@ -211,6 +212,10 @@ class Database:
         安全说明：SQLite VACUUM 创建临时文件 → 复制数据 → 原子替换原文件。
         若中途崩溃或断电，原文件不受影响。
         """
+        if self._vacuum_in_progress:
+            logger.warning("数据库压缩已在运行中，忽略重复请求")
+            return None
+        self._vacuum_in_progress = True
         try:
             with self._lock:
                 old_pages = self.query_one("PRAGMA page_count")[0]
@@ -224,6 +229,8 @@ class Database:
         except Exception as e:
             logger.error(f"数据库压缩失败: {e}")
             return None
+        finally:
+            self._vacuum_in_progress = False
 
     def close(self):
         """关闭数据库连接"""

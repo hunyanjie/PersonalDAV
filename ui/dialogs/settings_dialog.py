@@ -847,18 +847,53 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             messagebox.showerror("恢复失败", "恢复过程中发生错误，请查看日志。", parent=self)
 
     def _compact_db(self):
+        from database.db_manager import Database
+        if Database._vacuum_in_progress:
+            messagebox.showinfo("提示", "数据库压缩已在运行中，请等待完成。", parent=self)
+            return
         if not messagebox.askyesno("压缩数据库",
                                     "压缩将重写整个数据库以释放空闲空间。\n"
-                                    "期间界面可能会短暂卡顿，确定继续？", parent=self):
+                                    "期间程序响应会变慢，确定继续？", parent=self):
             return
-        from database.db_manager import Database
-        saved = Database().vacuum_full()
-        if saved is not None:
-            from ui.widgets.toast import Toast
-            Toast.show(self, f"数据库压缩完成，释放 {saved / 1024:.1f} KB 空间")
-            self._load_settings()
-        else:
-            messagebox.showerror("压缩失败", "数据库压缩过程中发生错误，请查看日志。", parent=self)
+
+        progress = tk.Toplevel(self)
+        progress.title("压缩数据库")
+        progress.transient(self)
+        progress.grab_set()
+        progress.resizable(False, False)
+        progress.protocol("WM_DELETE_WINDOW", lambda: None)
+        w, h = 320, 100
+        sw = progress.winfo_screenwidth()
+        sh = progress.winfo_screenheight()
+        progress.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
+        ttk.Label(progress, text="正在压缩数据库，请稍候…").pack(pady=(15, 5))
+        pb = ttk.Progressbar(progress, mode="indeterminate", length=280)
+        pb.pack(pady=5)
+        pb.start(10)
+
+        def _done(saved):
+            if not progress.winfo_exists():
+                return
+            progress.destroy()
+            if saved is not None:
+                from ui.widgets.toast import Toast
+                Toast.show(self, f"数据库压缩完成，释放 {saved / 1024:.1f} KB 空间")
+                self._load_settings()
+            else:
+                messagebox.showerror("压缩失败",
+                                     "数据库压缩过程中发生错误，请查看日志。", parent=self)
+
+        def _run():
+            saved = Database().vacuum_full()
+            try:
+                self.after(0, lambda: _done(saved))
+            except tk.TclError:
+                pass
+
+        import threading
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
 
     def _load_text_widget_lines(self, widget: tk.Text, raw: str):
         widget.delete("1.0", tk.END)
