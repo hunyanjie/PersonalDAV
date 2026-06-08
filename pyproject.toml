@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "PersonalDAV"
@@ -58,3 +58,6 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "9.0"
+
+[tool.setuptools.packages.find]
+include = ["models*", "database*", "services*", "network*", "ui*", "utils*", "mcp_tools*", "tests*"]
