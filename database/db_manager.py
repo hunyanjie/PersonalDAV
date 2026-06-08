@@ -20,6 +20,9 @@ class Database:
                     cls._instance = super(Database, cls).__new__(cls)
         return cls._instance
 
+    _checkpoint_interval = 60  # seconds
+    _checkpoint_timer: threading.Timer | None = None
+
     def __init__(self, db_path=DEFAULT_DB_PATH):
         if hasattr(self, '_initialized'):
             return
@@ -41,6 +44,7 @@ class Database:
         self.conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
         self.create_tables()
         self._vacuum_if_needed()
+        self._start_wal_checkpoint()
 
     def _vacuum_if_needed(self):
         try:
@@ -206,6 +210,29 @@ class Database:
                 c.execute(query)
             return c.fetchone()
 
+    def _start_wal_checkpoint(self):
+        self._do_wal_checkpoint()  # immediate first checkpoint
+        self._schedule_wal_checkpoint()
+
+    def _schedule_wal_checkpoint(self):
+        self._checkpoint_timer = threading.Timer(self._checkpoint_interval, self._do_wal_checkpoint)
+        self._checkpoint_timer.daemon = True
+        self._checkpoint_timer.start()
+
+    def _do_wal_checkpoint(self):
+        try:
+            with self._lock:
+                self.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except Exception:
+            pass
+        finally:
+            self._schedule_wal_checkpoint()
+
+    def _stop_wal_checkpoint(self):
+        if self._checkpoint_timer:
+            self._checkpoint_timer.cancel()
+            self._checkpoint_timer = None
+
     def vacuum_full(self) -> int | None:
         """完整 VACUUM 重写数据库，释放所有空闲空间。返回释放的字节数，失败返回 None。
 
@@ -238,12 +265,14 @@ class Database:
 
     def close(self):
         """关闭数据库连接"""
+        self._stop_wal_checkpoint()
         if self.conn:
             self.conn.close()
             self.conn = None
 
     def reopen(self):
         """关闭旧连接并重新打开（用于恢复备份后）"""
+        self._stop_wal_checkpoint()
         if self.conn:
             self.conn.close()
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -251,11 +280,14 @@ class Database:
         self.conn.execute("PRAGMA journal_mode = WAL;")
         self.conn.execute("PRAGMA synchronous = NORMAL;")
         self.create_tables()
+        self._start_wal_checkpoint()
 
     @classmethod
     def reset(cls):
         """重置单例（仅用于测试）"""
         with cls._lock:
-            if cls._instance and cls._instance.conn:
-                cls._instance.conn.close()
+            if cls._instance:
+                cls._instance._stop_wal_checkpoint()
+                if cls._instance.conn:
+                    cls._instance.conn.close()
             cls._instance = None
