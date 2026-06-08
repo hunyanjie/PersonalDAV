@@ -14,6 +14,7 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
+from utils import attachment_store
 from models.constants import (
     STATUS_MAPPING, STATUS_REV_MAPPING,
     TRANSPARENCY_MAPPING, TRANSPARENCY_REV_MAPPING,
@@ -523,9 +524,9 @@ class EventDialog:
                            '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                            '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
                 fmttype = fmt_map.get(ext, 'application/octet-stream')
-                b64 = base64.b64encode(data).decode('ascii')
-                self.attachments.append({'inline': True, 'data': b64, 'filename': name,
-                                         'fmttype': fmttype, 'size': len(data)})
+                rec = attachment_store.save(data, name, fmttype)
+                rec['inline'] = True
+                self.attachments.append(rec)
                 self._attach_refresh()
             except Exception as e:
                 messagebox.showerror("错误", f"无法读取文件:\n{e}", parent=self.root)
@@ -542,6 +543,7 @@ class EventDialog:
         for item in reversed(sel):
             idx = self.attach_tree.index(item)
             if 0 <= idx < len(self.attachments):
+                attachment_store.delete(self.attachments[idx])
                 self.attachments.pop(idx)
         self._attach_refresh()
 
@@ -552,11 +554,14 @@ class EventDialog:
         if idx < 0 or idx >= len(self.attachments): return
         a = self.attachments[idx]
         if a.get('inline'):
-            ext = os.path.splitext(a['filename'])[1] or '.bin'
+            data = attachment_store.read(a)
+            if data is None:
+                messagebox.showerror("错误", "附件文件不存在或无法读取", parent=self.root)
+                return
             tmp = os.path.join(os.environ.get('TEMP', os.environ.get('TMP', '.')), a['filename'])
             try:
                 with open(tmp, 'wb') as f:
-                    f.write(base64.b64decode(a['data']))
+                    f.write(data)
                 os.startfile(tmp)
             except Exception as e:
                 messagebox.showerror("错误", f"无法打开附件:\n{e}", parent=self.root)
@@ -583,10 +588,10 @@ class EventDialog:
                            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                            '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                            '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
-                a['data'] = base64.b64encode(data).decode('ascii')
-                a['filename'] = name
-                a['fmttype'] = fmt_map.get(ext, 'application/octet-stream')
-                a['size'] = len(data)
+                attachment_store.delete(a)
+                new_rec = attachment_store.save(data, name, fmt_map.get(ext, 'application/octet-stream'))
+                new_rec['inline'] = True
+                self.attachments[idx] = new_rec
                 self._attach_refresh()
             except Exception as e:
                 messagebox.showerror("错误", f"无法替换文件:\n{e}", parent=self.root)

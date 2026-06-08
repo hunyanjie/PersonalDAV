@@ -11,6 +11,7 @@ from models.constants import (
 )
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.encoding_helper import decode_ical_value
+from utils import attachment_store
 
 
 def parse_ical_event(ical_string):
@@ -314,7 +315,13 @@ def _build_attachments(ev, data):
     for a in data.get('attachments', []):
         att = ev.add('attach')
         if a.get('inline'):
-            att.value = a['data']
+            if 'filepath' in a:
+                b64_data = attachment_store.to_base64(a)
+                if b64_data is None:
+                    continue
+            else:
+                b64_data = a.get('data', '')
+            att.value = b64_data
             att.encoding_param = 'BASE64'
             att.encoded = True
             att.params['VALUE'] = ['BINARY']
