@@ -276,6 +276,10 @@ class SettingsDialog(tk.Toplevel):
         btn_f.pack(pady=5)
         ttk.Button(btn_f, text="导出备份 (.zip)", command=self._export_backup).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="从备份恢复", command=self._import_backup).pack(side=tk.LEFT, padx=5)
+        ttk.Separator(bk_f.body, orient="horizontal").pack(fill="x", padx=10, pady=5)
+        ttk.Label(bk_f.body, text="数据删除后数据库文件不会自动缩小。压缩将重写数据库以释放空闲空间。",
+                  foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=2)
+        ttk.Button(bk_f.body, text="压缩数据库", command=self._compact_db).pack(anchor="w", padx=10, pady=3)
 
     # ── 同步设置 ────────────────────────────────────────────────
 
@@ -841,6 +845,20 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                                 "数据已恢复，请重启程序以使更改生效。", parent=self)
         else:
             messagebox.showerror("恢复失败", "恢复过程中发生错误，请查看日志。", parent=self)
+
+    def _compact_db(self):
+        if not messagebox.askyesno("压缩数据库",
+                                    "压缩将重写整个数据库以释放空闲空间。\n"
+                                    "期间界面可能会短暂卡顿，确定继续？", parent=self):
+            return
+        from database.db_manager import Database
+        saved = Database().vacuum_full()
+        if saved is not None:
+            from ui.widgets.toast import Toast
+            Toast.show(self, f"数据库压缩完成，释放 {saved / 1024:.1f} KB 空间")
+            self._load_settings()
+        else:
+            messagebox.showerror("压缩失败", "数据库压缩过程中发生错误，请查看日志。", parent=self)
 
     def _load_text_widget_lines(self, widget: tk.Text, raw: str):
         widget.delete("1.0", tk.END)

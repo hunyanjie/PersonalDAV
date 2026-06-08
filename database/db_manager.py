@@ -45,9 +45,10 @@ class Database:
         try:
             page_count = self.query_one("PRAGMA page_count")[0]
             freelist = self.query_one("PRAGMA freelist_count")[0]
-            if freelist > page_count * 0.1 and freelist > 100:
-                self.execute("PRAGMA incremental_vacuum")
-                logger.info(f"数据库增量整理完成 (空闲页 {freelist}/{page_count})")
+            if freelist > page_count * 0.5 and freelist > 100:
+                self.execute("VACUUM")
+                new_pages = self.query_one("PRAGMA page_count")[0]
+                logger.info(f"数据库自动压缩完成: {page_count} -> {new_pages} 页 (释放 {page_count - new_pages} 页)")
         except Exception:
             pass
 
@@ -203,6 +204,21 @@ class Database:
             else:
                 c.execute(query)
             return c.fetchone()
+
+    def vacuum_full(self) -> int | None:
+        """完整 VACUUM 重写数据库，释放所有空闲空间。返回释放的字节数，失败返回 None。"""
+        try:
+            old_size = os.path.getsize(self.db_path)
+            with self._lock:
+                self.execute("VACUUM")
+            new_size = os.path.getsize(self.db_path)
+            saved = old_size - new_size
+            page_count = self.query_one("PRAGMA page_count")[0]
+            logger.info(f"数据库完整压缩完成: {old_size} -> {new_size} 字节 (释放 {saved} 字节, {page_count} 页)")
+            return saved
+        except Exception as e:
+            logger.error(f"数据库压缩失败: {e}")
+            return None
 
     def close(self):
         """关闭数据库连接"""
