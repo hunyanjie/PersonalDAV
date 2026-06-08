@@ -58,6 +58,8 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
+    SettingDef("auto_start_ftp", "启动时自动启动文件服务 (FTP/SFTP/TFTP)", "check",
+               "服务器控制", default=False, db_default="False"),
     SettingDef("ftps_enabled", "启用 FTPS (SSL)", "check", "服务器控制",
                default=False, db_default="False"),
     SettingDef("ftp_encoding", "FTP 文件编码:", "combo", "服务器控制",

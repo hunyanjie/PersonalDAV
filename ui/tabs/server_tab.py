@@ -307,6 +307,29 @@ class ServerTab(ttk.Frame):
             logger.error(msg)
             self.log_message(msg, logging.ERROR)
 
+    def _auto_start_ftp(self):
+        """启动时自动启动文件服务 — 无对话框，失败只记日志。"""
+        for name, var, port_var, root_var in [
+            ("FTP", self.ftp_enabled, self.ftp_port_var, self.ftp_root_var),
+            ("SFTP", self.sftp_enabled, self.sftp_port_var, self.sftp_root_var),
+            ("TFTP", self.tftp_enabled, self.tftp_port_var, self.tftp_root_var),
+        ]:
+            if not var.get():
+                continue
+            path = os.path.expanduser(os.path.expandvars(root_var.get().strip()))
+            if not path or not os.path.exists(path):
+                logger.warning(f"{name} 自动启动跳过: 根目录无效 ({root_var.get()})")
+                return
+        try:
+            if self.ftp_service.start():
+                self._set_ftp_config_state(True)
+                self.ftp_start_btn.config(state=tk.DISABLED)
+                self.ftp_stop_btn.config(state=tk.NORMAL)
+                self.ftp_status_label.config(text="状态: 运行中")
+                logger.info("文件服务 (FTP/SFTP/TFTP) 已自动启动")
+        except Exception as e:
+            logger.warning(f"文件服务自动启动失败: {e}")
+
     def stop_ftp_services(self):
         self.ftp_service.stop()
         self._set_ftp_config_state(False)

@@ -145,6 +145,8 @@ class DAVServerApp:
         self._sync_mcp_server()
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
             self.server_tab.start_server()
+        if self.settings_service.get_setting("auto_start_ftp", "False") == "True":
+            self.server_tab._auto_start_ftp()
         from utils.auto_start import set_auto_start, is_auto_start
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         if auto_start and not is_auto_start():
