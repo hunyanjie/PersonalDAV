@@ -1,12 +1,38 @@
 # 更新日志
 
-## v2.8
+## v2.8 — 性能与体验
 
+### 性能
+
+- **优化** `get_list_data()` 查询避免 `SELECT *` 全字段（通过 `get_selected_columns` 仅查展示列）
+- **优化** SQLite WAL 定期 checkpoint（每 60 秒 PASSIVE 模式），防止 WAL 文件无限增长
 - **重构** 放弃虚拟滚动窗口方案（PAGE_SIZE=500），改用全量数据分批插入（BATCH_SIZE=200）+ Treeview 原生滚动，滚动条操作恢复正常
 - **优化** 增量式复选框同步：点击/拖拽时只更新变化的 UIDs，不再遍历全量数据。配合 `_uid_to_item`/`_item_to_uid` 字典映射和 `tree.set(column)` 单列写入，显著降低 Tcl 往返次数
 - **优化** 拖拽选多行时自动加速滚动：鼠标移到顶部/底部边缘区域即自动持续滚动，越靠近边缘滚动越快（1~50 行/tick），手指离开边缘自动停止
 - **优化** 大批量数据（1000+ 条）不再会造成 UI 卡死，数据分批异步插入
+
+### 存储
+
+- **重构** 附件独立文件存储：新增 `utils/attachment_store.py`，附件文件直接写入 `data/attachments/` 目录，dialog 不再内存保留 base64
 - **修复** import_preview_dialog.py 中 `_sync_all_checkboxes` 传参不匹配和缺失 `_set_item_checkbox` 的问题
+
+### 用户体验
+
+- **新增** 首次启动向导（密码设置 + 端口配置），自动弹出引导
+- **新增** 字段验证增强：端口范围 1-65535、IP/CIDR/通配符格式校验、密码强度分级（最小 6 位）
+- **新增** 标准化确认对话框 `ConfirmDialog.ask()` 替代全部 `messagebox.askyesno` 调用
+- **增强** Toast 通知系统：新增 `success/warning/error` 四种颜色类型
+- **增强** 多处操作提示从模态 messagebox 改为 Toast 非模态通知（remote_file_ops 协议限制提示、字段操作引导等）
+- **重构** 设置页面 Grid 布局统一：SSL/FTP/同步等手动构建区域统一为 2 列 + sticky="we" 对齐
+
+### 基础设施
+
+- **新增** `utils/validators.py` 共享验证模块（端口 / IP / 密码强度）
+- **新增** `ui/dialogs/confirm_dialog.py` 统一确认对话框
+- **新增** `ui/dialogs/setup_wizard.py` 首次启动向导
+- **新增** `CONTRIBUTING.md` 贡献指南
+- **文档** README 添加 Mermaid 架构图，更新文件树
+- **文档** 更新 CHANGELOG 完整 v2.8 变更记录
 
 ## v2.7
 

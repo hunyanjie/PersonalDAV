@@ -163,35 +163,75 @@ PersonalDAV/
 ├── data/                    # 运行产物（自动创建）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
+│   ├── attachments/         # 附件独立文件存储
 │   └── log/                 # 日志文件
-├── mcp_tools/               # MCP 工具模块
-│   ├── server_tools.py      # DAV 服务器启停
-│   ├── contact_tools.py     # 联系人 CRUD
-│   ├── event_tools.py       # 日历事件 CRUD
-│   ├── config_tools.py      # 系统配置/健康检查
-│   ├── webdav_tools.py      # WebDAV 文件操作
-│   ├── ftp_tools.py         # FTP/SFTP 远程操作
-│   └── smb_tools.py         # SMB 共享浏览
+├── mcp_tools/               # MCP 工具模块（分文件管理）
 ├── models/                  # 数据模型层（dataclass）
 ├── database/                # 数据访问层（SQLite + Repository）
 │   └── repositories/        # 泛型 CRUD 仓储
 ├── services/                # 业务逻辑层
-│   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP控制）
+│   ├── base_service.py      # 泛型 Serivce 基类
+│   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP 访问控制）
 │   ├── mcp_server.py        # MCP SSE 服务器
 │   ├── ftp_service.py       # FTP/FTPS/SFTP/TFTP 服务器
+│   ├── sync_service.py      # Nextcloud 定时同步
 │   └── ...
 ├── network/                 # 网络层
 │   ├── dav_server.py        # CardDAV + CalDAV + WebDAV HTTP 服务
+│   ├── dav_client.py        # WebDAV 客户端（远程导入）
 │   └── webdav_helper.py     # XML 响应构建
 ├── ui/                      # 视图层（Tkinter）
+│   ├── app.py               # 主窗口 / 菜单 / 事件总线
 │   ├── tabs/                # 标签页（联系人/日历/服务器/远程）
-│   ├── dialogs/             # 对话框（设置/事件/联系人/导入）
-│   └── widgets/             # 自定义控件（提示框/右键菜单）
+│   ├── dialogs/             # 对话框（设置/事件/联系人/向导/确认）
+│   └── widgets/             # 自定义控件（Toast/右键菜单/工具提示）
 ├── utils/                   # 工具层
+│   ├── validators.py        # 端口/IP/密码强度校验
+│   ├── attachment_store.py  # 附件文件存储管理
 │   ├── crypto.py            # Fernet 加密
-│   ├── vcard_parser.py      # 回退式 vCard 解析
 │   └── ...
-└── tests/                   # 单元测试（23 项，325 子测试）
+└── tests/                   # 测试（pytest：23 项/325 子测试）
+```
+
+```mermaid
+graph TB
+    subgraph GUI["视图层（Tkinter）"]
+        direction LR
+        Contacts["联系人标签页"]
+        Calendar["日历标签页"]
+        Server["服务器标签页"]
+        Remote["远程文件标签页"]
+        Settings["设置对话框"]
+    end
+
+    subgraph Service["业务逻辑层"]
+        direction LR
+        ContactSvc["ContactService"]
+        EventSvc["EventService"]
+        AuthSvc["AuthService"]
+        SyncSvc["SyncService"]
+        FTPSvc["FTPService"]
+    end
+
+    subgraph Network["网络层"]
+        direction LR
+        DAV["DAV Server<br/>CardDAV+CalDAV+WebDAV"]
+        MCP["MCP Server<br/>FastMCP+SSE"]
+        FTP["FTP/FTPS/SFTP"]
+    end
+
+    subgraph Data["数据层"]
+        DB[("SQLite (WAL)")]
+        FS[("文件系统<br/>attachments/")]
+    end
+
+    GUI --> Service
+    Service --> Data
+    Network --> Service
+    Network --> Data
+    MCP -->|HTTP SSE| AI["AI 工具<br/>opencode / Claude"]
+    DAV -->|HTTP| Client["DAV 客户端<br/>手机/电脑"]
+    FTP -->|TCP| FTPClient["FTP 客户端"]
 ```
 
 ## 技术栈
