@@ -11,6 +11,7 @@ from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS
 from services.auth_service import AuthService
 from datetime import datetime
+from utils.validators import validate_port
 
 
 SIMPLE_SETTINGS = [
@@ -934,6 +935,13 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("close_action", self.close_action_var.get())
+
+        for name, key in [("DAV 端口", "default_port"), ("MCP 端口", "mcp_port")]:
+            if hasattr(self, f"{key}_var"):
+                ok, msg = validate_port(getattr(self, f"{key}_var").get())
+                if not ok:
+                    messagebox.showerror("端口错误", f"{name}: {msg}", parent=self)
+                    return
 
         s.set_setting("dav_root", self.dav_root_var.get())
         s.set_setting("ftp_password", self.ftp_password_var.get())

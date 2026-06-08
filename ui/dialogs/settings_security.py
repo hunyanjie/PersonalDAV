@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from services.auth_service import AuthService
+from utils.validators import validate_port, validate_ip_list, validate_password_strength
 
 
 class SecuritySettingsSection:
@@ -142,17 +143,22 @@ class SecuritySettingsSection:
         confirm_var = tk.StringVar()
         ttk.Entry(dialog, textvariable=confirm_var, show="*", width=30).grid(row=row, column=1, padx=5)
         row += 1
+        hint = ttk.Label(dialog, text="", foreground="red")
+        hint.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 5))
+        row += 1
         def do_save():
             if change and not AuthService().verify_password(old_var.get()):
                 messagebox.showerror("错误", "当前密码不正确", parent=dialog)
                 return
-            if not new_var.get():
-                messagebox.showerror("错误", "密码不能为空", parent=dialog)
+            pw = new_var.get()
+            ok, msg = validate_password_strength(pw)
+            if not ok:
+                hint.config(text=msg)
                 return
-            if new_var.get() != confirm_var.get():
-                messagebox.showerror("错误", "两次密码不一致", parent=dialog)
+            if pw != confirm_var.get():
+                hint.config(text="两次密码不一致")
                 return
-            AuthService().set_password(new_var.get())
+            AuthService().set_password(pw)
             self._refresh()
             dialog.destroy()
             messagebox.showinfo("成功", "密码已更新", parent=self._parent_frame)
@@ -217,8 +223,17 @@ class SecuritySettingsSection:
 
     def save(self):
         s = self.dialog.db
-        s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
-        s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
-        s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
+        whitelist = self._ip_whitelist_text.get("1.0", tk.END).strip()
+        blacklist = self._ip_blacklist_text.get("1.0", tk.END).strip()
+        bypass = self._ip_bypass_text.get("1.0", tk.END).strip()
+        for name, val in [("白名单", whitelist), ("黑名单", blacklist), ("免密码 IP", bypass)]:
+            errors = validate_ip_list(val)
+            if errors:
+                lines = "\n".join(f"  {p}: {m}" for p, m in errors)
+                messagebox.showerror("IP 格式错误", f"{name} 中存在无效条目:\n{lines}", parent=self._parent_frame)
+                return
+        s.set_setting("ip_whitelist", whitelist)
+        s.set_setting("ip_blacklist", blacklist)
+        s.set_setting("ip_bypass_auth", bypass)
         s.set_setting("bypass_localhost", str(self.dialog._bypass_localhost_var.get()))
         s.set_setting("force_password", str(self.dialog.force_password_var.get()))

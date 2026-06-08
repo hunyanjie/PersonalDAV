@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 from services.auth_service import AuthService
 from services.settings_service import SettingsService
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
+from utils.validators import validate_port, validate_password_strength
 
 
 class SetupWizard(tk.Toplevel):
@@ -122,8 +123,9 @@ class SetupWizard(tk.Toplevel):
                 if pw != pw2:
                     self.pw_hint.config(text="两次密码不一致")
                     return
-                if len(pw) < 4:
-                    self.pw_hint.config(text="密码长度至少 4 位")
+                ok, msg = validate_password_strength(pw)
+                if not ok:
+                    self.pw_hint.config(text=msg)
                     return
                 AuthService().set_password(pw)
             self._show_step(self._step + 1)
@@ -131,15 +133,11 @@ class SetupWizard(tk.Toplevel):
     def _finish(self):
         port = self.port_var.get().strip()
         if port:
-            try:
-                p = int(port)
-                if p < 1024 or p > 65535:
-                    self.port_hint.config(text="端口范围: 1024-65535")
-                    return
-                self.settings_svc.set_setting("default_port", str(p))
-            except ValueError:
-                self.port_hint.config(text="请输入有效端口号")
+            ok, msg = validate_port(port)
+            if not ok:
+                self.port_hint.config(text=msg)
                 return
+            self.settings_svc.set_setting("default_port", port)
         self._result = True
         self.destroy()
 

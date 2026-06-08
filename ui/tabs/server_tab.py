@@ -10,6 +10,7 @@ from services.ftp_service import FTPService
 from utils.logger import logger, GUIHandler
 
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
+from utils.validators import validate_port
 
 
 SERVER_ENCODINGS = [
@@ -244,6 +245,12 @@ class ServerTab(ttk.Frame):
 
     def _save_ftp_settings(self):
         if self.ftp_auto_save.get():
+            for name, var in [("FTP 端口", self.ftp_port_var), ("SFTP 端口", self.sftp_port_var),
+                              ("TFTP 端口", self.tftp_port_var)]:
+                ok, msg = validate_port(var.get())
+                if not ok:
+                    messagebox.showerror("端口错误", f"{name}: {msg}", parent=self)
+                    return
             self.settings_service.set_setting("ftp_enabled", str(self.ftp_enabled.get()))
             self.settings_service.set_setting("ftp_port", self.ftp_port_var.get())
             self.settings_service.set_setting("ftp_root", self.ftp_root_var.get())
@@ -401,9 +408,13 @@ WebDAV 文件服务:
     LEVEL_TAGS = {50: "CRITICAL", 40: "ERROR", 30: "WARNING", 20: "INFO", 10: "DEBUG"}
 
     def start_server(self):
+        ok, msg = validate_port(self.port_entry.get())
+        if not ok:
+            messagebox.showerror("端口错误", msg, parent=self)
+            return
         port = int(self.port_entry.get())
         if self.settings_service.get_setting("auto_save_port", "True") == "True":
-            self.settings_service.set_setting("default_port", port)
+            self.settings_service.set_setting("default_port", self.port_entry.get())
 
         ssl_enabled = self.ssl_enabled.get()
         ssl_cert = self.ssl_cert_var.get().strip()
