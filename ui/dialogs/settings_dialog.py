@@ -1,8 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
-from ui.widgets.right_click_menu import RightClickMenu
-from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from ui.widgets.collapsible_frame import CollapsibleFrame
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from ui.dialogs.settings_security import SecuritySettingsSection
@@ -10,10 +8,9 @@ from ui.dialogs.settings_reminders import ReminderPresetSection
 from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert, get_cert_info
 from models.setting_defs import SettingDef
-from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS, ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING
+from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS
 from services.auth_service import AuthService
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 SIMPLE_SETTINGS = [

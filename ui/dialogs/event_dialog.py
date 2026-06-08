@@ -14,9 +14,8 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
-from utils.encoding_helper import decode_ical_value
 from models.constants import (
-    STANDARD_ICAL_FIELDS, STATUS_MAPPING, STATUS_REV_MAPPING,
+    STATUS_MAPPING, STATUS_REV_MAPPING,
     TRANSPARENCY_MAPPING, TRANSPARENCY_REV_MAPPING,
     REPEAT_OPTIONS, WEEKDAYS, WEEKDAYS_RRULE, END_CONDITIONS,
     ALARM_ACTION_MAPPING, ALARM_ACTION_REV_MAPPING,
@@ -25,7 +24,7 @@ from models.constants import (
     REMINDER_STRING_MAPPING,
 )
 import json
-from ui.dialogs.detailed_reminder_editor import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
+from ui.dialogs.detailed_reminder_editor import DetailedReminderEditor
 from services.ical_builder import parse_ical_event, build_ical
 
 class EventDialog:
