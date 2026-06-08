@@ -221,30 +221,29 @@ class BaseTreeTab(ttk.Frame):
         """处理拖拽选多行。"""
         self._dragging = True
         TreeviewScroller.handle_drag_scroll(self.tree, event)
-
         if not self._drag_item:
             return
         item = self.tree.identify_row(event.y)
         if not item:
             return
-
         visible = self.tree.get_children()
         if not visible:
             return
         try:
-            start_idx = visible.index(self._drag_item)
-            curr_idx = visible.index(item)
-        except ValueError:
+            start_idx = self.tree.index(self._drag_item)
+            curr_idx = self.tree.index(item)
+        except tk.TclError:
             return
         selected = visible[min(start_idx, curr_idx):max(start_idx, curr_idx)+1]
         self._selected_uids = {self._uid_of(i) for i in selected}
         self.tree.selection_set(selected)
-        self._update_checkboxes()
 
     def _on_release(self, event):
         """处理释放事件"""
         self._drag_start = None
         self._drag_item = None
+        if self._dragging:
+            self._update_checkboxes()
         self._dragging = False
 
     def select_all(self, event=None):
