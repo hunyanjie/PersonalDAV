@@ -29,7 +29,7 @@ def smart_quoted_printable_decode(data: str, charset: str = 'utf-8') -> str:
     """解码 QP 数据"""
     try:
         return quopri.decodestring(data).decode(charset, errors="replace")
-    except:
+    except Exception:
         return data
 
 def decode_ical_value(value) -> str:

@@ -14,14 +14,14 @@ class QuotedPrintableStrategy(DecodingStrategy):
     def decode(self, data: str, charset: str) -> str:
         try:
             return quopri.decodestring(data).decode(charset, errors="replace")
-        except:
+        except Exception:
             return data
 
 class Base64Strategy(DecodingStrategy):
     def decode(self, data: str, charset: str) -> str:
         try:
             return base64.b64decode(data).decode(charset, errors="replace")
-        except:
+        except Exception:
             return data
 
 class PlainStrategy(DecodingStrategy):

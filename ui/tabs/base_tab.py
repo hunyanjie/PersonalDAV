@@ -288,7 +288,7 @@ class BaseTreeTab(ttk.Frame):
         """排序键 - 时间列用 datetime 解析，其他列用字符串"""
         if col in ('start', 'end', 'created_at', 'updated_at'):
             try: return datetime.fromisoformat(value.replace('Z', '+00:00')).replace(tzinfo=None)
-            except: return datetime.min
+            except Exception: return datetime.min
         return (value or '').lower()
 
     def _restore_default(self):
@@ -461,7 +461,7 @@ class BaseTreeTab(ttk.Frame):
                 messagebox.showinfo("提示", f"未识别到有效 {label} 数据", parent=self)
                 return
             self._open_import_preview(items, "剪切板")
-        except:
+        except Exception:
             messagebox.showinfo("提示", "无法读取剪切板内容", parent=self)
 
     def show_text_import(self):

@@ -24,7 +24,7 @@ class TimezoneHelper:
         try:
             sys_locale = locale.getdefaultlocale()[0]
             return Locale.parse(sys_locale) if sys_locale else Locale.parse('zh_CN')
-        except:
+        except Exception:
             return Locale.parse('zh_CN')
 
     @classmethod
@@ -42,14 +42,14 @@ class TimezoneHelper:
             city_name = tz_id.split('/')[-1].replace('_', ' ') if '/' in tz_id else tz_id
             try:
                 localized_name = babel.dates.get_timezone_name(tz_id, locale=loc)
-            except:
+            except Exception:
                 localized_name = tz_id
 
             local_tag = " [本地]" if tz_id == local_tz_id else ""
 
             return fmt.format(offset=offset_str, city=city_name, tz_id=tz_id,
                               localized=localized_name, local_tag=local_tag)
-        except:
+        except Exception:
             return tz_id
 
     @classmethod
@@ -82,7 +82,7 @@ class TimezoneHelper:
         try:
             from tzlocal import get_localzone
             return str(get_localzone())
-        except:
+        except Exception:
             return 'Asia/Shanghai'
 
     @classmethod
@@ -91,7 +91,7 @@ class TimezoneHelper:
             return cls._tz_to_display[tz_id]
         try:
             return cls._format_one(tz_id, cls._format, cls.get_local_timezone_id(), cls._build_sys_locale())
-        except:
+        except Exception:
             return tz_id
 
     @classmethod

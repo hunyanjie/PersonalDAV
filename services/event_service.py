@@ -76,7 +76,7 @@ class EventService(BaseService):
         try:
             parts = dict(pair.split('=') for pair in rrule_str.split(';') if '=' in pair)
             return 'FREQ' in parts
-        except: return False
+        except Exception: return False
 
     def generate_calendar_wrapper(self, vevents_str_list: list) -> str:
         """将 VEVENT 字符串列表包装成完整的 iCalendar 文件"""

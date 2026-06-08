@@ -152,7 +152,7 @@ class DetailedReminderEditor(tk.Toplevel):
                     tz_id = TimezoneHelper.extract_tz_id(self.abs_tz_v.get())
                     dt_naive = datetime.combine(self.abs_d.get_date(), datetime.strptime(f"{self.abs_h.get()}:{self.abs_m.get()}", "%H:%M").time())
                     trig = pytz.timezone(tz_id).localize(dt_naive).astimezone(pytz.UTC)
-                except: messagebox.showerror("错误", "时间格式非法", parent=self); return
+                except Exception: messagebox.showerror("错误", "时间格式非法", parent=self); return
             
             new_a = {'action': act, 'trigger': trig, 'description': self.desc_t.get("1.0", "end-1c").strip()}
             if self.attach_v.get(): new_a['attach'] = self.attach_v.get()
@@ -424,7 +424,7 @@ class EventDialog:
             if v <= 24:  # 旧版 DB 存小时数 → 转为分钟
                 v *= 60
             return v
-        except:
+        except Exception:
             return 60
 
     def create_time_tab(self):
@@ -1242,7 +1242,7 @@ class EventDialog:
         if not summary: messagebox.showwarning("提示", "请填写事件标题", parent=self.root); return
         if not self.allday_var.get():
             try: datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M"); datetime.strptime(f"{self.end_hour.get()}:{self.end_minute.get()}", "%H:%M")
-            except: messagebox.showwarning("提示", "请填写完整的时间", parent=self.root); return
+            except Exception: messagebox.showwarning("提示", "请填写完整的时间", parent=self.root); return
         self.raw_ical = self.generate_ical(); self.result = {'summary': summary}; self.root.destroy()
 
     def cancel(self): self.result = None; self.root.destroy()
