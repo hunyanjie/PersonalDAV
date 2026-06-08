@@ -132,7 +132,7 @@ class DAVServerApp:
 
         self.status_bar_mgr = StatusBarManager(
             self.status_bar, self.contact_service, self.event_service,
-            self.mcp_server, self.server_tab)
+            lambda: self.mcp_server, self.server_tab)
 
         self.status_bar_mgr.refresh()
 
@@ -208,9 +208,11 @@ class DAVServerApp:
                 self.mcp_server = MCPServer()
             if not self.mcp_server.is_running:
                 port = int(self.settings_service.get_setting("mcp_port", "8100"))
-                self.mcp_server.start(port=port)
+                self.mcp_server.start(port=port,
+                    on_ready=lambda: event_bus.publish(EVENT_SERVER_STATE_CHANGED))
         elif self.mcp_server is not None and self.mcp_server.is_running:
             self.mcp_server.stop()
+            event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def process_log_queue(self):
         self.logging_manager.process_queue(self.server_tab)
