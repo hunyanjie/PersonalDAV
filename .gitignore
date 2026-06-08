@@ -196,11 +196,7 @@ cython_debug/
 # Other
 .idea/
 docs/
+data/
 
-dav_data.db
-dav_server.log
-dav_data.db-wal
-dav_data.db-shm
-备注.md
 tests/snapshots/*.png
 tests/snapshots/diff/
