@@ -33,6 +33,9 @@ class BaseTreeTab(ttk.Frame):
         self._all_data = []       # 全量数据列表（已过滤）
         self._selected_uids = set()  # 跨页记住选中状态
         self._insert_pending = False  # 批量插入进行中
+        self._uid_to_item = {}    # uid -> tree item id
+        self._drag_lo = None      # 拖拽最小行索引
+        self._drag_hi = None      # 拖拽最大行索引
         self.app_root = None
         self._import_type = ''
 
@@ -115,23 +118,28 @@ class BaseTreeTab(ttk.Frame):
         self._insert_pending = True
         end = min(start + self.BATCH_SIZE, len(self._all_data))
         for i in range(start, end):
-            self.tree.insert("", tk.END, values=self._all_data[i])
+            uid = self._all_data[i][1]
+            vals = list(self._all_data[i])
+            vals[0] = "✓" if uid in self._selected_uids else " "
+            item_id = self.tree.insert("", tk.END, values=vals)
+            self._uid_to_item[uid] = item_id
         if end < len(self._all_data):
             self.after(1, lambda: self._batch_insert(end))
         else:
             self._insert_pending = False
-            self._update_checkboxes()
+            self._sync_checkboxes()
 
     def _rerender(self):
         """用当前 _all_data 重建视图。"""
         if self._insert_pending:
             return
+        self._uid_to_item.clear()
         for item in self.tree.get_children():
             self.tree.delete(item)
         if self._all_data:
             self._batch_insert(0)
         else:
-            self._update_checkboxes()
+            self._sync_checkboxes()
 
     def _after_refresh(self):
         """数据刷新后恢复排序状态 — 子类 refresh_* 末尾调用。"""
@@ -168,17 +176,18 @@ class BaseTreeTab(ttk.Frame):
             visible = self.tree.get_children()
             if not visible:
                 return "break"
+            old_sel = self._selected_uids.copy()
             start_idx = visible.index(self._last_selected or visible[0])
             end_idx = visible.index(item)
             selected = visible[min(start_idx, end_idx):max(start_idx, end_idx)+1]
-            selected_uids = {self._uid_of(i) for i in selected}
-            self._selected_uids = selected_uids
+            self._selected_uids = {self._uid_of(i) for i in selected}
             self.tree.selection_set(selected)
-            self._update_checkboxes()
+            self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
         ctrl = bool(event.state & 0x0004)
         uid = self._uid_of(item) if item else None
+        old_sel = self._selected_uids.copy()
 
         # 复选框列点击
         if column == "#1" and item:
@@ -193,7 +202,7 @@ class BaseTreeTab(ttk.Frame):
                 self.tree.selection_set([item])
                 self._selected_uids = {uid} if uid else set()
             self._last_selected = item
-            self._update_checkboxes()
+            self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
         # 普通列点击
@@ -209,7 +218,7 @@ class BaseTreeTab(ttk.Frame):
                 self.tree.selection_set([item])
                 self._selected_uids = {uid} if uid else set()
             self._last_selected = item
-            self._update_checkboxes()
+            self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
     def _uid_of(self, item):
@@ -234,16 +243,28 @@ class BaseTreeTab(ttk.Frame):
             curr_idx = self.tree.index(item)
         except tk.TclError:
             return
-        selected = visible[min(start_idx, curr_idx):max(start_idx, curr_idx)+1]
+        lo = min(start_idx, curr_idx)
+        hi = max(start_idx, curr_idx)
+        upd_lo = lo if self._drag_lo is None else min(lo, self._drag_lo)
+        upd_hi = hi if self._drag_hi is None else max(hi, self._drag_hi)
+        self._drag_lo, self._drag_hi = lo, hi
+        selected = visible[lo:hi+1]
         self._selected_uids = {self._uid_of(i) for i in selected}
         self.tree.selection_set(selected)
+        for i in range(upd_lo, upd_hi + 1):
+            item_id = visible[i]
+            vals = list(self.tree.item(item_id, 'values'))
+            vals[0] = "✓" if lo <= i <= hi else " "
+            self.tree.item(item_id, values=vals)
 
     def _on_release(self, event):
         """处理释放事件"""
         self._drag_start = None
         self._drag_item = None
+        self._drag_lo = None
+        self._drag_hi = None
         if self._dragging:
-            self._update_checkboxes()
+            self._sync_checkboxes()
         self._dragging = False
 
     def select_all(self, event=None):
@@ -251,7 +272,7 @@ class BaseTreeTab(ttk.Frame):
         visible = self.tree.get_children()
         self._selected_uids.update(self._uid_of(i) for i in visible)
         self.tree.selection_set(visible)
-        self._update_checkboxes()
+        self._sync_checkboxes()
         return "break"
 
     def delete_selected(self):
@@ -270,14 +291,28 @@ class BaseTreeTab(ttk.Frame):
         else:
             self._selected_uids.update(self._uid_of(i) for i in visible)
             self.tree.selection_set(visible)
-        self._update_checkboxes()
+        self._sync_checkboxes()
 
     def get_selected_uids(self):
         """返回所有已选 UID（跨页）。"""
         return self._selected_uids
 
-    def _update_checkboxes(self):
-        """根据 _selected_uids 刷新当前页复选框和选中高亮。"""
+    def _sync_checkboxes(self, uids=None):
+        """同步复选框和选中状态。
+        
+        Args:
+            uids: 若提供，只更新这些 UID 对应行的复选框（不更新 selection）。
+                  若为 None，全量同步（遍历所有行 + 重建 selection）。
+        """
+        if uids is not None:
+            for uid in uids:
+                item = self._uid_to_item.get(uid)
+                if item is None:
+                    continue
+                vals = list(self.tree.item(item, 'values'))
+                vals[0] = "✓" if uid in self._selected_uids else " "
+                self.tree.item(item, values=vals)
+            return
         sel = []
         for i in self.tree.get_children():
             uid = self._uid_of(i)
