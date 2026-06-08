@@ -115,7 +115,8 @@ class ServerTab(ttk.Frame):
         ttk.Label(port_frame, text="DAV 目录:").pack(side=tk.LEFT, padx=5)
         self.dav_root_entry = ttk.Entry(port_frame, textvariable=self.dav_root_var, width=25)
         self.dav_root_entry.pack(side=tk.LEFT, padx=2)
-        ttk.Button(port_frame, text="浏览...", width=6, command=lambda: self._browse_dir(self.dav_root_var)).pack(side=tk.LEFT, padx=2)
+        self.dav_root_browse_btn = ttk.Button(port_frame, text="浏览...", width=6, command=lambda: self._browse_dir(self.dav_root_var))
+        self.dav_root_browse_btn.pack(side=tk.LEFT, padx=2)
 
         # FTP / SFTP / TFTP 服务控制
         ftp_frame = ttk.LabelFrame(inner, text="FTP / SFTP / TFTP 文件服务")
@@ -407,6 +408,7 @@ WebDAV 文件服务:
         self.stop_btn.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.DISABLED)
         self.dav_root_entry.config(state=tk.DISABLED)
+        self.dav_root_browse_btn.config(state=tk.DISABLED)
         scheme = "HTTPS" if ssl_enabled else "HTTP"
         msg = f"服务器已启动 ({scheme}) 在端口 {port}"
         logger.info(msg)
@@ -421,6 +423,7 @@ WebDAV 文件服务:
             self.stop_btn.config(state=tk.DISABLED)
             self.port_entry.config(state=tk.NORMAL)
             self.dav_root_entry.config(state=tk.NORMAL)
+            self.dav_root_browse_btn.config(state=tk.NORMAL)
             msg = "服务器已停止"
             logger.info(msg)
             self.log_message(msg, logging.INFO)
