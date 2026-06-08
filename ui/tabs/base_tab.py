@@ -33,6 +33,7 @@ class BaseTreeTab(ttk.Frame):
         self._all_data = []       # 全量数据列表（已过滤）
         self._selected_uids = set()  # 跨页记住选中状态
         self._scroll_offset = 0   # 虚拟滚动偏移量
+        self._vsb_busy = False    # 防 vscroll.set 回环
         self.app_root = None
         self._import_type = ''
 
@@ -132,6 +133,8 @@ class BaseTreeTab(ttk.Frame):
 
     def _vsb_handler(self, *args):
         """拦截滚动条操作，转发到虚拟滚动逻辑。"""
+        if self._vsb_busy:
+            return
         n = len(self._all_data)
         if n <= self.PAGE_SIZE:
             self.tree.yview(*args)
@@ -174,9 +177,11 @@ class BaseTreeTab(ttk.Frame):
             self.tree.delete(item_id)
         self._sync_scrollbar()
         self._update_checkboxes()
+        self.tree.yview_moveto(0)
 
     def _sync_scrollbar(self):
         """更新滚动条位置以反映虚拟数据集的大小。"""
+        self._vsb_busy = True
         n = len(self._all_data)
         if n <= self.PAGE_SIZE:
             self.vscroll.set(0, 1)
@@ -186,6 +191,7 @@ class BaseTreeTab(ttk.Frame):
             start = off / max(1, n)
             end = (off + vis) / max(1, n)
             self.vscroll.set(start, end)
+        self._vsb_busy = False
 
     def _handle_drag_scroll_virtual(self, event):
         """拖拽时的边缘自动滚动（虚拟滚动版本）。"""
