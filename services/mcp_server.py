@@ -13,7 +13,7 @@ MCP（Model Context Protocol）服务器——可嵌入类 + 独立 CLI。
 
 import argparse
 import threading
-import time
+import time as _time
 
 from mcp.server.fastmcp import FastMCP
 import json as _json
@@ -89,27 +89,30 @@ class MCPServer:
         self._mcp = FastMCP("PersonalDAV")
         self._uvicorn_server = None
         self._thread: threading.Thread | None = None
-        self._register_tools()
-        logger.info("MCPServer 实例已创建")
+        self._tools_registered = False
+        logger.info("MCPServer 实例已创建（工具延迟到 start 时注册）")
 
     def start(self, host: str = "127.0.0.1", port: int = 8100) -> bool:
         if self._uvicorn_server is not None:
-            logger.warning(f"MCP 服务器已在端口运行，忽略重复启动请求")
+            logger.warning(f"MCP 服务器已在运行，忽略重复启动请求")
             return False
-        import uvicorn
-        logger.info(f"MCP 服务器正在启动，监听 {host}:{port}")
-        app = self._mcp.sse_app()
 
-        app = _AuthASGIMiddleware(app)
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        self._uvicorn_server = uvicorn.Server(config)
-        self._thread = threading.Thread(target=self._uvicorn_server.run, daemon=True)
-        self._thread.start()
-        time.sleep(0.3)
-        if self._uvicorn_server and hasattr(self._uvicorn_server, 'started') and self._uvicorn_server.started:
+        logger.info(f"MCP 服务器后台启动中，监听 {host}:{port}")
+
+        def _run():
+            if not self._tools_registered:
+                self._register_tools()
+                self._tools_registered = True
+            import uvicorn
+            app = self._mcp.sse_app()
+            app = _AuthASGIMiddleware(app)
+            config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+            self._uvicorn_server = uvicorn.Server(config)
             logger.info(f"MCP 服务器已启动，端口 {port}")
-        else:
-            logger.info(f"MCP 服务器启动中（端口 {port}）")
+            self._uvicorn_server.run()
+
+        self._thread = threading.Thread(target=_run, daemon=True)
+        self._thread.start()
         return True
 
     def stop(self) -> None:
@@ -137,6 +140,7 @@ class MCPServer:
         webdav_tools.register(self._mcp)
         ftp_tools.register(self._mcp)
         smb_tools.register(self._mcp)
+        logger.info("MCP 工具注册完成")
 
 
 if __name__ == "__main__":
@@ -149,7 +153,7 @@ if __name__ == "__main__":
     print(f"MCP SSE 服务器已启动: http://127.0.0.1:{args.port}/sse", flush=True)
     try:
         while True:
-            time.sleep(1)
+            _time.sleep(1)
     except KeyboardInterrupt:
         srv.stop()
         print("MCP 服务器已停止", flush=True)

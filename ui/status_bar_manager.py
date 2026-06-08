@@ -23,7 +23,7 @@ class StatusBarManager:
     def refresh(self, *args):
         c_count = self.contact_service.count()
         e_count = self.event_service.count()
-        mcp = "MCP 运行中" if self.mcp_server.is_running else "MCP 已关闭"
+        mcp = "MCP 运行中" if self.mcp_server is not None and self.mcp_server.is_running else "MCP 已关闭"
         server = self.server_tab.server_instance
         srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
         db_size = self._get_db_size()

@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 
 from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION, DEFAULT_DB_PATH
 from services.settings_service import SettingsService
-from mcp_tools._state import CONTACT_SVC, EVENT_SVC
+from mcp_tools._state import get_contact_svc, get_event_svc
 from mcp_tools.helpers import safe_json
 from utils.logger import logger
 
@@ -19,8 +19,8 @@ def register(mcp):
                 "software_version": SOFTWARE_VERSION,
                 "description": SOFTWARE_DESCRIPTION,
                 "db_path": DEFAULT_DB_PATH,
-                "contacts_count": CONTACT_SVC.count(),
-                "events_count": EVENT_SVC.count(),
+                "contacts_count": get_contact_svc().count(),
+                "events_count": get_event_svc().count(),
                 "mcp_port": int(s.get_setting("mcp_port", "8100")),
             }
             logger.debug(f"MCP 返回: get_config -> {cfg}")

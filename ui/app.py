@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import queue
-from database.db_manager import Database
 import time
 import os
 import webbrowser
@@ -9,16 +8,12 @@ from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
 from ui.tabs.remote_tab import RemoteTab
-from ui.dialogs.settings_dialog import SettingsDialog
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
 from utils.logger import logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
-from services.mcp_server import MCPServer
-from utils.auto_start import set_auto_start, is_auto_start
-from ui.tray_manager import TrayManager
 from ui.logging_manager import LoggingManager
 from ui.drag_drop_handler import DragDropHandler
 from ui.status_bar_manager import StatusBarManager
@@ -47,7 +42,7 @@ class DAVServerApp:
         self.logging_manager = LoggingManager(self.settings_service, self.log_queue)
         self.logging_manager.setup()
 
-        self.mcp_server = MCPServer()
+        self.mcp_server = None
         self.start_time = time.time()
 
         self.create_widgets()
@@ -76,6 +71,7 @@ class DAVServerApp:
         except ImportError:
             self._tray_available = False
         if self._tray_available:
+            from ui.tray_manager import TrayManager
             self._tray = TrayManager(self.root, on_show=self._tray_show, on_quit=self._tray_quit)
             self._tray.start()
 
@@ -149,6 +145,7 @@ class DAVServerApp:
         self._sync_mcp_server()
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
             self.server_tab.start_server()
+        from utils.auto_start import set_auto_start, is_auto_start
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         if auto_start and not is_auto_start():
             set_auto_start(True)
@@ -186,6 +183,7 @@ class DAVServerApp:
                     logger.error(f"SSL证书自动续期失败: {e}")
 
     def show_settings(self):
+        from ui.dialogs.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
 
@@ -196,6 +194,7 @@ class DAVServerApp:
                 self.server_tab.start_server()
             else:
                 messagebox.showinfo("提示", "HTTPS 设置将在下次启动服务器时生效。")
+        from utils.auto_start import set_auto_start
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         set_auto_start(auto_start)
         from ui.widgets.toast import Toast
@@ -203,10 +202,14 @@ class DAVServerApp:
 
     def _sync_mcp_server(self):
         enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"
-        if enabled and not self.mcp_server.is_running:
-            port = int(self.settings_service.get_setting("mcp_port", "8100"))
-            self.mcp_server.start(port=port)
-        elif not enabled and self.mcp_server.is_running:
+        if enabled:
+            if self.mcp_server is None:
+                from services.mcp_server import MCPServer
+                self.mcp_server = MCPServer()
+            if not self.mcp_server.is_running:
+                port = int(self.settings_service.get_setting("mcp_port", "8100"))
+                self.mcp_server.start(port=port)
+        elif self.mcp_server is not None and self.mcp_server.is_running:
             self.mcp_server.stop()
 
     def process_log_queue(self):
@@ -256,9 +259,11 @@ class DAVServerApp:
 
     def _do_quit(self):
         self.server_tab.stop_server()
-        self.mcp_server.stop()
+        if self.mcp_server is not None:
+            self.mcp_server.stop()
         if hasattr(self, '_tray'):
             self._tray.stop()
+        from database.db_manager import Database
         Database().close()
         self.root.destroy()
 

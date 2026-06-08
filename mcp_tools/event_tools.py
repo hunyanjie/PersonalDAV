@@ -1,4 +1,4 @@
-from mcp_tools._state import EVENT_SVC
+from mcp_tools._state import get_event_svc
 from mcp_tools.helpers import safe_json, check_readonly, make_event_summary
 from utils.logger import logger
 
@@ -8,7 +8,7 @@ def register(mcp):
     def list_events() -> str:
         logger.info("MCP 调用: list_events")
         try:
-            items = EVENT_SVC.get_list_data()
+            items = get_event_svc().get_list_data()
             result = []
             for row in items:
                 result.append({
@@ -27,7 +27,7 @@ def register(mcp):
     def get_event(uid: str) -> str:
         logger.info(f"MCP 调用: get_event uid={uid}")
         try:
-            raw = EVENT_SVC.get_by_uid(uid)
+            raw = get_event_svc().get_by_uid(uid)
             if raw is None:
                 logger.warning(f"MCP 返回: get_event -> 事件 {uid} 不存在")
                 return safe_json({"error": f"事件 {uid} 不存在"})
@@ -45,7 +45,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info(f"MCP 调用: create_event ical_data({len(ical_data)}B)")
         try:
-            uid, op = EVENT_SVC.add_event(ical_data, publish=False)
+            uid, op = get_event_svc().add_event(ical_data, publish=False)
             if uid is None:
                 logger.error(f"MCP 返回: create_event -> 失败: {op}")
                 return safe_json({"error": op})
@@ -61,7 +61,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info(f"MCP 调用: update_event uid={uid} ical_data({len(ical_data)}B)")
         try:
-            uid, op = EVENT_SVC.add_event(ical_data, force=True, publish=False)
+            uid, op = get_event_svc().add_event(ical_data, force=True, publish=False)
             if uid is None:
                 logger.error(f"MCP 返回: update_event -> 失败: {op}")
                 return safe_json({"error": op})
@@ -77,7 +77,7 @@ def register(mcp):
             return safe_json({"error": "只读模式下不支持此操作"})
         logger.info(f"MCP 调用: delete_event uid={uid}")
         try:
-            ok = EVENT_SVC.delete(uid)
+            ok = get_event_svc().delete(uid)
             logger.info(f"MCP 返回: delete_event -> uid={uid} deleted={ok}")
             return safe_json({"uid": uid, "deleted": ok})
         except Exception as e:
