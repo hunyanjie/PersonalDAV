@@ -218,11 +218,15 @@ class Database:
         self._vacuum_in_progress = True
         try:
             with self._lock:
-                old_pages = self.query_one("PRAGMA page_count")[0]
-                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                self.conn.execute("VACUUM")
-                new_pages = self.query_one("PRAGMA page_count")[0]
-            page_size = self.query_one("PRAGMA page_size")[0]
+                c = self.conn.cursor()
+                c.execute("PRAGMA page_count")
+                old_pages = c.fetchone()[0]
+                c.execute("PRAGMA page_size")
+                page_size = c.fetchone()[0]
+                c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                c.execute("VACUUM")
+                c.execute("PRAGMA page_count")
+                new_pages = c.fetchone()[0]
             saved = (old_pages - new_pages) * page_size
             logger.info(f"数据库压缩完成: {old_pages} -> {new_pages} 页, 释放 {saved / 1024:.1f} KB")
             return saved

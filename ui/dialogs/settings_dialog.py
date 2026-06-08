@@ -871,6 +871,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         pb = ttk.Progressbar(progress, mode="indeterminate", length=280)
         pb.pack(pady=5)
         pb.start(10)
+        progress.update()
 
         def _done(saved):
             if not progress.winfo_exists():
