@@ -86,9 +86,11 @@ class BaseTreeTab(ttk.Frame):
         self.hscroll.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # 虚拟滚动 — 替换滚动条命令 + Treeview 的 yscrollcommand
-        self.vscroll.config(command=self._vsb_handler)
+        # 虚拟滚动 — 替换 yscrollcommand + 重载 tree.yview
         self.tree.configure(yscrollcommand=self._on_tree_scroll)
+        self._orig_tree_yview = self.tree.yview
+        self.tree.yview = self._virtual_yview
+        self.vscroll.config(command=self.tree.yview)
 
         # 事件绑定
         self.tree.bind('<ButtonPress-1>', self._on_click)
@@ -131,14 +133,18 @@ class BaseTreeTab(ttk.Frame):
 
     # ── 虚拟滚动核心 ──
 
-    def _vsb_handler(self, *args):
-        """拦截滚动条操作，转发到虚拟滚动逻辑。"""
+    def _virtual_yview(self, *args):
+        """重载 tree.yview — 拦截滚动请求，转发到虚拟滚动逻辑。"""
         if self._vsb_busy:
             return
         n = len(self._all_data)
         if n <= self.PAGE_SIZE:
-            self.tree.yview(*args)
-            return
+            return self._orig_tree_yview(*args)
+        if not args:
+            off = self._scroll_offset
+            start = off / max(1, n)
+            end = (off + self.PAGE_SIZE) / max(1, n)
+            return (start, end)
         cmd = args[0]
         if cmd == 'moveto':
             frac = float(args[1])
