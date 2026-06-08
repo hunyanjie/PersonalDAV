@@ -34,6 +34,7 @@ class BaseTreeTab(ttk.Frame):
         self._selected_uids = set()  # 跨页记住选中状态
         self._insert_pending = False  # 批量插入进行中
         self._uid_to_item = {}    # uid -> tree item id
+        self._item_to_uid = {}    # tree item id -> uid（反向映射，避免 Tcl 调用）
         self._drag_lo = None      # 拖拽最小行索引
         self._drag_hi = None      # 拖拽最大行索引
         self.app_root = None
@@ -123,6 +124,7 @@ class BaseTreeTab(ttk.Frame):
             vals[0] = "✓" if uid in self._selected_uids else " "
             item_id = self.tree.insert("", tk.END, values=vals)
             self._uid_to_item[uid] = item_id
+            self._item_to_uid[item_id] = uid
         if end < len(self._all_data):
             self.after(1, lambda: self._batch_insert(end))
         else:
@@ -134,6 +136,7 @@ class BaseTreeTab(ttk.Frame):
         if self._insert_pending:
             return
         self._uid_to_item.clear()
+        self._item_to_uid.clear()
         for item in self.tree.get_children():
             self.tree.delete(item)
         if self._all_data:
@@ -180,13 +183,13 @@ class BaseTreeTab(ttk.Frame):
             start_idx = visible.index(self._last_selected or visible[0])
             end_idx = visible.index(item)
             selected = visible[min(start_idx, end_idx):max(start_idx, end_idx)+1]
-            self._selected_uids = {self._uid_of(i) for i in selected}
+            self._selected_uids = {self._item_to_uid[i] for i in selected}
             self.tree.selection_set(selected)
             self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
         ctrl = bool(event.state & 0x0004)
-        uid = self._uid_of(item) if item else None
+        uid = self._item_to_uid.get(item) if item else None
         old_sel = self._selected_uids.copy()
 
         # 复选框列点击
@@ -249,13 +252,10 @@ class BaseTreeTab(ttk.Frame):
         upd_hi = hi if self._drag_hi is None else max(hi, self._drag_hi)
         self._drag_lo, self._drag_hi = lo, hi
         selected = visible[lo:hi+1]
-        self._selected_uids = {self._uid_of(i) for i in selected}
+        self._selected_uids = {self._item_to_uid[i] for i in selected}
         self.tree.selection_set(selected)
         for i in range(upd_lo, upd_hi + 1):
-            item_id = visible[i]
-            vals = list(self.tree.item(item_id, 'values'))
-            vals[0] = "✓" if lo <= i <= hi else " "
-            self.tree.item(item_id, values=vals)
+            self.tree.set(visible[i], 'selected', "✓" if lo <= i <= hi else " ")
 
     def _on_release(self, event):
         """处理释放事件"""
@@ -270,7 +270,7 @@ class BaseTreeTab(ttk.Frame):
     def select_all(self, event=None):
         """全选。"""
         visible = self.tree.get_children()
-        self._selected_uids.update(self._uid_of(i) for i in visible)
+        self._selected_uids.update(self._item_to_uid[i] for i in visible)
         self.tree.selection_set(visible)
         self._sync_checkboxes()
         return "break"
@@ -286,10 +286,10 @@ class BaseTreeTab(ttk.Frame):
             return
         all_sel = all(i in self.tree.selection() for i in visible)
         if all_sel:
-            self._selected_uids.difference_update(self._uid_of(i) for i in visible)
+            self._selected_uids.difference_update(self._item_to_uid[i] for i in visible)
             self.tree.selection_set([])
         else:
-            self._selected_uids.update(self._uid_of(i) for i in visible)
+        self._selected_uids.update(self._item_to_uid[i] for i in visible)
             self.tree.selection_set(visible)
         self._sync_checkboxes()
 
@@ -309,17 +309,13 @@ class BaseTreeTab(ttk.Frame):
                 item = self._uid_to_item.get(uid)
                 if item is None:
                     continue
-                vals = list(self.tree.item(item, 'values'))
-                vals[0] = "✓" if uid in self._selected_uids else " "
-                self.tree.item(item, values=vals)
+                self.tree.set(item, 'selected', "✓" if uid in self._selected_uids else " ")
             return
         sel = []
         for i in self.tree.get_children():
-            uid = self._uid_of(i)
+            uid = self._item_to_uid.get(i)
             selected = uid in self._selected_uids
-            vals = list(self.tree.item(i, 'values'))
-            vals[0] = "✓" if selected else " "
-            self.tree.item(i, values=vals)
+            self.tree.set(i, 'selected', "✓" if selected else " ")
             if selected:
                 sel.append(i)
         self.tree.selection_set(sel)
