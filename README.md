@@ -5,6 +5,9 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 > [!NOTE]
 > 由于学习原因, 本项目的开发速度会有所缓慢。
 
+> [!IMPORTANT]
+> 使用前请阅读[免责声明](DISCLAIMER.md)。本软件按「原样」提供，作者不对数据丢失或安全问题承担责任。
+
 ## 功能特性
 
 - 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
@@ -127,13 +130,14 @@ python tests/run_all.py
 
 ## MCP 可用工具
 
-MCP 服务提供 32 个工具供 AI 调用：
+MCP 服务提供 33 个工具供 AI 调用：
 
 | 工具 | 说明 |
 |------|------|
 | `server_start` / `server_stop` / `server_status` | 管理 DAV 服务器启停和状态查询 |
 | `list_contacts` / `get_contact` | 查看联系人列表和详情 |
 | `create_contact` / `update_contact` / `delete_contact` | 联系人增删改 |
+| `create_contact_v2` | 通过结构化参数（姓名、邮箱、电话）创建联系人，无需拼接 vCard |
 | `list_events` / `get_event` | 查看事件列表和详情 |
 | `create_event` / `update_event` / `delete_event` | 事件增删改 |
 | `get_config` | 查询软件配置和统计数据 |
@@ -145,27 +149,65 @@ MCP 服务提供 32 个工具供 AI 调用：
 | `dav_list_files` / `dav_upload` / `dav_download` | WebDAV 文件浏览、上传、下载 |
 | `dav_delete` / `dav_mkdir` | WebDAV 文件删除和目录创建 |
 
+## 项目架构
+
+```
+PersonalDAV/
+├── main.py                  # 入口（TkinterDnD 主窗口）
+├── config.py                # 软件元信息
+├── data/                    # 运行产物（自动创建）
+│   ├── dav_data.db          # SQLite 数据库
+│   ├── remote_connections.key # Fernet 加密密钥
+│   └── log/                 # 日志文件
+├── mcp_tools/               # MCP 工具模块
+│   ├── server_tools.py      # DAV 服务器启停
+│   ├── contact_tools.py     # 联系人 CRUD
+│   ├── event_tools.py       # 日历事件 CRUD
+│   ├── config_tools.py      # 系统配置/健康检查
+│   ├── webdav_tools.py      # WebDAV 文件操作
+│   ├── ftp_tools.py         # FTP/SFTP 远程操作
+│   └── smb_tools.py         # SMB 共享浏览
+├── models/                  # 数据模型层（dataclass）
+├── database/                # 数据访问层（SQLite + Repository）
+│   └── repositories/        # 泛型 CRUD 仓储
+├── services/                # 业务逻辑层
+│   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP控制）
+│   ├── mcp_server.py        # MCP SSE 服务器
+│   ├── ftp_service.py       # FTP/FTPS/SFTP/TFTP 服务器
+│   └── ...
+├── network/                 # 网络层
+│   ├── dav_server.py        # CardDAV + CalDAV + WebDAV HTTP 服务
+│   └── webdav_helper.py     # XML 响应构建
+├── ui/                      # 视图层（Tkinter）
+│   ├── tabs/                # 标签页（联系人/日历/服务器/远程）
+│   ├── dialogs/             # 对话框（设置/事件/联系人/导入）
+│   └── widgets/             # 自定义控件（提示框/右键菜单）
+├── utils/                   # 工具层
+│   ├── crypto.py            # Fernet 加密
+│   ├── vcard_parser.py      # 回退式 vCard 解析
+│   └── ...
+└── tests/                   # 单元测试（23 项，325 子测试）
+```
+
 ## 技术栈
 
-- **GUI框架**: Tkinter / ttk / tkinterdnd2
-- **数据格式**: vCard (vcf), iCalendar (ics)
-- **数据库**: SQLite (WAL模式)
-- **HTTP服务器**: Python内置HTTPServer
-- **MCP服务器**: FastMCP + Uvicorn (SSE协议)
-- **主要依赖**:
-    - `vobject` — vCard和iCalendar解析
-    - `python-dateutil` — 日期解析
-    - `pytz` / `tzlocal` — 时区处理
-    - `babel` — 日期和时间的国际化
-    - `requests` / `httpx` — HTTP请求
-    - `tkcalendar` — 日历选择控件
-    - `mcp` — MCP 协议库
+| 层面 | 技术 |
+|------|------|
+| GUI 框架 | Tkinter / ttk / tkinterdnd2 |
+| 数据库 | SQLite (WAL 模式 + 线程安全) |
+| DAV 协议 | Python 内置 HTTPServer（无外部依赖） |
+| MCP 服务 | FastMCP + Uvicorn (SSE 协议) |
+| 加密 | PBKDF2-HMAC-SHA256（密码）、Fernet/AES-128-CBC（远程连接密码） |
+| 数据格式 | vCard 3.0 / iCalendar 2.0 |
+| 时区 | pytz / tzlocal / Babel |
+| 网络协议 | HTTP/WebDAV、FTP/FTPS、SFTP、TFTP、SMB/CIFS |
+| 测试 | pytest + tracemalloc + 像素截图对比 |
 
 ## 注意事项
 
 - 该服务仅设计用于本地网络或个人使用
 - 开启密码后请妥善保管，密码丢失无法找回
-- 请勿在公共网络环境中使用，除非配合 IP 白名单 + 强密码
+- 请勿在公共网络环境中使用，建议配合 IP 白名单 + 强密码
 
 ## 贡献
 
@@ -175,9 +217,38 @@ MCP 服务提供 32 个工具供 AI 调用：
 
 支持[提issue](https://github.com/hunyanjie/PersonalDAV/issues)。
 
+## 免责声明
+
+使用前请阅读完整的[免责声明](DISCLAIMER.md)。简言之：
+
+- 本软件按「原样」提供，无任何明示或暗示保证
+- 作者不对数据丢失、泄露或任何损害承担责任
+- 用户应自行做好数据备份
+- 不建议将本软件暴露到公网
+
 ## 许可证
 
-本项目采用MPL-2.0许可证。详见[LICENSE](https://github.com/hunyanjie/PersonalDAV?tab=MPL-2.0-1-ov-file#MPL-2.0-1-ov-file) 文件。
+本项目采用 **Apache License Version 2.0**。
+
+### 为什么选择 Apache 2.0？
+
+Apache 2.0 是**宽松许可证**，没有 copyleft 约束：
+
+| 维度 | 说明 |
+|------|------|
+| ✅ **自由使用** | 可自由使用、修改、分发，无论个人还是商业 |
+| ✅ **无需开源衍生代码** | 修改后不必公开源代码（与 GPL/MPL 不同） |
+| ✅ **专利保护** | 包含明确的专利授权，贡献者自动授予专利许可 |
+| ✅ **兼容性好** | 与 GPL v3 兼容，广泛用于开源生态 |
+| ❌ **无 copyleft** | 修改者没有义务回馈改进到社区 |
+
+### 对本项目而言
+
+- **如果您在个人/公司项目中使用**：直接引用无需开源
+- **如果您分发修改版本**：保留 Apache 2.0 声明即可，修改部分无需公开
+- **专有代码可单独存在**：不受影响
+
+完整许可证文本见 [LICENSE](LICENSE) 文件，或访问 [https://apache.org/licenses/LICENSE-2.0](https://apache.org/licenses/LICENSE-2.0)。
 
 ---
 

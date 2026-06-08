@@ -29,6 +29,22 @@
 PersonalDAV/
 ├── main.py                    # 入口：TkinterDnD 主窗口
 ├── config.py                  # 软件元信息（名称、版本、作者等）
+├── data/                      # 运行产物（启动时自动创建）
+│   ├── dav_data.db            # SQLite 数据库
+│   ├── dav_data.db.bak        # 自动备份
+│   ├── remote_connections.key # Fernet 加密密钥
+│   └── log/
+│       └── dav_server.log     # 日志文件（启用时）
+├── mcp_tools/                 # MCP 工具模块（v2.6 拆分）
+│   ├── _state.py              # 共享状态（服务实例单例）
+│   ├── helpers.py             # JSON 序列化 / 摘要辅助函数
+│   ├── server_tools.py        # DAV 服务器启停（start/stop/status）
+│   ├── contact_tools.py       # 联系人 CRUD + create_contact_v2
+│   ├── event_tools.py         # 日历事件 CRUD
+│   ├── config_tools.py        # 系统配置 / 健康检查
+│   ├── webdav_tools.py        # WebDAV 文件操作
+│   ├── ftp_tools.py           # FTP/SFTP 服务器管理 + 远程文件操作
+│   └── smb_tools.py           # SMB 共享浏览
 ├── models/                    # 数据模型层
 │   ├── setting_defs.py        # SettingDef 声明式设置定义
 │   ├── constants.py           # 共享映射常量（状态/透明度/提醒/频率/预设等）
@@ -188,7 +204,7 @@ python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 | 参数 | 简写 | 说明 |
 |------|------|------|
 | `--port` | `-p` | WebDAV 服务器端口，覆盖设置中的默认端口 |
-| `--db-path` | | 数据库文件路径，默认 `dav_data.db` |
+| `--db-path` | | 数据库文件路径，默认 `data/dav_data.db` |
 | `--log-level` | | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL |
 
 `--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
@@ -820,9 +836,9 @@ class MCPServer:
 
 `start()` 通过 `uvicorn.Server` 在 daemon 线程中运行，`stop()` 设置 `should_exit = True`。
 
-### 暴露的工具（共 32 个）
+### 暴露的工具（共 33 个）
 
-#### DAV 核心工具（15 个）
+#### DAV 核心工具（16 个）
 
 | 工具 | 类别 | 说明 |
 |------|------|------|
@@ -832,6 +848,7 @@ class MCPServer:
 | `list_contacts()` | 联系人 | 列出所有联系人摘要 |
 | `get_contact(uid)` | 联系人 | 获取联系人完整 vCard |
 | `create_contact(vcard_data)` | 联系人 | 从 vCard 创建联系人 |
+| `create_contact_v2(name, email, phone)` | 联系人 | 通过结构化参数创建联系人，无需手动拼接 vCard |
 | `update_contact(uid, vcard_data)` | 联系人 | 强制覆盖更新联系人 |
 | `delete_contact(uid)` | 联系人 | 删除联系人 |
 | `list_events()` | 日历 | 列出所有事件摘要 |
@@ -1304,6 +1321,106 @@ canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.wid
 
 ---
 
+## v2.6 新增概述
+
+### 密码加密存储 (`utils/crypto.py`)
+
+- 使用 **`cryptography` 库的 Fernet (AES-128-CBC)** 加密远程连接密码
+- 密钥文件 (`remote_connections.key`) 自动生成于数据目录 `data/`，与数据库同目录
+- 加密/解密在 `remote_tab.py` 的 `INSERT` / `UPDATE` / `SELECT` 操作中透明完成
+- 数据库中的 `remote_connections` 表 `password` 列存储为 base64 密文
+
+### 数据库自动备份
+
+```python
+# database/db_manager.py
+class Database:
+    def __init__(self, db_path: str):
+        db_path_obj = Path(db_path)
+        backup_path = db_path_obj.with_suffix(".db.bak")
+        if db_path_obj.exists():
+            shutil.copy2(db_path_obj, backup_path)
+```
+
+每次 `Database.__init__()` 启动时自动复制 `dav_data.db` → `dav_data.db.bak`。
+
+### DAV 协议增强
+
+| 特性 | 实现位置 | 说明 |
+|------|---------|------|
+| REPORT | `do_REPORT()` | 处理 `addressbook-multiget` / `calendar-multiget`，支持按 UID 批量查询 |
+| COPY / MOVE | `do_COPY()` / `do_MOVE()` / `_copy_or_move()` | 支持文件级（`/dav/`）和资源级（`/contacts/`、`/events/`）复制移动 |
+| CTag | `_collection_ctag()` | 基于集合内所有资源 ETag 计算哈希，添加到 PROPFIND 集合响应 |
+| OPTIONS 补充 | `do_OPTIONS()` | Allow 头新增 `REPORT, COPY, MOVE` |
+
+#### REPORT 请求示例
+
+```xml
+<?xml version="1.0" encoding="utf-8" ?>
+<C:addressbook-multiget xmlns:C="urn:ietf:params:xml:ns:carddav">
+  <A:prop xmlns:A="DAV:">
+    <A:getetag/>
+    <C:address-data/>
+  </A:prop>
+  <A:href>/contacts/uid-1.vcf</A:href>
+  <A:href>/contacts/uid-2.vcf</A:href>
+</C:addressbook-multiget>
+```
+
+### MCP 工具模块化
+
+`v2.5` 中所有 32 个工具集中在 `services/mcp_server.py`(824 行)。`v2.6` 拆分为 7 个独立模块，入口仅保留注册与启动逻辑 (120 行)：
+
+```
+mcp_tools/
+├── __init__.py     # 导出 all_tools 列表
+├── _state.py       # get/set_server_app 全局单例
+├── helpers.py      # serialize_model / make_summary
+├── server_tools.py   # 3 个工具
+├── contact_tools.py  # 6 个工具（+create_contact_v2）
+├── event_tools.py    # 5 个工具
+├── config_tools.py   # 2 个工具
+├── webdav_tools.py   # 5 个工具
+├── ftp_tools.py      # 10 个工具
+└── smb_tools.py      # 2 个工具
+```
+
+优势：
+- **职责清晰**：每个模块对应一个功能域
+- **可单独测试**：依赖注入友好，无需启动完整 GUI
+- **并行开发**：多人可同时编辑不同工具模块
+
+### 数据目录重组
+
+```
+v2.5                          v2.6
+dav_data.db          →        data/dav_data.db
+dav_endpoint.db      →        data/dav_data.db (合并)
+remote_connections   →        (保留表结构)
+dav_server.log       →        data/log/dav_server.log
+```
+
+- `main.py` 启动时自动迁移旧路径文件到 `data/`
+- 所有路径通过 `config.py` 中的 `DEFAULT_DB_PATH` / `DEFAULT_LOG_FILE` 集中管理
+- `data/` 目录在首次数据库连接时自动创建
+
+### 安全性
+
+- **裸 `except:` 全面消除**：20 处替换为 `except Exception:`，避免 `KeyboardInterrupt` / `SystemExit` 被意外吞没（commit `1b083e2`）
+- **FTP/SFTP 密码验证统一**：`AuthService.verify_ftp_password()` 同时处理 `pyftpdlib` 的 `AuthServiceAuthorizer` 和 `paramiko` 的 `SFTPAuthInterface.check_auth_password`
+- **`SOFTWARE_NAME` 统一**：所有遗留的 `"PrivateDAV"` 字符串替换为 `config.SOFTWARE_NAME`
+
+### 依赖清理
+
+| 依赖 | 状态 | 替代 |
+|------|------|------|
+| `lxml` | ❌ 移除 | `xml.etree.ElementTree`（标准库） |
+| `pyftpdlib` | ⚠️ 可选 | 懒导入 (`LazyImport`) |
+| `paramiko` | ⚠️ 可选 | 懒导入 (`LazyImport`) |
+| `pysmb` | ⚠️ 可选 | 懒导入 (`LazyImport`) |
+
+---
+
 ### 添加新模型
 
 1. 在 `models/` 下创建 dataclass
@@ -1326,5 +1443,5 @@ canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.wid
 ```python
 if col in ('start', 'end', 'created_at', 'updated_at', '新时间列'):
     try: return datetime.fromisoformat(value.replace('Z', '+00:00')).replace(tzinfo=None)
-    except: return datetime.min
+    except Exception: return datetime.min
 ```

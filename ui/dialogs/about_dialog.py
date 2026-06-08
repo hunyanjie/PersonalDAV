@@ -24,7 +24,7 @@ class AboutDialog(tk.Toplevel):
         sep.pack(fill=tk.X, pady=5)
 
         info = f"""作者: {SOFTWARE_AUTHOR}
-协议: MPL-2.0
+协议: Apache-2.0
 Python: 3.10+
 数据库: SQLite (WAL)
 DAV 协议: CardDAV + CalDAV + WebDAV
