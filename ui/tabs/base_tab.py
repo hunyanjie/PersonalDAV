@@ -139,8 +139,7 @@ class BaseTreeTab(ttk.Frame):
         cmd = args[0]
         if cmd == 'moveto':
             frac = float(args[1])
-            max_off = max(0, n - self.PAGE_SIZE)
-            self._scroll_offset = max(0, min(max_off, round(frac * max_off)))
+            self._scroll_offset = max(0, min(n - self.PAGE_SIZE, round(frac * n)))
             self._render_window()
         elif cmd == 'scroll':
             amount = int(args[1])
