@@ -4,8 +4,9 @@ import os
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from ui.widgets.collapsible_frame import CollapsibleFrame
-from ui.dialogs.detailed_reminder_editor import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
+from ui.dialogs.settings_security import SecuritySettingsSection
+from ui.dialogs.settings_reminders import ReminderPresetSection
 from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert, get_cert_info
 from models.setting_defs import SettingDef
@@ -88,8 +89,8 @@ class SettingsDialog(tk.Toplevel):
         self.grab_set()
         self.db = db_service
         self.on_save_callback = on_save_callback
-        self._custom_reminders_data = []
-        self._custom_allday_reminders_data = []
+        self._security_section = SecuritySettingsSection(self)
+        self._reminder_section = ReminderPresetSection(self)
 
         main_frame = ttk.Frame(self); main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         notebook = ttk.Notebook(main_frame); notebook.pack(fill=tk.BOTH, expand=True)
@@ -105,7 +106,7 @@ class SettingsDialog(tk.Toplevel):
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
         self.create_log_settings(log_frame)
-        self.create_security_settings(security_frame)
+        self._security_section.create_ui(security_frame)
         self.create_sync_settings(sync_frame)
         self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
@@ -312,218 +313,7 @@ class SettingsDialog(tk.Toplevel):
 
 
     # ── 安全设置 ────────────────────────────────────────────────
-
-    def create_security_settings(self, parent):
-        sub = ttk.Notebook(parent)
-        sub.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
-
-        pw_frame = ttk.Frame(sub); sub.add(pw_frame, text="密码验证")
-        ip_frame = ttk.Frame(sub); sub.add(ip_frame, text="IP 控制")
-        rate_frame = ttk.Frame(sub); sub.add(rate_frame, text="频率限制")
-
-        # ── 密码验证 ──
-        pw_f = ttk.LabelFrame(pw_frame, text="访问密码")
-        pw_f.pack(fill=tk.X, padx=5, pady=5)
-
-        self._auth_status_label = ttk.Label(pw_f, text="", font=('', 10))
-        self._auth_status_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-
-        self._set_pw_btn = ttk.Button(pw_f, text="设置密码", command=self._set_password)
-        self._set_pw_btn.grid(row=1, column=0, padx=5, pady=5)
-        self._change_pw_btn = ttk.Button(pw_f, text="更改密码", command=self._change_password)
-        self._change_pw_btn.grid(row=1, column=1, padx=5, pady=5)
-        self._clear_pw_btn = ttk.Button(pw_f, text="清除密码", command=self._clear_password)
-        self._clear_pw_btn.grid(row=1, column=2, padx=5, pady=5)
-
-        ttk.Label(pw_f, text="设置后 WebDAV、MCP 等所有服务均需密码验证。",
-                  foreground="gray", wraplength=500).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=2)
-
-        self.force_password_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(pw_frame, text="强制要求密码（未设密码时拒绝访问）",
-                        variable=self.force_password_var).pack(anchor="w", padx=10, pady=5)
-
-        token_f = ttk.LabelFrame(pw_frame, text="MCP 令牌（AI 连接用）")
-        token_f.pack(fill=tk.X, padx=5, pady=5)
-
-        self._mcp_token_var = tk.StringVar()
-        token_entry = ttk.Entry(token_f, textvariable=self._mcp_token_var, state="readonly", width=70)
-        token_entry.pack(fill=tk.X, padx=5, pady=5)
-
-        self._mcp_token_time_var = tk.StringVar()
-        ttk.Label(token_f, textvariable=self._mcp_token_time_var, foreground="gray", font=('', 8)).pack(anchor="w", padx=5)
-
-        btn_f = ttk.Frame(token_f)
-        btn_f.pack(fill=tk.X, padx=5, pady=5)
-        copy_btn = ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token)
-        copy_btn.pack(side=tk.LEFT, padx=2)
-        self._mcp_tip = EnhancedTooltip(copy_btn, "请先设置密码以生成令牌")
-        self._rotate_token_btn = ttk.Button(btn_f, text="轮换令牌", command=self._rotate_mcp_token)
-        self._rotate_token_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Label(btn_f, text="  更改密码或轮换后旧令牌立即失效。",
-                  foreground="gray").pack(side=tk.LEFT)
-
-        # ── IP 控制 ──
-        ip_f = ttk.LabelFrame(ip_frame, text="IP 访问控制（留空 = 不限制）")
-        ip_f.pack(fill=tk.X, padx=5, pady=5)
-
-        ttk.Label(ip_f, text="白名单（每行一个 IP / CIDR / 通配符）:",
-                  foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
-        self._ip_whitelist_text = tk.Text(ip_f, height=3, width=60)
-        self._ip_whitelist_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
-
-        ttk.Label(ip_f, text="黑名单（每行一个 IP / CIDR / 通配符）:",
-                  foreground="gray").grid(row=2, column=0, sticky="w", padx=5, pady=(5, 0))
-        self._ip_blacklist_text = tk.Text(ip_f, height=3, width=60)
-        self._ip_blacklist_text.grid(row=3, column=0, padx=5, pady=2, sticky="ew")
-
-        ttk.Label(ip_f, text="示例: 127.0.0.1 | 192.168.1.0/24 | 10.0.* | 白名单非空时只允许白名单 IP 访问",
-                  foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
-
-        self._bypass_localhost_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(ip_frame, text="本机访问免密码",
-                        variable=self._bypass_localhost_var).pack(anchor="w", padx=10, pady=(5, 0))
-
-        bypass_f = ttk.LabelFrame(ip_frame, text="免密码 IP（以下 IP 访问时不需密码验证）")
-        bypass_f.pack(fill=tk.X, padx=5, pady=5)
-
-        ttk.Label(bypass_f, text="每行一个 IP / CIDR / 通配符:",
-                  foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
-        self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
-        self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
-
-        # ── 频率限制 ──
-        rate_f = ttk.LabelFrame(rate_frame, text="访问频率限制")
-        rate_f.pack(fill=tk.X, padx=5, pady=5)
-
-        self.rate_limit_enabled_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(rate_f, text="启用访问频率限制",
-                        variable=self.rate_limit_enabled_var).grid(row=0, column=0, sticky="w", padx=5, pady=5)
-
-        ttk.Label(rate_f, text="每分钟最大请求数:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
-        self.rate_limit_max_var = tk.StringVar(value="60")
-        ttk.Entry(rate_f, textvariable=self.rate_limit_max_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=2)
-        ttk.Label(rate_f, text="超过限制的请求将被返回 429 Too Many Requests",
-                  foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
-
-        self._refresh_auth_ui()
-
-
-
-    def _refresh_auth_ui(self):
-        svc = AuthService()
-        enabled = svc.is_enabled()
-        self._auth_status_label.config(
-            text=f"访问密码: {'已设置' if enabled else '未设置'}",
-            foreground="green" if enabled else "orange"
-        )
-        state = tk.NORMAL if enabled else tk.DISABLED
-        self._change_pw_btn.config(state=state)
-        self._clear_pw_btn.config(state=state)
-        token = svc.get_mcp_token() if enabled else "(未设置密码)"
-        self._mcp_token_var.set(token)
-        rotated = svc.get_mcp_token_rotated_at()
-        if rotated:
-            self._mcp_token_time_var.set(f"上次轮换: {rotated}")
-        else:
-            self._mcp_token_time_var.set("")
-        self._rotate_token_btn.config(state=state)
-        if self._mcp_tip:
-            self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
-
-    def _set_password(self):
-        self._password_dialog(change=False)
-
-    def _change_password(self):
-        if not AuthService().is_enabled():
-            messagebox.showinfo("提示", "当前未设置密码，请使用「设置密码」", parent=self)
-            return
-        self._password_dialog(change=True)
-
-    def _password_dialog(self, change=False):
-        dialog = tk.Toplevel(self)
-        dialog.title("更改密码" if change else "设置密码")
-        dialog.transient(self)
-        dialog.grab_set()
-        # dialog.geometry("400x200")
-
-        row = 0
-        if change:
-            ttk.Label(dialog, text="当前密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-            old_var = tk.StringVar()
-            ttk.Entry(dialog, textvariable=old_var, show="*", width=30).grid(row=row, column=1, padx=5)
-            row += 1
-
-        ttk.Label(dialog, text="新密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-        new_var = tk.StringVar()
-        new_entry = ttk.Entry(dialog, textvariable=new_var, show="*", width=30)
-        new_entry.grid(row=row, column=1, padx=5)
-        row += 1
-
-        ttk.Label(dialog, text="确认密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-        confirm_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=confirm_var, show="*", width=30).grid(row=row, column=1, padx=5)
-        row += 1
-
-        def do_save():
-            if change and not AuthService().verify_password(old_var.get()):
-                messagebox.showerror("错误", "当前密码不正确", parent=dialog)
-                return
-            if not new_var.get():
-                messagebox.showerror("错误", "密码不能为空", parent=dialog)
-                return
-            if new_var.get() != confirm_var.get():
-                messagebox.showerror("错误", "两次密码不一致", parent=dialog)
-                return
-            AuthService().set_password(new_var.get())
-            self._refresh_auth_ui()
-            dialog.destroy()
-            messagebox.showinfo("成功", "密码已更新", parent=self)
-
-        btn_f = ttk.Frame(dialog)
-        btn_f.grid(row=row, column=0, columnspan=2, pady=15)
-        ttk.Button(btn_f, text="确定", command=do_save).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-
-    def _clear_password(self):
-        svc = AuthService()
-        if not svc.is_enabled():
-            return
-        dialog = tk.Toplevel(self)
-        dialog.title("清除密码")
-        dialog.transient(self)
-        dialog.grab_set()
-        # dialog.geometry("350x130")
-        ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
-        pw_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=2)
-        def do_clear():
-            if not svc.verify_password(pw_var.get()):
-                messagebox.showerror("错误", "密码不正确", parent=dialog)
-                return
-            dialog.destroy()
-            svc.clear_password()
-            self._refresh_auth_ui()
-            messagebox.showinfo("成功", "密码已清除", parent=self)
-        btn_f = ttk.Frame(dialog)
-        btn_f.pack(pady=10)
-        ttk.Button(btn_f, text="确定清除", command=do_clear).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-
-    def _rotate_mcp_token(self):
-        AuthService().rotate_mcp_token()
-        self._refresh_auth_ui()
-        from ui.widgets.toast import Toast
-        Toast.show(self, "MCP 令牌已轮换，旧令牌立即失效")
-
-    def _copy_mcp_token(self):
-        token = AuthService().get_mcp_token()
-        if not token:
-            messagebox.showinfo("提示", "请先设置密码", parent=self)
-            return
-        self.clipboard_clear()
-        self.clipboard_append(token)
-        from ui.widgets.toast import Toast
-        Toast.show(self, "MCP 令牌已复制到剪贴板")
+    # 已提取至 SecuritySettingsSection
 
 
 
@@ -682,7 +472,7 @@ class SettingsDialog(tk.Toplevel):
         row += 1
 
         self._create_timezone_format_ui(b_t)
-        self.create_preset_settings(p_t)
+        self._reminder_section.create_ui(p_t)
 
     def _create_timezone_format_ui(self, parent):
         sep = ttk.Separator(parent, orient='horizontal')
@@ -829,117 +619,6 @@ class SettingsDialog(tk.Toplevel):
             self.log_level_combo.config(state=st)
         self.enable_log_file_var.trace("w", on_toggle)
 
-    # ── 预设提醒增删改 ──────────────────────────────────────────
-
-    def _make_preset_quick_buttons(self, parent, entry):
-        common = ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"]
-        allday_common = ["日程发生时", "当天上午9点", "1天前上午9点", "2天前上午9点", "7天前上午9点"]
-        qf = ttk.LabelFrame(parent, text="常用预设 (点击快速填入)")
-        qf.pack(fill=tk.X, padx=10, pady=5)
-        nf = ttk.Frame(qf); nf.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(nf, text="常规:", font=('', 9)).pack(side=tk.LEFT)
-        for t in common:
-            ttk.Button(nf, text=t, width=10,
-                       command=lambda v=t: [entry.delete(0, tk.END), entry.insert(0, v)]).pack(side=tk.LEFT, padx=1)
-        af = ttk.Frame(qf); af.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(af, text="全天:", font=('', 9)).pack(side=tk.LEFT)
-        for t in allday_common:
-            ttk.Button(af, text=t, width=14,
-                       command=lambda v=t: [entry.delete(0, tk.END), entry.insert(0, v)]).pack(side=tk.LEFT, padx=1)
-
-    def add_preset_reminder(self):
-        dialog = tk.Toplevel(self); dialog.title('添加预设提醒'); dialog.transient(self); dialog.grab_set()  # ; dialog.geometry("520x300")
-        ttk.Label(dialog, text="添加预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
-        ttk.Label(dialog, text="输入提醒触发时间，新建日程时可双击预设快速添加。", foreground="gray").pack(anchor='w', padx=10)
-        ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
-        entry = ttk.Entry(dialog, width=40); entry.pack(padx=10, pady=5, fill=tk.X)
-        entry.focus_set()
-        self._make_preset_quick_buttons(dialog, entry)
-        var = tk.StringVar(value='normal')
-        rf = ttk.Frame(dialog); rf.pack(padx=10, pady=5, anchor='w')
-        ttk.Radiobutton(rf, text='常规事件', variable=var, value='normal').pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(rf, text='全天事件', variable=var, value='allday').pack(side=tk.LEFT, padx=2)
-        bf = ttk.Frame(dialog); bf.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Button(bf, text='确定', command=lambda: [
-            setattr(self, '_tmp_preset_val', entry.get().strip()) if entry.get().strip() else None,
-            dialog.destroy() if entry.get().strip() else None
-        ][-1]).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(bf, text='取消', command=dialog.destroy).pack(side=tk.RIGHT, padx=2)
-        dialog.wait_window()
-        v = getattr(self, '_tmp_preset_val', None)
-        if v:
-            lb = self.preset_allday_reminders_listbox if var.get() == 'allday' else self.preset_reminders_listbox
-            lb.insert('end', v)
-
-    def edit_preset_reminder(self):
-        n_sel = self.preset_reminders_listbox.curselection()
-        a_sel = self.preset_allday_reminders_listbox.curselection()
-        if not (n_sel or a_sel):
-            messagebox.showinfo("提示", "请先选中要编辑的预设项")
-            return
-        lb = self.preset_reminders_listbox if n_sel else self.preset_allday_reminders_listbox
-        idx = n_sel[0] if n_sel else a_sel[0]
-        cur = lb.get(idx)
-        dialog = tk.Toplevel(self); dialog.title('编辑预设提醒'); dialog.transient(self); dialog.grab_set()  # ; dialog.geometry("520x300")
-        ttk.Label(dialog, text="编辑预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
-        ttk.Label(dialog, text="修改提醒触发时间。", foreground="gray").pack(anchor='w', padx=10)
-        ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
-        entry = ttk.Entry(dialog, width=40); entry.insert(0, cur); entry.pack(padx=10, pady=5, fill=tk.X)
-        entry.focus_set(); entry.selection_range(0, tk.END)
-        self._make_preset_quick_buttons(dialog, entry)
-        bf = ttk.Frame(dialog); bf.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Button(bf, text='确定', command=lambda: [
-            lb.delete(idx), lb.insert(idx, entry.get().strip()), dialog.destroy()
-        ] if entry.get().strip() else None).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(bf, text='取消', command=dialog.destroy).pack(side=tk.RIGHT, padx=2)
-
-    def delete_preset_reminder(self):
-        for lb in [self.preset_reminders_listbox, self.preset_allday_reminders_listbox]:
-            sel = lb.curselection()
-            if sel: lb.delete(sel[0]); return
-
-    def add_custom_default_reminder(self, is_allday):
-        data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
-        listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-        def on_save(new_alarm):
-            save_data = new_alarm.copy()
-            save_data['trigger'] = save_alarm_trigger(save_data['trigger'])
-            if 'duration' in save_data and isinstance(save_data['duration'], timedelta):
-                save_data['duration'] = save_data['duration'].total_seconds()
-            data_list.append(save_data)
-            self._refresh_custom_listbox(listbox, data_list)
-        DetailedReminderEditor(self, callback=on_save)
-
-    def edit_custom_default_reminder(self, is_allday):
-        data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
-        listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-        sel = listbox.curselection()
-        if not sel: return
-        idx = sel[0]
-        try:
-            initial_data = data_list[idx].copy()
-            initial_data['trigger'] = load_alarm_trigger(initial_data.get('trigger'))
-            if 'duration' in initial_data and isinstance(initial_data['duration'], (int, float)):
-                initial_data['duration'] = timedelta(seconds=initial_data['duration'])
-        except Exception:
-            initial_data = None
-        def on_save(new_alarm):
-            save_data = new_alarm.copy()
-            save_data['trigger'] = save_alarm_trigger(save_data['trigger'])
-            if 'duration' in save_data and isinstance(save_data['duration'], timedelta):
-                save_data['duration'] = save_data['duration'].total_seconds()
-            data_list[idx] = save_data
-            self._refresh_custom_listbox(listbox, data_list)
-        DetailedReminderEditor(self, initial_alarm=initial_data, callback=on_save)
-
-    def delete_custom_default_reminder(self, is_allday):
-        data_list = self._custom_allday_reminders_data if is_allday else self._custom_reminders_data
-        listbox = self.custom_default_allday_reminders_listbox if is_allday else self.custom_default_reminders_listbox
-        sel = listbox.curselection()
-        if sel:
-            del data_list[sel[0]]
-            self._refresh_custom_listbox(listbox, data_list)
-
     def browse_log_file(self):
         p = filedialog.asksaveasfilename(title="选择日志文件", filetypes=[("日志文件", "*.log"), ("所有文件", "*.*")], defaultextension=".log")
         if p: self.log_path_var.set(p)
@@ -1054,43 +733,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             self._cert_info_label.config(text="证书状态: 未选择证书或无法读取", foreground="gray")
 
     # ── 显示格式 ────────────────────────────────────────────────
-
-    @staticmethod
-    def _format_alarm_display(alarm_data):
-        action_map = ALARM_ACTION_REV_MAPPING
-        action = action_map.get(alarm_data.get('action', ''), alarm_data.get('action', ''))
-        trigger = alarm_data.get('trigger', {})
-        if isinstance(trigger, dict):
-            t_type = trigger.get('type')
-            if t_type == 'td':
-                seconds = trigger.get('seconds', 0)
-                prefix = "前" if seconds < 0 else ""
-                seconds = abs(seconds)
-                days = int(seconds // 86400)
-                hours = int((seconds % 86400) // 3600)
-                mins = int((seconds % 3600) // 60)
-                parts = []
-                if days: parts.append(f"{days}天")
-                if hours: parts.append(f"{hours}小时")
-                if mins: parts.append(f"{mins}分钟")
-                trigger_str = "".join(parts) + prefix if parts else ("发生时" if prefix else str(seconds))
-            elif t_type == 'dt':
-                trigger_str = trigger.get('iso', '')
-            else:
-                trigger_str = str(trigger)
-        elif isinstance(trigger, str):
-            trigger_str = trigger
-        else:
-            trigger_str = str(trigger)
-        desc = alarm_data.get('description', '')
-        result = f"{action} - {trigger_str}"
-        if desc: result += f" | 描述: {desc}"
-        return result
-
-    def _refresh_custom_listbox(self, listbox, data_list):
-        listbox.delete(0, tk.END)
-        for alarm_data in data_list:
-            listbox.insert(tk.END, self._format_alarm_display(alarm_data))
+    # 已提取至 ReminderPresetSection
 
     # ── 加载 ────────────────────────────────────────────────────
 
@@ -1099,46 +742,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._load_simple()
         s.set_setting("totp_secret", "")
 
-        for key, lb in [('preset_reminders', self.preset_reminders_listbox),
-                        ('preset_allday_reminders', self.preset_allday_reminders_listbox)]:
-            val = s.get_setting(key, '')
-            if val:
-                for item in val.split(';'):
-                    if item: lb.insert(tk.END, item)
-
-        self._custom_reminders_data = []
-        self._custom_allday_reminders_data = []
-        for key, data_list, lb in [
-            ('custom_default_reminders', self._custom_reminders_data, self.custom_default_reminders_listbox),
-            ('custom_default_allday_reminders', self._custom_allday_reminders_data, self.custom_default_allday_reminders_listbox)
-        ]:
-            val = s.get_setting(key, '')
-            if val:
-                for item_str in val.split(';'):
-                    if not item_str: continue
-                    if not item_str.startswith('{'):
-                        parts = item_str.split(':', 3)
-                        if len(parts) >= 3:
-                            act = ALARM_ACTION_MAPPING.get(parts[0], "DISPLAY")
-                            trig_str = parts[2]
-                            if ":" in trig_str:
-                                h, m = map(int, trig_str.split(':'))
-                                t_val = {'type': 'td', 'seconds': h*3600 + m*60}
-                            else:
-                                t_val = {'type': 'td', 'seconds': -900}
-                            item_str = json.dumps({'action': act, 'trigger': t_val, 'description': parts[3] if len(parts)>3 else ""}, ensure_ascii=False)
-                    try:
-                        alarm_data = json.loads(item_str)
-                        data_list.append(alarm_data)
-                    except Exception:
-                        data_list.append({'action': 'DISPLAY', 'trigger': {'type': 'td', 'seconds': -900}, 'description': item_str})
-            self._refresh_custom_listbox(lb, data_list)
-
-        for key, lb in [('default_reminders', self.default_reminders_listbox),
-                        ('default_allday_reminders', self.default_allday_reminders_listbox)]:
-            sel_str = s.get_setting(key, '')
-            for i in range(lb.size()):
-                if lb.get(i) in sel_str.split(';'): lb.selection_set(i)
+        self._reminder_section.load()
+        self._security_section.load()
 
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
         self.log_path_var.set(s.get_setting("log_file_path", "log/dav_server.log"))
@@ -1148,22 +753,12 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         TimezoneHelper.set_format(self.tz_fmt_var.get())
 
         total_min = int(s.get_setting("default_duration", "60"))
-        if total_min <= 24:  # 旧版 DB 存小时数 → 转为分钟
-            total_min *= 60
-        self._dur_h_var.set(str(total_min // 60))
-        self._dur_m_var.set(str(total_min % 60))
 
         self.ssl_enabled_var.set(s.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
         self._auto_renew_var.set(s.get_setting("ssl_auto_renew", "True") == "True")
         self._update_cert_info()
-
-        self._load_text_widget_lines(self._ip_whitelist_text, s.get_setting("ip_whitelist", ""))
-        self._load_text_widget_lines(self._ip_blacklist_text, s.get_setting("ip_blacklist", ""))
-        self._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
-        self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
-        self.force_password_var.set(s.get_setting("force_password", "True") == "True")
 
         self.data_dir_var.set(s.get_setting("data_dir", "data"))
 
@@ -1186,18 +781,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.db.reset_all()
         self._reset_simple()
 
-        self.preset_reminders_listbox.delete(0, tk.END)
-        for p in ["5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前"]:
-            self.preset_reminders_listbox.insert(tk.END, p)
-        self.preset_allday_reminders_listbox.delete(0, tk.END)
-        for p in ["日程发生时", "1天前", "2天前", "7天前"]:
-            self.preset_allday_reminders_listbox.insert(tk.END, p)
-        self.default_reminders_listbox.selection_clear(0, tk.END)
-        self.default_allday_reminders_listbox.selection_clear(0, tk.END)
-        self._custom_reminders_data.clear()
-        self._custom_allday_reminders_data.clear()
-        self.custom_default_reminders_listbox.delete(0, tk.END)
-        self.custom_default_allday_reminders_listbox.delete(0, tk.END)
+        self._reminder_section.reset()
+        self._security_section.reset()
 
         self.enable_log_file_var.set(False)
         self.log_path_var.set("log/dav_server.log")
@@ -1220,11 +805,6 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._auto_renew_var.set(True)
 
         self.close_action_var.set("ask")
-
-        self._ip_whitelist_text.delete("1.0", tk.END)
-        self._ip_blacklist_text.delete("1.0", tk.END)
-        self._ip_bypass_text.delete("1.0", tk.END)
-        self._bypass_localhost_var.set(True)
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
 
@@ -1275,13 +855,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
     def save_settings(self):
         s = self.db
         self._save_simple()
-
-        s.set_setting('preset_reminders', ';'.join([self.preset_reminders_listbox.get(i) for i in range(self.preset_reminders_listbox.size())]))
-        s.set_setting('preset_allday_reminders', ';'.join([self.preset_allday_reminders_listbox.get(i) for i in range(self.preset_allday_reminders_listbox.size())]))
-        s.set_setting('default_reminders', ';'.join([self.default_reminders_listbox.get(i) for i in self.default_reminders_listbox.curselection()]))
-        s.set_setting('default_allday_reminders', ';'.join([self.default_allday_reminders_listbox.get(i) for i in self.default_allday_reminders_listbox.curselection()]))
-        s.set_setting('custom_default_reminders', ';'.join([json.dumps(item, ensure_ascii=False) for item in self._custom_reminders_data]))
-        s.set_setting('custom_default_allday_reminders', ';'.join([json.dumps(item, ensure_ascii=False) for item in self._custom_allday_reminders_data]))
+        self._reminder_section.save()
+        self._security_section.save()
 
         s.set_setting("enable_log_file", str(self.enable_log_file_var.get()))
         s.set_setting("log_file_path", self.log_path_var.get())
@@ -1303,11 +878,6 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("close_action", self.close_action_var.get())
-        s.set_setting("ip_whitelist", self._ip_whitelist_text.get("1.0", tk.END).strip())
-        s.set_setting("ip_blacklist", self._ip_blacklist_text.get("1.0", tk.END).strip())
-        s.set_setting("ip_bypass_auth", self._ip_bypass_text.get("1.0", tk.END).strip())
-        s.set_setting("bypass_localhost", str(self._bypass_localhost_var.get()))
-        s.set_setting("force_password", str(self.force_password_var.get()))
 
         s.set_setting("dav_root", self.dav_root_var.get())
         s.set_setting("ftp_password", self.ftp_password_var.get())
