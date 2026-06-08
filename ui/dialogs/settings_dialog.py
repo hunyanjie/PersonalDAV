@@ -235,28 +235,28 @@ class SettingsDialog(tk.Toplevel):
 
         self.ssl_enabled_var = tk.BooleanVar()
         ttk.Checkbutton(body, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
-            row=0, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+            row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
         ttk.Label(body, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
         self.ssl_cert_var = tk.StringVar()
-        ttk.Entry(body, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_cert_var).grid(row=1, column=1, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=2, padx=2)
 
         ttk.Label(body, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
         self.ssl_key_var = tk.StringVar()
-        ttk.Entry(body, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_key_var).grid(row=2, column=1, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=2, padx=2)
 
         btn_f = ttk.Frame(body)
-        btn_f.grid(row=3, column=0, columnspan=4, pady=5)
+        btn_f.grid(row=3, column=0, columnspan=3, pady=5)
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
 
         self._cert_info_label = ttk.Label(body, text="", foreground="gray")
-        self._cert_info_label.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        self._cert_info_label.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         self._auto_renew_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(body, text="自动续期（证书到期前自动生成新证书）",
-                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
 
         # FTP / WebDAV 设置
@@ -264,12 +264,13 @@ class SettingsDialog(tk.Toplevel):
         extra_f.pack(fill=tk.X, padx=5, pady=2)
         ttk.Label(extra_f, text="WebDAV 根目录:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.dav_root_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.dav_root_var, width=40).grid(row=0, column=1, sticky="w", padx=2)
+        ttk.Entry(extra_f, textvariable=self.dav_root_var).grid(row=0, column=1, sticky="we", padx=2)
         ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_dir(self.dav_root_var)).grid(row=0, column=2, padx=2)
         ttk.Label(extra_f, text="FTP 独立密码:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.ftp_password_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.ftp_password_var, width=20, show="*").grid(row=1, column=1, sticky="w", padx=2)
+        ttk.Entry(extra_f, textvariable=self.ftp_password_var, show="*").grid(row=1, column=1, sticky="we", padx=2)
         ttk.Label(extra_f, text="（留空=统一账号）").grid(row=1, column=2, sticky="w", padx=2)
+        extra_f.grid_columnconfigure(1, weight=1)
 
         # 备份与恢复
         bk_f = CollapsibleFrame(parent, text="备份与恢复")
@@ -293,24 +294,28 @@ class SettingsDialog(tk.Toplevel):
 
         ttk.Label(f, text="服务器 URL:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
         self.sync_url_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.sync_url_var, width=50).grid(row=0, column=1, sticky="we", padx=5, pady=3)
-        ttk.Label(f, text="https://example.com/remote.php/dav/", foreground="gray").grid(row=0, column=2, sticky="w", padx=2)
+        enf = ttk.Frame(f)
+        enf.grid(row=0, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Entry(enf, textvariable=self.sync_url_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Label(enf, text="https://example.com/remote.php/dav/", foreground="gray").pack(side=tk.LEFT, padx=5)
 
         ttk.Label(f, text="用户名:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
         self.sync_user_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.sync_user_var, width=30).grid(row=1, column=1, sticky="w", padx=5, pady=3)
+        ttk.Entry(f, textvariable=self.sync_user_var).grid(row=1, column=1, columnspan=2, sticky="we", padx=2, pady=3)
 
         ttk.Label(f, text="应用密码:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
         self.sync_password_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.sync_password_var, width=30, show="*").grid(row=2, column=1, sticky="w", padx=5, pady=3)
+        ttk.Entry(f, textvariable=self.sync_password_var, show="*").grid(row=2, column=1, columnspan=2, sticky="we", padx=2, pady=3)
 
         ttk.Label(f, text="同步间隔:").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+        sf = ttk.Frame(f)
+        sf.grid(row=3, column=1, columnspan=2, sticky="w", padx=2)
         self.sync_interval_var = tk.StringVar(value="30")
-        ttk.Spinbox(f, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).grid(row=3, column=1, sticky="w", padx=5, pady=3)
-        ttk.Label(f, text="分钟").grid(row=3, column=2, sticky="w", padx=2)
+        ttk.Spinbox(sf, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(sf, text="分钟").pack(side=tk.LEFT, padx=2)
 
         self.sync_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+        ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
         ttk.Label(f, text="提示：在 Nextcloud 安全设置中生成「应用密码」，建议不要使用主密码。",
                   foreground="gray", wraplength=500).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
