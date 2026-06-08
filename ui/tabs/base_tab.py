@@ -37,6 +37,8 @@ class BaseTreeTab(ttk.Frame):
         self._item_to_uid = {}    # tree item id -> uid（反向映射，避免 Tcl 调用）
         self._drag_lo = None      # 拖拽最小行索引
         self._drag_hi = None      # 拖拽最大行索引
+        self._auto_scroll_after_id = None  # 自动滚动定时器 ID
+        self._last_drag_y = 0       # 拖拽末次鼠标 Y 坐标
         self.app_root = None
         self._import_type = ''
 
@@ -229,13 +231,8 @@ class BaseTreeTab(ttk.Frame):
         vals = self.tree.item(item, 'values')
         return vals[1] if len(vals) > 1 else None
 
-    def _on_drag(self, event):
-        """处理拖拽选多行。"""
-        self._dragging = True
-        TreeviewScroller.handle_drag_scroll(self.tree, event)
-        if not self._drag_item:
-            return
-        item = self.tree.identify_row(event.y)
+    def _do_drag_select(self, item):
+        """拖拽选择逻辑 — 被 _on_drag 和 _auto_scroll_tick 共用。"""
         if not item:
             return
         visible = self.tree.get_children()
@@ -257,8 +254,42 @@ class BaseTreeTab(ttk.Frame):
         for i in range(upd_lo, upd_hi + 1):
             self.tree.set(visible[i], 'selected', "✓" if lo <= i <= hi else " ")
 
+    def _start_auto_scroll(self, units):
+        """启动/更新自动滚动循环。"""
+        if self._auto_scroll_after_id:
+            self.after_cancel(self._auto_scroll_after_id)
+        self._auto_scroll_tick(units)
+
+    def _stop_auto_scroll(self):
+        if self._auto_scroll_after_id:
+            self.after_cancel(self._auto_scroll_after_id)
+            self._auto_scroll_after_id = None
+
+    def _auto_scroll_tick(self, units):
+        """自动滚动一次并更新选择。"""
+        self.tree.yview_scroll(units, "units")
+        if self._drag_item:
+            item = self.tree.identify_row(self._last_drag_y)
+            self._do_drag_select(item)
+        self._auto_scroll_after_id = self.after(30, lambda: self._auto_scroll_tick(units))
+
+    def _on_drag(self, event):
+        """处理拖拽选多行。"""
+        self._dragging = True
+        self._last_drag_y = event.y
+        units = TreeviewScroller.compute_scroll_units(self.tree, event)
+        if units:
+            self._start_auto_scroll(units)
+        else:
+            self._stop_auto_scroll()
+        if not self._drag_item:
+            return
+        item = self.tree.identify_row(event.y)
+        self._do_drag_select(item)
+
     def _on_release(self, event):
         """处理释放事件"""
+        self._stop_auto_scroll()
         self._drag_start = None
         self._drag_item = None
         self._drag_lo = None
@@ -289,7 +320,7 @@ class BaseTreeTab(ttk.Frame):
             self._selected_uids.difference_update(self._item_to_uid[i] for i in visible)
             self.tree.selection_set([])
         else:
-        self._selected_uids.update(self._item_to_uid[i] for i in visible)
+            self._selected_uids.update(self._item_to_uid[i] for i in visible)
             self.tree.selection_set(visible)
         self._sync_checkboxes()
 
