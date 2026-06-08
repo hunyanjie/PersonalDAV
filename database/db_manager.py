@@ -206,15 +206,20 @@ class Database:
             return c.fetchone()
 
     def vacuum_full(self) -> int | None:
-        """完整 VACUUM 重写数据库，释放所有空闲空间。返回释放的字节数，失败返回 None。"""
+        """完整 VACUUM 重写数据库，释放所有空闲空间。返回释放的字节数，失败返回 None。
+
+        安全说明：SQLite VACUUM 创建临时文件 → 复制数据 → 原子替换原文件。
+        若中途崩溃或断电，原文件不受影响。
+        """
         try:
-            old_size = os.path.getsize(self.db_path)
             with self._lock:
-                self.execute("VACUUM")
-            new_size = os.path.getsize(self.db_path)
-            saved = old_size - new_size
-            page_count = self.query_one("PRAGMA page_count")[0]
-            logger.info(f"数据库完整压缩完成: {old_size} -> {new_size} 字节 (释放 {saved} 字节, {page_count} 页)")
+                old_pages = self.query_one("PRAGMA page_count")[0]
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                self.conn.execute("VACUUM")
+                new_pages = self.query_one("PRAGMA page_count")[0]
+            page_size = self.query_one("PRAGMA page_size")[0]
+            saved = (old_pages - new_pages) * page_size
+            logger.info(f"数据库压缩完成: {old_pages} -> {new_pages} 页, 释放 {saved / 1024:.1f} KB")
             return saved
         except Exception as e:
             logger.error(f"数据库压缩失败: {e}")
