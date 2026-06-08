@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PersonalDAV"
+version = "2.6"
+description = "全能 DAV 服务 (CardDAV + CalDAV + WebDAV)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "hunyanjie" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "vobject>=0.9.6",
+    "pytz>=2023.3",
+    "requests>=2.28.0",
+    "python-dateutil>=2.8.2",
+    "tzlocal>=5.0",
+    "Babel>=2.12.0",
+    "tkcalendar>=1.6.1",
+    "tkinterdnd2==0.4.3",
+    "webdavclient3>=3.14.6",
+    "cryptography>=41.0.0",
+    "mcp>=1.0.0",
+    "Pillow>=10.0.0",
+    "pystray>=0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27.0",
+    "pytest>=9.0.0",
+]
+
+[tool.mypy]
+python_version = "3.12"
+explicit_package_bases = true
+show_error_codes = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "services.ftp_service"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "services.smb_service"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "ui.tabs.smb_tab"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["pyftpdlib.*", "paramiko.*", "smb.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+
+[tool.setuptools.packages.find]
+include = ["models*", "database*", "services*", "network*", "ui*", "utils*", "mcp_tools*", "tests*"]

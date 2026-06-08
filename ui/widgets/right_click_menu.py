@@ -129,13 +129,13 @@ class RightClickMenu:
     def undo(self):
         try:
             self.widget.edit_undo()
-        except:
+        except Exception:
             self.widget.event_generate("<<Undo>>")
 
     def redo(self):
         try:
             self.widget.edit_redo()
-        except:
+        except Exception:
             self.widget.event_generate("<<Redo>>")
 
     def cut(self): self.widget.event_generate("<<Cut>>")

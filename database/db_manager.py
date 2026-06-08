@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 import json
@@ -22,6 +23,14 @@ class Database:
             return
         self._initialized = True
         self.db_path = db_path
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+        if os.path.isfile(db_path):
+            try:
+                bak = db_path + ".bak"
+                import shutil
+                shutil.copy2(db_path, bak)
+            except Exception as e:
+                logger.warning(f"数据库自动备份失败: {e}")
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA busy_timeout = 5000;")
         self.conn.execute("PRAGMA journal_mode = WAL;")  # 开启 WAL 模式提高并发性能
@@ -80,7 +89,7 @@ class Database:
         for table in ['contacts', 'events']:
             for col in ['created_at', 'updated_at']:
                 try: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
-                except: pass
+                except Exception: pass
 
         # 远程连接表（FTP/FTPS/SFTP 保存的连接）
         c.execute('''CREATE TABLE IF NOT EXISTS remote_connections
@@ -96,7 +105,7 @@ class Database:
 
         # 迁移: 联系人分组
         try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
-        except: pass
+        except Exception: pass
 
         # 初始数据填充 (仅在表为空时)
         c.execute("SELECT COUNT(*) FROM settings")

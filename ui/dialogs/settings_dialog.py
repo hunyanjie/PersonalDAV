@@ -707,7 +707,7 @@ class SettingsDialog(tk.Toplevel):
                 preview = TimezoneHelper._format_one(
                     tz_id, fmt, tz_id, TimezoneHelper._build_sys_locale()
                 )
-            except:
+            except Exception:
                 preview = "(格式无效)"
             self._tz_preview_label.config(text=f"预览: {preview}")
 
@@ -921,7 +921,7 @@ class SettingsDialog(tk.Toplevel):
             initial_data['trigger'] = load_alarm_trigger(initial_data.get('trigger'))
             if 'duration' in initial_data and isinstance(initial_data['duration'], (int, float)):
                 initial_data['duration'] = timedelta(seconds=initial_data['duration'])
-        except:
+        except Exception:
             initial_data = None
         def on_save(new_alarm):
             save_data = new_alarm.copy()
@@ -1130,7 +1130,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                     try:
                         alarm_data = json.loads(item_str)
                         data_list.append(alarm_data)
-                    except:
+                    except Exception:
                         data_list.append({'action': 'DISPLAY', 'trigger': {'type': 'td', 'seconds': -900}, 'description': item_str})
             self._refresh_custom_listbox(lb, data_list)
 
@@ -1141,7 +1141,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                 if lb.get(i) in sel_str.split(';'): lb.selection_set(i)
 
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
-        self.log_path_var.set(s.get_setting("log_file_path", "dav_server.log"))
+        self.log_path_var.set(s.get_setting("log_file_path", "log/dav_server.log"))
         self.log_level_var.set(s.get_setting("log_level", "INFO"))
         self.tz_fmt_var.set(s.get_setting("timezone_format",
             "{offset} - {city} ({tz_id}) {localized}{local_tag}"))
@@ -1165,7 +1165,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
         self.force_password_var.set(s.get_setting("force_password", "True") == "True")
 
-        self.data_dir_var.set(s.get_setting("data_dir", ""))
+        self.data_dir_var.set(s.get_setting("data_dir", "data"))
 
         self.close_action_var.set(s.get_setting("close_action", "ask"))
 
@@ -1200,7 +1200,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.custom_default_allday_reminders_listbox.delete(0, tk.END)
 
         self.enable_log_file_var.set(False)
-        self.log_path_var.set("dav_server.log")
+        self.log_path_var.set("log/dav_server.log")
         self.log_level_var.set("INFO")
         self.tz_fmt_var.set("{offset} - {city} ({tz_id}) {localized}{local_tag}")
         TimezoneHelper.set_format(self.tz_fmt_var.get())

@@ -241,7 +241,7 @@ class ContactsTab(BaseTreeTab):
                 fn = vobj.fn.value if hasattr(vobj, 'fn') else "(无姓名)"
                 existing = self.db.get_by_uid(uid) is not None
                 items.append({"uid": uid, "title": fn, "raw": v, "is_new": not existing, "has_dup": False})
-            except:
+            except Exception:
                 items.append({"uid": "?", "title": "(解析失败)", "raw": v, "is_new": True, "has_dup": False})
         return items
 

@@ -1,5 +1,6 @@
 import weakref
 import logging
+from config import SOFTWARE_NAME
 from typing import Any
 
 
@@ -33,7 +34,7 @@ class EventBus:
                     try:
                         callback(*args, **kwargs)
                     except Exception as e:
-                        logging.getLogger("PrivateDAV").error(f"EventBus 回调执行失败: {e}")
+                        logging.getLogger(SOFTWARE_NAME).error(f"EventBus 回调执行失败: {e}")
                 else:
                     dead_refs.add(ref)
             self._subscribers[event_type] -= dead_refs

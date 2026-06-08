@@ -14,13 +14,11 @@ def export_backup(output_path: str) -> bool:
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             zf.write(db_path, arcname="dav_data.db")
             zf.writestr("settings.json", json.dumps(dict(settings), ensure_ascii=False, indent=2))
-            for f in ["dav_server.log"]:
-                log_path = f
-                if not os.path.isfile(log_path):
-                    from utils.path_helper import resolve_data_path
-                    log_path = resolve_data_path(f)
+            from utils.path_helper import resolve_data_path
+            for f in ["log/dav_server.log"]:
+                log_path = resolve_data_path(f)
                 if os.path.isfile(log_path):
-                    zf.write(log_path, arcname=f)
+                    zf.write(log_path, arcname="dav_server.log")
             zf.writestr("backup_info.txt",
                         f"备份时间: {datetime.now().isoformat()}\n"
                         f"数据版本: 2.3\n"
@@ -52,9 +50,12 @@ def import_backup(zip_path: str) -> bool:
                 for k, v in imported.items():
                     SettingsService().set_setting(k, v)
             # 解压日志
+            from utils.path_helper import resolve_data_path
+            log_dir = os.path.dirname(resolve_data_path("log/dav_server.log")) or "."
+            os.makedirs(log_dir, exist_ok=True)
             for name in zf.namelist():
                 if name.endswith(".log"):
-                    zf.extract(name, path=db_dir)
+                    zf.extract(name, path=log_dir)
         return True
     except Exception as e:
         import logging

@@ -11,15 +11,17 @@
 | iCalendar | vobject / python-dateutil | iCalendar 解析/生成 |
 | vCard | vobject + 自研 RobustVCardParser | vCard 解析/生成（含 QP/Base64 回退） |
 | 时区 | pytz / tzlocal / Babel | 时区计算、本地化名称 |
-| 网络 | http.server（内置） | CardDAV/CalDAV HTTP 服务器 |
-| FTP 服务 | pyftpdlib | FTP/FTPS 服务器 |
-| SFTP 服务 | paramiko | SFTP 服务器 |
-| TFTP 服务 | tftpy | TFTP 服务器 |
-| FTP 客户端 | ftplib + paramiko | 远程 FTP/FTPS/SFTP 文件浏览 |
-| SMB 客户端 | pysmb | SMB/CIFS 网络共享浏览 |
-| WebDAV 客户端 | webdavclient3 | 远程 WebDAV 导入 |
+| 网络（DAV） | http.server（内置） | CardDAV/CalDAV HTTP 服务器 (v2.1) |
+| FTP 服务 | pyftpdlib | FTP/FTPS 服务器 (v2.5) |
+| SFTP 服务 | paramiko | SFTP 服务器 (v2.5) |
+| TFTP 服务 | tftpy | TFTP 服务器 (v2.5) |
+| FTP 客户端 | ftplib + paramiko | 远程 FTP/FTPS/SFTP 文件浏览 (v2.5) |
+| SMB 客户端 | pysmb | SMB/CIFS 网络共享浏览 (v2.5) |
+| WebDAV 客户端 | webdavclient3 | 远程 WebDAV 导入 (v2.5) |
 | HTTP 请求 | requests | URL 导入 |
 | 国际化 | locale / Babel | 系统语言检测、时区名称本地化 |
+
+> v2.6 变动：移除 `lxml` 依赖，改用标准库 `xml.etree.ElementTree`。`pyftpdlib`、`paramiko`、`pysmb` 改为惰性导入（首次使用时才加载），未安装时功能不可用但程序不崩溃。
 
 ---
 
@@ -29,6 +31,22 @@
 PersonalDAV/
 ├── main.py                    # 入口：TkinterDnD 主窗口
 ├── config.py                  # 软件元信息（名称、版本、作者等）
+├── data/                      # 运行产物（启动时自动创建）
+│   ├── dav_data.db            # SQLite 数据库
+│   ├── dav_data.db.bak        # 自动备份
+│   ├── remote_connections.key # Fernet 加密密钥
+│   └── log/
+│       └── dav_server.log     # 日志文件（启用时）
+├── mcp_tools/                 # MCP 工具模块（v2.6 拆分）
+│   ├── _state.py              # 共享状态（服务实例单例）
+│   ├── helpers.py             # JSON 序列化 / 摘要辅助函数
+│   ├── server_tools.py        # DAV 服务器启停（start/stop/status）
+│   ├── contact_tools.py       # 联系人 CRUD + create_contact_v2
+│   ├── event_tools.py         # 日历事件 CRUD
+│   ├── config_tools.py        # 系统配置 / 健康检查
+│   ├── webdav_tools.py        # WebDAV 文件操作
+│   ├── ftp_tools.py           # FTP/SFTP 服务器管理 + 远程文件操作
+│   └── smb_tools.py           # SMB 共享浏览
 ├── models/                    # 数据模型层
 │   ├── setting_defs.py        # SettingDef 声明式设置定义
 │   ├── constants.py           # 共享映射常量（状态/透明度/提醒/频率/预设等）
@@ -92,6 +110,8 @@ PersonalDAV/
         ├── progress_window.py    # 通用进度窗口
         └── treeview_scroller.py  # 拖拽自动滚动
 ```
+
+> v2.6 数据目录重组：数据库、密钥、日志统一归入 `data/`，`main.py` 启动时自动从旧路径迁移文件。所有路径通过 `config.py` 的 `DEFAULT_DB_PATH` / `DEFAULT_LOG_FILE` 集中管理。
 
 ---
 
@@ -187,9 +207,9 @@ python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 
 | 参数 | 简写 | 说明 |
 |------|------|------|
-| `--port` | `-p` | WebDAV 服务器端口，覆盖设置中的默认端口 |
-| `--db-path` | | 数据库文件路径，默认 `dav_data.db` |
-| `--log-level` | | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL |
+| `--port` | `-p` | WebDAV 服务器端口，覆盖设置中的默认端口 (v2.1) |
+| `--db-path` | | 数据库文件路径，默认 `data/dav_data.db` (v2.1) |
+| `--log-level` | | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL (v2.1) |
 
 `--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
 
@@ -463,18 +483,37 @@ class PlainStrategy(DecodingStrategy): ...
 ### 表结构
 
 ```sql
-settings (key TEXT PRIMARY KEY, value TEXT)
-contacts (selected, uid, full_name, email, phone, vcard, id, created_at, updated_at)
-events   (selected, uid, summary, dtstart, dtend, ical, id, created_at, updated_at)
-auth_logs (id INTEGER PRIMARY KEY, client_ip, method, ...)
-remote_connections (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    label TEXT, host TEXT, port INTEGER, username TEXT,
-                    password TEXT, protocol TEXT, encoding TEXT)
+settings (key TEXT PRIMARY KEY, value TEXT)          -- v2.0
+contacts (selected, uid, full_name, email, phone,    -- v2.0
+          vcard, id, created_at, updated_at)
+events   (selected, uid, summary, dtstart, dtend,    -- v2.0
+          ical, id, created_at, updated_at)
+auth_logs (id INTEGER PRIMARY KEY, client_ip,         -- v2.2
+           method, ...)
+remote_connections (id INTEGER PRIMARY KEY            -- v2.5
+                    AUTOINCREMENT, label TEXT, host TEXT,
+                    port INTEGER, username TEXT,
+                    password TEXT, protocol TEXT,
+                    encoding TEXT)
 ```
 
 - `selected` 是运行时列（UI 复选框），不参与 INSERT
 - `created_at` / `updated_at` 由 Service 层在 `add_or_update` 时设置
 - 数据库通过 `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE` 迁移兼容旧库
+
+### 自动备份（v2.6）
+
+```python
+# database/db_manager.py
+class Database:
+    def __init__(self, db_path: str):
+        db_path_obj = Path(db_path)
+        backup_path = db_path_obj.with_suffix(".db.bak")
+        if db_path_obj.exists():
+            shutil.copy2(db_path_obj, backup_path)
+```
+
+每次 `Database.__init__()` 启动时自动复制 `dav_data.db` → `dav_data.db.bak`。
 
 ---
 
@@ -482,12 +521,12 @@ remote_connections (id INTEGER PRIMARY KEY AUTOINCREMENT,
 
 ### 功能
 
-- 搜索栏（实时过滤，子类实现 `apply_filter`）
-- 全选/反选（单击第一列复选框列头）
-- 拖拽多选（`B1-Motion` 事件）
-- 三态排序
-- 右键菜单（通过 `RightClickMenu`）
-- 全局 `Ctrl+A` / `Delete` 快捷键
+- 搜索栏（实时过滤，子类实现 `apply_filter`）(v2.0)
+- 全选/反选（单击第一列复选框列头）(v1.2)
+- 拖拽多选（`B1-Motion` 事件）(v1.2)
+- 三态排序 (v2.0)
+- 右键菜单（通过 `RightClickMenu`）(v2.0)
+- 全局 `Ctrl+A` / `Delete` 快捷键 (v2.0)
 
 ### 子类需覆盖
 
@@ -653,7 +692,7 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 ## DAV 服务器（dav_server.py）
 
-### 端点路由
+### 端点路由 (v2.1)
 
 | 路径前缀 | 服务 | 资源类型 |
 |----------|------|----------|
@@ -672,8 +711,11 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 | `DELETE` | 删除资源 | — |
 | `PROPFIND` | 属性查询（WebDAV） | 返回资源类型、ETag、子资源列表 |
 | `OPTIONS` | 查询服务器能力 | 按路径返回 `addressbook` / `calendar-access` |
+| `REPORT` | 批量查询（v2.6） | 处理 `addressbook-multiget` / `calendar-multiget` |
+| `COPY` | 复制资源（v2.6） | 支持文件（`/dav/`）和资源（`/contacts/`、`/events/`） |
+| `MOVE` | 移动资源（v2.6） | 同上 |
 
-### PROPFIND
+### PROPFIND (v2.1)
 
 返回标准 WebDAV 多状态响应，包含：
 
@@ -681,8 +723,23 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 - `<D:getetag>` — 每个资源的 MD5 ETag
 - `<D:getcontenttype>` — MIME 类型
 - `<D:getcontentlength>` — 大小
+- `<C:getctag>`（v2.6） — 集合 CTag，基于所有子资源 ETag 的哈希值，提升 CalDAV 客户端同步效率
 
 支持 `Depth: 0`（仅自身）和 `Depth: 1`（含子资源）。
+
+### REPORT 请求示例（v2.6）
+
+```xml
+<?xml version="1.0" encoding="utf-8" ?>
+<C:addressbook-multiget xmlns:C="urn:ietf:params:xml:ns:carddav">
+  <A:prop xmlns:A="DAV:">
+    <A:getetag/>
+    <C:address-data/>
+  </A:prop>
+  <A:href>/contacts/uid-1.vcf</A:href>
+  <A:href>/contacts/uid-2.vcf</A:href>
+</C:addressbook-multiget>
+```
 
 ### 鉴权
 
@@ -695,7 +752,7 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 每次鉴权结果（成功/失败/拒绝/免密）均通过 `log_auth()` 记录，含客户端 IP 和 User-Agent。
 
-### ETag
+### ETag (v2.1)
 
 通过 `BaseService.get_etag(uid)` 计算：
 
@@ -717,7 +774,7 @@ def get_etag(self, uid: str) -> str | None:
 
 统一密码管理，一个密码同时保护 WebDAV、MCP 等所有服务。密码通过 PBKDF2-HMAC-SHA256（600,000 轮）加盐哈希后存储。
 
-### 存储
+### 存储 (v2.2)
 
 | 设置键 | 格式 | 示例 |
 |--------|------|------|
@@ -725,11 +782,11 @@ def get_etag(self, uid: str) -> str | None:
 
 空值 = 未设置密码（鉴权关闭）。
 
-### MCP 令牌
+### MCP 令牌 (v2.2)
 
 令牌通过 `sha256("mcp:" + stored_hash)` 派生，确定性生成。更改密码自动刷新令牌。
 
-### IP 访问控制
+### IP 访问控制 (v2.2)
 
 | 设置键 | 作用 | 规则 |
 |--------|------|------|
@@ -743,7 +800,7 @@ IP 匹配支持三种格式：
 - **CIDR** — `192.168.1.0/24`
 - **通配符** — `192.168.*`
 
-### 鉴权日志
+### 鉴权日志 (v2.2)
 
 所有鉴权事件通过 `AuthService.log_auth(success, client_ip, method, extra)` 统一记录：
 
@@ -785,11 +842,32 @@ TOTP 在 v2.5 开发中实现并随后移除。原因：设置对话框保存后
 
 添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。如需 IP 控制，在请求入口处依次调用 `check_ip(client_ip)` → `ip_bypasses_auth(client_ip)` → `verify_*()` → `log_auth()`。
 
+### 远程连接密码加密（v2.6）
+
+`utils/crypto.py` 使用 cryptography 库的 Fernet（AES-128-CBC）加密 `remote_connections` 表中的密码字段：
+
+- 密钥文件 `remote_connections.key` 自动生成于 `data/` 目录
+- 加密/解密在 `remote_tab.py` 的 INSERT / UPDATE / SELECT 操作中透明完成
+- 数据库存储为 base64 密文，不暴露明文
+
+### FTP/SFTP 密码验证统一（v2.6）
+
+`AuthService.verify_ftp_password()` 同时处理两种协议栈：
+- `pyftpdlib` → `AuthServiceAuthorizer`
+- `paramiko` → `SFTPAuthInterface.check_auth_password`
+
+消除重复的密码校验逻辑，统一走 PBKDF2 哈希验证。
+
+### 代码安全清理（v2.6）
+
+- **裸 `except:` 全面消除**：20 处替换为 `except Exception:`，避免 `KeyboardInterrupt` / `SystemExit` 被意外吞没
+- **`SOFTWARE_NAME` 统一**：所有遗留的 `"PrivateDAV"` 字符串替换为 `config.SOFTWARE_NAME`
+
 ---
 
 ## MCP 服务器（services/mcp_server.py）
 
-### 设计目的
+### 设计目的 (v2.2)
 
 MCP（Model Context Protocol）服务器允许 AI 助手（opencode、Claude 等）直接调用 PersonalDAV 的内部服务层，无需模拟 HTTP 请求。集成到 GUI 程序中，以 SSE 协议在后台线程运行。
 
@@ -820,9 +898,9 @@ class MCPServer:
 
 `start()` 通过 `uvicorn.Server` 在 daemon 线程中运行，`stop()` 设置 `should_exit = True`。
 
-### 暴露的工具（共 32 个）
+### 暴露的工具（共 33 个）
 
-#### DAV 核心工具（15 个）
+#### DAV 核心工具（16 个）
 
 | 工具 | 类别 | 说明 |
 |------|------|------|
@@ -832,6 +910,7 @@ class MCPServer:
 | `list_contacts()` | 联系人 | 列出所有联系人摘要 |
 | `get_contact(uid)` | 联系人 | 获取联系人完整 vCard |
 | `create_contact(vcard_data)` | 联系人 | 从 vCard 创建联系人 |
+| `create_contact_v2(name, email, phone)` | 联系人 | 通过结构化参数创建联系人，无需手动拼接 vCard |
 | `update_contact(uid, vcard_data)` | 联系人 | 强制覆盖更新联系人 |
 | `delete_contact(uid)` | 联系人 | 删除联系人 |
 | `list_events()` | 日历 | 列出所有事件摘要 |
@@ -842,7 +921,7 @@ class MCPServer:
 | `get_config()` | 系统 | 返回配置（名称/版本/数量等） |
 | `dav_health_check(base_url)` | 系统 | OPTIONS + PROPFIND + GET 端点验证（含 `/dav/`） |
 
-#### FTP/SFTP 服务器管理（3 个）
+#### FTP/SFTP 服务器管理（3 个）(v2.5)
 
 | 工具 | 说明 |
 |------|------|
@@ -880,6 +959,26 @@ class MCPServer:
 | `dav_mkdir(base_url, path)` | 创建 WebDAV 目录 |
 
 所有写入操作使用 `publish=False`（不触发 tkinter 事件循环），GUI 通过标签切换自动刷新。
+
+### 工具模块化（v2.6）
+
+v2.6 将工具从 `services/mcp_server.py`（824 行）拆分为 7 个独立模块，入口仅保留注册与启动逻辑（120 行）：
+
+```
+mcp_tools/
+├── __init__.py       # 导出 all_tools 列表
+├── _state.py         # get/set_server_app 全局单例
+├── helpers.py        # serialize_model / make_summary
+├── server_tools.py   # 3 个工具
+├── contact_tools.py  # 6 个工具（含 create_contact_v2）
+├── event_tools.py    # 5 个工具
+├── config_tools.py   # 2 个工具
+├── webdav_tools.py   # 5 个工具
+├── ftp_tools.py      # 10 个工具
+└── smb_tools.py      # 2 个工具
+```
+
+优势：职责清晰、可单独测试、无需启动完整 GUI。
 
 ### 鉴权中间件
 
@@ -938,14 +1037,14 @@ pytest tests/ -v -q
 
 | 文件 | 测试内容 |
 |------|----------|
-| `test_config.py` | 验证配置常量（名称、版本、默认路径等） |
-| `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询） |
-| `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 |
-| `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪） |
-| `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 |
-| `_run_mcp_tools_check.py` | MCP 全部 32 个工具的内部端到端测试（`python tests/_run_mcp_tools_check.py`） |
-| `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议） |
-| `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 |
+| `test_config.py` | 验证配置常量（名称、版本、默认路径等）(v2.1) |
+| `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询）(v2.1) |
+| `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 (v2.5) |
+| `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪）(v2.5) |
+| `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 (v2.5) |
+| `_run_mcp_tools_check.py` | MCP 全部 33 个工具的内部端到端测试 (v2.2) |
+| `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2) |
+| `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3) |
 
 ### 运行全部测试
 
@@ -964,7 +1063,7 @@ python tests/run_all.py
 
 ---
 
-## 内存泄漏检测（memory_leak_detector.py）
+## 内存泄漏检测（memory_leak_detector.py）(v2.5)
 
 `utils/memory_leak_detector.py` 提供两种互补的内存泄漏检测方法：
 
@@ -1006,7 +1105,7 @@ def test_label_no_leak(self):
 
 ---
 
-## 悬浮提示系统（EnhancedTooltip）
+## 悬浮提示系统（EnhancedTooltip）(v2.1)
 
 ### 设计目的
 
@@ -1057,7 +1156,7 @@ EnhancedTooltip(widget, "提示文字",
 2. 若需要在新分区（新的 notebook 标签页），在 `__init__` 中创建新 frame 并调用 `_build_simple(new_frame, "新分区名")`
 3. 在读取处通过 `ServicesService().get_setting("键名", "默认值")` 获取
 
-## FTP / FTPS / SFTP 文件服务
+## FTP / FTPS / SFTP 文件服务 (v2.5)
 
 `services/ftp_service.py`
 
@@ -1097,7 +1196,7 @@ FTP 控制 `ftp_encoding` 设置（默认为 `utf-8`），下拉框含 32 种编
 
 ---
 
-## FTP / SFTP 客户端服务
+## FTP / SFTP 客户端服务 (v2.5)
 
 `services/ftp_client_service.py` — stateless 工具函数，每次调用创建独立连接。
 
@@ -1123,7 +1222,7 @@ FTP 控制 `ftp_encoding` 设置（默认为 `utf-8`），下拉框含 32 种编
 
 ---
 
-## SMB / CIFS 网络共享
+## SMB / CIFS 网络共享 (v2.5)
 
 `services/smb_service.py` — 基于 pysmb 库
 
@@ -1137,7 +1236,7 @@ FTP 控制 `ftp_encoding` 设置（默认为 `utf-8`），下拉框含 32 种编
 | `unmount(mount_point)` | 取消挂载映射 |
 | `get_mounted_shares()` | 返回当前所有挂载的共享 |
 
-### RemoteTab（远程文件浏览器）
+### RemoteTab（远程文件浏览器）(v2.5)
 
 `ui/tabs/remote_tab.py` — 由原 `smb_tab.py` 重命名扩展而来，支持多协议（SMB / FTP / FTPS / SFTP）。
 
@@ -1166,7 +1265,7 @@ FTP 控制 `ftp_encoding` 设置（默认为 `utf-8`），下拉框含 32 种编
 
 ---
 
-## WebDAV 辅助模块
+## WebDAV 辅助模块 (v2.5)
 
 `network/webdav_helper.py` — 手动构建 WebDAV XML 响应，不依赖 `wsgidav`。
 
@@ -1180,7 +1279,7 @@ FTP 控制 `ftp_encoding` 设置（默认为 `utf-8`），下拉框含 32 种编
 
 ---
 
-## 窗口居中工具
+## 窗口居中工具 (v2.5)
 
 `utils/window_utils.py`
 
@@ -1199,7 +1298,7 @@ center_window(window, width=600, height=400)
 
 ---
 
-## 审计日志协议筛选
+## 审计日志协议筛选 (v2.5)
 
 `services/auth_service.py` — `get_auth_logs_filtered(protocol="")` 使用 SQL `LIKE` 过滤。
 
@@ -1215,7 +1314,7 @@ center_window(window, width=600, height=400)
 
 ---
 
-## Calendar 月视图
+## Calendar 月视图 (v2.4)
 
 `ui/tabs/calendar_tab.py` — CalendarTab 支持"议程"和"月视图"两种模式。
 
@@ -1243,7 +1342,7 @@ center_window(window, width=600, height=400)
 
 ---
 
-## 多个表头排序
+## 多个表头排序 (v2.0)
 
 `BaseTreeTab.sort_tree(col)` **三态排序**：
 
@@ -1257,7 +1356,7 @@ center_window(window, width=600, height=400)
 
 ---
 
-## 多选下载/删除
+## 多选下载/删除 (v2.5)
 
 ### 下载
 
@@ -1273,7 +1372,7 @@ center_window(window, width=600, height=400)
 
 ---
 
-## Canvas 滚动容器
+## Canvas 滚动容器 (v2.5)
 
 `ui/tabs/server_tab.py` 使用 `Canvas` + `Scrollbar` 包裹所有服务器设置控件以防止内容溢出：
 
@@ -1294,7 +1393,7 @@ canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.wid
 
 ---
 
-## mypy 类型覆盖
+## mypy 类型覆盖 (v2.5)
 
 `mypy.ini` — 分模块管理严格度：
 
@@ -1326,5 +1425,5 @@ canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.wid
 ```python
 if col in ('start', 'end', 'created_at', 'updated_at', '新时间列'):
     try: return datetime.fromisoformat(value.replace('Z', '+00:00')).replace(tzinfo=None)
-    except: return datetime.min
+    except Exception: return datetime.min
 ```

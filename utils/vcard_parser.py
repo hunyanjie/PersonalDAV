@@ -14,14 +14,14 @@ class QuotedPrintableStrategy(DecodingStrategy):
     def decode(self, data: str, charset: str) -> str:
         try:
             return quopri.decodestring(data).decode(charset, errors="replace")
-        except:
+        except Exception:
             return data
 
 class Base64Strategy(DecodingStrategy):
     def decode(self, data: str, charset: str) -> str:
         try:
             return base64.b64decode(data).decode(charset, errors="replace")
-        except:
+        except Exception:
             return data
 
 class PlainStrategy(DecodingStrategy):
@@ -73,7 +73,8 @@ class RobustVCardParser:
                     if charset != "utf-8" and strategy == cls._default_strategy:
                         try:
                             value = value.encode('latin1').decode(charset, errors="replace")
-                        except: pass
+                        except Exception:
+                            logger.debug("vCard CHARSET 编码转换失败")
 
                     properties[name] = {"value": value, "params": params}
                     current_property = name

@@ -125,7 +125,8 @@ class DetailedReminderEditor(tk.Toplevel):
             try:
                 local_dt = tr.astimezone(pytz.timezone(TimezoneHelper.get_local_timezone_id()))
                 self.abs_d.set_date(local_dt.date()); self.abs_h.set(local_dt.strftime("%H")); self.abs_m.set(local_dt.strftime("%M"))
-            except: pass
+            except Exception:
+                logger.debug("闹钟时间解析失败")
         elif isinstance(tr, timedelta):
             self.trig_type_var.set("relative")
             sec = abs(tr.total_seconds())
@@ -151,7 +152,7 @@ class DetailedReminderEditor(tk.Toplevel):
                     tz_id = TimezoneHelper.extract_tz_id(self.abs_tz_v.get())
                     dt_naive = datetime.combine(self.abs_d.get_date(), datetime.strptime(f"{self.abs_h.get()}:{self.abs_m.get()}", "%H:%M").time())
                     trig = pytz.timezone(tz_id).localize(dt_naive).astimezone(pytz.UTC)
-                except: messagebox.showerror("错误", "时间格式非法", parent=self); return
+                except Exception: messagebox.showerror("错误", "时间格式非法", parent=self); return
             
             new_a = {'action': act, 'trigger': trig, 'description': self.desc_t.get("1.0", "end-1c").strip()}
             if self.attach_v.get(): new_a['attach'] = self.attach_v.get()
@@ -160,7 +161,8 @@ class DetailedReminderEditor(tk.Toplevel):
             try:
                 rc = int(self.rep_v.get() or 0)
                 if rc > 0: new_a['repeat'] = rc; new_a['duration'] = timedelta(minutes=int(self.dur_v.get() or 15))
-            except: pass
+            except Exception:
+                logger.debug("忽略异常")
             
             if self.callback: self.callback(new_a)
             self.destroy()
@@ -323,7 +325,8 @@ class EventDialog:
             if m_m: mins = int(m_m.group(1))
             if days or hours or mins:
                 return -timedelta(days=days, hours=hours, minutes=mins)
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
         return None
 
     def create_widgets(self):
@@ -421,7 +424,7 @@ class EventDialog:
             if v <= 24:  # 旧版 DB 存小时数 → 转为分钟
                 v *= 60
             return v
-        except:
+        except Exception:
             return 60
 
     def create_time_tab(self):
@@ -539,7 +542,8 @@ class EventDialog:
             self.end_date.set_date(end_dt.date())
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
 
     def _add_exdate(self):
         from tkcalendar import Calendar
@@ -563,7 +567,8 @@ class EventDialog:
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         from datetime import datetime as _dt
         try: cal.selection_set(_dt.strptime(old, '%Y-%m-%d'))
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
         cal.pack(padx=10, pady=10)
         def confirm():
             d = cal.get_date()
@@ -587,7 +592,8 @@ class EventDialog:
             self.end_date.set_date(end_dt.date())
             self.end_hour.set(end_dt.strftime("%H"))
             self.end_minute.set(end_dt.strftime("%M"))
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
 
     def create_reminder_tab(self):
         main_frame = ttk.Frame(self.reminder_tab)
@@ -953,7 +959,8 @@ class EventDialog:
                     if 'UNTIL' in parts:
                         self.end_cond_var.set('按日期结束')
                         try: self.end_date_entry.set_date(parser.parse(parts['UNTIL']).date())
-                        except: pass
+                        except Exception:
+                            logger.debug("忽略异常")
                     elif 'COUNT' in parts: self.end_cond_var.set('按次数结束'); self.end_count_var.set(parts['COUNT'])
                     else: self.end_cond_var.set('永不结束')
                 # 解析 EXDATE 例外日期
@@ -1014,7 +1021,8 @@ class EventDialog:
                     if hasattr(alarm, 'attendee'): alarm_data['attendee'] = alarm.attendee.value
                     if hasattr(alarm, 'repeat'): 
                         try: alarm_data['repeat'] = int(alarm.repeat.value)
-                        except: pass
+                        except Exception:
+                            logger.debug("忽略异常")
                     if hasattr(alarm, 'duration'): alarm_data['duration'] = alarm.duration.value
                     self.alarms.append(alarm_data)
             except Exception as e: logger.error(f"解析 iCalendar 数据失败 (UID={self.uid_var.get()}): {e}")
@@ -1197,7 +1205,8 @@ class EventDialog:
             seq = int(self.sequence_var.get() or "0")
             if self.initial.get('ical'): seq += 1
             ev.add('sequence').value = str(seq)
-        except: pass
+        except Exception:
+            logger.debug("忽略异常")
         if self.url_var.get().strip(): ev.add('url').value = self.url_var.get().strip()
 
         # 保存自定义扩展状态
@@ -1212,7 +1221,8 @@ class EventDialog:
                 k, v = field.get('key', '').strip(), field.get('value', '').strip()
                 if k and k.upper() not in STANDARD_ICAL_FIELDS:
                     try: ev.add(k.lower()).value = v
-                    except: pass
+                    except Exception:
+                        logger.debug("忽略异常")
         return cal.serialize()
 
     def show_raw_data(self):
@@ -1232,7 +1242,7 @@ class EventDialog:
         if not summary: messagebox.showwarning("提示", "请填写事件标题", parent=self.root); return
         if not self.allday_var.get():
             try: datetime.strptime(f"{self.start_hour.get()}:{self.start_minute.get()}", "%H:%M"); datetime.strptime(f"{self.end_hour.get()}:{self.end_minute.get()}", "%H:%M")
-            except: messagebox.showwarning("提示", "请填写完整的时间", parent=self.root); return
+            except Exception: messagebox.showwarning("提示", "请填写完整的时间", parent=self.root); return
         self.raw_ical = self.generate_ical(); self.result = {'summary': summary}; self.root.destroy()
 
     def cancel(self): self.result = None; self.root.destroy()

@@ -4,6 +4,7 @@ import threading
 import os
 import uuid
 import tempfile
+from utils.logger import logger
 from network.dav_client import WebDAVImportLogic
 from ui.widgets.progress_window import ProgressWindow
 from ui.widgets.right_click_menu import RightClickMenu
@@ -208,8 +209,8 @@ class WebDAVImportDialog(tk.Toplevel):
                     try:
                         if os.path.exists(temp_file):
                             os.remove(temp_file)
-                    except:
-                        pass
+                    except Exception:
+                        logger.debug("清理 WebDAV 临时文件失败")
                 else:
                     if hasattr(progress_win, 'stat_vars'):
                         progress_win.stat_vars['failed'].set(progress_win.stat_vars['failed'].get()+1)

@@ -51,6 +51,28 @@ class AuthService:
         computed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex()
         return secrets.compare_digest(computed, pw_hash)
 
+    def verify_ftp_password(self, password: str, username: str = "", client_ip: str = "", protocol: str = "FTP") -> bool:
+        """FTP/SFTP 通用密码验证（含匿名回退 + 鉴权日志）"""
+        ftp_pass = SettingsService().get_setting("ftp_password", "")
+        if ftp_pass:
+            ok = password == ftp_pass
+            self.log_auth(ok, client_ip, protocol, f"用户={username}")
+            return ok
+        stored = SettingsService().get_setting("access_password_hash", "")
+        if not stored:
+            self.log_auth(True, client_ip, f"{protocol}-匿名", f"用户={username}")
+            return True
+        if '$' in stored:
+            salt, pw_hash = stored.split('$', 1)
+            from hashlib import pbkdf2_hmac
+            from secrets import compare_digest
+            ok = compare_digest(pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 600000).hex(), pw_hash)
+            self.log_auth(ok, client_ip, protocol, f"用户={username}")
+            if ok:
+                return True
+        self.log_auth(False, client_ip, protocol, f"用户={username}")
+        return False
+
     # ── MCP 令牌（可轮换） ──────────────────────────────────────
 
     def _mcp_token_seed(self) -> str:
