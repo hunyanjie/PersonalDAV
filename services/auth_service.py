@@ -15,7 +15,18 @@ class AuthService:
     def __new__(cls):
         if not cls._instance:
             cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
         return cls._instance
+
+    def __init__(self):
+        if getattr(self, '_initialized', False):
+            return
+        self._initialized = True
+        self._prune_auth_logs()
+
+    @staticmethod
+    def _prune_auth_logs():
+        pass
 
     # ── 密码 ────────────────────────────────────────────────────
 

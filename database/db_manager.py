@@ -27,15 +27,28 @@ class Database:
         if os.path.isfile(db_path):
             try:
                 bak = db_path + ".bak"
-                import shutil
-                shutil.copy2(db_path, bak)
+                if not os.path.isfile(bak) or os.path.getmtime(db_path) > os.path.getmtime(bak):
+                    import shutil
+                    shutil.copy2(db_path, bak)
             except Exception as e:
                 logger.warning(f"数据库自动备份失败: {e}")
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA busy_timeout = 5000;")
-        self.conn.execute("PRAGMA journal_mode = WAL;")  # 开启 WAL 模式提高并发性能
-        self.conn.execute("PRAGMA synchronous = NORMAL;") # 配合 WAL 提高写入速度
+        self.conn.execute("PRAGMA journal_mode = WAL;")
+        self.conn.execute("PRAGMA synchronous = NORMAL;")
+        self.conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
         self.create_tables()
+        self._vacuum_if_needed()
+
+    def _vacuum_if_needed(self):
+        try:
+            page_count = self.query_one("PRAGMA page_count")[0]
+            freelist = self.query_one("PRAGMA freelist_count")[0]
+            if freelist > page_count * 0.1 and freelist > 100:
+                self.execute("PRAGMA incremental_vacuum")
+                logger.info(f"数据库增量整理完成 (空闲页 {freelist}/{page_count})")
+        except Exception:
+            pass
 
     @contextmanager
     def transaction(self):

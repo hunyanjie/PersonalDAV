@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 from utils.logger import GUIHandler, logger
 
 
@@ -26,7 +27,7 @@ class LoggingManager:
             log_file = resolve_data_path(log_file)
             log_level = self.settings_service.get_setting("log_level", "INFO")
             try:
-                self.file_handler = logging.FileHandler(log_file, encoding='utf-8')
+                self.file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
                 self.file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
                 self.file_handler.setLevel(getattr(logging, log_level, logging.INFO))
                 logger.addHandler(self.file_handler)
