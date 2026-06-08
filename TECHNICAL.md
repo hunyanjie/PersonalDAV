@@ -133,7 +133,7 @@ PersonalDAV/
 └── ui/                        # 视图层
     ├── app.py                 # DAVServerApp 主应用类
     ├── tabs/
-    │   ├── base_tab.py        # BaseTreeTab 泛型 Treeview 基类（搜索/排序/多选）
+    │   ├── base_tab.py        # BaseTreeTab 泛型 Treeview 基类（搜索/排序/多选/批量插入/加速滚动）
     │   ├── contacts_tab.py    # ContactsTab
     │   ├── calendar_tab.py    # CalendarTab（含月视图）
     │   ├── server_tab.py      # ServerTab（FTP/SFTP/TFTP/WebDAV 控制）
@@ -149,7 +149,7 @@ PersonalDAV/
         ├── enhanced_tooltip.py   # 悬浮提示框
         ├── right_click_menu.py   # 右键菜单（上下文感知）
         ├── progress_window.py    # 通用进度窗口
-        └── treeview_scroller.py  # 拖拽自动滚动
+        └── treeview_scroller.py  # 拖拽自动加速滚动（compute_scroll_units）
 ```
 
 > v2.6 数据目录重组：数据库、密钥、日志统一归入 `data/`，`main.py` 启动时自动从旧路径迁移文件。所有路径通过 `config.py` 的 `DEFAULT_DB_PATH` / `DEFAULT_LOG_FILE` 集中管理。
@@ -579,10 +579,35 @@ def vacuum_full(self) -> int | None:
 
 - 搜索栏（实时过滤，子类实现 `apply_filter`）(v2.0)
 - 全选/反选（单击第一列复选框列头）(v1.2)
-- 拖拽多选（`B1-Motion` 事件）(v1.2)
+- 拖拽多选 + 自动加速滚动（`B1-Motion` → 边缘 10% 区域触发 `after(30ms)` 循环，越靠近边缘越快，1~50 行/tick）(v2.8)
+- 增量式复选框同步（`_sync_checkboxes(uids=None)`，传 UIDs 时只更新指定行，不传时全量遍历）(v2.8)
+- `_uid_to_item` / `_item_to_uid` 字典映射，避免 `tree.item()` Tcl 往返 (v2.8)
 - 三态排序 (v2.0)
 - 右键菜单（通过 `RightClickMenu`）(v2.0)
 - 全局 `Ctrl+A` / `Delete` 快捷键 (v2.0)
+
+### 大批量数据处理
+
+`BaseTreeTab` 不再使用虚拟滚动（v2.8 之前 `PAGE_SIZE=500` 的窗口方案），而是全量数据一次性插入 Treeview，通过以下手段保证性能：
+
+| 手段 | 说明 |
+|------|------|
+| `BATCH_SIZE=200` 分批异步插入 | `_batch_insert()` 每批插入 200 行，用 `after(1)` 调度下一批，初始加载不卡 UI |
+| `_uid_to_item` / `_item_to_uid` 映射 | 在 `_batch_insert` 时建立，`_rerender` 时清空。UID ↔ item_id O(1) 双向查找，替代 `tree.item()` Tcl 调用 |
+| `tree.set(column, value)` 单列写入 | 更新复选框时只写 `'selected'` 列，替代 `tree.item(values)` 读写全部列，Tcl 调用减半 |
+| 增量式 `_sync_checkboxes(uids)` | 点击时只更新 `old_sel ^ new_sel` 变化的 UIDs；拖拽时只更新 `union(old_range, new_range)` 范围内的行 |
+| `_drag_lo` / `_drag_hi` 范围追踪 | 拖拽期间跟踪已滚过的最大/最小行索引，确保复选框正确勾选/取消 |
+
+### 拖拽自动加速滚动 (v2.8)
+
+`TreeviewScroller.compute_scroll_units()` 根据鼠标在 Treeview 中的相对位置计算滚动速度：
+
+```
+深度 = (阈值 - 相对距离) / 阈值      # 0~1，越靠近边缘越大
+脉冲数 = max(1, int(深度 * MAX_SCROLL_UNITS=50))
+```
+
+`_on_drag` 根据返回值调度 `after(30ms)` 定时循环 `_auto_scroll_tick()`，手离边缘即 `_stop_auto_scroll()` 取消定时器。
 
 ### 子类需覆盖
 
