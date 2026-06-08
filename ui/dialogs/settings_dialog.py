@@ -4,7 +4,7 @@ import os
 from ui.widgets.right_click_menu import RightClickMenu
 from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from ui.widgets.collapsible_frame import CollapsibleFrame
-from ui.dialogs.event_dialog import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
+from ui.dialogs.detailed_reminder_editor import DetailedReminderEditor, save_alarm_trigger, load_alarm_trigger
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from utils.timezone_helper import TimezoneHelper
 from utils.cert_helper import generate_self_signed_cert, get_cert_info
