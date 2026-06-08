@@ -25,6 +25,47 @@
 
 ---
 
+## 启动流程
+
+程序启动过程（从双击到窗口出现）按顺序执行：
+
+```
+main()
+  ├── argparse 解析命令行参数（--port / --db-path / --log-level）
+  ├── logging.basicConfig 初始化日志系统
+  ├── Database(db_path=...)  [仅当 --db-path 或 --data-dir 指定时]
+  │     └── _vacuum_if_needed() 空闲页 > 50% 自动 VACUUM
+  ├── _migrate_old_files() 旧版本文件迁移
+  ├── TkinterDnD.Tk() 创建主窗口
+  └── DAVServerApp(root)
+        ├── SettingsService() 加载设置
+        ├── ContactService() 联系人服务单例
+        ├── EventService() 事件服务单例
+        ├── LoggingManager.setup() 日志文件配置
+        ├── create_widgets() 构建 UI（标签页 / 状态栏 / 菜单）
+        ├── DragDropHandler.setup() 拖拽绑定
+        ├── EventBus 订阅
+        ├── TrayManager.start() [pystray 可用时]
+        └── root.after_idle(_deferred_startup)
+              ├── _sync_mcp_server() [后台线程，不阻塞]
+              ├── 自动启动 DAV 服务器 [按设置]
+              ├── 自动检查更新 [后台线程]
+              ├── SSL 证书自动续期
+              └── _start_periodic_sync() [Nextcloud 同步]
+
+root.mainloop()
+```
+
+### 设计要点
+
+- **窗口优先**：`create_widgets()` 在 `__init__` 中尽早调用，确保主窗口在 `_deferred_startup` 执行前已经显示
+- **`after_idle` 延迟初始化**：DAV 服务器、MCP 服务、更新检查等耗时操作放在主循环启动后的空闲时刻执行，不阻塞窗口渲染
+- **惰性服务（v2.7）**：`MCPServer` 对象在控制面板开启 MCP 功能前不创建；`mcp_tools/_state.py` 中 `ContactService`、`EventService`、`FTPService` 通过惰性 getter 在首次调用时实例化
+- **重型导入按需加载**：`Database`、`SettingsDialog`、`TrayManager` 等模块从文件顶部移到使用处导入，减少模块级的传递性导入开销
+- **后台线程**：MCP 工具注册 + uvicorn 启动、更新检查、证书续期、定时同步均在后台线程执行，主线程只处理 GUI 事件
+
+---
+
 ## 架构总览
 
 ```
