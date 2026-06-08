@@ -879,8 +879,11 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             progress.destroy()
             if saved is not None:
                 from ui.widgets.toast import Toast
-                Toast.show(self, f"数据库压缩完成，释放 {saved / 1024:.1f} KB 空间")
-                self._load_settings()
+                if saved > 0:
+                    Toast.show(self, f"数据库压缩完成，释放 {saved / 1024:.1f} KB 空间")
+                else:
+                    Toast.show(self, "数据库已处于最佳状态，无需压缩")
+                self.load_settings()
             else:
                 messagebox.showerror("压缩失败",
                                      "数据库压缩过程中发生错误，请查看日志。", parent=self)
