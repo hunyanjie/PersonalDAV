@@ -466,9 +466,57 @@ class SettingsDialog(tk.Toplevel):
             for log in logs:
                 tag = "success" if log["success"] else "failure"
                 status = "成功" if log["success"] else "失败"
-                tree.insert("", tk.END, values=(log["time"], log["ip"], status, log["method"], log["detail"]), tags=(tag,))
+                tree.insert("", tk.END, iid=str(log.get("id", "")),
+                            values=(log["time"], log["ip"], status, log["method"], log["detail"]),
+                            tags=(tag,))
             tree.tag_configure("success", foreground="green")
             tree.tag_configure("failure", foreground="red")
+
+        def _show_detail(event):
+            from database.db_manager import Database
+            sel = tree.selection()
+            if not sel:
+                return
+            log_id = sel[0]
+            if not log_id.isdigit():
+                return
+            rows = Database().query(
+                "SELECT id, timestamp, ip, success, method, detail, prev_hash, hash FROM auth_logs WHERE id=?",
+                (int(log_id),)
+            )
+            if not rows:
+                return
+            r = rows[0]
+            detail_win = tk.Toplevel(self)
+            detail_win.title("审计日志详情")
+            detail_win.transient(self)
+            detail_win.grab_set()
+            detail_win.geometry("500x350")
+            fields = [
+                ("ID", str(r[0])),
+                ("时间", str(r[1] or "")),
+                ("IP", str(r[2] or "")),
+                ("状态", "成功" if r[3] else "失败"),
+                ("协议", str(r[4] or "")),
+                ("详情", str(r[5] or "")),
+                ("前序哈希", str(r[6] or "")),
+                ("当前哈希", str(r[7] or "")),
+            ]
+            main_f = ttk.Frame(detail_win, padding=10)
+            main_f.pack(fill=tk.BOTH, expand=True)
+            for i, (label, value) in enumerate(fields):
+                ttk.Label(main_f, text=label + ":", font=("", 9, "bold")).grid(
+                    row=i, column=0, sticky="ne", padx=(0, 5), pady=2)
+                txt = tk.Text(main_f, height=1 if i < 6 else 2, width=50, wrap=tk.WORD,
+                              font=("Consolas", 9), relief=tk.FLAT, bg=self.cget("bg"))
+                txt.grid(row=i, column=1, sticky="nw", padx=2, pady=2)
+                txt.insert("1.0", value)
+                txt.config(state=tk.DISABLED)
+            btn_f = ttk.Frame(detail_win)
+            btn_f.pack(pady=(0, 8))
+            ttk.Button(btn_f, text="关闭", command=detail_win.destroy).pack()
+
+        tree.bind("<Double-1>", _show_detail)
 
         filter_combo.bind("<<ComboboxSelected>>", refresh)
 
