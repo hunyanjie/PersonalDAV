@@ -48,6 +48,22 @@ class BaseService:
     def count(self) -> int:
         return self.repo.count()
 
+    def search(self, keyword: str, limit: int = 20) -> list[dict]:
+        if not hasattr(self.repo, 'search_by_keyword'):
+            return []
+        models = self.repo.search_by_keyword(keyword, limit)
+        return [self._model_to_dict(m) for m in models]
+
+    def search_by_date_range(self, start: str, end: str) -> list[dict]:
+        if not hasattr(self.repo, 'search_by_date_range') or not callable(self.repo.search_by_date_range):
+            return []
+        models = self.repo.search_by_date_range(start, end)
+        return [self._model_to_dict(m) for m in models]
+
+    def _model_to_dict(self, model) -> dict:
+        fields = self._list_fields if hasattr(self, '_list_fields') and self._list_fields else ()
+        return {f: getattr(model, f, "") for f in fields}
+
     def get_etag(self, uid: str) -> str | None:
         raw = self.get_by_uid(uid)
         if raw is None:
