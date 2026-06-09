@@ -205,3 +205,6 @@ ftp_root/
 
 tests/snapshots/*.png
 tests/snapshots/diff/
+
+AGENTS.md
+GEMINI.md
