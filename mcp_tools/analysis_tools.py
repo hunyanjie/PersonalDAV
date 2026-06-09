@@ -9,13 +9,19 @@ from mcp_tools.helpers import safe_json
 from utils.logger import logger
 
 
+MAX_COMPARE = 500
+
 def register(mcp):
-    @mcp.tool(description="检测可能重复的联系人（基于姓名/邮箱/电话的模糊匹配）")
+    @mcp.tool(description="检测可能重复的联系人（基于姓名/邮箱/电话的模糊匹配，最多比较前500条）")
     def detect_contact_duplicates(threshold: float = 0.8) -> str:
         logger.info(f"MCP 调用: detect_contact_duplicates threshold={threshold}")
         try:
             svc = get_contact_svc()
             items = svc.get_list_data()
+            total = len(items)
+            if total > MAX_COMPARE:
+                logger.warning("detect_contact_duplicates: 联系人过多(%d)，仅比较前%d条", total, MAX_COMPARE)
+                items = items[:MAX_COMPARE]
             pairs = []
             for i, row in enumerate(items):
                 uid_i, name_i = row[0], str(row[1] or "")
@@ -50,6 +56,9 @@ def register(mcp):
         try:
             svc = get_event_svc()
             items = svc.get_list_data()
+            if len(items) > MAX_COMPARE:
+                logger.warning("detect_event_conflicts: 事件过多(%d)，仅分析前%d条", len(items), MAX_COMPARE)
+                items = items[:MAX_COMPARE]
             if not date_to:
                 date_to = (datetime.now() + timedelta(days=30)).isoformat()
             if not date_from:
