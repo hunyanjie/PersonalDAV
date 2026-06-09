@@ -1,15 +1,18 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time
+import time, os
 from fastapi import APIRouter, Depends, HTTPException, Query
-from config import SOFTWARE_VERSION
+from fastapi.responses import JSONResponse
+from config import SOFTWARE_VERSION, SOFTWARE_NAME
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
+from services.embeddings import EmbeddingService
 from .models import (
     ContactOut, ContactCreate, ContactStructuredCreate, ContactUpdate,
     EventOut, EventCreate, EventUpdate, HealthOut, AuthTokenOut, AuthTokenRequest,
+    ServerConfigOut, AuthLogOut, StatsOut, ErrorOut,
 )
 from .auth import get_current_token
 
@@ -210,3 +213,113 @@ async def delete_event(uid: str, token: str = Depends(get_current_token)):
         raise HTTPException(404, "事件不存在")
     ok = svc.delete(uid)
     return {"deleted": ok}
+
+
+# ── Contacts Search ────────────────────────────────────────────
+
+@api_router.get("/contacts/search", summary="搜索联系人")
+async def search_contacts(
+    q: str = Query("", description="关键词"),
+    limit: int = Query(10, description="返回条数"),
+    token: str = Depends(get_current_token),
+):
+    svc = EmbeddingService()
+    return svc.search_contacts(q, top_k=limit)
+
+
+# ── Events Search ──────────────────────────────────────────────
+
+@api_router.get("/events/search", summary="搜索事件")
+async def search_events(
+    q: str = Query("", description="关键词"),
+    date_from: str = Query("", description="起始时间"),
+    date_to: str = Query("", description="结束时间"),
+    limit: int = Query(10, description="返回条数"),
+    token: str = Depends(get_current_token),
+):
+    svc = EmbeddingService()
+    return svc.search_events(q, date_from=date_from, date_to=date_to, top_k=limit)
+
+
+# ── Settings ───────────────────────────────────────────────────
+
+@api_router.get("/settings", summary="获取所有设置")
+async def list_settings(token: str = Depends(get_current_token)):
+    s = SettingsService()
+    rows = s.db.query("SELECT key, value FROM settings")
+    return {r[0]: r[1] for r in rows}
+
+
+@api_router.get("/settings/{key}", summary="获取单个设置")
+async def get_setting(key: str, token: str = Depends(get_current_token)):
+    s = SettingsService()
+    val = s.get_setting(key, None)
+    if val is None:
+        raise HTTPException(404, "设置不存在")
+    return {"key": key, "value": val}
+
+
+@api_router.put("/settings/{key}", summary="更新设置")
+async def update_setting(key: str, body: dict, token: str = Depends(get_current_token)):
+    s = SettingsService()
+    s.set_setting(key, body.get("value", ""))
+    return {"key": key, "updated": True}
+
+
+# ── Server Config ─────────────────────────────────────────────
+
+@api_router.get("/server/config", response_model=ServerConfigOut, summary="服务器配置信息")
+async def server_config(token: str = Depends(get_current_token)):
+    s = SettingsService()
+    return ServerConfigOut(
+        host=s.get_setting("default_host", "127.0.0.1"),
+        port=int(s.get_setting("default_port", "8000")),
+        db_path=s.get_setting("db_path", "data/dav_data.db"),
+        dav_root=s.get_setting("dav_root", "./dav_root"),
+        log_level=s.get_setting("log_level", "INFO"),
+        mcp_enabled=s.get_setting("mcp_enabled", "False") == "True",
+        mcp_port=int(s.get_setting("mcp_port", "8100")),
+        mcp_safety_mode=s.get_setting("mcp_safety_mode", "confirm"),
+        mcp_readonly=s.get_setting("mcp_readonly", "False") == "True",
+    )
+
+
+# ── Auth Logs ──────────────────────────────────────────────────
+
+@api_router.get("/auth/logs", response_model=list[AuthLogOut], summary="获取鉴权日志")
+async def auth_logs(
+    limit: int = Query(100, description="返回条数"),
+    protocol: str = Query("", description="协议筛选"),
+    token: str = Depends(get_current_token),
+):
+    svc = AuthService()
+    return svc.get_auth_logs_filtered(protocol=protocol, limit=limit)
+
+
+# ── Stats ──────────────────────────────────────────────────────
+
+@api_router.get("/stats", response_model=StatsOut, summary="服务器统计信息")
+async def stats(token: str = Depends(get_current_token)):
+    cs = ContactService()
+    es = EventService()
+    s = SettingsService()
+    dav_root = s.get_setting("dav_root", "./dav_root")
+    total_size = 0
+    file_count = 0
+    if os.path.isdir(dav_root):
+        for dirpath, _, filenames in os.walk(dav_root):
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                try:
+                    total_size += os.path.getsize(fp)
+                    file_count += 1
+                except Exception:
+                    pass
+    return StatsOut(
+        contacts_count=cs.count(),
+        events_count=es.count(),
+        files_count=file_count,
+        disk_used_mb=round(total_size / (1024 * 1024), 2),
+        uptime=time.time() - _start_time,
+        version=SOFTWARE_VERSION,
+    )

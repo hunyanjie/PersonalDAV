@@ -69,3 +69,35 @@ class AuthTokenRequest(BaseModel):
 
 class ErrorOut(BaseModel):
     detail: str
+
+
+class ServerConfigOut(BaseModel):
+    host: str = ""
+    port: int = 0
+    db_path: str = ""
+    dav_root: str = ""
+    log_level: str = "INFO"
+    mcp_enabled: bool = False
+    mcp_port: int = 8100
+    mcp_safety_mode: str = "confirm"
+    mcp_readonly: bool = False
+
+
+class AuthLogOut(BaseModel):
+    id: int
+    time: str
+    ip: str
+    success: bool
+    method: str
+    detail: str
+    prev_hash: str = ""
+    hash: str = ""
+
+
+class StatsOut(BaseModel):
+    contacts_count: int = 0
+    events_count: int = 0
+    files_count: int = 0
+    disk_used_mb: float = 0.0
+    uptime: float = 0.0
+    version: str = ""
