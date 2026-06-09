@@ -5,6 +5,7 @@ import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 
 from .config import DaemonConfig
 from .dav import dav_router
@@ -12,6 +13,12 @@ from .api import api_router
 from .auth import AuthMiddleware
 from .logging import StructuredLogger
 from .mcp import create_mcp_app
+
+
+def _unique_id(route: APIRoute) -> str:
+    name = route.name.replace("_", "-")
+    methods = "_".join(sorted(route.methods - {"HEAD", "OPTIONS"})) if route.methods else "any"
+    return f"{name}_{methods.lower()}"
 
 logger: StructuredLogger | None = None
 
@@ -41,11 +48,13 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     cfg = config or DaemonConfig()
     app = FastAPI(
         title="PersonalDAV",
-        description="Personal Infrastructure Platform — CardDAV + CalDAV + WebDAV + REST API",
+        description="个人数据管理平台 — CardDAV 联系人 + CalDAV 日历 + WebDAV 文件 + REST API",
         version="3.0.0",
         lifespan=lifespan,
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        generate_unique_id_function=_unique_id,
+        swagger_ui_parameters={"displayRequestDuration": True, "defaultModelsExpandDepth": -1},
     )
     app.state.config = cfg
     app.add_middleware(AuthMiddleware)

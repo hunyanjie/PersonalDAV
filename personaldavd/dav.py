@@ -12,7 +12,7 @@ from services.event_service import EventService
 from services.settings_service import SettingsService
 from utils.attachment_store import ATTACHMENTS_DIR
 
-dav_router = APIRouter(tags=["DAV Protocol"])
+dav_router = APIRouter(tags=["DAV 协议"])
 
 
 def _etag(raw: str) -> str:
@@ -27,7 +27,7 @@ def _ctag(service) -> str:
     return f'"ctag-{hashlib.md5("|".join(sorted(tags)).encode("utf-8")).hexdigest()[:16]}"'
 
 
-def _multistatus_xml(responses: list[tuple[str, str, str, int]], ns: str = "") -> bytes:
+def _multistatus_xml(responses: list[tuple[str, str, str, str, int]], ns: str = "") -> bytes:
     body = "\n".join(
         f'    <D:response>\n'
         f'        <D:href>{href}</D:href>\n'
@@ -41,7 +41,7 @@ def _multistatus_xml(responses: list[tuple[str, str, str, int]], ns: str = "") -
         f'            <D:status>HTTP/1.1 200 OK</D:status>\n'
         f'        </D:propstat>\n'
         f'    </D:response>'
-        for href, etag, ctype, size in responses
+        for href, rtype, etag, ctype, size in responses
     )
     xml = f'<?xml version="1.0" encoding="utf-8" ?>\n<D:multistatus xmlns:D="DAV:" {ns}>\n{body}\n</D:multistatus>'
     return xml.encode("utf-8")
@@ -54,12 +54,12 @@ async def _body(request: Request) -> str:
 
 # ── Helpers ─────────────────────────────────────────────────────
 
-def _collection_responses(service, path_prefix: str, ext: str, ctype: str) -> list[tuple[str, str, str, int]]:
-    resp = [(path_prefix, "", f"httpd/unix-directory", 0)]
+def _collection_responses(service, path_prefix: str, ext: str, ctype: str) -> list[tuple[str, str, str, str, int]]:
+    resp = [(path_prefix, "", "", "httpd/unix-directory", 0)]
     for uid, raw in service.get_all_items():
         href = f"{path_prefix}{uid}{ext}"
         e = service.get_etag(uid) or _etag(raw)
-        resp.append((href, e, ctype, len(raw.encode("utf-8"))))
+        resp.append((href, "", e, ctype, len(raw.encode("utf-8"))))
     return resp
 
 
@@ -72,6 +72,7 @@ def _collection_responses(service, path_prefix: str, ext: str, ctype: str) -> li
 @dav_router.api_route("/contacts/", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
 @dav_router.api_route("/contacts", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
 async def contacts_handler(request: Request, rest: str = ""):
+    """CardDAV 联系人服务 — 支持 GET/PUT/DELETE/PROPFIND/REPORT/OPTIONS。"""
     svc = ContactService()
     method = request.method
     path = request.url.path.rstrip("/") or "/contacts"
@@ -108,18 +109,18 @@ async def contacts_handler(request: Request, rest: str = ""):
         depth = request.headers.get("Depth", "0")
         is_collection = path.endswith("/contacts") or path.endswith("/contacts/") or (not path.endswith(".vcf"))
         if is_collection:
-            responses = [(path + "/", "", "httpd/unix-directory", 0)]
+            responses = [(path + "/", "", "", "httpd/unix-directory", 0)]
             if depth != "0":
                 for uid, raw in svc.get_all_items():
                     href = f"{path}/{uid}.vcf" if not path.endswith("/") else f"{path}{uid}.vcf"
                     e = svc.get_etag(uid) or _etag(raw)
-                    responses.append((href, e, "text/vcard", len(raw.encode("utf-8"))))
+                    responses.append((href, "", e, "text/vcard", len(raw.encode("utf-8"))))
             xml = _multistatus_xml(responses, 'xmlns:C="urn:ietf:params:xml:ns:carddav"')
         else:
             uid = os.path.basename(path).replace(".vcf", "")
             raw = svc.get_by_uid(uid)
             e = svc.get_etag(uid) or (_etag(raw) if raw else '""')
-            xml = _multistatus_xml([(path, e, "text/vcard", len(raw.encode("utf-8")) if raw else 0)],
+            xml = _multistatus_xml([(path, "", e, "text/vcard", len(raw.encode("utf-8")) if raw else 0)],
                                    'xmlns:C="urn:ietf:params:xml:ns:carddav"')
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
 
@@ -134,9 +135,9 @@ async def contacts_handler(request: Request, rest: str = ""):
             raw = svc.get_by_uid(uid)
             if raw:
                 e = svc.get_etag(uid) or _etag(raw)
-                responses.append((href, e, "text/vcard", len(raw.encode("utf-8"))))
+                responses.append((href, "", e, "text/vcard", len(raw.encode("utf-8"))))
             else:
-                responses.append((href, '""', "text/vcard", 0))
+                responses.append((href, "", '""', "text/vcard", 0))
         xml = _multistatus_xml(responses, 'xmlns:C="urn:ietf:params:xml:ns:carddav"')
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
 
@@ -152,6 +153,7 @@ async def contacts_handler(request: Request, rest: str = ""):
 @dav_router.api_route("/events/", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
 @dav_router.api_route("/events", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
 async def events_handler(request: Request, rest: str = ""):
+    """CalDAV 日历事件服务 — 支持 GET/PUT/DELETE/PROPFIND/REPORT/OPTIONS。"""
     svc = EventService()
     method = request.method
     path = request.url.path.rstrip("/") or "/events"
@@ -196,18 +198,18 @@ async def events_handler(request: Request, rest: str = ""):
         depth = request.headers.get("Depth", "0")
         is_collection = path.endswith("/events") or path.endswith("/events/") or (not path.endswith(".ics"))
         if is_collection:
-            responses = [(path + "/", "", "httpd/unix-directory", 0)]
+            responses = [(path + "/", "", "", "httpd/unix-directory", 0)]
             if depth != "0":
                 for uid, raw in svc.get_all_items():
                     href = f"{path}/{uid}.ics" if not path.endswith("/") else f"{path}{uid}.ics"
                     e = svc.get_etag(uid) or _etag(raw)
-                    responses.append((href, e, "text/calendar", len(raw.encode("utf-8"))))
+                    responses.append((href, "", e, "text/calendar", len(raw.encode("utf-8"))))
             xml = _multistatus_xml(responses, 'xmlns:CAL="urn:ietf:params:xml:ns:caldav"')
         else:
             uid = os.path.basename(path).replace(".ics", "")
             raw = svc.get_by_uid(uid)
             e = svc.get_etag(uid) or (_etag(raw) if raw else '""')
-            xml = _multistatus_xml([(path, e, "text/calendar", len(raw.encode("utf-8")) if raw else 0)],
+            xml = _multistatus_xml([(path, "", e, "text/calendar", len(raw.encode("utf-8")) if raw else 0)],
                                    'xmlns:CAL="urn:ietf:params:xml:ns:caldav"')
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
 
@@ -223,9 +225,9 @@ async def events_handler(request: Request, rest: str = ""):
             if raw:
                 full = svc.get_full_ical(uid, mode, base_url) or raw
                 e = svc.get_etag(uid) or _etag(full)
-                responses.append((href, e, "text/calendar", len(full.encode("utf-8"))))
+                responses.append((href, "", e, "text/calendar", len(full.encode("utf-8"))))
             else:
-                responses.append((href, '""', "text/calendar", 0))
+                responses.append((href, "", '""', "text/calendar", 0))
         xml = _multistatus_xml(responses, 'xmlns:CAL="urn:ietf:params:xml:ns:caldav"')
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
 
@@ -236,6 +238,7 @@ async def events_handler(request: Request, rest: str = ""):
 
 @dav_router.api_route("/attachments/{filename}", methods=["GET", "HEAD"])
 async def attachment_asgi(request: Request, filename: str):
+    """附件下载 — 返回日历事件中引用的附件文件。"""
     safe_path = os.path.normpath(os.path.join(ATTACHMENTS_DIR, os.path.basename(filename)))
     if not safe_path.startswith(os.path.normpath(ATTACHMENTS_DIR)):
         return Response("Forbidden", status_code=403)
@@ -265,6 +268,7 @@ async def attachment_asgi(request: Request, filename: str):
 )
 @dav_router.api_route("/dav", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "MKCOL", "COPY", "MOVE", "OPTIONS"])
 async def webdav_handler(request: Request, rest: str = ""):
+    """WebDAV 文件服务 — 支持 GET/PUT/DELETE/PROPFIND/MKCOL/COPY/MOVE。"""
     method = request.method
     dav_root = SettingsService().get_setting("dav_root", "./dav_root")
 
@@ -336,20 +340,20 @@ async def webdav_handler(request: Request, rest: str = ""):
             with open(fs_path, "rb") as f:
                 etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
             s = os.stat(fs_path)
-            responses.append((base_href, etag_v, "application/octet-stream", s.st_size))
+            responses.append((base_href, "", etag_v, "application/octet-stream", s.st_size))
         else:
-            responses.append((base_href, "", "httpd/unix-directory", 0))
+            responses.append((base_href, "", "", "httpd/unix-directory", 0))
             if depth != "0":
                 for name in sorted(os.listdir(fs_path)):
                     child = os.path.join(fs_path, name)
                     href = f"{base_href}/{name}"
                     s = os.stat(child)
                     if os.path.isdir(child):
-                        responses.append((href, "", "httpd/unix-directory", 0))
+                        responses.append((href, "", "", "httpd/unix-directory", 0))
                     else:
                         with open(child, "rb") as f:
                             etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
-                        responses.append((href, etag_v, "application/octet-stream", s.st_size))
+                        responses.append((href, "", etag_v, "application/octet-stream", s.st_size))
         xml = _multistatus_xml(responses)
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
 

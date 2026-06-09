@@ -12,7 +12,7 @@ from .models import (
 )
 from .auth import get_current_token
 
-api_router = APIRouter(tags=["REST API"])
+api_router = APIRouter(tags=["API 接口"])
 _start_time = time.time()
 
 
@@ -55,8 +55,9 @@ def _event_to_out(raw: str) -> EventOut | None:
 
 # ── Health ──────────────────────────────────────────────────────
 
-@api_router.get("/health", response_model=HealthOut, summary="Server health check")
+@api_router.get("/health", response_model=HealthOut, summary="服务器健康检查")
 async def health():
+    """返回服务器运行状态、版本号、运行时长、联系人/事件数量。"""
     svc = SettingsService()
     cs = ContactService()
     es = EventService()
@@ -70,49 +71,54 @@ async def health():
 
 # ── Auth / Token ────────────────────────────────────────────────
 
-@api_router.post("/auth/token", response_model=AuthTokenOut, summary="Obtain bearer token")
+@api_router.post("/auth/token", response_model=AuthTokenOut, summary="获取访问令牌")
 async def get_token(req: AuthTokenRequest):
+    """用管理员密码换取 Bearer Token，后续请求携带此令牌即可通过鉴权。"""
     svc = AuthService()
     if not svc.verify_password(req.password):
-        raise HTTPException(401, "Invalid password")
+        raise HTTPException(401, "密码错误")
     token = svc.get_mcp_token()
     if not token:
-        raise HTTPException(403, "No password configured — token unavailable")
+        raise HTTPException(403, "未设置密码，无法生成令牌")
     return AuthTokenOut(token=token, scopes=req.scopes)
 
 
 # ── Contacts ────────────────────────────────────────────────────
 
-@api_router.get("/contacts", response_model=list[ContactOut], summary="List all contacts")
+@api_router.get("/contacts", response_model=list[ContactOut], summary="列出所有联系人")
 async def list_contacts(token: str = Depends(get_current_token)):
+    """返回所有联系人的摘要列表（姓名、邮箱、电话、分组）。"""
     svc = ContactService()
     raw_list = svc.get_all_raw()
     return [o for r in raw_list if (o := _contact_to_out(r))]
 
 
-@api_router.get("/contacts/{uid}", response_model=ContactOut, summary="Get contact by UID")
+@api_router.get("/contacts/{uid}", response_model=ContactOut, summary="获取单个联系人")
 async def get_contact(uid: str, token: str = Depends(get_current_token)):
+    """根据 UID 获取联系人的完整 vCard 数据。"""
     svc = ContactService()
     raw = svc.get_by_uid(uid)
     if not raw:
-        raise HTTPException(404, "Contact not found")
+        raise HTTPException(404, "联系人不存在")
     out = _contact_to_out(raw)
     if not out:
-        raise HTTPException(500, "Failed to parse contact")
+        raise HTTPException(500, "解析联系人失败")
     return out
 
 
-@api_router.post("/contacts", response_model=dict, summary="Create contact from vCard")
+@api_router.post("/contacts", response_model=dict, summary="从 vCard 创建联系人")
 async def create_contact(body: ContactCreate, token: str = Depends(get_current_token)):
+    """传入完整的 vCard 文本创建联系人，自动提取 UID。"""
     svc = ContactService()
     uid, op = svc.add_contact(body.vcard_data)
     if uid is None:
-        raise HTTPException(400, f"Failed to create contact: {op}")
+        raise HTTPException(400, f"创建联系人失败: {op}")
     return {"uid": uid, "operation": op}
 
 
-@api_router.post("/contacts/structured", response_model=dict, summary="Create contact from structured fields")
+@api_router.post("/contacts/structured", response_model=dict, summary="通过结构化信息创建联系人")
 async def create_contact_structured(body: ContactStructuredCreate, token: str = Depends(get_current_token)):
+    """通过姓名、邮箱、电话等结构化字段创建联系人，无需手动拼接 vCard。"""
     vcard = (
         "BEGIN:VCARD\r\nVERSION:3.0\r\n"
         f"FN:{body.full_name}\r\n"
@@ -126,73 +132,80 @@ async def create_contact_structured(body: ContactStructuredCreate, token: str = 
     svc = ContactService()
     uid, op = svc.add_contact(vcard)
     if uid is None:
-        raise HTTPException(400, f"Failed to create contact: {op}")
+        raise HTTPException(400, f"创建联系人失败: {op}")
     return {"uid": uid, "operation": op}
 
 
-@api_router.put("/contacts/{uid}", response_model=dict, summary="Update contact")
+@api_router.put("/contacts/{uid}", response_model=dict, summary="更新联系人")
 async def update_contact(uid: str, body: ContactUpdate, token: str = Depends(get_current_token)):
+    """用新的 vCard 数据覆盖更新指定联系人。"""
     svc = ContactService()
     existing = svc.get_by_uid(uid)
     if not existing:
-        raise HTTPException(404, "Contact not found")
+        raise HTTPException(404, "联系人不存在")
     new_uid, op = svc.add_contact(body.vcard_data, force=True)
     return {"uid": new_uid, "operation": op}
 
 
-@api_router.delete("/contacts/{uid}", response_model=dict, summary="Delete contact")
+@api_router.delete("/contacts/{uid}", response_model=dict, summary="删除联系人")
 async def delete_contact(uid: str, token: str = Depends(get_current_token)):
+    """删除指定 UID 的联系人。"""
     svc = ContactService()
     if not svc.get_by_uid(uid):
-        raise HTTPException(404, "Contact not found")
+        raise HTTPException(404, "联系人不存在")
     ok = svc.delete(uid)
     return {"deleted": ok}
 
 
 # ── Events ──────────────────────────────────────────────────────
 
-@api_router.get("/events", response_model=list[EventOut], summary="List all events")
+@api_router.get("/events", response_model=list[EventOut], summary="列出所有事件")
 async def list_events(token: str = Depends(get_current_token)):
+    """返回所有日历事件的摘要列表（标题、起止时间）。"""
     svc = EventService()
     raw_list = svc.get_all_raw()
     return [o for r in raw_list if (o := _event_to_out(r))]
 
 
-@api_router.get("/events/{uid}", response_model=EventOut, summary="Get event by UID")
+@api_router.get("/events/{uid}", response_model=EventOut, summary="获取单个事件")
 async def get_event(uid: str, token: str = Depends(get_current_token)):
+    """根据 UID 获取事件的完整 iCalendar 数据。"""
     svc = EventService()
     raw = svc.get_by_uid(uid)
     if not raw:
-        raise HTTPException(404, "Event not found")
+        raise HTTPException(404, "事件不存在")
     out = _event_to_out(raw)
     if not out:
-        raise HTTPException(500, "Failed to parse event")
+        raise HTTPException(500, "解析事件失败")
     return out
 
 
-@api_router.post("/events", response_model=dict, summary="Create event from iCalendar")
+@api_router.post("/events", response_model=dict, summary="从 iCalendar 创建事件")
 async def create_event(body: EventCreate, token: str = Depends(get_current_token)):
+    """传入完整的 iCalendar 文本创建事件，自动提取 UID。"""
     svc = EventService()
     uid, op = svc.add_event(body.ical_data)
     if uid is None:
-        raise HTTPException(400, f"Failed to create event: {op}")
+        raise HTTPException(400, f"创建事件失败: {op}")
     return {"uid": uid, "operation": op}
 
 
-@api_router.put("/events/{uid}", response_model=dict, summary="Update event")
+@api_router.put("/events/{uid}", response_model=dict, summary="更新事件")
 async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_current_token)):
+    """用新的 iCalendar 数据覆盖更新指定事件。"""
     svc = EventService()
     existing = svc.get_by_uid(uid)
     if not existing:
-        raise HTTPException(404, "Event not found")
+        raise HTTPException(404, "事件不存在")
     new_uid, op = svc.add_event(body.ical_data, force=True)
     return {"uid": new_uid, "operation": op}
 
 
-@api_router.delete("/events/{uid}", response_model=dict, summary="Delete event")
+@api_router.delete("/events/{uid}", response_model=dict, summary="删除事件")
 async def delete_event(uid: str, token: str = Depends(get_current_token)):
+    """删除指定 UID 的事件。"""
     svc = EventService()
     if not svc.get_by_uid(uid):
-        raise HTTPException(404, "Event not found")
+        raise HTTPException(404, "事件不存在")
     ok = svc.delete(uid)
     return {"deleted": ok}
