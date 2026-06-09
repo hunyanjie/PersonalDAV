@@ -110,6 +110,12 @@ def main():
     parser.add_argument("--log-level", type=str, default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                         help="日志级别")
+    parser.add_argument("--remote", action="store_true",
+                        help="远程模式 — 连接 headless daemon 而非本地数据库")
+    parser.add_argument("--remote-url", type=str, default="http://127.0.0.1:8000",
+                        help="daemon 地址（默认 http://127.0.0.1:8000）")
+    parser.add_argument("--remote-token", type=str, default="",
+                        help="Bearer token（可选）")
     args = parser.parse_args()
 
     log_level = getattr(logging, args.log_level.upper(), logging.INFO)
@@ -128,7 +134,12 @@ def main():
     _migrate_inline_attachments()
 
     root = TkinterDnD.Tk()
-    app = DAVServerApp(root, cli_port=args.port, cli_log_level=args.log_level)
+    if args.remote:
+        from services.backend import RemoteBackend
+        backend = RemoteBackend(base_url=args.remote_url, token=args.remote_token)
+    else:
+        backend = None
+    app = DAVServerApp(root, backend=backend, cli_port=args.port, cli_log_level=args.log_level)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     from utils.window_utils import center_window
     center_window(root)

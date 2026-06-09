@@ -30,11 +30,14 @@ dependencies = [
     "pyOpenSSL>=24.0.0",
     "paramiko>=3.5.0",
     "tftpy>=0.8.2",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.38.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.27.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "httpx>=0.27.0",
     "pytest>=9.0.0",
 ]
 
@@ -64,4 +67,4 @@ ignore_missing_imports = true
 minversion = "9.0"
 
 [tool.setuptools.packages.find]
-include = ["models*", "database*", "services*", "network*", "ui*", "utils*", "mcp_tools*", "tests*"]
+include = ["models*", "database*", "services*", "network*", "ui*", "utils*", "mcp_tools*", "tests*", "personaldavd*"]

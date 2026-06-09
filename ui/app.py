@@ -4,13 +4,11 @@ import queue
 import time
 import os
 import webbrowser
+from typing import TYPE_CHECKING
 from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
 from ui.tabs.remote_tab import RemoteTab
-from services.contact_service import ContactService
-from services.event_service import EventService
-from services.settings_service import SettingsService
 from utils.logger import logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
@@ -18,14 +16,25 @@ from ui.logging_manager import LoggingManager
 from ui.drag_drop_handler import DragDropHandler
 from ui.status_bar_manager import StatusBarManager
 
+if TYPE_CHECKING:
+    from services.backend import Backend
+
 
 class DAVServerApp:
     """主应用程序类"""
-    def __init__(self, root, cli_port=None, cli_log_level=None):
+    def __init__(self, root, backend: "Backend" = None,
+                 cli_port=None, cli_log_level=None):
         self.root = root
         self.root.title(f"{SOFTWARE_NAME} v{SOFTWARE_VERSION}")
 
-        self.settings_service = SettingsService()
+        if backend is None:
+            from services.backend import LocalBackend
+            backend = LocalBackend()
+        self.backend = backend
+        self.settings_service = backend.settings_service
+        self.contact_service = backend.contact_service
+        self.event_service = backend.event_service
+
         if cli_port is not None:
             self.settings_service.set_setting("default_port", str(cli_port))
         if cli_log_level is not None:
@@ -35,8 +44,6 @@ class DAVServerApp:
             "{offset} - {city} ({tz_id}) {localized}{local_tag}")
         from utils.timezone_helper import TimezoneHelper
         TimezoneHelper.set_format(fmt)
-        self.contact_service = ContactService()
-        self.event_service = EventService()
 
         self.log_queue = queue.Queue()
         self.logging_manager = LoggingManager(self.settings_service, self.log_queue)
@@ -295,8 +302,7 @@ class DAVServerApp:
             self.mcp_server.stop()
         if hasattr(self, '_tray'):
             self._tray.stop()
-        from database.db_manager import Database
-        Database().close()
+        self.backend.close()
         self.root.destroy()
 
     def _tray_notify(self, text):

@@ -16,6 +16,9 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
+- 🖥️ **无界面服务器模式** — 可单独运行 `python -m personaldavd`，不打开图形界面也能提供服务
+- 🌐 **REST API** — 通过 HTTP 接口管理联系人和日历事件，方便集成到其他程序
+- 🔗 **远程连接** — GUI 可通过 `--remote` 参数连接到远程服务器，管理远端数据
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
 - 🗜️ **数据库压缩** — 删除数据后空闲空间不浪费，可在设置页手动压缩或启动时自动整理
 - 🛡️ **IP 访问控制** — 白名单/黑名单/CIDR/通配符，支持本机免密码
@@ -57,9 +60,19 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
    pip install -e ".[dev]"
    ```
 
-3. 运行程序：
+3. 运行程序（图形界面）：
    ```bash
    python main.py
+   ```
+
+4. 无界面模式（服务器模式）：
+   ```bash
+   python -m personaldavd --port 8000
+   ```
+
+5. 远程连接（GUI 连到远程服务器）：
+   ```bash
+   python main.py --remote --remote-url http://你的服务器地址:8000
    ```
 
 ### 运行测试
@@ -109,21 +122,40 @@ python tests/run_all.py
 1. 在"设置 → MCP 服务"中启用 MCP 服务
 2. 在 opencode 或支持 MCP 的 AI 工具中配置：
 
-   ```json
-   {
-     "mcp": {
-       "personal-dav": {
-         "type": "remote",
-         "url": "http://127.0.0.1:8100/sse"
-       }
-     }
-   }
-   ```
+    ```json
+    {
+      "mcp": {
+        "personal-dav": {
+          "type": "remote",
+          "url": "http://127.0.0.1:8000/mcp/sse"
+        }
+      }
+    }
+    ```
 
 3. 如果设置了密码，还需要添加 `Authorization: Bearer <令牌>`（令牌从安全设置页复制）
 
+> [!NOTE]
+> 如果使用无界面模式（`python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
+
+### REST API
+
+服务器模式下可以通过 HTTP 接口管理数据：
+
+| 接口 | 说明 |
+|------|------|
+| `GET /api/health` | 服务器健康检查 |
+| `POST /api/auth/token` | 获取访问令牌 |
+| `GET /api/contacts` | 联系人列表 |
+| `POST /api/contacts` | 创建联系人 |
+| `GET /api/events` | 事件列表 |
+| `POST /api/events` | 创建事件 |
+
+详细文档访问服务器后打开 `http://localhost:8000/api/docs`。
+
 ## 客户端配置
 
+> [!IMPORTANT]
 > 如果设置了访问密码，客户端需要输入密码（用户名任意）。
 
 ### CardDAV 配置
@@ -165,6 +197,16 @@ MCP 服务提供 33 个工具供 AI 调用：
 PersonalDAV/
 ├── main.py                  # 入口（TkinterDnD 主窗口）
 ├── config.py                # 软件元信息
+├── personaldavd/            # 无界面服务器模式（v3.0 新增）
+│   ├── __main__.py          # 命令行入口：python -m personaldavd
+│   ├── daemon.py            # FastAPI 应用工厂
+│   ├── dav.py               # CardDAV + CalDAV + WebDAV ASGI 路由
+│   ├── api.py               # REST API 路由
+│   ├── auth.py              # 统一鉴权中间件
+│   ├── mcp.py               # MCP 集成模块
+│   ├── models.py            # Pydantic 数据模型
+│   ├── config.py            # 守护进程配置
+│   └── logging.py           # 结构化日志
 ├── data/                    # 运行产物（自动创建）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
@@ -200,13 +242,27 @@ PersonalDAV/
 
 ```mermaid
 graph TB
-    subgraph GUI["视图层（Tkinter）"]
+    subgraph GUI["图形界面（Tkinter）"]
         direction LR
         Contacts["联系人标签页"]
         Calendar["日历标签页"]
         Server["服务器标签页"]
         Remote["远程文件标签页"]
         Settings["设置对话框"]
+    end
+
+    subgraph Daemon["无界面服务器（personaldavd）"]
+        direction LR
+        DAV["DAV 协议"]
+        REST["REST API"]
+        MCP["MCP 协议"]
+        AUTH["统一鉴权"]
+    end
+
+    subgraph Backend["服务层"]
+        direction LR
+        LB["LocalBackend"]
+        RB["RemoteBackend"]
     end
 
     subgraph Service["业务逻辑层"]
@@ -218,24 +274,21 @@ graph TB
         FTPSvc["FTPService"]
     end
 
-    subgraph Network["网络层"]
-        direction LR
-        DAV["DAV Server<br/>CardDAV+CalDAV+WebDAV"]
-        MCP["MCP Server<br/>FastMCP+SSE"]
-        FTP["FTP/FTPS/SFTP"]
-    end
-
     subgraph Data["数据层"]
         DB[("SQLite (WAL)")]
         FS[("文件系统<br/>attachments/")]
     end
 
-    GUI --> Service
+    GUI -->|默认| LB
+    GUI -->|--remote| RB
+    LB --> Service
+    RB -->|HTTP| REST
+    Daemon --> Service
     Service --> Data
-    Network --> Service
-    Network --> Data
-    MCP -->|HTTP SSE| AI["AI 工具<br/>opencode / Claude"]
-    DAV -->|HTTP| Client["DAV 客户端<br/>手机/电脑"]
+    REST -->|HTTP| AI["AI 工具<br/>opencode / Claude"]
+    REST -->|HTTP| Client["DAV 客户端<br/>手机/电脑"]
+    DAV -->|HTTP| Client
+    MCP -->|HTTP SSE| AI
     FTP -->|TCP| FTPClient["FTP 客户端"]
 ```
 
@@ -245,8 +298,10 @@ graph TB
 |------|------|
 | GUI 框架 | Tkinter / ttk / tkinterdnd2 |
 | 数据库 | SQLite (WAL 模式 + 线程安全) |
-| DAV 协议 | Python 内置 HTTPServer（无外部依赖） |
-| MCP 服务 | FastMCP + Uvicorn (SSE 协议) |
+| 服务器框架 | FastAPI + Uvicorn（v3.0 统一 ASGI 运行时） |
+| DAV 协议 | FastAPI / Starlette ASGI 路由 |
+| REST API | FastAPI + Pydantic（自动生成 OpenAPI 文档） |
+| MCP 服务 | FastMCP + Starlette（集成到主服务器） |
 | 加密 | PBKDF2-HMAC-SHA256（密码）、Fernet/AES-128-CBC（远程连接密码） |
 | 数据格式 | vCard 3.0 / iCalendar 2.0 |
 | 时区 | pytz / tzlocal / Babel |
