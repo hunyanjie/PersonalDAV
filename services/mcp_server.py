@@ -134,7 +134,7 @@ class MCPServer:
 
     def _register_tools(self) -> None:
         from mcp_tools import server_tools, contact_tools, event_tools
-        from mcp_tools import config_tools, webdav_tools, ftp_tools, smb_tools
+        from mcp_tools import config_tools, webdav_tools, ftp_tools, smb_tools, analysis_tools
 
         server_tools.register(self._mcp)
         contact_tools.register(self._mcp)
@@ -143,6 +143,7 @@ class MCPServer:
         webdav_tools.register(self._mcp)
         ftp_tools.register(self._mcp)
         smb_tools.register(self._mcp)
+        analysis_tools.register(self._mcp)
         logger.info("MCP 工具注册完成")
 
 
