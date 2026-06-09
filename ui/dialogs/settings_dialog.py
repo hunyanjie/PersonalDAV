@@ -94,6 +94,7 @@ class SettingsDialog(tk.Toplevel):
         self.grab_set()
         self.db = db_service
         self.on_save_callback = on_save_callback
+        self._port_ck_fns = {}
         self._security_section = SecuritySettingsSection(self)
         self._reminder_section = ReminderPresetSection(self)
 
@@ -235,8 +236,12 @@ class SettingsDialog(tk.Toplevel):
                 ok, msg = validate_port(entry.get())
                 entry.config(foreground="red" if not ok else "orange" if msg else "black")
             var.trace("w", _ck)
-            _ck()
+            self._port_ck_fns[key] = _ck
             break
+
+    def _refresh_port_validations(self):
+        for fn in self._port_ck_fns.values():
+            fn()
 
     def create_server_settings(self, parent):
         f = ttk.LabelFrame(parent, text="服务器控制")
@@ -806,6 +811,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.sync_password_var.set(s.get_setting("sync_password", ""))
         self.sync_interval_var.set(s.get_setting("sync_interval", "30"))
         self.sync_enabled_var.set(s.get_setting("sync_enabled", "False") == "True")
+
+        self._refresh_port_validations()
 
     # ── 重置 ────────────────────────────────────────────────────
 

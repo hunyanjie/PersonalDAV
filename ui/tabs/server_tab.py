@@ -105,14 +105,9 @@ class ServerTab(ttk.Frame):
         self.port_var = tk.StringVar(value=self.settings_service.get_setting("default_port", "8000"))
         self.port_entry = ttk.Entry(port_frame, textvariable=self.port_var, width=10)
         self.port_entry.pack(side=tk.LEFT, padx=5)
-        self.port_var.trace("w", lambda *a: self._update_info())
         self.port_hint = ttk.Label(port_frame, text="", font=("", 8)); self.port_hint.pack(side=tk.LEFT, padx=5)
-        def _port_keyup(*_):
-            ok, msg = validate_port(self.port_var.get())
-            if not ok: self.port_hint.config(text=msg, foreground="red")
-            elif msg: self.port_hint.config(text=msg, foreground="orange")
-            else: self.port_hint.config(text="")
-        self.port_entry.bind("<KeyRelease>", _port_keyup)
+        self._setup_port_validation(self.port_entry, self.port_var, self.port_hint)
+        self.port_var.trace("w", lambda *a: self._update_info())
 
         self.start_btn = ttk.Button(port_frame, text="启动服务器", command=self.start_server)
         self.start_btn.pack(side=tk.LEFT, padx=5)
@@ -140,6 +135,7 @@ class ServerTab(ttk.Frame):
         ttk.Label(ftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.ftp_port_entry = ttk.Entry(ftp_row, textvariable=self.ftp_port_var, width=6)
         self.ftp_port_entry.pack(side=tk.LEFT)
+        self._setup_port_validation(self.ftp_port_entry, self.ftp_port_var)
         ttk.Label(ftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
         self.ftp_root_entry = ttk.Entry(ftp_row, textvariable=self.ftp_root_var, width=40)
         self.ftp_root_entry.pack(side=tk.LEFT, padx=2)
@@ -157,6 +153,7 @@ class ServerTab(ttk.Frame):
         ttk.Label(sftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.sftp_port_entry = ttk.Entry(sftp_row, textvariable=self.sftp_port_var, width=6)
         self.sftp_port_entry.pack(side=tk.LEFT)
+        self._setup_port_validation(self.sftp_port_entry, self.sftp_port_var)
         ttk.Label(sftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
         self.sftp_root_entry = ttk.Entry(sftp_row, textvariable=self.sftp_root_var, width=40)
         self.sftp_root_entry.pack(side=tk.LEFT, padx=2)
@@ -174,6 +171,7 @@ class ServerTab(ttk.Frame):
         ttk.Label(tftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.tftp_port_entry = ttk.Entry(tftp_row, textvariable=self.tftp_port_var, width=6)
         self.tftp_port_entry.pack(side=tk.LEFT)
+        self._setup_port_validation(self.tftp_port_entry, self.tftp_port_var)
         ttk.Label(tftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
         self.tftp_root_entry = ttk.Entry(tftp_row, textvariable=self.tftp_root_var, width=40)
         self.tftp_root_entry.pack(side=tk.LEFT, padx=2)
@@ -249,6 +247,17 @@ class ServerTab(ttk.Frame):
             status_label.config(text="✓", foreground="green")
         else:
             status_label.config(text="✗", foreground="red")
+
+    def _setup_port_validation(self, entry, var, hint_label=None):
+        def _ck(*_):
+            ok, msg = validate_port(var.get())
+            entry.config(foreground="red" if not ok else "orange" if msg else "black")
+            if hint_label:
+                if not ok: hint_label.config(text=msg, foreground="red")
+                elif msg: hint_label.config(text=msg, foreground="orange")
+                else: hint_label.config(text="")
+        var.trace("w", _ck)
+        _ck()
 
     def _save_ftp_settings(self):
         if self.ftp_auto_save.get():
