@@ -1,3 +1,4 @@
+import re
 import vobject
 import pytz
 import base64
@@ -184,6 +185,14 @@ def _parse_attachments(ev):
                 a['fmttype'] = att.params.get('FMTTYPE', ['text/uri-list'])[0] if hasattr(att, 'params') else 'text/uri-list'
                 a['size'] = 0
             attachments.append(a)
+    if 'x-personaldav-attach' in ev.contents:
+        for xatt in ev.contents['x-personaldav-attach']:
+            a = {'inline': True}
+            a['filepath'] = xatt.params.get('X-FILEPATH', [''])[0]
+            a['filename'] = xatt.params.get('FILENAME', ['attachment.bin'])[0]
+            a['fmttype'] = xatt.params.get('FMTTYPE', ['application/octet-stream'])[0]
+            a['size'] = int(xatt.params.get('X-SIZE', ['0'])[0])
+            attachments.append(a)
     return attachments
 
 
@@ -313,26 +322,87 @@ def _build_alarms(ev, data):
 
 def _build_attachments(ev, data):
     for a in data.get('attachments', []):
-        att = ev.add('attach')
         if a.get('inline'):
-            if 'filepath' in a:
-                b64_data = attachment_store.to_base64(a)
-                if b64_data is None:
-                    continue
-            else:
+            filepath = a.get('filepath', '')
+            if not filepath:
                 b64_data = a.get('data', '')
-            att.value = b64_data
-            att.encoding_param = 'BASE64'
-            att.encoded = True
-            att.params['VALUE'] = ['BINARY']
-            if a.get('fmttype') and a['fmttype'] != 'application/octet-stream':
-                att.params['FMTTYPE'] = [a['fmttype']]
+                if not b64_data:
+                    continue
+                record = attachment_store.from_base64(b64_data, a.get('filename', 'attachment.bin'), a.get('fmttype'))
+                if '_b64_fallback' in record:
+                    att = ev.add('attach')
+                    att.value = b64_data
+                    att.encoding_param = 'BASE64'
+                    att.encoded = True
+                    att.params['VALUE'] = ['BINARY']
+                    if a.get('fmttype') and a['fmttype'] != 'application/octet-stream':
+                        att.params['FMTTYPE'] = [a['fmttype']]
+                    if a.get('filename'):
+                        att.params['FILENAME'] = [a['filename']]
+                    continue
+                a['filepath'] = record['filepath']
+                a['size'] = record['size']
+            xatt = ev.add('x-personaldav-attach')
+            xatt.value = 'REF'
+            if a.get('fmttype'):
+                xatt.params['FMTTYPE'] = [a['fmttype']]
             if a.get('filename'):
-                att.params['FILENAME'] = [a['filename']]
+                xatt.params['FILENAME'] = [a['filename']]
+            if a.get('filepath'):
+                xatt.params['X-FILEPATH'] = [a['filepath']]
+            xatt.params['X-SIZE'] = [str(a.get('size', 0))]
         else:
+            att = ev.add('attach')
             att.value = a.get('uri', '')
             if a.get('fmttype') and a['fmttype'] != 'text/uri-list':
                 att.params['FMTTYPE'] = [a['fmttype']]
+
+
+def inject_attachments(stored_ical: str, mode: str = "inline", base_url: str = "") -> str:
+    if 'X-PERSONALDAV-ATTACH' not in stored_ical:
+        return stored_ical
+    try:
+        cal = vobject.readOne(stored_ical)
+        ev = cal.vevent if cal.name == 'VCALENDAR' else cal
+        if 'x-personaldav-attach' not in ev.contents:
+            return stored_ical
+        for xatt in list(ev.contents['x-personaldav-attach']):
+            filepath = xatt.params.get('X-FILEPATH', [''])[0]
+            filename = xatt.params.get('FILENAME', ['attachment.bin'])[0]
+            fmttype = xatt.params.get('FMTTYPE', ['application/octet-stream'])[0]
+            att = ev.add('attach')
+
+            if mode == "uri" and base_url:
+                rel_path = os.path.basename(filepath) if filepath else filename
+                att.value = f"{base_url.rstrip('/')}/attachments/{rel_path}"
+                if fmttype and fmttype != 'application/octet-stream':
+                    att.params['FMTTYPE'] = [fmttype]
+                if filename:
+                    att.params['FILENAME'] = [filename]
+            else:
+                record = {'filepath': filepath, 'filename': filename, 'fmttype': fmttype}
+                b64_data = attachment_store.to_base64(record)
+                if b64_data is None:
+                    continue
+                att.value = b64_data
+                att.encoding_param = 'BASE64'
+                att.encoded = True
+                att.params['VALUE'] = ['BINARY']
+                if fmttype and fmttype != 'application/octet-stream':
+                    att.params['FMTTYPE'] = [fmttype]
+                if filename:
+                    att.params['FILENAME'] = [filename]
+            ev.contents['x-personaldav-attach'].remove(xatt)
+        serialized = cal.serialize()
+        serialized = re.sub(
+            r'^X-PERSONALDAV-ATTACH[^\r\n]*(?:\r?\n[ \t][^\r\n]*)*\r?\n',
+            '', serialized, flags=re.MULTILINE
+        )
+        return serialized
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("注入附件失败")
+        return stored_ical
 
 
 def _build_extra_fields(ev, data):

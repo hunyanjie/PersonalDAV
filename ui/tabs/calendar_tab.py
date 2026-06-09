@@ -338,7 +338,7 @@ class CalendarTab(BaseTreeTab):
         if not uids:
             messagebox.showinfo("提示", "请先选择要导出的事件", parent=self)
             return
-        events = self.db.get_selected_raw(uids)
+        events = self.db.get_selected_full_raw(uids)
 
         initial = ""
         if len(uids) == 1:

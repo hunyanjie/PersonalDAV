@@ -5,7 +5,7 @@ import shutil
 from typing import BinaryIO
 from utils.logger import logger
 
-ATTACHMENTS_DIR = "data/attachments"
+ATTACHMENTS_DIR = os.path.join("data", "calendar_attachments")
 
 
 def _ensure_dir():

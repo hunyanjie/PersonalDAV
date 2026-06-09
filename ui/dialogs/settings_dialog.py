@@ -70,6 +70,10 @@ SIMPLE_SETTINGS = [
                         "euc-kr", "euc-jp", "cp1252", "iso-8859-1",
                         "cp1250", "cp1251", "koi8-r"],
                width=10),
+    SettingDef("attachment_mode", "日历附件模式:", "combo", "服务器控制",
+               default="内联 Base64", db_default="inline",
+               options=["内联 Base64", "HTTP 链接"],
+               display_map={"内联 Base64": "inline", "HTTP 链接": "uri"}, width=12),
     # ========== 安全设置 ==========
     # force_password / rate_limit 手工构建于 create_security_settings
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
@@ -849,7 +853,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             return
         from utils.backup import import_backup
         if import_backup(path):
-            self._load_settings()
+            self.load_settings()
             messagebox.showinfo("恢复成功",
                                 "数据已恢复，请重启程序以使更改生效。", parent=self)
         else:
