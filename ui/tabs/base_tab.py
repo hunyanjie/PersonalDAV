@@ -95,10 +95,12 @@ class BaseTreeTab(ttk.Frame):
                 if self._import_type == "contacts":
                     self._all_data.append((" ", uid, r.get("full_name", ""),
                                            r.get("email", ""), r.get("phone", ""),
-                                           r.get("groups", ""), "", ""))
+                                           r.get("groups", ""),
+                                           r.get("created_at", ""), r.get("updated_at", "")))
                 else:
                     self._all_data.append((" ", uid, r.get("summary", ""),
-                                           r.get("dtstart", ""), r.get("dtend", ""), "", ""))
+                                           r.get("dtstart", ""), r.get("dtend", ""),
+                                           r.get("created_at", ""), r.get("updated_at", "")))
             self._rerender()
         except Exception:
             self.apply_filter(query)
