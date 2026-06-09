@@ -142,13 +142,13 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.status_bar_mgr.refresh)
 
     def _show_setup_wizard(self):
-        completed = self.settings_service.get_setting("setup_wizard_completed", "")
-        if completed == "1":
+        completed = self.settings_service.get_setting("setup_wizard_completed", "False")
+        if completed == "True":
             return
         from ui.dialogs.setup_wizard import SetupWizard
         wiz = SetupWizard(self.root)
         self.root.wait_window(wiz)
-        self.settings_service.set_setting("setup_wizard_completed", "1")
+        self.settings_service.set_setting("setup_wizard_completed", "True")
 
     def _deferred_startup(self):
         self._show_setup_wizard()
