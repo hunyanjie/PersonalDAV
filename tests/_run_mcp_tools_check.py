@@ -1,4 +1,4 @@
-"""Test all MCP tools"""
+"""Test all MCP tools (v3.1: new search + analysis + safety tools)"""
 import sys, json, asyncio, time
 sys.path.insert(0, '.')
 from services.mcp_server import MCPServer
@@ -60,23 +60,47 @@ async def test():
     data, ok = await call('delete_contact', {'uid': 'mcp-test-c'})
     r('delete_contact', ok, f'deleted={data.get("deleted")}')
 
+    results.append("=== v3.1 搜索工具(关键词) ===")
+    data, ok = await call('search_contacts', {'query': 'test', 'limit': 5})
+    r('search_contacts', ok, f'{len(data)} 条')
+
+    data, ok = await call('search_events', {'query': 'test', 'limit': 5})
+    r('search_events', ok, f'{len(data)} 条')
+
+    results.append("=== v3.1 安全机制 ===")
+    data, ok = await call('create_contact', {'vcard_data': 'BEGIN:VCARD\nVERSION:3.0\nUID:safe-test\nFN:Safe Test\nEND:VCARD', 'confirmed': True})
+    r('create_contact(已确认)', ok, str(data))
+
+    data2, ok2 = await call('delete_contact', {'uid': 'safe-test'})
+    r('delete_contact(已确认)', ok2, str(data2))
+
     results.append("=== 事件工具 ===")
     data, ok = await call('list_events', {})
     r('list_events', ok, f'{len(data)} 条')
 
     ical = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Test//EN\nBEGIN:VEVENT\nUID:mcp-test-e\nSUMMARY:Test Event\nDTSTART:20260601T000000\nDTEND:20260601T010000\nEND:VEVENT\nEND:VCALENDAR'
-    data, ok = await call('create_event', {'ical_data': ical})
+    data, ok = await call('create_event', {'ical_data': ical, 'confirmed': True})
     r('create_event', ok, str(data))
 
     data, ok = await call('get_event', {'uid': 'mcp-test-e'})
     r('get_event(新)', ok, f'摘要={data.get("summary","?")}')
 
     ical2 = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Test//EN\nBEGIN:VEVENT\nUID:mcp-test-e\nSUMMARY:Updated Event\nDTSTART:20260601T000000\nDTEND:20260601T020000\nEND:VEVENT\nEND:VCALENDAR'
-    data, ok = await call('update_event', {'uid': 'mcp-test-e', 'ical_data': ical2})
+    data, ok = await call('update_event', {'uid': 'mcp-test-e', 'ical_data': ical2, 'confirmed': True})
     r('update_event', ok, str(data))
 
-    data, ok = await call('delete_event', {'uid': 'mcp-test-e'})
+    data, ok = await call('delete_event', {'uid': 'mcp-test-e', 'confirmed': True})
     r('delete_event', ok, f'deleted={data.get("deleted")}')
+
+    results.append("=== v3.1 冲突检测 ===")
+    data, ok = await call('detect_contact_duplicates', {'threshold': 0.6})
+    r('detect_contact_duplicates', ok, f'{len(data)} 组')
+
+    data, ok = await call('detect_event_conflicts', {'date_from': '20260101T000000', 'date_to': '20270101T000000'})
+    r('detect_event_conflicts', ok, f'{len(data)} 组')
+
+    data, ok = await call('detect_upcoming_conflicts', {'days': 365})
+    r('detect_upcoming_conflicts', ok, f'{len(data)} 组')
 
     results.append("=== 服务端管理工具 ===")
     data, ok = await call('server_start', {'port': 8099})
@@ -101,6 +125,6 @@ async def test():
         for e in errors:
             print(f'  - {e}')
     else:
-        print('\n所有 16 个 MCP 工具测试通过')
+        print(f'\n所有 {len(results)} 个 MCP 工具测试通过')
 
 asyncio.run(test())
