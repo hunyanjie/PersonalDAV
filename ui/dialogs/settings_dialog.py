@@ -30,6 +30,10 @@ SIMPLE_SETTINGS = [
     SettingDef("mcp_port", "MCP 服务端口:", "entry", "MCP 服务", default="8100", width=10),
     SettingDef("auto_check_update", "启动时自动检查更新", "check", "基本设置", default=True, db_default="True"),
     SettingDef("mcp_readonly", "只读模式（禁止写操作）", "check", "MCP 服务", default=False, db_default="False"),
+    SettingDef("mcp_safety_mode", "操作安全模式:", "combo", "MCP 服务",
+               default="需要确认", db_default="confirm",
+               options=["允许所有操作", "需要确认", "禁止写操作"],
+               display_map={"允许所有操作": "allow", "需要确认": "confirm", "禁止写操作": "safe"}, width=14),
 
     # ========== 基本设置 ==========
     SettingDef("default_status", "默认事件状态:", "combo", "基本设置",
@@ -108,6 +112,7 @@ class SettingsDialog(tk.Toplevel):
         sync_frame = ttk.Frame(notebook); notebook.add(sync_frame, text="同步设置")
         audit_frame = ttk.Frame(notebook); notebook.add(audit_frame, text="审计日志")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
+        search_frame = ttk.Frame(notebook); notebook.add(search_frame, text="搜索")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
@@ -116,6 +121,7 @@ class SettingsDialog(tk.Toplevel):
         self.create_sync_settings(sync_frame)
         self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
+        self.create_search_settings(search_frame)
 
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=10)
@@ -420,6 +426,11 @@ class SettingsDialog(tk.Toplevel):
             ("ftp_rmdir(...)", "远程文件", "远程删除目录"),
             ("smb_list_shares(...)", "远程文件", "列出 SMB 共享"),
             ("smb_list_files(...)", "远程文件", "浏览 SMB 共享"),
+            ("search_contacts(query, limit)", "搜索", "语义/关键词搜索联系人"),
+            ("search_events(query, date_from, date_to, limit)", "搜索", "搜索事件"),
+            ("detect_contact_duplicates(threshold)", "分析", "检测重复联系人"),
+            ("detect_event_conflicts(date_from, date_to)", "分析", "事件时间冲突检测"),
+            ("detect_upcoming_conflicts(days)", "分析", "未来 N 天日程冲突"),
         ]
         for name, cat, desc in tool_list:
             tree.insert("", tk.END, values=(name, cat, desc))
@@ -774,6 +785,162 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
     # ── 显示格式 ────────────────────────────────────────────────
     # 已提取至 ReminderPresetSection
 
+    # ── 搜索设置 ────────────────────────────────────────────────
+
+    def create_search_settings(self, parent):
+        f = ttk.LabelFrame(parent, text="搜索模式")
+        f.pack(fill=tk.X, padx=5, pady=5)
+        self.search_provider_var = tk.StringVar(value="keyword")
+        providers = [
+            ("keyword", "内置关键词（零依赖，默认）"),
+            ("onnx", "本地 ONNX 模型（需下载模型）"),
+            ("api", "外部 API（Ollama / OpenAI 兼容）"),
+        ]
+        for val, label in providers:
+            ttk.Radiobutton(f, text=label, variable=self.search_provider_var,
+                            value=val, command=self._on_search_provider_change).pack(
+                anchor="w", padx=10, pady=2)
+
+        self._onnx_frame = ttk.LabelFrame(parent, text="ONNX 本地模型")
+        self._onnx_frame.pack(fill=tk.X, padx=5, pady=5)
+        model_f = ttk.Frame(self._onnx_frame)
+        model_f.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(model_f, text="可用模型:").pack(side=tk.LEFT)
+        self.onnx_model_var = tk.StringVar()
+        self.onnx_model_combo = ttk.Combobox(model_f, textvariable=self.onnx_model_var,
+                                              state="readonly", width=30)
+        self.onnx_model_combo.pack(side=tk.LEFT, padx=5)
+        self._refresh_models_btn = ttk.Button(model_f, text="刷新", command=self._refresh_model_list)
+        self._refresh_models_btn.pack(side=tk.LEFT, padx=2)
+
+        dl_f = ttk.Frame(self._onnx_frame)
+        dl_f.pack(fill=tk.X, padx=5, pady=5)
+        self._download_model_btn = ttk.Button(dl_f, text="下载推荐模型 (all-MiniLM-L6-v2, ~23MB)",
+                                               command=self._download_default_model)
+        self._download_model_btn.pack(side=tk.LEFT, padx=2)
+        self._model_status_label = ttk.Label(dl_f, text="", foreground="gray")
+        self._model_status_label.pack(side=tk.LEFT, padx=5)
+
+        self._api_frame = ttk.LabelFrame(parent, text="外部 API 配置")
+        self._api_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(self._api_frame, text="API URL:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.api_url_var = tk.StringVar()
+        ttk.Entry(self._api_frame, textvariable=self.api_url_var, width=50).grid(row=0, column=1, sticky="w", padx=2)
+
+        ttk.Label(self._api_frame, text="模型名:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.api_model_var = tk.StringVar()
+        ttk.Entry(self._api_frame, textvariable=self.api_model_var, width=30).grid(row=1, column=1, sticky="w", padx=2)
+        ttk.Label(self._api_frame, text="（可选，如 nomic-embed-text）",
+                  foreground="gray").grid(row=1, column=2, sticky="w", padx=2)
+
+        ttk.Label(self._api_frame, text="API Key:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
+        self.api_key_var = tk.StringVar()
+        ttk.Entry(self._api_frame, textvariable=self.api_key_var, width=40, show="*").grid(row=2, column=1, sticky="w", padx=2)
+        ttk.Label(self._api_frame, text="（可选）", foreground="gray").grid(row=2, column=2, sticky="w", padx=2)
+
+        test_btn = ttk.Button(self._api_frame, text="测试连接", command=self._test_api_connection)
+        test_btn.grid(row=3, column=1, sticky="w", padx=2, pady=5)
+
+        idx_f = ttk.LabelFrame(parent, text="索引管理")
+        idx_f.pack(fill=tk.X, padx=5, pady=5)
+        self._rebuild_btn = ttk.Button(idx_f, text="重建语义搜索索引", command=self._rebuild_search_index)
+        self._rebuild_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        self._index_status_label = ttk.Label(idx_f, text="", foreground="gray")
+        self._index_status_label.pack(side=tk.LEFT, padx=5)
+
+        self._on_search_provider_change()
+
+        self._refresh_model_list()
+
+    def _on_search_provider_change(self):
+        mode = self.search_provider_var.get()
+        self._onnx_frame.pack_forget()
+        self._api_frame.pack_forget()
+        if mode == "onnx":
+            self._onnx_frame.pack(fill=tk.X, padx=5, pady=5, after=self._onnx_frame.master.winfo_children()[0])
+        elif mode == "api":
+            self._api_frame.pack(fill=tk.X, padx=5, pady=5, after=self._api_frame.master.winfo_children()[0])
+
+    def _refresh_model_list(self):
+        from services.embeddings import list_available_models
+        models = list_available_models()
+        self.onnx_model_combo["values"] = models
+        if models:
+            current = self.onnx_model_var.get()
+            if current not in models:
+                self.onnx_model_var.set(models[0])
+            self._model_status_label.config(text=f"发现 {len(models)} 个模型", foreground="green")
+        else:
+            self.onnx_model_var.set("")
+            self._model_status_label.config(text="未找到模型，请下载", foreground="gray")
+
+    def _download_default_model(self):
+        import threading
+        from services.embeddings import MODELS_DIR
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        self._download_model_btn.config(state=tk.DISABLED, text="下载中...")
+        self._model_status_label.config(text="正在下载模型...", foreground="blue")
+
+        def _run():
+            import urllib.request
+            import zipfile
+            import io
+            url = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx.zip"
+            try:
+                resp = urllib.request.urlopen(url, timeout=120)
+                data = resp.read()
+                target_dir = os.path.join(MODELS_DIR, "all-MiniLM-L6-v2")
+                os.makedirs(target_dir, exist_ok=True)
+                with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                    zf.extractall(target_dir)
+                self.after(0, lambda: self._model_status_label.config(
+                    text="下载完成", foreground="green"))
+                self.after(0, self._refresh_model_list)
+            except Exception as e:
+                self.after(0, lambda: self._model_status_label.config(
+                    text=f"下载失败: {e}", foreground="red"))
+            finally:
+                self.after(0, lambda: self._download_model_btn.config(
+                    state=tk.NORMAL, text="下载推荐模型 (all-MiniLM-L6-v2, ~23MB)"))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _test_api_connection(self):
+        from services.embeddings import EmbeddingService
+        url = self.api_url_var.get().strip()
+        model = self.api_model_var.get().strip()
+        key = self.api_key_var.get().strip()
+        if not url:
+            messagebox.showwarning("提示", "请先输入 API URL", parent=self)
+            return
+        ok = EmbeddingService().configure_api(url, model, key)
+        if ok:
+            messagebox.showinfo("成功", "API 连接测试通过", parent=self)
+        else:
+            messagebox.showerror("失败", "API 连接测试失败，请检查 URL 和模型名", parent=self)
+
+    def _rebuild_search_index(self):
+        from services.embeddings import EmbeddingService
+        svc = EmbeddingService()
+        if not svc.provider.is_semantic:
+            messagebox.showinfo("提示", "当前搜索模式不是语义模式，无需重建索引", parent=self)
+            return
+        import threading
+        self._rebuild_btn.config(state=tk.DISABLED, text="重建中...")
+        self._index_status_label.config(text="正在重建索引...", foreground="blue")
+
+        def _run():
+            def progress(current, total):
+                self.after(0, lambda: self._index_status_label.config(
+                    text=f"索引进度: {current}/{total}", foreground="blue"))
+            svc.rebuild_index(progress_callback=progress)
+            self.after(0, lambda: self._index_status_label.config(
+                text="索引重建完成", foreground="green"))
+            self.after(0, lambda: self._rebuild_btn.config(
+                state=tk.NORMAL, text="重建语义搜索索引"))
+
+        threading.Thread(target=_run, daemon=True).start()
+
     # ── 加载 ────────────────────────────────────────────────────
 
     def load_settings(self):
@@ -813,6 +980,41 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.sync_enabled_var.set(s.get_setting("sync_enabled", "False") == "True")
 
         self._refresh_port_validations()
+
+        # 搜索设置
+        provider = s.get_setting("search_provider", "keyword")
+        self.search_provider_var.set(provider)
+        if provider == "onnx":
+            model_path = s.get_setting("search_onnx_model", "")
+            if model_path:
+                self.onnx_model_var.set(model_path)
+            self._refresh_model_list()
+        elif provider == "api":
+            self.api_url_var.set(s.get_setting("search_api_url", ""))
+            self.api_model_var.set(s.get_setting("search_api_model", ""))
+            self.api_key_var.set(s.get_setting("search_api_key", ""))
+        self._on_search_provider_change()
+        self._refresh_model_list()
+        self._update_embedding_provider_from_settings()
+
+    def _update_embedding_provider_from_settings(self):
+        from services.embeddings import EmbeddingService, MODELS_DIR
+        import os
+        svc = EmbeddingService()
+        provider = self.search_provider_var.get()
+        if provider == "keyword":
+            svc.configure_keyword()
+        elif provider == "onnx":
+            model = self.onnx_model_var.get()
+            if model:
+                path = os.path.join(MODELS_DIR, model)
+                svc.configure_onnx(path)
+        elif provider == "api":
+            url = self.api_url_var.get().strip()
+            model = self.api_model_var.get().strip()
+            key = self.api_key_var.get().strip()
+            if url:
+                svc.configure_api(url, model, key)
 
     # ── 重置 ────────────────────────────────────────────────────
 
@@ -987,6 +1189,16 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("sync_password", self.sync_password_var.get())
         s.set_setting("sync_interval", self.sync_interval_var.get())
         s.set_setting("sync_enabled", str(self.sync_enabled_var.get()))
+
+        s.set_setting("search_provider", self.search_provider_var.get())
+        if self.search_provider_var.get() == "onnx":
+            s.set_setting("search_onnx_model", self.onnx_model_var.get())
+        elif self.search_provider_var.get() == "api":
+            s.set_setting("search_api_url", self.api_url_var.get().strip())
+            s.set_setting("search_api_model", self.api_model_var.get().strip())
+            s.set_setting("search_api_key", self.api_key_var.get().strip())
+
+        self._update_embedding_provider_from_settings()
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
