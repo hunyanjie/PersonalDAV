@@ -67,12 +67,26 @@ class SecuritySettingsSection:
                   foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
         self._ip_whitelist_text = tk.Text(ip_f, height=3, width=60)
         self._ip_whitelist_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+        self._ip_wl_hint = ttk.Label(ip_f, text="", font=("", 8))
+        self._ip_wl_hint.grid(row=1, column=1, sticky="w", padx=5)
         ttk.Label(ip_f, text="黑名单（每行一个 IP / CIDR / 通配符）:",
                   foreground="gray").grid(row=2, column=0, sticky="w", padx=5, pady=(5, 0))
         self._ip_blacklist_text = tk.Text(ip_f, height=3, width=60)
         self._ip_blacklist_text.grid(row=3, column=0, padx=5, pady=2, sticky="ew")
+        self._ip_bl_hint = ttk.Label(ip_f, text="", font=("", 8))
+        self._ip_bl_hint.grid(row=3, column=1, sticky="w", padx=5)
         ttk.Label(ip_f, text="示例: 127.0.0.1 | 192.168.1.0/24 | 10.0.* | 白名单非空时只允许白名单 IP 访问",
                   foreground="gray", font=('', 8)).grid(row=4, column=0, sticky="w", padx=5, pady=(0, 5))
+
+        def _ip_check(text_widget, hint_label, *_, name="IP"):
+            val = text_widget.get("1.0", tk.END).strip()
+            errors = validate_ip_list(val)
+            if errors:
+                hint_label.config(text=f"{len(errors)} 个无效格式", foreground="red")
+            else:
+                hint_label.config(text="", foreground="")
+        self._ip_whitelist_text.bind("<KeyRelease>", lambda *a: _ip_check(self._ip_whitelist_text, self._ip_wl_hint, name="白名单"))
+        self._ip_blacklist_text.bind("<KeyRelease>", lambda *a: _ip_check(self._ip_blacklist_text, self._ip_bl_hint, name="黑名单"))
 
         self.dialog._bypass_localhost_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(parent, text="本机访问免密码",
@@ -84,6 +98,13 @@ class SecuritySettingsSection:
                   foreground="gray").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
         self._ip_bypass_text = tk.Text(bypass_f, height=3, width=60)
         self._ip_bypass_text.grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+        self._ip_bypass_hint = ttk.Label(bypass_f, text="", font=("", 8))
+        self._ip_bypass_hint.grid(row=1, column=1, sticky="w", padx=5)
+        def _bypass_check(*_):
+            val = self._ip_bypass_text.get("1.0", tk.END).strip()
+            errors = validate_ip_list(val)
+            self._ip_bypass_hint.config(text=f"{len(errors)} 个无效格式" if errors else "", foreground="red" if errors else "")
+        self._ip_bypass_text.bind("<KeyRelease>", _bypass_check)
 
     def _create_rate_ui(self, parent):
         rate_f = ttk.LabelFrame(parent, text="访问频率限制")

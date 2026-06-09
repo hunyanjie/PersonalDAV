@@ -124,6 +124,16 @@ class SetupWizard(tk.Toplevel):
         self.port_hint = ttk.Label(self.step_frame, text="", foreground="red")
         self.port_hint.pack(anchor=tk.W, pady=(5, 0))
 
+        def _port_keyup(*_):
+            ok, msg = validate_port(self.port_var.get())
+            if not ok:
+                self.port_hint.config(text=msg, foreground="red")
+            elif msg:
+                self.port_hint.config(text=msg, foreground="orange")
+            else:
+                self.port_hint.config(text="✓ 端口有效", foreground="green")
+        port_entry.bind("<KeyRelease>", _port_keyup)
+
         self.prev_btn.pack(side=tk.LEFT)
         self.finish_btn.pack(side=tk.RIGHT)
         self.skip_btn.pack_forget()
@@ -156,7 +166,7 @@ class SetupWizard(tk.Toplevel):
         if port:
             ok, msg = validate_port(port)
             if not ok:
-                self.port_hint.config(text=msg)
+                self.port_hint.config(text=msg, foreground="red")
                 return
             self.settings_svc.set_setting("default_port", port)
         self._result = True

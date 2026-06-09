@@ -106,6 +106,13 @@ class ServerTab(ttk.Frame):
         self.port_entry = ttk.Entry(port_frame, textvariable=self.port_var, width=10)
         self.port_entry.pack(side=tk.LEFT, padx=5)
         self.port_var.trace("w", lambda *a: self._update_info())
+        self.port_hint = ttk.Label(port_frame, text="", font=("", 8)); self.port_hint.pack(side=tk.LEFT, padx=5)
+        def _port_keyup(*_):
+            ok, msg = validate_port(self.port_var.get())
+            if not ok: self.port_hint.config(text=msg, foreground="red")
+            elif msg: self.port_hint.config(text=msg, foreground="orange")
+            else: self.port_hint.config(text="")
+        self.port_entry.bind("<KeyRelease>", _port_keyup)
 
         self.start_btn = ttk.Button(port_frame, text="启动服务器", command=self.start_server)
         self.start_btn.pack(side=tk.LEFT, padx=5)
@@ -412,6 +419,9 @@ WebDAV 文件服务:
         if not ok:
             messagebox.showerror("端口错误", msg, parent=self)
             return
+        if msg:
+            from ui.widgets.toast import Toast
+            Toast.warning(self, msg)
         port = int(self.port_entry.get())
         if self.settings_service.get_setting("auto_save_port", "True") == "True":
             self.settings_service.set_setting("default_port", self.port_entry.get())
