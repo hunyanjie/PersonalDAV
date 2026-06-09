@@ -135,6 +135,7 @@ python tests/run_all.py
 
 3. 如果设置了密码，还需要添加 `Authorization: Bearer <令牌>`（令牌从安全设置页复制）
 
+> [!NOTE]
 > 如果使用无界面模式（`python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
 
 ### REST API
@@ -154,6 +155,7 @@ python tests/run_all.py
 
 ## 客户端配置
 
+> [!IMPORTANT]
 > 如果设置了访问密码，客户端需要输入密码（用户名任意）。
 
 ### CardDAV 配置
