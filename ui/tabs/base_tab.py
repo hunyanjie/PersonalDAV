@@ -46,21 +46,62 @@ class BaseTreeTab(ttk.Frame):
         """创建统一的搜索栏"""
         search_f = ttk.Frame(parent)
         search_f.pack(fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(search_f, textvariable=self.search_var)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
         self.search_var.trace("w", self._on_search_change)
-        
-        ttk.Button(search_f, text="清空", width=5, 
+
+        self._ai_search = tk.BooleanVar(value=False)
+        self._ai_btn = ttk.Button(search_f, text="🔍 AI", width=5,
+                                  command=self._toggle_ai_search)
+        self._ai_btn.pack(side=tk.LEFT, padx=2)
+
+        ttk.Button(search_f, text="清空", width=5,
                    command=lambda: self.search_var.set("")).pack(side=tk.LEFT, padx=2)
         return search_f
+
+    def _toggle_ai_search(self):
+        self._ai_search.set(not self._ai_search.get())
+        self._ai_btn.config(text="🔍 AI" if not self._ai_search.get() else "🔍 AI*")
+        self._on_search_change()
 
     def _on_search_change(self, *args):
         """搜索框内容变更回调"""
         query = self.search_var.get().lower().strip()
-        self.apply_filter(query)
+        if self._ai_search.get() and query:
+            self._semantic_search(query)
+        else:
+            self.apply_filter(query)
+
+    def _semantic_search(self, query: str):
+        """Delegate search to EmbeddingService."""
+        try:
+            from services.embeddings import EmbeddingService
+            svc = EmbeddingService()
+            if self._import_type == "contacts":
+                results = svc.search_contacts(query, top_k=50)
+            else:
+                results = svc.search_events(query, top_k=50)
+
+            self._all_data = []
+            seen = set()
+            for r in results:
+                uid = r.get("uid", "")
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                if self._import_type == "contacts":
+                    self._all_data.append((" ", uid, r.get("full_name", ""),
+                                           r.get("email", ""), r.get("phone", ""),
+                                           r.get("groups", ""), "", ""))
+                else:
+                    self._all_data.append((" ", uid, r.get("summary", ""),
+                                           r.get("dtstart", ""), r.get("dtend", ""), "", ""))
+            self._rerender()
+        except Exception:
+            self.apply_filter(query)
 
     def apply_filter(self, query):
         """执行过滤显示"""
