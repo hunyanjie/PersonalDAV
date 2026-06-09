@@ -932,10 +932,24 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             messagebox.showerror("失败", "API 连接测试失败，请检查 URL 和模型名", parent=self)
 
     def _rebuild_search_index(self):
-        from services.embeddings import EmbeddingService
+        from services.embeddings import EmbeddingService, MODELS_DIR
+        import os
         svc = EmbeddingService()
         if not svc.provider.is_semantic:
-            messagebox.showinfo("提示", "当前搜索模式不是语义模式，无需重建索引", parent=self)
+            provider = self.search_provider_var.get()
+            if provider == "onnx":
+                model = self.onnx_model_var.get()
+                if not model:
+                    msg = "未选择 ONNX 模型，请先在「本地 ONNX 模型」下拉列表中选一个模型"
+                elif not os.path.isdir(os.path.join(MODELS_DIR, model)):
+                    msg = f"模型目录不存在 ({model})，请先下载模型"
+                else:
+                    msg = "ONNX 模型加载失败，请检查 onnxruntime 和 tokenizers 是否已安装"
+            elif provider == "api":
+                msg = "API 连接失败，请点「测试连接」确认 URL 和模型名正确"
+            else:
+                msg = "请先在搜索模式中切换到 ONNX 或 API"
+            messagebox.showinfo("提示", msg, parent=self)
             return
         import threading
         self._rebuild_btn.config(state=tk.DISABLED, text="重建中...")
@@ -1009,24 +1023,42 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._refresh_model_list()
         self._update_embedding_provider_from_settings()
 
-    def _update_embedding_provider_from_settings(self):
-        from services.embeddings import EmbeddingService, MODELS_DIR
+    def _update_embedding_provider_from_settings(self) -> bool:
+        """根据当前 UI 配置 EmbeddingService。返回 True 表示语义模式已就绪。"""
+        from services.embeddings import EmbeddingService, MODELS_DIR, list_available_models
         import os
         svc = EmbeddingService()
         provider = self.search_provider_var.get()
         if provider == "keyword":
             svc.configure_keyword()
+            return False
         elif provider == "onnx":
             model = self.onnx_model_var.get()
-            if model:
-                path = os.path.join(MODELS_DIR, model)
-                svc.configure_onnx(path)
+            if not model:
+                svc.configure_keyword()
+                return False
+            path = os.path.join(MODELS_DIR, model)
+            if not os.path.isdir(path):
+                svc.configure_keyword()
+                return False
+            ok = svc.configure_onnx(path)
+            if not ok:
+                svc.configure_keyword()
+                return False
+            return True
         elif provider == "api":
             url = self.api_url_var.get().strip()
+            if not url:
+                svc.configure_keyword()
+                return False
             model = self.api_model_var.get().strip()
             key = self.api_key_var.get().strip()
-            if url:
-                svc.configure_api(url, model, key)
+            ok = svc.configure_api(url, model, key)
+            if not ok:
+                svc.configure_keyword()
+                return False
+            return True
+        return False
 
     # ── 重置 ────────────────────────────────────────────────────
 
@@ -1210,7 +1242,15 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             s.set_setting("search_api_model", self.api_model_var.get().strip())
             s.set_setting("search_api_key", self.api_key_var.get().strip())
 
-        self._update_embedding_provider_from_settings()
+        semantic_ok = self._update_embedding_provider_from_settings()
+        if self.search_provider_var.get() != "keyword" and not semantic_ok:
+            self.search_provider_var.set("keyword")
+            self._on_search_provider_change()
+            messagebox.showwarning(
+                "搜索模式降级",
+                "语义搜索初始化失败，已自动降级为内置关键词搜索。\n"
+                "请检查模型文件或 API 配置后重试。",
+                parent=self)
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
         if self.on_save_callback:
