@@ -45,6 +45,22 @@ class BaseRepository(Generic[T]):
             cursor.execute(f"DELETE FROM {self.table} WHERE uid=?", (uid,))
         return True
 
+    def search(self, columns: list[str], keyword: str, limit: int = 20) -> list[T]:
+        conditions = " OR ".join(f"{col} LIKE ?" for col in columns)
+        pattern = f"%{keyword}%"
+        rows = self.db.query(
+            f"SELECT {self._col_str} FROM {self.table} WHERE {conditions} LIMIT ?",
+            (*([pattern] * len(columns)), limit)
+        )
+        return [self._to_model(row) for row in rows]
+
+    def search_by_date_range(self, start_col: str, end_col: str, start: str, end: str) -> list[T]:
+        rows = self.db.query(
+            f"SELECT {self._col_str} FROM {self.table} WHERE {start_col} >= ? AND {end_col} <= ?",
+            (start, end)
+        )
+        return [self._to_model(row) for row in rows]
+
     def count(self) -> int:
         row = self.db.query_one(f"SELECT COUNT(*) FROM {self.table}")
         return row[0] if row else 0
