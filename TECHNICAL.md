@@ -833,10 +833,13 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 `_check_auth()` 在每个 `do_*` 方法开头调用，处理流程（按顺序）：
 
-1. **IP 访问控制** — 调用 `AuthService().check_ip(client_ip)`，被拒绝时 `log_auth()` 记录并返回 403
-2. **密码开关** — 未设密码直接放行
-3. **免密码 IP** — 调用 `AuthService().ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
-4. **Basic Auth 校验** — 解析 `Authorization` 头，密码错误/格式错误/缺失均返回 401 + `WWW-Authenticate` 头
+1. **URL 鉴权（仅 `/attachments/`）** — 若 `url_auth_enabled=True`，要求请求携带 `?token=&ts=&nonce=` 参数。通过 MD5 签名 + 时间窗口校验后直接放行（跳过其余鉴权）
+2. **Referer 鉴权** — 若 `referer_enabled=True`，校验 `Referer` 头是否在白名单前缀中，不匹配则 403
+3. **远程鉴权** — 若 `remote_auth_enabled=True`，POST JSON 到远程 URL：`{"path","method","headers","client_ip","timestamp"}`。返回 `allow`/`ok`/`true`/`1`/`yes` 表示允许，此时跳过密码校验
+4. **IP 访问控制** — 调用 `AuthService().check_ip(client_ip)`，被拒绝时 `log_auth()` 记录并返回 403
+5. **密码开关** — 未设密码直接放行
+6. **免密码 IP** — 调用 `AuthService().ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
+7. **Basic Auth 校验** — 解析 `Authorization` 头，密码错误/格式错误/缺失均返回 401 + `WWW-Authenticate` 头
 
 每次鉴权结果（成功/失败/拒绝/免密）均通过 `log_auth()` 记录，含客户端 IP 和 User-Agent。
 
@@ -929,6 +932,60 @@ TOTP 在 v2.5 开发中实现并随后移除。原因：设置对话框保存后
 ### 扩展指南
 
 添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。如需 IP 控制，在请求入口处依次调用 `check_ip(client_ip)` → `ip_bypasses_auth(client_ip)` → `verify_*()` → `log_auth()`。
+
+### URL 鉴权（v2.8）
+
+用于保护附件下载链接不被盗用。令牌生成和校验逻辑均在 `AuthService` 中：
+
+```python
+def generate_url_token(path: str) -> (token, ts, nonce):
+    secret = get_url_auth_secret()          # 首次自动生成，存入 DB
+    ts = str(int(time.time()))
+    nonce = secrets.token_hex(8)
+    raw = f"{secret}|{ts}|{nonce}|{path}"
+    token = hashlib.md5(raw).hexdigest()
+    return token, ts, nonce
+
+def verify_url_token(path, token, ts, nonce) -> bool:
+    expected = md5(secret | ts | nonce | path)
+    compare_digest(expected, token)         # 防时序攻击
+    now - int(ts) <= expiry(默认300s)       # 时间窗口校验
+```
+
+令牌通过 `?token=&ts=&nonce=` 追加到附件 URL 末尾，`ical_builder.py` 的 URI 模式自动生成。`AuthMiddleware.check_auth()` 对 `/attachments/` 路径自动校验，通过后直通（跳过密码）。
+
+### Referer 鉴权（v2.8）
+
+白名单前缀匹配，支持多行配置（每行一个，匹配开头）：
+
+```python
+def check_referer(referer: str) -> bool:
+    for pattern in referer_whitelist:
+        if referer.startswith(pattern.rstrip('/')):
+            return True
+    return False
+```
+
+在 `AuthMiddleware.check_auth()` 中于 URL 鉴权之后、远程鉴权之前执行。
+
+### 远程鉴权（v2.8）
+
+将请求全文转发到外部 HTTP 服务验证，可作为替代密码校验的鉴权方式：
+
+```
+POST {remote_auth_url}
+Content-Type: application/json
+
+{
+  "path": "/contacts/uid.vcf",
+  "method": "GET",
+  "headers": {"User-Agent": "...", "Referer": "..."},
+  "client_ip": "192.168.1.100",
+  "timestamp": 1717000000
+}
+```
+
+响应必须是 HTTP 200，Body 为 `allow` / `ok` / `true` / `1` / `yes`（大小写不敏感）表示放行，其余拒绝。通过后跳过密码校验。
 
 ### 远程连接密码加密（v2.6）
 
