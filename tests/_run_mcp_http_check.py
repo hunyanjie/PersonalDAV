@@ -28,31 +28,33 @@ async def test():
         r(f"{label}: list_contacts", ok, f'{len(d)} 条')
 
         ok, d = await _call(session, "create_contact", {"vcard_data":
-            "BEGIN:VCARD\nVERSION:3.0\nUID:mcp-http-c\nFN:HTTP Test\nEMAIL:http@test.com\nEND:VCARD"})
+            "BEGIN:VCARD\nVERSION:3.0\nUID:mcp-http-c\nFN:HTTP Test\nEMAIL:http@test.com\nEND:VCARD",
+            "confirmed": True})
         r(f"{label}: create_contact", ok, str(d))
 
         ok, d = await _call(session, "get_contact", {"uid": "mcp-http-c"})
         r(f"{label}: get_contact", ok, f'名称={d.get("full_name","?")}')
 
         ok, d = await _call(session, "update_contact", {"uid": "mcp-http-c", "vcard_data":
-            "BEGIN:VCARD\nVERSION:3.0\nUID:mcp-http-c\nFN:HTTP Updated\nEMAIL:upd@test.com\nEND:VCARD"})
+            "BEGIN:VCARD\nVERSION:3.0\nUID:mcp-http-c\nFN:HTTP Updated\nEMAIL:upd@test.com\nEND:VCARD",
+            "confirmed": True})
         r(f"{label}: update_contact", ok, str(d))
 
-        ok, d = await _call(session, "delete_contact", {"uid": "mcp-http-c"})
+        ok, d = await _call(session, "delete_contact", {"uid": "mcp-http-c", "confirmed": True})
         r(f"{label}: delete_contact", ok, f'deleted={d.get("deleted")}')
 
         ical = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Test//EN\nBEGIN:VEVENT\nUID:mcp-http-e\nSUMMARY:HTTP Event\nDTSTART:20260601T000000\nDTEND:20260601T010000\nEND:VEVENT\nEND:VCALENDAR'
-        ok, d = await _call(session, "create_event", {"ical_data": ical})
+        ok, d = await _call(session, "create_event", {"ical_data": ical, "confirmed": True})
         r(f"{label}: create_event", ok, str(d))
 
         ok, d = await _call(session, "get_event", {"uid": "mcp-http-e"})
         r(f"{label}: get_event", ok, f'摘要={d.get("summary","?")}')
 
         ical2 = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Test//EN\nBEGIN:VEVENT\nUID:mcp-http-e\nSUMMARY:HTTP Updated\nDTSTART:20260601T000000\nDTEND:20260601T020000\nEND:VEVENT\nEND:VCALENDAR'
-        ok, d = await _call(session, "update_event", {"uid": "mcp-http-e", "ical_data": ical2})
+        ok, d = await _call(session, "update_event", {"uid": "mcp-http-e", "ical_data": ical2, "confirmed": True})
         r(f"{label}: update_event", ok, str(d))
 
-        ok, d = await _call(session, "delete_event", {"uid": "mcp-http-e"})
+        ok, d = await _call(session, "delete_event", {"uid": "mcp-http-e", "confirmed": True})
         r(f"{label}: delete_event", ok, f'deleted={d.get("deleted")}')
 
         ok, d = await _call(session, "get_config", {})

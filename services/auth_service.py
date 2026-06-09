@@ -347,16 +347,16 @@ class AuthService:
         try:
             if protocol:
                 rows = Database().query(
-                    "SELECT timestamp, ip, success, method, detail FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
+                    "SELECT id, timestamp, ip, success, method, detail FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
                     (f"%{protocol}%", limit)
                 )
             else:
                 rows = Database().query(
-                    "SELECT timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                    "SELECT id, timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
                     (limit,)
                 )
             return [
-                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or ""}
+                {"id": r[0], "time": r[1], "ip": r[2], "success": bool(r[3]), "method": r[4] or "", "detail": r[5] or ""}
                 for r in rows
             ]
         except Exception:

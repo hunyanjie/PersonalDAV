@@ -29,6 +29,8 @@
 > v2.6 变动：移除 `lxml` 依赖，改用标准库 `xml.etree.ElementTree`。`pyftpdlib`、`paramiko`、`pysmb` 改为惰性导入（首次使用时才加载），未安装时功能不可用但程序不崩溃。
 
 > v3.0 变动：引入 FastAPI + Uvicorn 作为统一 ASGI 运行时，替代 Python 内置 `http.server`。新增 `personaldavd/` 包支持无界面守护进程模式，新增 `services/backend.py` Backend 抽象层支持本地/远程切换。
+>
+> v3.1 变动：新增 `services/embeddings.py` Embedding 抽象层 + `mcp_tools/analysis_tools.py` 冲突检测工具。ONNX Runtime 和 tokenizers 作为可选依赖，不安装时自动降级为关键词搜索。设置页新增「搜索」标签页，支持 provider 切换、ONNX 模型下载、API 配置。
 
 ---
 
@@ -404,6 +406,75 @@ python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 | `--remote-token` | | Bearer token（可选）(v3.0) |
 
 `--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
+
+---
+
+## v3.1 — AI 增强架构
+
+### EmbeddingService 架构
+
+```
+EmbeddingService (单例)
+  ├── KeywordProvider ................. 内置  | 零依赖  | difflib + SQL LIKE
+  ├── ONNXProvider ................... 可选  | onnxruntime + tokenizers | 下载模型到 data/models/
+  └── APIEmbeddingProvider ........... 可选  | httpx | Ollama / OpenAI 兼容
+```
+
+`EmbeddingService` 对外统一接口：
+
+- `search_contacts(query, top_k)` → list[dict]
+- `search_events(query, top_k, date_from, date_to)` → list[dict]
+- `rebuild_index(progress_callback)` — 全量预计算 embedding 缓存
+
+语义模式：query → provider.embed() → cosine_similarity vs 缓存 → 排序
+关键词模式：query → difflib.SequenceMatcher + SQL LIKE → 排序
+
+### 搜索数据流
+
+```
+GUI 搜索框 [🔍 AI 切换]
+  │
+  ├─ AI 开启 → EmbeddingService.search_*(query)
+  │              ├─ 语义 (ONNX/API): embed → rank
+  │              └─ 关键词 (内置): difflib → rank
+  │
+  └─ AI 关闭 → apply_filter(query)  (原有本地过滤)
+
+MCP 工具 search_contacts / search_events
+  └→ 同样走 EmbeddingService，统一搜索逻辑
+```
+
+### MCP 安全机制
+
+三种模式（设置页可配）：
+
+| 模式 | 行为 |
+|------|------|
+| `allow` | 向后兼容，不检查 |
+| `confirm`（默认） | 写操作需要 `confirmed=true` 参数 |
+| `safe` | 拒绝所有写操作，返回错误 |
+
+实现位置：`mcp_tools/helpers.py:check_safety(action, confirmed)`
+
+### 冲突检测
+
+`mcp_tools/analysis_tools.py` 三个工具：
+
+| 工具 | 算法 |
+|------|------|
+| `detect_contact_duplicates(threshold)` | difflib.SequenceMatcher 两两比较名称/邮箱/电话 |
+| `detect_event_conflicts(date_from, date_to)` | SQL 时间段重叠 `dtstart < ? AND dtend > ?` |
+| `detect_upcoming_conflicts(days)` | 同上，自动计算日期范围 |
+
+### 可选依赖
+
+| 包 | 用途 | 何时安装 |
+|------|------|---------|
+| `onnxruntime` | ONNX 模型推理 | 用户点击下载 ONNX 模型时 |
+| `tokenizers` | 模型 tokenizer | 同左 |
+| `httpx` | 外部 API 调用 | 已依赖（v3.0 RemoteBackend） |
+
+不装 `onnxruntime` + `tokenizers` 不影响任何功能，搜索自动使用内置关键词模式。
 
 ### 无头（`--headless`）模式
 

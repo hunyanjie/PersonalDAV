@@ -1,5 +1,6 @@
 from mcp_tools._state import get_contact_svc
-from mcp_tools.helpers import safe_json, check_readonly, make_contact_summary
+from mcp_tools.helpers import safe_json, check_readonly, check_safety, make_contact_summary
+from services.embeddings import EmbeddingService
 from utils.logger import logger
 
 
@@ -35,9 +36,12 @@ def register(mcp):
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="通过 vCard 数据创建联系人")
-    def create_contact(vcard_data: str) -> str:
+    def create_contact(vcard_data: str, confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("创建联系人", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: create_contact vcard_data({len(vcard_data)}B)")
         try:
             uid, op = get_contact_svc().add_contact(vcard_data, publish=False)
@@ -51,9 +55,12 @@ def register(mcp):
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="更新联系人（提供 UID 和新的 vCard 数据）")
-    def update_contact(uid: str, vcard_data: str) -> str:
+    def update_contact(uid: str, vcard_data: str, confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("更新联系人", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: update_contact uid={uid} vcard_data({len(vcard_data)}B)")
         try:
             uid, op = get_contact_svc().add_contact(vcard_data, force=True, publish=False)
@@ -67,9 +74,12 @@ def register(mcp):
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="删除指定 UID 的联系人")
-    def delete_contact(uid: str) -> str:
+    def delete_contact(uid: str, confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("删除联系人", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: delete_contact uid={uid}")
         try:
             ok = get_contact_svc().delete(uid)
@@ -79,10 +89,25 @@ def register(mcp):
             logger.exception(f"MCP 异常: delete_contact uid={uid}")
             return safe_json({"error": str(e)})
 
+    @mcp.tool(description="搜索联系人（支持语义搜索，关键词为空时返回最新列表）")
+    def search_contacts(query: str = "", limit: int = 10) -> str:
+        logger.info(f"MCP 调用: search_contacts query={query!r} limit={limit}")
+        try:
+            svc = EmbeddingService()
+            results = svc.search_contacts(query, top_k=limit)
+            logger.info(f"MCP 返回: search_contacts -> {len(results)} 条")
+            return safe_json(results)
+        except Exception as e:
+            logger.exception("MCP 异常: search_contacts")
+            return safe_json({"error": str(e)})
+
     @mcp.tool(description="通过结构化参数创建联系人（姓名、邮箱、电话）")
-    def create_contact_v2(full_name: str, email: str = "", phone: str = "") -> str:
+    def create_contact_v2(full_name: str, email: str = "", phone: str = "", confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("创建联系人", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: create_contact_v2 name={full_name} email={email} phone={phone}")
         try:
             vcard = f"BEGIN:VCARD\nVERSION:3.0\nFN:{full_name}\n"
