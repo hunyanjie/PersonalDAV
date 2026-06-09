@@ -197,6 +197,23 @@ class DAVServerApp:
         from ui.dialogs.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
+        if getattr(dialog, 'restart_requested', False):
+            self._after_import_backup()
+
+    def _after_import_backup(self):
+        from ui.dialogs.confirm_dialog import ConfirmDialog
+        if self.server_tab.server_instance is not None:
+            if ConfirmDialog.ask(self.root, "重启服务器",
+                                  "设置已恢复。\n是否立即重启服务器使更改生效？"):
+                self.server_tab.stop_server()
+                self.server_tab.start_server()
+                from ui.widgets.toast import Toast
+                Toast.success(self.root, "服务器已重启")
+            else:
+                messagebox.showinfo("提示", "部分更改将在下次启动服务器时生效。")
+        from utils.auto_start import set_auto_start
+        auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
+        set_auto_start(auto_start)
 
     def on_settings_saved(self, ssl_toggled=False):
         if ssl_toggled and self.server_tab.server_instance is not None:

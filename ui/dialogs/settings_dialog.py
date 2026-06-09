@@ -849,13 +849,12 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             return
         if not ConfirmDialog.ask(self, "确认恢复",
                                   "恢复将替换当前数据库和设置，\n"
-                                  "程序需要重启才能生效。确定继续？"):
+                                  "之后可能需要重启服务器才能完全生效。确定继续？"):
             return
         from utils.backup import import_backup
         if import_backup(path):
-            self.load_settings()
-            messagebox.showinfo("恢复成功",
-                                "数据已恢复，请重启程序以使更改生效。", parent=self)
+            self.restart_requested = True
+            self.destroy()
         else:
             messagebox.showerror("恢复失败", "恢复过程中发生错误，请查看日志。", parent=self)
 
