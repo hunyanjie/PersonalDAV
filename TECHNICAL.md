@@ -34,6 +34,7 @@ main()
   ├── argparse 解析命令行参数（--port / --db-path / --log-level）
   ├── logging.basicConfig 初始化日志系统
   ├── Database(db_path=...)  [仅当 --db-path 或 --data-dir 指定时]
+  │     ├── WAL mode + _start_wal_checkpoint() (PASSIVE, 每60s)
   │     └── _vacuum_if_needed() 空闲页 > 50% 自动 VACUUM
   ├── _migrate_old_files() 旧版本文件迁移
   ├── TkinterDnD.Tk() 创建主窗口
@@ -47,6 +48,7 @@ main()
         ├── EventBus 订阅
         ├── TrayManager.start() [pystray 可用时]
         └── root.after_idle(_deferred_startup)
+              ├── _show_setup_wizard() [首次启动时弹出]
               ├── _sync_mcp_server() [后台线程，不阻塞]
               ├── 自动启动 DAV 服务器 [按设置]
               ├── 自动检查更新 [后台线程]
@@ -120,6 +122,8 @@ PersonalDAV/
 │   ├── encoding_helper.py     # QP/Base64 编解码
 │   ├── vcard_parser.py        # RobustVCardParser 回退解析（策略模式）
 │   ├── window_utils.py        # center_window() 窗口居中工具
+│   ├── validators.py          # 端口/IP/密码强度验证（v2.8）
+│   ├── attachment_store.py    # 附件文件存储管理（v2.8）
 │   └── logger.py              # 日志系统（RotatingFile + GUI 输出）
 ├── tests/                     # 单元测试
 │   ├── test_config.py         # 配置常量验证
@@ -144,11 +148,14 @@ PersonalDAV/
     │   ├── contact_dialog.py     # 联系人编辑对话框
     │   ├── import_preview_dialog.py # 导入预览 + 对比对话框
     │   ├── text_import_dialog.py
-    │   └── webdav_import_dialog.py
+    │   ├── webdav_import_dialog.py
+    │   ├── confirm_dialog.py     # 标准化确认对话框（v2.8）
+    │   └── setup_wizard.py       # 首次启动向导（v2.8）
     └── widgets/
         ├── enhanced_tooltip.py   # 悬浮提示框
         ├── right_click_menu.py   # 右键菜单（上下文感知）
         ├── progress_window.py    # 通用进度窗口
+        ├── toast.py              # 非模态 Toast 通知（v2.8 类型化）
         └── treeview_scroller.py  # 拖拽自动加速滚动（compute_scroll_units）
 ```
 
