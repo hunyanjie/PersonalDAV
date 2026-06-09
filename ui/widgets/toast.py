@@ -15,7 +15,7 @@ class Toast:
     def show(cls, parent, message, duration=3000, type="info"):
         if cls._instance:
             try:
-                cls._instance.destroy()
+                cls._instance.win.destroy()
             except tk.TclError:
                 pass
         cls._instance = cls(parent, message, duration, type)
