@@ -1,7 +1,7 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog, simpledialog
 from ui.widgets.toast import Toast
-from ui.dialogs.confirm_dialog import ConfirmDialog, filedialog, simpledialog
+from ui.dialogs.confirm_dialog import ConfirmDialog
 import threading
 import os
 from typing import Any
