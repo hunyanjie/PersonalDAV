@@ -16,6 +16,8 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
+- 🔍 **语义搜索** — 支持关键词搜索和可选的语义搜索（ONNX 本地模型 / Ollama / OpenAI API），在联系人/日历标签页可直接切换 AI 搜索
+- 🛡️ **MCP 操作安全** — 危险操作需人工确认，支持三种安全模式（允许/确认/禁止）
 - 🖥️ **无界面服务器模式** — 通过 `main.py --headless` 或 `python -m personaldavd` 运行，不打开图形界面也能提供服务
 - 🌐 **REST API** — 通过 HTTP 接口管理联系人和日历事件，方便集成到其他程序
 - 🔗 **远程连接** — GUI 可通过 `--remote` 参数连接到远程服务器，管理远端数据
@@ -187,7 +189,7 @@ python tests/run_all.py
 
 ## MCP 可用工具
 
-MCP 服务提供 33 个工具供 AI 调用：
+MCP 服务提供 38 个工具供 AI 调用：
 
 | 工具 | 说明 |
 |------|------|
@@ -205,6 +207,9 @@ MCP 服务提供 33 个工具供 AI 调用：
 | `smb_list_shares` / `smb_list_files` | 查看 SMB 服务器上的共享目录和文件列表 |
 | `dav_list_files` / `dav_upload` / `dav_download` | WebDAV 文件浏览、上传、下载 |
 | `dav_delete` / `dav_mkdir` | WebDAV 文件删除和目录创建 |
+| `search_contacts(query, limit)` / `search_events(query, ...)` | **v3.1** 语义/关键词搜索联系人和事件 |
+| `detect_contact_duplicates(threshold)` | **v3.1** 检测可能重复的联系人 |
+| `detect_event_conflicts(date_from, date_to)` / `detect_upcoming_conflicts(days)` | **v3.1** 日程时间冲突检测 |
 
 ## 项目架构
 
