@@ -54,5 +54,6 @@ def show_raw_dialog(parent, title, raw_data):
     txt.pack(fill=tk.BOTH, expand=True)
     txt.insert(tk.END, raw_data)
     txt.config(state=tk.DISABLED)
+    from utils.window_utils import center_window; center_window(win, parent)
 
 

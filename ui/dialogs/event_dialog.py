@@ -409,6 +409,7 @@ class EventDialog:
     def _add_exdate(self):
         from tkcalendar import Calendar
         w = tk.Toplevel(self.root); w.title("选择例外日期"); w.grab_set()
+        from utils.window_utils import center_window; center_window(w, self.root)
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         cal.pack(padx=10, pady=10)
         def confirm():
@@ -425,6 +426,7 @@ class EventDialog:
         old = self.exdate_listbox.get(idx)
         from tkcalendar import Calendar
         w = tk.Toplevel(self.root); w.title("编辑例外日期"); w.grab_set()
+        from utils.window_utils import center_window; center_window(w, self.root)
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         from datetime import datetime as _dt
         try: cal.selection_set(_dt.strptime(old, '%Y-%m-%d'))
@@ -868,6 +870,7 @@ class EventDialog:
 
     def custom_repeat_settings(self):
         dialog = tk.Toplevel(self.root); dialog.title("自定义重复设置"); dialog.grab_set()
+        from utils.window_utils import center_window; center_window(dialog, self.root)
         main_f = ttk.Frame(dialog); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         ttk.Label(main_f, text="重复频率:").grid(row=0, column=0, sticky="w")
         self.freq_var = tk.StringVar(value="每周")
@@ -1003,6 +1006,7 @@ class EventDialog:
 
     def show_raw_data(self):
         win = tk.Toplevel(self.root); win.title("原始数据")
+        from utils.window_utils import center_window; center_window(win, self.root)
         sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
         txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
         RightClickMenu(txt, "text", actions=["copy", None, "select_all"])

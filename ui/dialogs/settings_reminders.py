@@ -110,6 +110,7 @@ class ReminderPresetSection:
 
     def _add_preset_reminder(self):
         dialog = tk.Toplevel(self.dialog); dialog.title('添加预设提醒'); dialog.transient(self.dialog); dialog.grab_set()
+        from utils.window_utils import center_window; center_window(dialog, self.dialog)
         ttk.Label(dialog, text="添加预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
         ttk.Label(dialog, text="输入提醒触发时间，新建日程时可双击预设快速添加。", foreground="gray").pack(anchor='w', padx=10)
         ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))
@@ -142,6 +143,7 @@ class ReminderPresetSection:
         idx = n_sel[0] if n_sel else a_sel[0]
         cur = lb.get(idx)
         dialog = tk.Toplevel(self.dialog); dialog.title('编辑预设提醒'); dialog.transient(self.dialog); dialog.grab_set()
+        from utils.window_utils import center_window; center_window(dialog, self.dialog)
         ttk.Label(dialog, text="编辑预设提醒", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=(10, 0))
         ttk.Label(dialog, text="修改提醒触发时间。", foreground="gray").pack(anchor='w', padx=10)
         ttk.Label(dialog, text="预设内容:").pack(anchor='w', padx=10, pady=(10, 0))

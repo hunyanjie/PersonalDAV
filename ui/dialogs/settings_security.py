@@ -128,6 +128,7 @@ class SecuritySettingsSection:
         dialog.title("更改密码" if change else "设置密码")
         dialog.transient(self._parent_frame)
         dialog.grab_set()
+        from utils.window_utils import center_window; center_window(dialog, self._parent_frame)
         row = 0
         if change:
             ttk.Label(dialog, text="当前密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
@@ -175,6 +176,7 @@ class SecuritySettingsSection:
         dialog.title("清除密码")
         dialog.transient(self._parent_frame)
         dialog.grab_set()
+        from utils.window_utils import center_window; center_window(dialog, self._parent_frame)
         ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
         pw_var = tk.StringVar()
         ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=2)

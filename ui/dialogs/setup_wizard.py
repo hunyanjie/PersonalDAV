@@ -22,6 +22,7 @@ class SetupWizard(tk.Toplevel):
         self._build()
         self._show_step(0)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        from utils.window_utils import center_window; center_window(self, parent)
 
     def _build(self):
         self.step_frame = ttk.Frame(self, padding=20)

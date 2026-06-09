@@ -161,6 +161,7 @@ class ContactDialog(tk.Toplevel):
 
     def pick_date(self):
         w = tk.Toplevel(self); w.title("选择日期"); w.grab_set()
+        from utils.window_utils import center_window; center_window(w, self)
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         cal.pack(padx=10, pady=10)
         ttk.Button(w, text="确定", command=lambda: [self.birthday_var.set(cal.get_date()), w.destroy()]).pack(pady=5)
@@ -288,6 +289,7 @@ class ContactDialog(tk.Toplevel):
     def show_raw(self):
         if not self.vcard and not self.raw_vcard_data: return
         w = tk.Toplevel(self); w.title("vCard 源码")
+        from utils.window_utils import center_window; center_window(w, self)
         scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL)
         t = tk.Text(w, wrap=tk.CHAR, yscrollcommand=scroll_v.set)
         RightClickMenu(t, "text", actions=["copy", None, "select_all"])
