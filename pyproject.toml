@@ -26,6 +26,9 @@ dependencies = [
     "mcp>=1.0.0",
     "Pillow>=10.0.0",
     "pystray>=0.19.0",
+    "pyftpdlib>=1.5.10",
+    "paramiko>=3.5.0",
+    "tftpy>=0.8.2",
 ]
 
 [project.optional-dependencies]

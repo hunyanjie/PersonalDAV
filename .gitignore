@@ -194,6 +194,8 @@ cython_debug/
 .cursorindexingignore
 
 # Other
+.gemini/
+.opencode/
 graphify-out/
 docs/
 data/
