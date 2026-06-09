@@ -84,9 +84,28 @@ class SetupWizard(tk.Toplevel):
         self.pw_hint = ttk.Label(self.step_frame, text="", foreground="red")
         self.pw_hint.pack(anchor=tk.W)
 
+        def _pw_keyup(*_):
+            pw = self.pw_var.get()
+            pw2 = self.pw2_var.get()
+            if not pw and not pw2:
+                self.pw_hint.config(text="", foreground="red"); return
+            if pw and pw2 and pw != pw2:
+                self.pw_hint.config(text="两次密码不一致", foreground="red"); return
+            ok, msg = validate_password_strength(pw) if pw else (True, "")
+            if ok:
+                self.pw_hint.config(text=("" if not pw2 else "✓ 密码一致") if pw else "", foreground="green")
+            else:
+                self.pw_hint.config(text=msg, foreground="red")
+        pw_entry.bind("<KeyRelease>", _pw_keyup)
+        pw2_entry.bind("<KeyRelease>", _pw_keyup)
+
         self.skip_btn.pack(side=tk.RIGHT, before=self.next_btn)
         self.prev_btn.pack(side=tk.LEFT)
         self.next_btn.pack(side=tk.RIGHT)
+
+        def _next_enter(*_): self._next_step()
+        pw_entry.bind("<Return>", _next_enter)
+        pw2_entry.bind("<Return>", _next_enter)
         pw_entry.focus()
 
     def _step_port(self):
@@ -109,6 +128,7 @@ class SetupWizard(tk.Toplevel):
         self.finish_btn.pack(side=tk.RIGHT)
         self.skip_btn.pack_forget()
         self.next_btn.pack_forget()
+        port_entry.bind("<Return>", lambda *_: self._finish())
         port_entry.focus()
 
     def _prev_step(self):

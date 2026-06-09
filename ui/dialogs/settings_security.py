@@ -130,10 +130,12 @@ class SecuritySettingsSection:
         dialog.grab_set()
         from utils.window_utils import center_window; center_window(dialog, self._parent_frame)
         row = 0
+        old_entry = None
         if change:
             ttk.Label(dialog, text="当前密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
             old_var = tk.StringVar()
-            ttk.Entry(dialog, textvariable=old_var, show="*", width=30).grid(row=row, column=1, padx=5)
+            old_entry = ttk.Entry(dialog, textvariable=old_var, show="*", width=30)
+            old_entry.grid(row=row, column=1, padx=5)
             row += 1
         ttk.Label(dialog, text="新密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
         new_var = tk.StringVar()
@@ -142,23 +144,40 @@ class SecuritySettingsSection:
         row += 1
         ttk.Label(dialog, text="确认密码:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
         confirm_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=confirm_var, show="*", width=30).grid(row=row, column=1, padx=5)
+        confirm_entry = ttk.Entry(dialog, textvariable=confirm_var, show="*", width=30)
+        confirm_entry.grid(row=row, column=1, padx=5)
         row += 1
         hint = ttk.Label(dialog, text="", foreground="red")
         hint.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 5))
         row += 1
-        def do_save():
+
+        def _pw_keyup(*_):
+            pw = new_var.get()
+            pw2 = confirm_var.get()
+            if not pw and not pw2:
+                hint.config(text="", foreground="red"); return
+            if pw and pw2 and pw != pw2:
+                hint.config(text="两次密码不一致", foreground="red"); return
+            ok, msg = validate_password_strength(pw) if pw else (True, "")
+            if ok:
+                hint.config(text=("" if not pw2 else "✓ 密码一致") if pw else "", foreground="green")
+            else:
+                hint.config(text=msg, foreground="red")
+        new_entry.bind("<KeyRelease>", _pw_keyup)
+        confirm_entry.bind("<KeyRelease>", _pw_keyup)
+
+        def do_save(*_):
             if change and not AuthService().verify_password(old_var.get()):
                 messagebox.showerror("错误", "当前密码不正确", parent=dialog)
                 return
             pw = new_var.get()
+            if not pw:
+                hint.config(text="密码不能为空", foreground="red"); return
             ok, msg = validate_password_strength(pw)
             if not ok:
-                hint.config(text=msg)
-                return
+                hint.config(text=msg, foreground="red"); return
             if pw != confirm_var.get():
-                hint.config(text="两次密码不一致")
-                return
+                hint.config(text="两次密码不一致", foreground="red"); return
             AuthService().set_password(pw)
             self._refresh()
             dialog.destroy()
@@ -167,6 +186,8 @@ class SecuritySettingsSection:
         btn_f.grid(row=row, column=0, columnspan=2, pady=15)
         ttk.Button(btn_f, text="确定", command=do_save).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        for w in ([old_entry, new_entry, confirm_entry] if change else [new_entry, confirm_entry]):
+            if w: w.bind("<Return>", do_save)
 
     def _clear_password(self):
         svc = AuthService()
@@ -179,8 +200,9 @@ class SecuritySettingsSection:
         from utils.window_utils import center_window; center_window(dialog, self._parent_frame)
         ttk.Label(dialog, text="请输入当前密码以确认清除:").pack(pady=(10, 5))
         pw_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=pw_var, show="*", width=25).pack(pady=2)
-        def do_clear():
+        pw_entry = ttk.Entry(dialog, textvariable=pw_var, show="*", width=25)
+        pw_entry.pack(pady=2)
+        def do_clear(*_):
             if not svc.verify_password(pw_var.get()):
                 messagebox.showerror("错误", "密码不正确", parent=dialog)
                 return
@@ -192,6 +214,8 @@ class SecuritySettingsSection:
         btn_f.pack(pady=10)
         ttk.Button(btn_f, text="确定清除", command=do_clear).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        pw_entry.bind("<Return>", do_clear)
+        pw_entry.focus()
 
     def _rotate_mcp_token(self):
         AuthService().rotate_mcp_token()

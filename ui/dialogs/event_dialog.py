@@ -877,10 +877,12 @@ class EventDialog:
         ttk.Combobox(main_f, textvariable=self.freq_var, values=["每天", "每周", "每月", "每年"], state="readonly").grid(row=0, column=1, pady=5)
         ttk.Label(main_f, text="重复间隔:").grid(row=1, column=0, sticky="w")
         self.interval_var = tk.StringVar(value="1")
-        ttk.Spinbox(main_f, from_=1, to=99, textvariable=self.interval_var, width=5).grid(row=1, column=1, pady=5, sticky="w")
-        def save_custom():
+        interval_spin = ttk.Spinbox(main_f, from_=1, to=99, textvariable=self.interval_var, width=5)
+        interval_spin.grid(row=1, column=1, pady=5, sticky="w")
+        def save_custom(*_):
             self.custom_repeat_data = {'freq': FREQ_MAPPING.get(self.freq_var.get(), "WEEKLY"), 'interval': self.interval_var.get()}
             dialog.destroy()
+        interval_spin.bind("<Return>", save_custom); dialog.bind("<Return>", save_custom)
         ttk.Button(main_f, text="确定", command=save_custom).grid(row=2, column=1, pady=20)
 
     def update_reminder_listbox(self):

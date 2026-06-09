@@ -121,11 +121,13 @@ class ReminderPresetSection:
         rf = ttk.Frame(dialog); rf.pack(padx=10, pady=5, anchor='w')
         ttk.Radiobutton(rf, text='常规事件', variable=var, value='normal').pack(side=tk.LEFT, padx=2)
         ttk.Radiobutton(rf, text='全天事件', variable=var, value='allday').pack(side=tk.LEFT, padx=2)
+        def _confirm(*_):
+            v = entry.get().strip()
+            if v:
+                self._tmp_val = v; dialog.destroy()
+        entry.bind("<Return>", _confirm)
         bf = ttk.Frame(dialog); bf.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Button(bf, text='确定', command=lambda: [
-            setattr(self, '_tmp_val', entry.get().strip()) if entry.get().strip() else None,
-            dialog.destroy() if entry.get().strip() else None
-        ][-1]).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(bf, text='确定', command=_confirm).pack(side=tk.RIGHT, padx=2)
         ttk.Button(bf, text='取消', command=dialog.destroy).pack(side=tk.RIGHT, padx=2)
         dialog.wait_window()
         v = getattr(self, '_tmp_val', None)
@@ -150,10 +152,12 @@ class ReminderPresetSection:
         entry = ttk.Entry(dialog, width=40); entry.insert(0, cur); entry.pack(padx=10, pady=5, fill=tk.X)
         entry.focus_set(); entry.selection_range(0, tk.END)
         self._make_quick_buttons(dialog, entry)
+        def _confirm(*_):
+            v = entry.get().strip()
+            if v: lb.delete(idx); lb.insert(idx, v); dialog.destroy()
+        entry.bind("<Return>", _confirm)
         bf = ttk.Frame(dialog); bf.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Button(bf, text='确定', command=lambda: [
-            lb.delete(idx), lb.insert(idx, entry.get().strip()), dialog.destroy()
-        ] if entry.get().strip() else None).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(bf, text='确定', command=_confirm).pack(side=tk.RIGHT, padx=2)
         ttk.Button(bf, text='取消', command=dialog.destroy).pack(side=tk.RIGHT, padx=2)
 
     def _delete_preset_reminder(self):
