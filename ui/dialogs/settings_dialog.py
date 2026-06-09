@@ -881,27 +881,39 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self._download_model_btn.config(state=tk.DISABLED, text="下载中...")
         self._model_status_label.config(text="正在下载模型...", foreground="blue")
 
+        HF_BASE = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main"
+        FILES = [
+            ("onnx/model_quantized.onnx", "model_quantized.onnx"),
+            ("tokenizer.json", "tokenizer.json"),
+        ]
+        target_dir = os.path.join(MODELS_DIR, "all-MiniLM-L6-v2")
+
         def _run():
             import urllib.request
-            import zipfile
-            import io
-            url = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx.zip"
+
+            def _reset_btn():
+                self._download_model_btn.config(
+                    state=tk.NORMAL, text="下载推荐模型 (all-MiniLM-L6-v2, ~23MB)")
+
+            def _set_status(text: str, fg: str = "red"):
+                self._model_status_label.config(text=text, foreground=fg)
+
             try:
-                resp = urllib.request.urlopen(url, timeout=120)
-                data = resp.read()
-                target_dir = os.path.join(MODELS_DIR, "all-MiniLM-L6-v2")
                 os.makedirs(target_dir, exist_ok=True)
-                with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                    zf.extractall(target_dir)
-                self.after(0, lambda: self._model_status_label.config(
-                    text="下载完成", foreground="green"))
+                for idx, (src, dst) in enumerate(FILES):
+                    url = f"{HF_BASE}/{src}"
+                    dst_path = os.path.join(target_dir, dst)
+                    self.after(0, lambda f=dst: _set_status(f"正在下载 {f}..."))
+                    urllib.request.urlretrieve(url, dst_path)
+                    self.after(0, lambda f=dst: _set_status(f"{f} 下载完成", "green"))
                 self.after(0, self._refresh_model_list)
             except Exception as e:
-                self.after(0, lambda: self._model_status_label.config(
-                    text=f"下载失败: {e}", foreground="red"))
+                err = str(e) or "未知错误"
+                import shutil
+                shutil.rmtree(target_dir, ignore_errors=True)
+                self.after(0, lambda m=err: _set_status(f"下载失败: {m}"))
             finally:
-                self.after(0, lambda: self._download_model_btn.config(
-                    state=tk.NORMAL, text="下载推荐模型 (all-MiniLM-L6-v2, ~23MB)"))
+                self.after(0, _reset_btn)
 
         threading.Thread(target=_run, daemon=True).start()
 
