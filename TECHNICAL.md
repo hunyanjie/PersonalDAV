@@ -67,15 +67,17 @@ main()
 root.mainloop()
 ```
 
-### 无界面守护进程模式（`python -m personaldavd`）
+### 无界面守护进程模式（`main.py --headless` / `python -m personaldavd`）
+
+```main.py --headless``` 和 ```python -m personaldavd``` 路径相同，最终都进入 daemon 生命周期：
 
 ```
-__main__.main()
-  ├── argparse 解析命令行参数
-  │   (--host / --port / --log-level / --log-json / --db-path / --dav-root)
-  └── DaemonConfig() → run_daemon(config)
+main.py --headless
+  ├── argparse 解析命令行参数（GUI + headless 专有参数）
+  ├── DaemonConfig() ← 合并 CLI 参数覆盖默认值
+  └── run_daemon(config)  ← 以下与 personaldavd.__main__ 完全一致
         ├── create_app(config)
-        │     ├── FastAPI(title="PersonalDAV", ...)
+        │     ├── FastAPI(title=SOFTWARE_NAME, ...)
         │     ├── app.add_middleware(AuthMiddleware)   # 统一鉴权
         │     ├── app.include_router(api_router, prefix="/api")
         │     ├── app.include_router(dav_router)        # DAV + 附件
@@ -87,6 +89,8 @@ __main__.main()
         └── uvicorn.run(app, host, port)
               └── 同步 I/O 循环，阻塞至 Ctrl+C / SIGTERM
 ```
+
+推荐使用 `main.py --headless` 而非 `python -m personaldavd`，因为前者使用同一个入口文件（打包 exe 后也适用），参数集也更完整。
 
 ### 设计要点
 
@@ -383,6 +387,8 @@ _reset_simple()                               # 重置所有控件为默认值
 
 ## 命令行参数
 
+### GUI 模式
+
 ```bash
 python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 ```
@@ -391,9 +397,32 @@ python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 |------|------|------|
 | `--port` | `-p` | WebDAV 服务器端口，覆盖设置中的默认端口 (v2.1) |
 | `--db-path` | | 数据库文件路径，默认 `data/dav_data.db` (v2.1) |
+| `--data-dir` | | 数据存储目录（与 --db-path 冲突时 --db-path 优先）(v3.0) |
 | `--log-level` | | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL (v2.1) |
+| `--remote` | | 远程模式 — 连接 headless daemon 而非本地数据库 (v3.0) |
+| `--remote-url` | | daemon 地址，默认 `http://127.0.0.1:8000` (v3.0) |
+| `--remote-token` | | Bearer token（可选）(v3.0) |
 
 `--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
+
+### 无头（`--headless`）模式
+
+```bash
+python main.py --headless --host 0.0.0.0 --port 8000 --log-json --dav-root /mnt/dav
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--host` | `127.0.0.1` | 监听地址 (v3.0) |
+| `--port` / `-p` | `8000` | 监听端口 (v3.0) |
+| `--log-level` | `INFO` | 日志级别 (v3.0) |
+| `--log-json` | — | JSON 结构化日志输出 (v3.0) |
+| `--db-path` | `data/dav_data.db` | 数据库路径 (v3.0) |
+| `--dav-root` | `./dav_root` | WebDAV 根目录 (v3.0) |
+
+### Daemon 直启模式（`python -m personaldavd`）
+
+参数与 `--headless` 完全相同。推荐使用 `main.py --headless`，因为打包成 exe 后 `python -m` 不可用。
 
 ---
 
