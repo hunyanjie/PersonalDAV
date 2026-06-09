@@ -2,14 +2,17 @@
 
 ## v3.1
 
-- **新增** 语义搜索：支持关键词搜索和可选的语义搜索（ONNX 本地模型 / Ollama / OpenAI API）。在设置页可切换 provider，联系人/日历标签页搜索框旁点 🔍 AI 按钮即可启用 AI 搜索
-- **新增** 搜索类 MCP 工具：`search_contacts(query, limit)` 和 `search_events(query, date_from, date_to, limit)`，支持语义搜索和关键词降级
-- **新增** 冲突检测 MCP 工具：`detect_contact_duplicates()` 查重联系人，`detect_event_conflicts()` 和 `detect_upcoming_conflicts()` 检测日程时间冲突
-- **新增** MCP 操作安全机制：`delete_contact`、`delete_event`、`create_*`、`update_*` 等危险工具新增 `confirmed` 参数，未确认时返回警告。设置页新增「操作安全模式」选项（允许所有操作 / 需要确认 / 禁止写操作）
-- **新增** Embedding 抽象层：`services/embeddings.py` 提供 `EmbeddingProvider` 抽象和三种实现（Keyword、ONNX、API），`EmbeddingService` 单例管理统一搜索。ONNX 和外部 API 均为可选，零依赖降级到关键词搜索
-- **新增** ONNX 模型一键下载：设置页搜索标签页内置下载按钮，自动下载 all-MiniLM-L6-v2.onnx 到 `data/models/`。用户也可以手动放置模型到该目录，程序自动识别
-- **优化** 搜索框支持 AI 切换：联系人/日历标签页搜索框旁新增 🔍 AI 按钮，点击后搜索自动使用语义搜索（如已配置），否则退回关键词
-- **新增** `BaseRepository.search()` / `search_by_date_range()` 泛型搜索方法
+- **🔍 智能搜索** — 新增 AI 搜索功能！在联系人或日历页面，点击搜索框旁边的 🔍 按钮，就能用 AI 帮您查找，支持模糊匹配和语义理解，搜得又准又快。支持三种模式：
+  - 内置关键词搜索（默认，无需任何配置）
+  - 本地 ONNX 模型（免费离线，下载一次就能用，约 23MB）
+  - 外部 API（兼容 Ollama、OpenAI 等）
+- **⚙️ 搜索设置** — 设置页新增「搜索」标签页，可切换搜索模式、下载模型、配置 API
+- **🤖 AI 助手升级** — MCP 新增多个实用工具：
+  - `search_contacts` / `search_events` — AI 助手可以直接搜索您的联系人和日程
+  - `detect_contact_duplicates` — 帮您找出可能重复的联系人
+  - `detect_event_conflicts` / `detect_upcoming_conflicts` — 检查日程有没有撞车
+- **🛡️ 操作安全** — MCP 写操作（增/删/改）新增确认机制，可在设置中选择「需要确认」「禁止写操作」或「直接允许」，防止误操作
+- **📋 审计日志** — 双击任意日志行即可查看完整详情（含哈希链）
 
 ## v3.0
 

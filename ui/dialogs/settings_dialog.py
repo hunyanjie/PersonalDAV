@@ -492,6 +492,8 @@ class SettingsDialog(tk.Toplevel):
             detail_win.transient(self)
             detail_win.grab_set()
             detail_win.geometry("500x350")
+            from utils.window_utils import center_window
+            center_window(detail_win, self)
             fields = [
                 ("ID", str(r[0])),
                 ("时间", str(r[1] or "")),
