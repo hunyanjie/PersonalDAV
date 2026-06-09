@@ -48,16 +48,16 @@ async def test():
         data, ok = await call('get_contact', {'uid': uid})
         r('get_contact', ok, f'uid={uid}')
 
-    data, ok = await call('create_contact', {'vcard_data': 'BEGIN:VCARD\nVERSION:3.0\nUID:mcp-test-c\nFN:MCP Test\nEMAIL:test@mcp.com\nEND:VCARD'})
+    data, ok = await call('create_contact', {'vcard_data': 'BEGIN:VCARD\nVERSION:3.0\nUID:mcp-test-c\nFN:MCP Test\nEMAIL:test@mcp.com\nEND:VCARD', 'confirmed': True})
     r('create_contact', ok, str(data))
 
     data, ok = await call('get_contact', {'uid': 'mcp-test-c'})
     r('get_contact(新)', ok, f'名称={data.get("full_name", "?")}')
 
-    data, ok = await call('update_contact', {'uid': 'mcp-test-c', 'vcard_data': 'BEGIN:VCARD\nVERSION:3.0\nUID:mcp-test-c\nFN:MCP Updated\nEMAIL:upd@mcp.com\nEND:VCARD'})
+    data, ok = await call('update_contact', {'uid': 'mcp-test-c', 'vcard_data': 'BEGIN:VCARD\nVERSION:3.0\nUID:mcp-test-c\nFN:MCP Updated\nEMAIL:upd@mcp.com\nEND:VCARD', 'confirmed': True})
     r('update_contact', ok, str(data))
 
-    data, ok = await call('delete_contact', {'uid': 'mcp-test-c'})
+    data, ok = await call('delete_contact', {'uid': 'mcp-test-c', 'confirmed': True})
     r('delete_contact', ok, f'deleted={data.get("deleted")}')
 
     results.append("=== v3.1 搜索工具(关键词) ===")
@@ -71,7 +71,7 @@ async def test():
     data, ok = await call('create_contact', {'vcard_data': 'BEGIN:VCARD\nVERSION:3.0\nUID:safe-test\nFN:Safe Test\nEND:VCARD', 'confirmed': True})
     r('create_contact(已确认)', ok, str(data))
 
-    data2, ok2 = await call('delete_contact', {'uid': 'safe-test'})
+    data2, ok2 = await call('delete_contact', {'uid': 'safe-test', 'confirmed': True})
     r('delete_contact(已确认)', ok2, str(data2))
 
     results.append("=== 事件工具 ===")
