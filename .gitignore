@@ -194,7 +194,7 @@ cython_debug/
 .cursorindexingignore
 
 # Other
-.idea/
+graphify-out/
 docs/
 data/
 
