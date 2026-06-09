@@ -4,14 +4,19 @@
 
 | 层面 | 技术 | 用途 |
 |------|------|------|
-| 语言 | Python 3.10+ | 类型注解、dataclass、match 语句 |
+| 语言 | Python 3.12+ | 类型注解、dataclass、match 语句 |
 | GUI | tkinter / ttk / tkinterdnd2 | 桌面界面、原生控件、文件拖放 |
 | 日历控件 | tkcalendar (Calendar) | 日历月视图、日期选择 |
 | 数据库 | SQLite3（内置） | 本地存储，WAL 模式，单文件 |
+| 服务器框架 | FastAPI + Uvicorn (v3.0) | 统一 ASGI 运行时，替代 http.server |
+| REST API | FastAPI + Pydantic (v3.0) | 联系人/事件 CRUD，自动 OpenAPI 文档 |
+| DAuth | Starlette BaseHTTPMiddleware (v3.0) | 统一鉴权中间件（Basic + Bearer + IP） |
+| DAV 协议 | FastAPI/Starlette ASGI 路由 (v3.0) | CardDAV/CalDAV/WebDAV，替代 http.server |
+| MCP 服务 | FastMCP + Starlette (v3.0) | 集成到主服务器，挂载 `/mcp/` 路径 |
 | iCalendar | vobject / python-dateutil | iCalendar 解析/生成 |
 | vCard | vobject + 自研 RobustVCardParser | vCard 解析/生成（含 QP/Base64 回退） |
 | 时区 | pytz / tzlocal / Babel | 时区计算、本地化名称 |
-| 网络（DAV） | http.server（内置） | CardDAV/CalDAV HTTP 服务器 (v2.1) |
+| HTTP 客户端 | httpx (v3.0) | RemoteBackend 底层传输 |
 | FTP 服务 | pyftpdlib | FTP/FTPS 服务器 (v2.5) |
 | SFTP 服务 | paramiko | SFTP 服务器 (v2.5) |
 | TFTP 服务 | tftpy | TFTP 服务器 (v2.5) |
@@ -23,9 +28,13 @@
 
 > v2.6 变动：移除 `lxml` 依赖，改用标准库 `xml.etree.ElementTree`。`pyftpdlib`、`paramiko`、`pysmb` 改为惰性导入（首次使用时才加载），未安装时功能不可用但程序不崩溃。
 
+> v3.0 变动：引入 FastAPI + Uvicorn 作为统一 ASGI 运行时，替代 Python 内置 `http.server`。新增 `personaldavd/` 包支持无界面守护进程模式，新增 `services/backend.py` Backend 抽象层支持本地/远程切换。
+
 ---
 
 ## 启动流程
+
+### GUI 模式（`python main.py`）
 
 程序启动过程（从双击到窗口出现）按顺序执行：
 
@@ -58,6 +67,27 @@ main()
 root.mainloop()
 ```
 
+### 无界面守护进程模式（`python -m personaldavd`）
+
+```
+__main__.main()
+  ├── argparse 解析命令行参数
+  │   (--host / --port / --log-level / --log-json / --db-path / --dav-root)
+  └── DaemonConfig() → run_daemon(config)
+        ├── create_app(config)
+        │     ├── FastAPI(title="PersonalDAV", ...)
+        │     ├── app.add_middleware(AuthMiddleware)   # 统一鉴权
+        │     ├── app.include_router(api_router, prefix="/api")
+        │     ├── app.include_router(dav_router)        # DAV + 附件
+        │     └── app.mount("/mcp", create_mcp_app())   # MCP SSE
+        ├── _init_environment()
+        │     ├── os.makedirs(db_dir / dav_root)
+        │     └── sqlite3.connect(db_path).close()
+        ├── lifespan 开始
+        └── uvicorn.run(app, host, port)
+              └── 同步 I/O 循环，阻塞至 Ctrl+C / SIGTERM
+```
+
 ### 设计要点
 
 - **窗口优先**：`create_widgets()` 在 `__init__` 中尽早调用，确保主窗口在 `_deferred_startup` 执行前已经显示
@@ -68,12 +98,115 @@ root.mainloop()
 
 ---
 
+## v3.0 架构变更
+
+### 统一 ASGI 运行时
+
+v3.0 将原有 `http.server`（内置库）替换为 FastAPI + Uvicorn，形成了一个统一 ASGI 运行时：
+
+```
+┌──────────────────────────────────────────┐
+│           FastAPI App (Uvicorn)           │
+│                                          │
+│  ┌────────────┐  ┌────────────────────┐  │
+│  │ AuthMiddleware │  统一鉴权入口         │  │
+│  └──────┬─────┘  └────────────────────┘  │
+│         │                                 │
+│  ┌──────┴─────────────────────────────┐  │
+│  │  Router 分发                        │  │
+│  │  ├── DAV Routes  (/contacts/* etc)  │  │
+│  │  ├── REST API     (/api/*)          │  │
+│  │  └── MCP Mount    (/mcp/)           │  │
+│  └────────────────────────────────────┘  │
+└──────────────────────────────────────────┘
+```
+
+关键点：
+- 所有协议（DAV / REST / MCP）运行在同一个进程中、同一个端口上
+- AuthMiddleware 在路由器之前执行，统一处理鉴权
+- MCP 通过 `app.mount("/mcp", create_mcp_app())` 挂载为 Starlette 子应用
+- 移除了 `http.server.BaseHTTPRequestHandler` 继承体系
+
+### personaldavd 模块
+
+`personaldavd/` 是无界面守护进程包，入口为 `python -m personaldavd`：
+
+| 文件 | 职责 |
+|------|------|
+| `__main__.py` | CLI 参数解析（--host/--port/--log-level/--log-json/--db-path/--dav-root） |
+| `daemon.py` | FastAPI app factory + lifespan（数据库/目录初始化） |
+| `dav.py` | DAV 协议 ASGI 路由（CardDAV + CalDAV + WebDAV + 附件） |
+| `api.py` | REST API 路由（联系人/事件 CRUD + 健康检查 + 令牌获取） |
+| `auth.py` | AuthMiddleware + 统一鉴权 + Scope 权限 |
+| `mcp.py` | MCP SSE 子应用工厂（挂载到 `/mcp/`） |
+| `models.py` | Pydantic 数据模型（ContactOut, EventOut, HealthOut 等） |
+| `config.py` | DaemonConfig dataclass |
+| `logging.py` | StructuredLogger（JSON/明文双模式） |
+
+### Backend 抽象层
+
+`services/backend.py` 定义 Backend 接口，支持本地/远程切换：
+
+```
+Backend (ABC)
+  ├── LocalBackend     直接实例化 Service 层，供 GUI 默认使用
+  └── RemoteBackend    通过 httpx 调用 daemon REST API
+```
+
+RemoteBackend 使用 `_RemoteContactService` / `_RemoteEventService` / `_RemoteSettings` 代理类，保持与 `ContactService` / `EventService` / `SettingsService` 相同的方法签名，使 GUI tab 代码无需修改。
+
+GUI 启动时可通过 `--remote` 参数切换到 RemoteBackend：
+
+```python
+# main.py
+if args.remote:
+    backend = RemoteBackend(base_url=args.remote_url, token=args.remote_token)
+else:
+    backend = LocalBackend()
+app = DAVServerApp(root, backend=backend)
+```
+
+### 路由对照
+
+| 路径 | 协议 | 实现文件 | 说明 |
+|------|------|---------|------|
+| `/contacts/` | CardDAV | `dav.py` | PROPFIND/REPORT/GET/PUT/DELETE |
+| `/events/` | CalDAV | `dav.py` | PROPFIND/REPORT/GET/PUT/DELETE |
+| `/dav/` | WebDAV | `dav.py` | PROPFIND/GET/PUT/DELETE/MKCOL/COPY/MOVE |
+| `/attachments/` | HTTP | `dav.py` | GET 附件文件（带鉴权） |
+| `/api/health` | REST | `api.py` | 健康检查 |
+| `/api/auth/token` | REST | `api.py` | 获取 Bearer token |
+| `/api/contacts` | REST | `api.py` | 联系人 CRUD |
+| `/api/events` | REST | `api.py` | 事件 CRUD |
+| `/api/docs` | OpenAPI | FastAPI 原生 | Swagger UI |
+| `/mcp/sse` | MCP SSE | `mcp.py` | SSE 端点 |
+| `/mcp/messages/` | MCP | `mcp.py` | 消息端点 |
+
+### 与旧版本的兼容
+
+- GUI 模式（`python main.py`）仍然使用 `http.server`（`DAVServer`）提供服务，完全兼容 v2.x 行为
+- 无界面模式（`python -m personaldavd`）使用 FastAPI，数据格式和数据库结构不变
+- `RemoteBackend` 通过 REST API 与新旧版本兼容
+
+---
+
 ## 架构总览
 
 ```
 PersonalDAV/
 ├── main.py                    # 入口：TkinterDnD 主窗口
 ├── config.py                  # 软件元信息（名称、版本、作者等）
+├── personaldavd/              # v3.0 无界面守护进程
+│   ├── __init__.py
+│   ├── __main__.py            # CLI 入口
+│   ├── config.py              # DaemonConfig 数据类
+│   ├── daemon.py              # FastAPI 应用工厂
+│   ├── dav.py                 # DAV ASGI 路由
+│   ├── api.py                 # REST API 路由
+│   ├── auth.py                # 统一鉴权中间件
+│   ├── mcp.py                 # MCP 子应用工厂
+│   ├── models.py              # Pydantic 模型
+│   └── logging.py             # 结构化日志
 ├── data/                      # 运行产物（启动时自动创建）
 │   ├── dav_data.db            # SQLite 数据库
 │   ├── dav_data.db.bak        # 自动备份
@@ -104,6 +237,7 @@ PersonalDAV/
 │       └── settings_repository.py
 ├── services/                  # 业务逻辑层
 │   ├── base_service.py        # BaseService 泛型服务基类（含 get_etag / get_all_items）
+│   ├── backend.py             # v3.0 Backend 抽象层（LocalBackend / RemoteBackend）
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
 │   ├── settings_service.py    # SettingsService 单例
@@ -1167,6 +1301,20 @@ def _sync_mcp_server(self):
 ```
 
 用户在设置界面勾选「启用 MCP 服务」→ 保存后，`EVENT_SETTINGS_CHANGED` 被发布，`_sync_mcp_server()` 动态启动或停止后台服务器。启用前 MCPServer 对象不存在，零内存开销。
+
+### v3.0 集成模式（personaldavd）
+
+在无界面守护进程模式下，MCP 直接挂载到 FastAPI 应用中：
+
+```python
+# daemon.py
+from .mcp import create_mcp_app
+app.mount("/mcp", create_mcp_app(), name="mcp")
+```
+
+`create_mcp_app()` 创建 FastMCP 实例，注册全部 33 个工具，调用 `sse_app()` 返回 Starlette ASGI 子应用。该子应用通过 `app.mount()` 挂载到 `/mcp` 前缀下，与 DAV 路由、REST API 共享同一端口和鉴权中间件。
+
+路径变化：`/sse` → `/mcp/sse`，`/messages/` → `/mcp/messages/`。
 
 ### 独立运行
 
