@@ -374,7 +374,13 @@ def inject_attachments(stored_ical: str, mode: str = "inline", base_url: str = "
 
             if mode == "uri" and base_url:
                 rel_path = os.path.basename(filepath) if filepath else filename
-                att.value = f"{base_url.rstrip('/')}/attachments/{rel_path}"
+                url = f"{base_url.rstrip('/')}/attachments/{rel_path}"
+                from services.auth_service import AuthService
+                svc = AuthService()
+                if svc.is_url_auth_enabled():
+                    token, ts, nonce = svc.generate_url_token(f"/attachments/{rel_path}")
+                    url += f"?token={token}&ts={ts}&nonce={nonce}"
+                att.value = url
                 if fmttype and fmttype != 'application/octet-stream':
                     att.params['FMTTYPE'] = [fmttype]
                 if filename:

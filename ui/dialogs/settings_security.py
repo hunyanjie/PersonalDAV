@@ -19,10 +19,12 @@ class SecuritySettingsSection:
         pw_frame = ttk.Frame(sub); sub.add(pw_frame, text="密码验证")
         ip_frame = ttk.Frame(sub); sub.add(ip_frame, text="IP 控制")
         rate_frame = ttk.Frame(sub); sub.add(rate_frame, text="频率限制")
+        url_frame = ttk.Frame(sub); sub.add(url_frame, text="URL/Referer/远程")
 
         self._create_password_ui(pw_frame)
         self._create_ip_ui(ip_frame)
         self._create_rate_ui(rate_frame)
+        self._create_url_auth_ui(url_frame)
         self._refresh()
 
     def _create_password_ui(self, parent):
@@ -117,6 +119,51 @@ class SecuritySettingsSection:
         ttk.Entry(rate_f, textvariable=self.dialog.rate_limit_max_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=2)
         ttk.Label(rate_f, text="超过限制的请求将被返回 429 Too Many Requests",
                   foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+
+    def _create_url_auth_ui(self, parent):
+        # ── URL 鉴权 ──
+        url_f = ttk.LabelFrame(parent, text="URL 鉴权（附件下载链接 时间戳+随机数+MD5）")
+        url_f.pack(fill=tk.X, padx=5, pady=5)
+        self.dialog.url_auth_enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(url_f, text="启用 URL 鉴权",
+                        variable=self.dialog.url_auth_enabled_var).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(url_f, text="令牌有效期（秒）:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.dialog.url_auth_expiry_var = tk.StringVar(value="300")
+        ttk.Entry(url_f, textvariable=self.dialog.url_auth_expiry_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=2)
+        ttk.Label(url_f, text="开启后附件下载链接需携带 ?token=&ts=&nonce= 参数，",
+                  foreground="gray", font=('', 8)).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 2))
+        ttk.Label(url_f, text="令牌由服务端密钥 + 时间戳 + 随机数 + 路径 MD5 生成。",
+                  foreground="gray", font=('', 8)).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+
+        # ── Referer 鉴权 ──
+        ref_f = ttk.LabelFrame(parent, text="Referer 鉴权（防盗链）")
+        ref_f.pack(fill=tk.X, padx=5, pady=5)
+        self.dialog.referer_enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(ref_f, text="启用 Referer 鉴权",
+                        variable=self.dialog.referer_enabled_var).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(ref_f, text="允许的 Referer 前缀（每行一个，匹配开头）:",
+                  foreground="gray").grid(row=1, column=0, sticky="w", padx=5, pady=(0, 2))
+        self._referer_text = tk.Text(ref_f, height=4, width=60)
+        self._referer_text.grid(row=2, column=0, padx=5, pady=2, sticky="ew")
+        ttk.Label(ref_f, text="示例: http://localhost:8080 | https://example.com",
+                  foreground="gray", font=('', 8)).grid(row=3, column=0, sticky="w", padx=5, pady=(0, 5))
+
+        # ── 远程鉴权 ──
+        remote_f = ttk.LabelFrame(parent, text="远程鉴权（转发请求到外部服务验证）")
+        remote_f.pack(fill=tk.X, padx=5, pady=5)
+        self.dialog.remote_auth_enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(remote_f, text="启用远程鉴权（开启后将转发所有请求到远程地址验证，通过后可跳过密码校验）",
+                        variable=self.dialog.remote_auth_enabled_var).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+        ttk.Label(remote_f, text="远程鉴权 URL:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self.dialog.remote_auth_url_var = tk.StringVar(value="")
+        ttk.Entry(remote_f, textvariable=self.dialog.remote_auth_url_var, width=50).grid(row=1, column=1, sticky="w", padx=5, pady=2)
+        ttk.Label(remote_f, text="超时（秒）:").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        self.dialog.remote_auth_timeout_var = tk.StringVar(value="10")
+        ttk.Entry(remote_f, textvariable=self.dialog.remote_auth_timeout_var, width=10).grid(row=2, column=1, sticky="w", padx=5, pady=2)
+        ttk.Label(remote_f, text="POST JSON 到远程地址，返回 allow/ok/true/1/yes 表示允许，其余拒绝。",
+                  foreground="gray", font=('', 8)).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 2))
+        ttk.Label(remote_f, text='请求体: {"path","method","headers","client_ip","timestamp"}',
+                  foreground="gray", font=('', 8)).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     def _refresh(self):
         svc = AuthService()
@@ -261,12 +308,26 @@ class SecuritySettingsSection:
         self.dialog._load_text_widget_lines(self._ip_bypass_text, s.get_setting("ip_bypass_auth", ""))
         self.dialog._bypass_localhost_var.set(s.get_setting("bypass_localhost", "True") == "True")
         self.dialog.force_password_var.set(s.get_setting("force_password", "True") == "True")
+        self.dialog.url_auth_enabled_var.set(s.get_setting("url_auth_enabled", "False") == "True")
+        self.dialog.url_auth_expiry_var.set(s.get_setting("url_auth_expiry", "300"))
+        self.dialog.referer_enabled_var.set(s.get_setting("referer_enabled", "False") == "True")
+        self.dialog._load_text_widget_lines(self._referer_text, s.get_setting("referer_whitelist", ""))
+        self.dialog.remote_auth_enabled_var.set(s.get_setting("remote_auth_enabled", "False") == "True")
+        self.dialog.remote_auth_url_var.set(s.get_setting("remote_auth_url", ""))
+        self.dialog.remote_auth_timeout_var.set(s.get_setting("remote_auth_timeout", "10"))
 
     def reset(self):
         self.dialog._bypass_localhost_var.set(True)
         self._ip_whitelist_text.delete("1.0", tk.END)
         self._ip_blacklist_text.delete("1.0", tk.END)
         self._ip_bypass_text.delete("1.0", tk.END)
+        self.dialog.url_auth_enabled_var.set(False)
+        self.dialog.url_auth_expiry_var.set("300")
+        self.dialog.referer_enabled_var.set(False)
+        self._referer_text.delete("1.0", tk.END)
+        self.dialog.remote_auth_enabled_var.set(False)
+        self.dialog.remote_auth_url_var.set("")
+        self.dialog.remote_auth_timeout_var.set("10")
 
     def save(self):
         s = self.dialog.db
@@ -284,3 +345,10 @@ class SecuritySettingsSection:
         s.set_setting("ip_bypass_auth", bypass)
         s.set_setting("bypass_localhost", str(self.dialog._bypass_localhost_var.get()))
         s.set_setting("force_password", str(self.dialog.force_password_var.get()))
+        s.set_setting("url_auth_enabled", str(self.dialog.url_auth_enabled_var.get()))
+        s.set_setting("url_auth_expiry", self.dialog.url_auth_expiry_var.get())
+        s.set_setting("referer_enabled", str(self.dialog.referer_enabled_var.get()))
+        s.set_setting("referer_whitelist", self._referer_text.get("1.0", tk.END).strip())
+        s.set_setting("remote_auth_enabled", str(self.dialog.remote_auth_enabled_var.get()))
+        s.set_setting("remote_auth_url", self.dialog.remote_auth_url_var.get())
+        s.set_setting("remote_auth_timeout", self.dialog.remote_auth_timeout_var.get())
