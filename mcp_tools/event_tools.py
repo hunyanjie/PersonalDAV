@@ -1,5 +1,5 @@
 from mcp_tools._state import get_event_svc
-from mcp_tools.helpers import safe_json, check_readonly, make_event_summary
+from mcp_tools.helpers import safe_json, check_readonly, check_safety, make_event_summary
 from services.embeddings import EmbeddingService
 from utils.logger import logger
 
@@ -41,9 +41,12 @@ def register(mcp):
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="通过 iCalendar 数据创建事件")
-    def create_event(ical_data: str) -> str:
+    def create_event(ical_data: str, confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("创建事件", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: create_event ical_data({len(ical_data)}B)")
         try:
             uid, op = get_event_svc().add_event(ical_data, publish=False)
@@ -57,9 +60,12 @@ def register(mcp):
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="更新事件（提供 UID 和新的 iCalendar 数据）")
-    def update_event(uid: str, ical_data: str) -> str:
+    def update_event(uid: str, ical_data: str, confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("更新事件", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: update_event uid={uid} ical_data({len(ical_data)}B)")
         try:
             uid, op = get_event_svc().add_event(ical_data, force=True, publish=False)
@@ -85,9 +91,12 @@ def register(mcp):
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="删除指定 UID 的事件")
-    def delete_event(uid: str) -> str:
+    def delete_event(uid: str, confirmed: bool = False) -> str:
         if check_readonly():
             return safe_json({"error": "只读模式下不支持此操作"})
+        blocked = check_safety("删除事件", confirmed)
+        if blocked:
+            return safe_json({"error": blocked, "hint": "添加 confirmed=true 参数"})
         logger.info(f"MCP 调用: delete_event uid={uid}")
         try:
             ok = get_event_svc().delete(uid)

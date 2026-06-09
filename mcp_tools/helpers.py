@@ -18,6 +18,24 @@ def check_readonly() -> bool:
     return SettingsService().get_setting("mcp_readonly", "False") == "True"
 
 
+_SAFETY_MODE_CACHE: dict[str, str] = {}
+
+
+def check_safety(action: str, confirmed: bool = False) -> str | None:
+    """Returns error string if blocked, None if allowed."""
+    mode = _SAFETY_MODE_CACHE.get("mcp_safety_mode")
+    if mode is None:
+        mode = SettingsService().get_setting("mcp_safety_mode", "confirm")
+        _SAFETY_MODE_CACHE["mcp_safety_mode"] = mode
+    if mode == "allow":
+        return None
+    if mode == "safe":
+        return f"安全模式(safe): {action} 操作已被禁止。请在设置中更改为 confirm 或 allow 模式。"
+    if not confirmed:
+        return f"确认要求(confirm): {action} 操作需要 confirmed=true 参数才能执行。"
+    return None
+
+
 def make_contact_summary(uid: str) -> dict[str, Any]:
     raw = get_contact_svc().get_by_uid(uid)
     if not raw:
