@@ -266,6 +266,8 @@ class EmbeddingService:
                     "email": c.email,
                     "phone": c.phone,
                     "groups": getattr(c, "groups", ""),
+                    "created_at": c.created_at or "",
+                    "updated_at": c.updated_at or "",
                 })
 
         if self._provider.is_semantic:
@@ -290,6 +292,8 @@ class EmbeddingService:
                     "summary": e.summary,
                     "dtstart": e.dtstart,
                     "dtend": e.dtend,
+                    "created_at": e.created_at or "",
+                    "updated_at": e.updated_at or "",
                 })
 
         if self._provider.is_semantic:
