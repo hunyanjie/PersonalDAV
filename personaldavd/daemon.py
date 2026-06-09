@@ -16,9 +16,9 @@ from .mcp import create_mcp_app
 
 
 def _unique_id(route: APIRoute) -> str:
-    name = route.name.replace("_", "-")
+    path = route.path.replace("{", "").replace("}", "").replace("/", "_")
     methods = "_".join(sorted(route.methods - {"HEAD", "OPTIONS"})) if route.methods else "any"
-    return f"{name}_{methods.lower()}"
+    return f"{path}_{methods}".lower()
 
 logger: StructuredLogger | None = None
 
