@@ -5,6 +5,7 @@ import difflib
 import logging
 import os
 from typing import Any
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,20 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if not norm_a or not norm_b:
         return 0.0
     return dot / (norm_a * norm_b)
+
+
+def mean_pooling(token_embeds: "np.ndarray", attention_mask: "np.ndarray") -> "np.ndarray":
+    import numpy as np
+    mask = attention_mask[:, :, np.newaxis].astype(np.float32)
+    sum_emb = np.sum(token_embeds * mask, axis=1)
+    sum_mask = np.maximum(np.sum(mask, axis=1), 1e-9)
+    return sum_emb / sum_mask
+
+
+def l2_normalize(emb: "np.ndarray") -> "np.ndarray":
+    import numpy as np
+    norm = np.linalg.norm(emb, axis=1, keepdims=True)
+    return emb / np.maximum(norm, 1e-9)
 
 
 def list_available_models() -> list[str]:
@@ -100,18 +115,74 @@ class ONNXProvider(EmbeddingProvider):
         self._tok.enable_padding(pad_id=0, pad_token="[PAD]", length=128)
         self._session = onnxruntime.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
 
+    def _encode(self, text: str) -> dict[str, "np.ndarray"]:
+        encoded = self._tok.encode(text)
+        import numpy as np
+        ids = np.array([encoded.ids], dtype=np.int64)
+        mask = np.array([encoded.attention_mask], dtype=np.int64)
+        ort_inputs: dict[str, np.ndarray] = {
+            "input_ids": ids,
+            "attention_mask": mask,
+        }
+        for inp in self._session.get_inputs():
+            if inp.name == "token_type_ids":
+                ort_inputs[inp.name] = np.zeros_like(ids)
+            elif inp.name not in ort_inputs:
+                ort_inputs[inp.name] = np.zeros(
+                    [ids.shape[0]] + list(inp.shape[1:]), dtype=np.int64)
+        return ort_inputs
+
     def embed(self, text: str) -> list[float]:
         self._load()
-        encoded = self._tok.encode(text)
-        input_ids = encoded.ids
-        attention_mask = encoded.attention_mask
-        import numpy as np
-        ort_inputs = {
-            "input_ids": np.array([input_ids], dtype=np.int64),
-            "attention_mask": np.array([attention_mask], dtype=np.int64),
-        }
+        ort_inputs = self._encode(text)
         outputs = self._session.run(None, ort_inputs)
-        return outputs[0].squeeze().tolist()
+        return self._postprocess(outputs, ort_inputs["attention_mask"])
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        self._load()
+        import numpy as np
+        batch_size = 64
+        results: list[list[float]] = []
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i:i + batch_size]
+            ids_list, mask_list = [], []
+            special: dict[str, list[np.ndarray]] = {}
+            for t in chunk:
+                ort_inputs = self._encode(t)
+                ids_list.append(ort_inputs["input_ids"])
+                mask_list.append(ort_inputs["attention_mask"])
+                for name, val in ort_inputs.items():
+                    if name not in ("input_ids", "attention_mask"):
+                        special.setdefault(name, []).append(val)
+            batch_ids = np.concatenate(ids_list, axis=0)
+            batch_mask = np.concatenate(mask_list, axis=0)
+            feed: dict[str, np.ndarray] = {"input_ids": batch_ids, "attention_mask": batch_mask}
+            for name, vals in special.items():
+                feed[name] = np.concatenate(vals, axis=0)
+            outputs = self._session.run(None, feed)
+            embs = self._postprocess(outputs, batch_mask, batch=True)
+            results.extend(embs)
+        return results
+
+    def _postprocess(self, outputs: list, attention_mask: "np.ndarray", batch: bool = False
+                      ) -> "list[list[float]] | list[float]":
+        import numpy as np
+        emb = outputs[0]
+        if emb.ndim == 1:
+            return emb.tolist()
+        if emb.ndim == 3 and emb.shape[1] > 1:
+            emb = mean_pooling(emb, attention_mask)
+            emb = l2_normalize(emb)
+        if emb.ndim == 2:
+            if batch:
+                return emb.tolist()
+            return emb[0].tolist()
+        result = emb.squeeze().tolist()
+        if batch and isinstance(result[0], (list, np.ndarray)):
+            return result
+        if not batch:
+            return result
+        return [result]
 
     @property
     def name(self) -> str:
@@ -212,18 +283,28 @@ class EmbeddingService:
 
     def _rank_candidates(self, query: str, candidates: list[dict], text_fn: callable, top_k: int) -> list[dict]:
         query_vec = self._provider.embed(query)
+        uncached: list[tuple[int, str, dict]] = []
+        for idx, c in enumerate(candidates):
+            uid = c.get("uid", "")
+            if uid not in self._cache:
+                uncached.append((idx, uid, c))
+        if uncached and self._provider.is_semantic:
+            texts = [text_fn(u[2]) for u in uncached]
+            try:
+                vecs = self._provider.embed_batch(texts)
+                for (idx, uid, c), vec in zip(uncached, vecs):
+                    self._cache[uid] = vec
+            except Exception:
+                for idx, uid, c in uncached:
+                    try:
+                        self._cache[uid] = self._provider.embed(text_fn(c))
+                    except Exception:
+                        self._cache[uid] = []
+
         scored: list[tuple[float, dict]] = []
         for c in candidates:
             uid = c.get("uid", "")
-            text = text_fn(c)
-            if uid in self._cache:
-                vec = self._cache[uid]
-            else:
-                try:
-                    vec = self._provider.embed(text)
-                    self._cache[uid] = vec
-                except Exception:
-                    vec = []
+            vec = self._cache.get(uid, [])
             if vec:
                 score = cosine_similarity(query_vec, vec)
                 scored.append((score, c))
@@ -256,8 +337,11 @@ class EmbeddingService:
         svc = ContactService()
         all_items = svc.get_all_items()
 
+        max_items = 2000 if self._provider.is_semantic else len(all_items)
         candidates = []
-        for uid, _ in all_items:
+        for idx, (uid, _) in enumerate(all_items):
+            if idx >= max_items:
+                break
             c = svc.repo.get_by_uid(uid)
             if c:
                 candidates.append({
@@ -279,8 +363,11 @@ class EmbeddingService:
         svc = EventService()
         all_items = svc.get_all_items()
 
+        max_items = 2000 if self._provider.is_semantic else len(all_items)
         candidates = []
-        for uid, _ in all_items:
+        for idx, (uid, _) in enumerate(all_items):
+            if idx >= max_items:
+                break
             e = svc.repo.get_by_uid(uid)
             if e:
                 if date_from and e.dtstart < date_from:
