@@ -68,9 +68,12 @@ def _collection_responses(service, path_prefix: str, ext: str, ctype: str) -> li
 @dav_router.api_route(
     "/contacts/{rest:path}",
     methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"],
+    include_in_schema=False,
 )
-@dav_router.api_route("/contacts/", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
-@dav_router.api_route("/contacts", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
+@dav_router.api_route("/contacts/", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"],
+                       include_in_schema=False)
+@dav_router.api_route("/contacts", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"],
+                       include_in_schema=False)
 async def contacts_handler(request: Request, rest: str = ""):
     """CardDAV 联系人服务 — 支持 GET/PUT/DELETE/PROPFIND/REPORT/OPTIONS。"""
     svc = ContactService()
@@ -149,9 +152,12 @@ async def contacts_handler(request: Request, rest: str = ""):
 @dav_router.api_route(
     "/events/{rest:path}",
     methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"],
+    include_in_schema=False,
 )
-@dav_router.api_route("/events/", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
-@dav_router.api_route("/events", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"])
+@dav_router.api_route("/events/", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"],
+                       include_in_schema=False)
+@dav_router.api_route("/events", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "REPORT", "OPTIONS"],
+                       include_in_schema=False)
 async def events_handler(request: Request, rest: str = ""):
     """CalDAV 日历事件服务 — 支持 GET/PUT/DELETE/PROPFIND/REPORT/OPTIONS。"""
     svc = EventService()
@@ -236,7 +242,7 @@ async def events_handler(request: Request, rest: str = ""):
 
 # ── Attachments ─────────────────────────────────────────────────
 
-@dav_router.api_route("/attachments/{filename}", methods=["GET", "HEAD"])
+@dav_router.api_route("/attachments/{filename}", methods=["GET", "HEAD"], include_in_schema=False)
 async def attachment_asgi(request: Request, filename: str):
     """附件下载 — 返回日历事件中引用的附件文件。"""
     safe_path = os.path.normpath(os.path.join(ATTACHMENTS_DIR, os.path.basename(filename)))
@@ -265,8 +271,10 @@ async def attachment_asgi(request: Request, filename: str):
 @dav_router.api_route(
     "/dav/{rest:path}",
     methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "MKCOL", "COPY", "MOVE", "OPTIONS"],
+    include_in_schema=False,
 )
-@dav_router.api_route("/dav", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "MKCOL", "COPY", "MOVE", "OPTIONS"])
+@dav_router.api_route("/dav", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "MKCOL", "COPY", "MOVE", "OPTIONS"],
+                       include_in_schema=False)
 async def webdav_handler(request: Request, rest: str = ""):
     """WebDAV 文件服务 — 支持 GET/PUT/DELETE/PROPFIND/MKCOL/COPY/MOVE。"""
     method = request.method
