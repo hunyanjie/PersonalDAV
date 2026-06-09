@@ -11,6 +11,7 @@ from .dav import dav_router
 from .api import api_router
 from .auth import AuthMiddleware
 from .logging import StructuredLogger
+from .mcp import create_mcp_app
 
 logger: StructuredLogger | None = None
 
@@ -50,6 +51,7 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     app.add_middleware(AuthMiddleware)
     app.include_router(api_router, prefix="/api")
     app.include_router(dav_router)
+    app.mount("/mcp", create_mcp_app(), name="mcp")
     return app
 
 
