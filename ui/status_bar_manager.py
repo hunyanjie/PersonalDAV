@@ -6,11 +6,11 @@ from database.db_manager import Database
 class StatusBarManager:
     """状态栏管理器 — 从 DAVServerApp 提取"""
 
-    def __init__(self, status_bar, contact_service, event_service, mcp_server, server_tab):
+    def __init__(self, status_bar, contact_service, event_service, get_mcp_server, server_tab):
         self._bar = status_bar
         self.contact_service = contact_service
         self.event_service = event_service
-        self.mcp_server = mcp_server
+        self._get_mcp_server = get_mcp_server
         self.server_tab = server_tab
         self._pending_update = None
 
@@ -23,7 +23,8 @@ class StatusBarManager:
     def refresh(self, *args):
         c_count = self.contact_service.count()
         e_count = self.event_service.count()
-        mcp = "MCP 运行中" if self.mcp_server is not None and self.mcp_server.is_running else "MCP 已关闭"
+        mcp_server = self._get_mcp_server()
+        mcp = "MCP 运行中" if mcp_server is not None and mcp_server.is_running else "MCP 已关闭"
         server = self.server_tab.server_instance
         srv = f"运行中 ({self._format_uptime(server.start_time)})" if server else "已停止"
         db_size = self._get_db_size()

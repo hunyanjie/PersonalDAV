@@ -92,7 +92,8 @@ class MCPServer:
         self._tools_registered = False
         logger.info("MCPServer 实例已创建（工具延迟到 start 时注册）")
 
-    def start(self, host: str = "127.0.0.1", port: int = 8100) -> bool:
+    def start(self, host: str = "127.0.0.1", port: int = 8100,
+              on_ready: callable = None) -> bool:
         if self._uvicorn_server is not None:
             logger.warning(f"MCP 服务器已在运行，忽略重复启动请求")
             return False
@@ -109,6 +110,8 @@ class MCPServer:
             config = uvicorn.Config(app, host=host, port=port, log_level="warning")
             self._uvicorn_server = uvicorn.Server(config)
             logger.info(f"MCP 服务器已启动，端口 {port}")
+            if on_ready:
+                on_ready()
             self._uvicorn_server.run()
 
         self._thread = threading.Thread(target=_run, daemon=True)

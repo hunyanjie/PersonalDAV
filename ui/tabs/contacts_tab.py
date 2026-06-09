@@ -192,7 +192,8 @@ class ContactsTab(BaseTreeTab):
     def delete_contact(self):
         uids = list(self._selected_uids)
         if not uids: return
-        if messagebox.askyesno("确认", f"确定删除选中的 {len(uids)} 个联系人吗？"):
+        from ui.dialogs.confirm_dialog import ConfirmDialog
+        if ConfirmDialog.ask(self, "确认", f"确定删除选中的 {len(uids)} 个联系人吗？"):
             for uid in uids:
                 self.db.delete(uid)
             self.refresh_contacts()
@@ -210,6 +211,7 @@ class ContactsTab(BaseTreeTab):
         data = ''.join(raws) if len(uids) > 1 else raws[0]
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
+            from utils.window_utils import center_window; center_window(win, self)
             sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
             txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
             RightClickMenu(txt, "text", actions=["copy", None, "select_all"])

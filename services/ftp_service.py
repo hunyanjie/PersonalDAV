@@ -36,8 +36,11 @@ def _generate_thumbnail(filepath: str, max_size: int = 128) -> str | None:
 
 class AuthServiceAuthorizer:
     def validate_authentication(self, username: str, password: str, handler: object) -> bool:
-        from pyftpdlib.handlers import TLS_FTPHandler
-        from pyftpdlib.authorizers import AuthenticationFailed
+        try:
+            from pyftpdlib.handlers import TLS_FTPHandler
+            from pyftpdlib.authorizers import AuthenticationFailed
+        except ImportError:
+            raise RuntimeError("pyftpdlib is required for FTP authentication")
         is_ftps = isinstance(handler, TLS_FTPHandler)
         proto = "FTPS" if is_ftps else "FTP"
         client_ip = getattr(handler, 'remote_ip', 'unknown')
@@ -318,20 +321,25 @@ class FTPService:
 
             if settings.get_setting("ftp_enabled", "True") == "True":
                 try:
-                    port = int(settings.get_setting("ftp_port", "21"))
-                    root = settings.get_setting("ftp_root", "./ftp_root")
-                    os.makedirs(root, exist_ok=True)
-                    self._ftp_thread = threading.Thread(
-                        target=self._run_ftp,
-                        args=(port, root),
-                        daemon=True,
-                        name="ftp-server",
-                    )
-                    self._ftp_thread.start()
-                    started_any = True
-                    logger.info(f"FTP server thread started on port {port}")
-                except Exception as e:
-                    logger.error(f"Failed to start FTP server: {e}")
+                    import pyftpdlib  # noqa: F401
+                except ImportError:
+                    logger.error("Failed to start FTP server: pyftpdlib not installed (pip install pyftpdlib)")
+                else:
+                    try:
+                        port = int(settings.get_setting("ftp_port", "21"))
+                        root = settings.get_setting("ftp_root", "./ftp_root")
+                        os.makedirs(root, exist_ok=True)
+                        self._ftp_thread = threading.Thread(
+                            target=self._run_ftp,
+                            args=(port, root),
+                            daemon=True,
+                            name="ftp-server",
+                        )
+                        self._ftp_thread.start()
+                        started_any = True
+                        logger.info(f"FTP server thread started on port {port}")
+                    except Exception as e:
+                        logger.error(f"Failed to start FTP server: {e}")
 
             if settings.get_setting("sftp_enabled", "False") == "True":
                 try:
@@ -354,20 +362,25 @@ class FTPService:
 
             if settings.get_setting("tftp_enabled", "False") == "True":
                 try:
-                    port = int(settings.get_setting("tftp_port", "69"))
-                    root = settings.get_setting("tftp_root", "./tftp_root")
-                    os.makedirs(root, exist_ok=True)
-                    self._tftp_thread = threading.Thread(
-                        target=self._run_tftp,
-                        args=(port, root),
-                        daemon=True,
-                        name="tftp-server",
-                    )
-                    self._tftp_thread.start()
-                    started_any = True
-                    logger.info(f"TFTP server thread started on port {port}")
-                except Exception as e:
-                    logger.error(f"Failed to start TFTP server: {e}")
+                    import tftpy  # noqa: F401
+                except ImportError:
+                    logger.error("Failed to start TFTP server: tftpy not installed (pip install tftpy)")
+                else:
+                    try:
+                        port = int(settings.get_setting("tftp_port", "69"))
+                        root = settings.get_setting("tftp_root", "./tftp_root")
+                        os.makedirs(root, exist_ok=True)
+                        self._tftp_thread = threading.Thread(
+                            target=self._run_tftp,
+                            args=(port, root),
+                            daemon=True,
+                            name="tftp-server",
+                        )
+                        self._tftp_thread.start()
+                        started_any = True
+                        logger.info(f"TFTP server thread started on port {port}")
+                    except Exception as e:
+                        logger.error(f"Failed to start TFTP server: {e}")
 
             if started_any:
                 self._running = True
@@ -418,26 +431,34 @@ class FTPService:
             return self._running
 
     def _run_ftp(self, port: int, root: str) -> None:
-        from pyftpdlib.handlers import TLS_FTPHandler
-        from pyftpdlib.servers import FTPServer as PyFTPD
-
-        authorizer = AuthServiceAuthorizer()
-        settings = SettingsService()
-        use_tls = settings.get_setting("ftps_enabled", "False") == "True"
-        certfile = settings.get_setting("ssl_certfile", "")
-        keyfile = settings.get_setting("ssl_keyfile", "")
-        LoggedFTPHandler = _make_ftp_handler()
-        if use_tls and certfile:
-            handler = type("LoggedTLSFTPHandler", (LoggedFTPHandler, TLS_FTPHandler), {})
-            handler.certfile = certfile
-            handler.keyfile = keyfile or certfile
-        else:
-            handler = LoggedFTPHandler
-        handler.authorizer = authorizer
-        handler.banner = "Welcome to PersonalDAV FTP Server"
-        encoding = settings.get_setting("ftp_encoding", "utf-8")
-        handler.encoding = encoding
         try:
+            from pyftpdlib.servers import FTPServer as PyFTPD
+        except ImportError:
+            logger.error("FTP server failed: pyftpdlib not installed")
+            return
+
+        try:
+            from pyftpdlib.handlers import TLS_FTPHandler
+        except ImportError:
+            TLS_FTPHandler = None
+
+        try:
+            authorizer = AuthServiceAuthorizer()
+            settings = SettingsService()
+            use_tls = settings.get_setting("ftps_enabled", "False") == "True"
+            certfile = settings.get_setting("ssl_certfile", "")
+            keyfile = settings.get_setting("ssl_keyfile", "")
+            LoggedFTPHandler = _make_ftp_handler()
+            if use_tls and certfile and TLS_FTPHandler is not None:
+                handler = type("LoggedTLSFTPHandler", (LoggedFTPHandler, TLS_FTPHandler), {})
+                handler.certfile = certfile
+                handler.keyfile = keyfile or certfile
+            else:
+                handler = LoggedFTPHandler
+            handler.authorizer = authorizer
+            handler.banner = "Welcome to PersonalDAV FTP Server"
+            encoding = settings.get_setting("ftp_encoding", "utf-8")
+            handler.encoding = encoding
             server = PyFTPD(("0.0.0.0", port), handler)
             self._ftp_server = server
             server.max_cons = 256
@@ -491,7 +512,11 @@ class FTPService:
             logger.info("SFTP server stopped")
 
     def _run_tftp(self, port: int, root: str) -> None:
-        from tftpy import TftpServer
+        try:
+            from tftpy import TftpServer
+        except ImportError:
+            logger.error("TFTP server failed: tftpy not installed")
+            return
         try:
             server = TftpServer(root)
             self._tftp_server = server
@@ -503,7 +528,12 @@ class FTPService:
             logger.info("TFTP server stopped")
 
     def _handle_sftp_client(self, client: socket.socket, addr: tuple[str, int], root: str, auth: AuthService) -> None:
-        import paramiko
+        try:
+            import paramiko
+        except ImportError:
+            logger.error(f"SFTP client rejected [{addr[0]}]: paramiko not installed")
+            client.close()
+            return
         _, StubSFTPServer, SFTPAuthInterface = _make_sftp_classes()
         transport = paramiko.Transport(client)
         try:

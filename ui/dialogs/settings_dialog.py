@@ -11,6 +11,8 @@ from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS
 from services.auth_service import AuthService
 from datetime import datetime
+from utils.validators import validate_port
+from ui.dialogs.confirm_dialog import ConfirmDialog
 
 
 SIMPLE_SETTINGS = [
@@ -58,6 +60,8 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
+    SettingDef("auto_start_ftp", "启动时自动启动文件服务 (FTP/SFTP/TFTP)", "check",
+               "服务器控制", default=False, db_default="False"),
     SettingDef("ftps_enabled", "启用 FTPS (SSL)", "check", "服务器控制",
                default=False, db_default="False"),
     SettingDef("ftp_encoding", "FTP 文件编码:", "combo", "服务器控制",
@@ -66,6 +70,10 @@ SIMPLE_SETTINGS = [
                         "euc-kr", "euc-jp", "cp1252", "iso-8859-1",
                         "cp1250", "cp1251", "koi8-r"],
                width=10),
+    SettingDef("attachment_mode", "日历附件模式:", "combo", "服务器控制",
+               default="内联 Base64", db_default="inline",
+               options=["内联 Base64", "HTTP 链接"],
+               display_map={"内联 Base64": "inline", "HTTP 链接": "uri"}, width=12),
     # ========== 安全设置 ==========
     # force_password / rate_limit 手工构建于 create_security_settings
     SettingDef("start_time_snap", "新建日程默认开始时间:", "combo", "基本设置",
@@ -86,6 +94,7 @@ class SettingsDialog(tk.Toplevel):
         self.grab_set()
         self.db = db_service
         self.on_save_callback = on_save_callback
+        self._port_ck_fns = {}
         self._security_section = SecuritySettingsSection(self)
         self._reminder_section = ReminderPresetSection(self)
 
@@ -213,10 +222,32 @@ class SettingsDialog(tk.Toplevel):
 
     # ── 服务器设置 ──────────────────────────────────────────────
 
+    def _setup_port_validation(self, parent_frame, key):
+        if not hasattr(self, f"{key}_var"):
+            return
+        var = getattr(self, f"{key}_var")
+        target = str(var)
+        for child in parent_frame.winfo_children():
+            if not isinstance(child, ttk.Entry):
+                continue
+            if str(child.cget("textvariable")) != target:
+                continue
+            def _ck(*_, entry=child):
+                ok, msg = validate_port(entry.get())
+                entry.config(foreground="red" if not ok else "orange" if msg else "black")
+            var.trace("w", _ck)
+            self._port_ck_fns[key] = _ck
+            break
+
+    def _refresh_port_validations(self):
+        for fn in self._port_ck_fns.values():
+            fn()
+
     def create_server_settings(self, parent):
         f = ttk.LabelFrame(parent, text="服务器控制")
         f.pack(fill=tk.X, padx=5, pady=5)
         self._build_simple(f, "服务器控制")
+        self._setup_port_validation(f, "default_port")
 
         close_f = ttk.LabelFrame(parent, text="关闭行为")
         close_f.pack(fill=tk.X, padx=5, pady=5)
@@ -231,28 +262,28 @@ class SettingsDialog(tk.Toplevel):
 
         self.ssl_enabled_var = tk.BooleanVar()
         ttk.Checkbutton(body, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
-            row=0, column=0, columnspan=4, sticky="w", padx=5, pady=5)
+            row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
         ttk.Label(body, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
         self.ssl_cert_var = tk.StringVar()
-        ttk.Entry(body, textvariable=self.ssl_cert_var, width=50).grid(row=1, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_cert_var).grid(row=1, column=1, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=2, padx=2)
 
         ttk.Label(body, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
         self.ssl_key_var = tk.StringVar()
-        ttk.Entry(body, textvariable=self.ssl_key_var, width=50).grid(row=2, column=1, columnspan=2, sticky="we", padx=2)
-        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=3, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_key_var).grid(row=2, column=1, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=2, padx=2)
 
         btn_f = ttk.Frame(body)
-        btn_f.grid(row=3, column=0, columnspan=4, pady=5)
+        btn_f.grid(row=3, column=0, columnspan=3, pady=5)
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
 
         self._cert_info_label = ttk.Label(body, text="", foreground="gray")
-        self._cert_info_label.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        self._cert_info_label.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         self._auto_renew_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(body, text="自动续期（证书到期前自动生成新证书）",
-                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
 
         # FTP / WebDAV 设置
@@ -260,12 +291,13 @@ class SettingsDialog(tk.Toplevel):
         extra_f.pack(fill=tk.X, padx=5, pady=2)
         ttk.Label(extra_f, text="WebDAV 根目录:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         self.dav_root_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.dav_root_var, width=40).grid(row=0, column=1, sticky="w", padx=2)
+        ttk.Entry(extra_f, textvariable=self.dav_root_var).grid(row=0, column=1, sticky="we", padx=2)
         ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_dir(self.dav_root_var)).grid(row=0, column=2, padx=2)
         ttk.Label(extra_f, text="FTP 独立密码:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.ftp_password_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.ftp_password_var, width=20, show="*").grid(row=1, column=1, sticky="w", padx=2)
+        ttk.Entry(extra_f, textvariable=self.ftp_password_var, show="*").grid(row=1, column=1, sticky="we", padx=2)
         ttk.Label(extra_f, text="（留空=统一账号）").grid(row=1, column=2, sticky="w", padx=2)
+        extra_f.grid_columnconfigure(1, weight=1)
 
         # 备份与恢复
         bk_f = CollapsibleFrame(parent, text="备份与恢复")
@@ -289,24 +321,28 @@ class SettingsDialog(tk.Toplevel):
 
         ttk.Label(f, text="服务器 URL:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
         self.sync_url_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.sync_url_var, width=50).grid(row=0, column=1, sticky="we", padx=5, pady=3)
-        ttk.Label(f, text="https://example.com/remote.php/dav/", foreground="gray").grid(row=0, column=2, sticky="w", padx=2)
+        enf = ttk.Frame(f)
+        enf.grid(row=0, column=1, columnspan=2, sticky="we", padx=2)
+        ttk.Entry(enf, textvariable=self.sync_url_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Label(enf, text="https://example.com/remote.php/dav/", foreground="gray").pack(side=tk.LEFT, padx=5)
 
         ttk.Label(f, text="用户名:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
         self.sync_user_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.sync_user_var, width=30).grid(row=1, column=1, sticky="w", padx=5, pady=3)
+        ttk.Entry(f, textvariable=self.sync_user_var).grid(row=1, column=1, columnspan=2, sticky="we", padx=2, pady=3)
 
         ttk.Label(f, text="应用密码:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
         self.sync_password_var = tk.StringVar()
-        ttk.Entry(f, textvariable=self.sync_password_var, width=30, show="*").grid(row=2, column=1, sticky="w", padx=5, pady=3)
+        ttk.Entry(f, textvariable=self.sync_password_var, show="*").grid(row=2, column=1, columnspan=2, sticky="we", padx=2, pady=3)
 
         ttk.Label(f, text="同步间隔:").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+        sf = ttk.Frame(f)
+        sf.grid(row=3, column=1, columnspan=2, sticky="w", padx=2)
         self.sync_interval_var = tk.StringVar(value="30")
-        ttk.Spinbox(f, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).grid(row=3, column=1, sticky="w", padx=5, pady=3)
-        ttk.Label(f, text="分钟").grid(row=3, column=2, sticky="w", padx=2)
+        ttk.Spinbox(sf, from_=5, to=1440, textvariable=self.sync_interval_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(sf, text="分钟").pack(side=tk.LEFT, padx=2)
 
         self.sync_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+        ttk.Checkbutton(f, text="启用定时同步", variable=self.sync_enabled_var).grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
         ttk.Label(f, text="提示：在 Nextcloud 安全设置中生成「应用密码」，建议不要使用主密码。",
                   foreground="gray", wraplength=500).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
@@ -333,6 +369,8 @@ class SettingsDialog(tk.Toplevel):
         self._mcp_url_label.pack(anchor="w", padx=10, pady=5)
         ttk.Label(info, text="提示：更改端口后需重启程序或重新打开设置以刷新 URL。",
                   foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=5)
+
+        self._setup_port_validation(f, "mcp_port")
 
         def update_url(*_):
             port = self.mcp_port_var.get() if hasattr(self, 'mcp_port_var') else "8100"
@@ -774,10 +812,12 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.sync_interval_var.set(s.get_setting("sync_interval", "30"))
         self.sync_enabled_var.set(s.get_setting("sync_enabled", "False") == "True")
 
+        self._refresh_port_validations()
+
     # ── 重置 ────────────────────────────────────────────────────
 
     def reset_settings(self):
-        if not messagebox.askyesno("确认重置", "确定要重置所有设置吗？\n此操作无法撤销。", parent=self):
+        if not ConfirmDialog.ask(self, "确认重置", "确定要重置所有设置吗？\n此操作无法撤销。"):
             return
         self.db.reset_all()
         self._reset_simple()
@@ -825,7 +865,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         from utils.backup import export_backup
         if export_backup(path):
             from ui.widgets.toast import Toast
-            Toast.show(self, f"备份已导出到:\n{path}", duration=4000)
+            Toast.success(self, f"备份已导出到:\n{path}")
         else:
             messagebox.showerror("备份失败", "导出过程中发生错误，请查看日志。", parent=self)
 
@@ -834,15 +874,14 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             title="从备份恢复", filetypes=[("ZIP 文件", "*.zip")], parent=self)
         if not path:
             return
-        if not messagebox.askyesno("确认恢复",
-                                    "恢复将替换当前数据库和设置，\n"
-                                    "程序需要重启才能生效。确定继续？", parent=self):
+        if not ConfirmDialog.ask(self, "确认恢复",
+                                  "恢复将替换当前数据库和设置，\n"
+                                  "之后可能需要重启服务器才能完全生效。确定继续？"):
             return
         from utils.backup import import_backup
         if import_backup(path):
-            self._load_settings()
-            messagebox.showinfo("恢复成功",
-                                "数据已恢复，请重启程序以使更改生效。", parent=self)
+            self.restart_requested = True
+            self.destroy()
         else:
             messagebox.showerror("恢复失败", "恢复过程中发生错误，请查看日志。", parent=self)
 
@@ -851,9 +890,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         if Database._vacuum_in_progress:
             messagebox.showinfo("提示", "数据库压缩已在运行中，请等待完成。", parent=self)
             return
-        if not messagebox.askyesno("压缩数据库",
-                                    "压缩将重写整个数据库以释放空闲空间。\n"
-                                    "期间程序响应会变慢，确定继续？", parent=self):
+        if not ConfirmDialog.ask(self, "压缩数据库",
+                                  "压缩将重写整个数据库以释放空闲空间。\n"
+                                  "期间程序响应会变慢，确定继续？"):
             return
 
         progress = tk.Toplevel(self)
@@ -932,6 +971,13 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("close_action", self.close_action_var.get())
+
+        for name, key in [("DAV 端口", "default_port"), ("MCP 端口", "mcp_port")]:
+            if hasattr(self, f"{key}_var"):
+                ok, msg = validate_port(getattr(self, f"{key}_var").get())
+                if not ok:
+                    messagebox.showerror("端口错误", f"{name}: {msg}", parent=self)
+                    return
 
         s.set_setting("dav_root", self.dav_root_var.get())
         s.set_setting("ftp_password", self.ftp_password_var.get())

@@ -3,6 +3,7 @@ from datetime import datetime
 from database.repositories.event_repository import EventRepository
 from models.event import EventModel
 from services.base_service import BaseService
+from services.ical_builder import inject_attachments
 from utils.logger import logger
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
@@ -97,3 +98,24 @@ class EventService(BaseService):
             chunk = '\n'.join(lines)
             if chunk.strip(): inner.append(chunk)
         return self.generate_calendar_wrapper(inner)
+
+    def get_full_ical(self, uid: str, mode: str = "inline", base_url: str = "") -> str | None:
+        stored = self.get_by_uid(uid)
+        if stored is None:
+            return None
+        return inject_attachments(stored, mode, base_url)
+
+    def get_all_full_raw(self, mode: str = "inline", base_url: str = "") -> list[str]:
+        return [inject_attachments(getattr(c, self._raw_field), mode, base_url) for c in self.repo.get_all()]
+
+    def get_all_full_items(self, mode: str = "inline", base_url: str = "") -> list[tuple[str, str]]:
+        return [(getattr(c, 'uid'), inject_attachments(getattr(c, self._raw_field), mode, base_url)) for c in self.repo.get_all()]
+
+    def get_selected_full_raw(self, uids: list[str]) -> list[str]:
+        result = []
+        for uid in uids:
+            c = self.repo.get_by_uid(uid)
+            if c:
+                raw = getattr(c, self._raw_field)
+                result.append(inject_attachments(raw, "inline", ""))
+        return result

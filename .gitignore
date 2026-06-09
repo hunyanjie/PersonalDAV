@@ -194,7 +194,9 @@ cython_debug/
 .cursorindexingignore
 
 # Other
-.idea/
+.gemini/
+.opencode/
+graphify-out/
 docs/
 data/
 
@@ -203,3 +205,6 @@ ftp_root/
 
 tests/snapshots/*.png
 tests/snapshots/diff/
+
+AGENTS.md
+GEMINI.md

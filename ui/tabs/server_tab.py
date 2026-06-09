@@ -10,6 +10,7 @@ from services.ftp_service import FTPService
 from utils.logger import logger, GUIHandler
 
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
+from utils.validators import validate_port
 
 
 SERVER_ENCODINGS = [
@@ -104,6 +105,8 @@ class ServerTab(ttk.Frame):
         self.port_var = tk.StringVar(value=self.settings_service.get_setting("default_port", "8000"))
         self.port_entry = ttk.Entry(port_frame, textvariable=self.port_var, width=10)
         self.port_entry.pack(side=tk.LEFT, padx=5)
+        self.port_hint = ttk.Label(port_frame, text="", font=("", 8)); self.port_hint.pack(side=tk.LEFT, padx=5)
+        self._setup_port_validation(self.port_entry, self.port_var, self.port_hint)
         self.port_var.trace("w", lambda *a: self._update_info())
 
         self.start_btn = ttk.Button(port_frame, text="启动服务器", command=self.start_server)
@@ -132,6 +135,7 @@ class ServerTab(ttk.Frame):
         ttk.Label(ftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.ftp_port_entry = ttk.Entry(ftp_row, textvariable=self.ftp_port_var, width=6)
         self.ftp_port_entry.pack(side=tk.LEFT)
+        self._setup_port_validation(self.ftp_port_entry, self.ftp_port_var)
         ttk.Label(ftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
         self.ftp_root_entry = ttk.Entry(ftp_row, textvariable=self.ftp_root_var, width=40)
         self.ftp_root_entry.pack(side=tk.LEFT, padx=2)
@@ -149,6 +153,7 @@ class ServerTab(ttk.Frame):
         ttk.Label(sftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.sftp_port_entry = ttk.Entry(sftp_row, textvariable=self.sftp_port_var, width=6)
         self.sftp_port_entry.pack(side=tk.LEFT)
+        self._setup_port_validation(self.sftp_port_entry, self.sftp_port_var)
         ttk.Label(sftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
         self.sftp_root_entry = ttk.Entry(sftp_row, textvariable=self.sftp_root_var, width=40)
         self.sftp_root_entry.pack(side=tk.LEFT, padx=2)
@@ -166,6 +171,7 @@ class ServerTab(ttk.Frame):
         ttk.Label(tftp_row, text="端口:").pack(side=tk.LEFT, padx=5)
         self.tftp_port_entry = ttk.Entry(tftp_row, textvariable=self.tftp_port_var, width=6)
         self.tftp_port_entry.pack(side=tk.LEFT)
+        self._setup_port_validation(self.tftp_port_entry, self.tftp_port_var)
         ttk.Label(tftp_row, text="根目录:").pack(side=tk.LEFT, padx=5)
         self.tftp_root_entry = ttk.Entry(tftp_row, textvariable=self.tftp_root_var, width=40)
         self.tftp_root_entry.pack(side=tk.LEFT, padx=2)
@@ -242,8 +248,28 @@ class ServerTab(ttk.Frame):
         else:
             status_label.config(text="✗", foreground="red")
 
+    def _setup_port_validation(self, entry, var, hint_label=None):
+        def _ck(*_):
+            ok, msg = validate_port(var.get())
+            entry.config(foreground="red" if not ok else "orange" if msg else "black")
+            if hint_label:
+                if not ok: hint_label.config(text=msg, foreground="red")
+                elif msg: hint_label.config(text=msg, foreground="orange")
+                else: hint_label.config(text="")
+        var.trace("w", _ck)
+        _ck()
+
     def _save_ftp_settings(self):
         if self.ftp_auto_save.get():
+            for name, var in [("FTP 端口", self.ftp_port_var), ("SFTP 端口", self.sftp_port_var),
+                              ("TFTP 端口", self.tftp_port_var)]:
+                ok, msg = validate_port(var.get())
+                if not ok:
+                    messagebox.showerror("端口错误", f"{name}: {msg}", parent=self)
+                    return
+                if msg:
+                    from ui.widgets.toast import Toast
+                    Toast.warning(self, f"{name}: {msg}")
             self.settings_service.set_setting("ftp_enabled", str(self.ftp_enabled.get()))
             self.settings_service.set_setting("ftp_port", self.ftp_port_var.get())
             self.settings_service.set_setting("ftp_root", self.ftp_root_var.get())
@@ -306,6 +332,29 @@ class ServerTab(ttk.Frame):
             msg = f"启动异常: {e}"
             logger.error(msg)
             self.log_message(msg, logging.ERROR)
+
+    def _auto_start_ftp(self):
+        """启动时自动启动文件服务 — 无对话框，失败只记日志。"""
+        for name, var, port_var, root_var in [
+            ("FTP", self.ftp_enabled, self.ftp_port_var, self.ftp_root_var),
+            ("SFTP", self.sftp_enabled, self.sftp_port_var, self.sftp_root_var),
+            ("TFTP", self.tftp_enabled, self.tftp_port_var, self.tftp_root_var),
+        ]:
+            if not var.get():
+                continue
+            path = os.path.expanduser(os.path.expandvars(root_var.get().strip()))
+            if not path or not os.path.exists(path):
+                logger.warning(f"{name} 自动启动跳过: 根目录无效 ({root_var.get()})")
+                return
+        try:
+            if self.ftp_service.start():
+                self._set_ftp_config_state(True)
+                self.ftp_start_btn.config(state=tk.DISABLED)
+                self.ftp_stop_btn.config(state=tk.NORMAL)
+                self.ftp_status_label.config(text="状态: 运行中")
+                logger.info("文件服务 (FTP/SFTP/TFTP) 已自动启动")
+        except Exception as e:
+            logger.warning(f"文件服务自动启动失败: {e}")
 
     def stop_ftp_services(self):
         self.ftp_service.stop()
@@ -378,9 +427,16 @@ WebDAV 文件服务:
     LEVEL_TAGS = {50: "CRITICAL", 40: "ERROR", 30: "WARNING", 20: "INFO", 10: "DEBUG"}
 
     def start_server(self):
+        ok, msg = validate_port(self.port_entry.get())
+        if not ok:
+            messagebox.showerror("端口错误", msg, parent=self)
+            return
+        if msg:
+            from ui.widgets.toast import Toast
+            Toast.warning(self, msg)
         port = int(self.port_entry.get())
         if self.settings_service.get_setting("auto_save_port", "True") == "True":
-            self.settings_service.set_setting("default_port", port)
+            self.settings_service.set_setting("default_port", self.port_entry.get())
 
         ssl_enabled = self.ssl_enabled.get()
         ssl_cert = self.ssl_cert_var.get().strip()

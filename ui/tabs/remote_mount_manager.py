@@ -1,5 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from ui.widgets.toast import Toast
+from ui.dialogs.confirm_dialog import ConfirmDialog
 from services.smb_service import SMBService
 from database.db_manager import Database
 from utils.crypto import encrypt, decrypt
@@ -37,7 +39,7 @@ class RemoteMountManager:
                 "INSERT INTO remote_connections (protocol, server, port, username, password, encoding, label, created_at) VALUES (?,?,?,?,?,?,?,?)",
                 conn_info)
 
-        messagebox.showinfo("成功", "已保存连接", parent=self.tab)
+        Toast.success(self.tab, "已保存连接")
         self.refresh()
 
     def refresh(self):
@@ -196,7 +198,7 @@ class RemoteMountManager:
         sel = tree.selection()
         if not sel:
             return
-        if not messagebox.askyesno("确认删除", f"确定要删除 {len(sel)} 条记录吗？", parent=self.tab):
+        if not ConfirmDialog.ask(self.tab, "确认删除", f"确定要删除 {len(sel)} 条记录吗？"):
             return
         for item in sel:
             values = tree.item(item, "values")

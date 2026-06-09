@@ -1,4 +1,4 @@
-"""Treeview 通用操作基类 — 原生 Treeview + yview 滚动。"""
+"""Treeview 通用操作基类 — 原生 Treeview + 滚动。"""
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
@@ -16,6 +16,7 @@ class BaseTreeTab(ttk.Frame):
     HEADINGS = {}         # 子类覆盖: {'col1': '标题1', ...}
     DEFAULT_SORT_COL = ''     # 默认排序列（子类可覆盖）
     DEFAULT_SORT_REV = False  # 默认排序方向
+    BATCH_SIZE = 200      # 批量插入每批条数
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -31,6 +32,13 @@ class BaseTreeTab(ttk.Frame):
         self._user_sort = False
         self._all_data = []       # 全量数据列表（已过滤）
         self._selected_uids = set()  # 跨页记住选中状态
+        self._insert_pending = False  # 批量插入进行中
+        self._uid_to_item = {}    # uid -> tree item id
+        self._item_to_uid = {}    # tree item id -> uid（反向映射，避免 Tcl 调用）
+        self._drag_lo = None      # 拖拽最小行索引
+        self._drag_hi = None      # 拖拽最大行索引
+        self._auto_scroll_after_id = None  # 自动滚动定时器 ID
+        self._last_drag_y = 0       # 拖拽末次鼠标 Y 坐标
         self.app_root = None
         self._import_type = ''
 
@@ -61,7 +69,6 @@ class BaseTreeTab(ttk.Frame):
 
     def setup_treeview(self, list_frame, on_edit_callback):
         """初始化标准 Treeview。"""
-        # 创建 Treeview
         self.tree = ttk.Treeview(list_frame, columns=['selected'] + list(self.COLUMNS),
                                  show='headings', selectmode='extended')
         self.tree.heading('selected', text='✓')
@@ -73,7 +80,7 @@ class BaseTreeTab(ttk.Frame):
                             command=lambda c=col: self.sort_tree(c))
             self.tree.column(col, width=width)
 
-        # 滚动条
+        # 滚动条 — 原生连接
         self.vscroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.vscroll.set)
         self.hscroll = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
@@ -107,6 +114,51 @@ class BaseTreeTab(ttk.Frame):
         """鼠标滚轮滚动。"""
         self.tree.yview_scroll(-int(event.delta / 120), 'units')
 
+    # ── 大批量数据分批插入 ──
+
+    def _batch_insert(self, start=0):
+        """分批插入 _all_data 到 Treeview，避免 UI 卡顿。"""
+        self._insert_pending = True
+        end = min(start + self.BATCH_SIZE, len(self._all_data))
+        for i in range(start, end):
+            uid = self._all_data[i][1]
+            vals = list(self._all_data[i])
+            vals[0] = "✓" if uid in self._selected_uids else " "
+            item_id = self.tree.insert("", tk.END, values=vals)
+            self._uid_to_item[uid] = item_id
+            self._item_to_uid[item_id] = uid
+        if end < len(self._all_data):
+            self.after(1, lambda: self._batch_insert(end))
+        else:
+            self._insert_pending = False
+            self._sync_checkboxes()
+
+    def _rerender(self):
+        """用当前 _all_data 重建视图。"""
+        if self._insert_pending:
+            return
+        self._uid_to_item.clear()
+        self._item_to_uid.clear()
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        if self._all_data:
+            self._batch_insert(0)
+        else:
+            self._sync_checkboxes()
+
+    def _after_refresh(self):
+        """数据刷新后恢复排序状态 — 子类 refresh_* 末尾调用。"""
+        if self._user_sort and self._sort_col:
+            self._sort_tree_exec()
+        elif self.DEFAULT_SORT_COL:
+            self._sort_col = self.DEFAULT_SORT_COL
+            self._sort_rev = self.DEFAULT_SORT_REV
+            self._sort_tree_exec()
+        else:
+            self._sort_col = ''
+            self._rerender()
+            self._update_sort_arrows()
+
     def _on_click(self, event):
         """处理点击事件。"""
         region = self.tree.identify("region", event.x, event.y)
@@ -129,17 +181,18 @@ class BaseTreeTab(ttk.Frame):
             visible = self.tree.get_children()
             if not visible:
                 return "break"
+            old_sel = self._selected_uids.copy()
             start_idx = visible.index(self._last_selected or visible[0])
             end_idx = visible.index(item)
             selected = visible[min(start_idx, end_idx):max(start_idx, end_idx)+1]
-            selected_uids = {self._uid_of(i) for i in selected}
-            self._selected_uids = selected_uids
+            self._selected_uids = {self._item_to_uid[i] for i in selected}
             self.tree.selection_set(selected)
-            self._update_checkboxes()
+            self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
         ctrl = bool(event.state & 0x0004)
-        uid = self._uid_of(item) if item else None
+        uid = self._item_to_uid.get(item) if item else None
+        old_sel = self._selected_uids.copy()
 
         # 复选框列点击
         if column == "#1" and item:
@@ -154,7 +207,7 @@ class BaseTreeTab(ttk.Frame):
                 self.tree.selection_set([item])
                 self._selected_uids = {uid} if uid else set()
             self._last_selected = item
-            self._update_checkboxes()
+            self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
         # 普通列点击
@@ -170,7 +223,7 @@ class BaseTreeTab(ttk.Frame):
                 self.tree.selection_set([item])
                 self._selected_uids = {uid} if uid else set()
             self._last_selected = item
-            self._update_checkboxes()
+            self._sync_checkboxes(old_sel ^ self._selected_uids)
             return "break"
 
     def _uid_of(self, item):
@@ -178,39 +231,79 @@ class BaseTreeTab(ttk.Frame):
         vals = self.tree.item(item, 'values')
         return vals[1] if len(vals) > 1 else None
 
-    def _on_drag(self, event):
-        """处理拖拽选多行。"""
-        self._dragging = True
-        TreeviewScroller.handle_drag_scroll(self.tree, event)
-
-        if not self._drag_item:
-            return
-        item = self.tree.identify_row(event.y)
+    def _do_drag_select(self, item):
+        """拖拽选择逻辑 — 被 _on_drag 和 _auto_scroll_tick 共用。"""
         if not item:
             return
-
         visible = self.tree.get_children()
         if not visible:
             return
-        start_idx = visible.index(self._drag_item)
-        curr_idx = visible.index(item)
-        selected = visible[min(start_idx, curr_idx):max(start_idx, curr_idx)+1]
-        self._selected_uids = {self._uid_of(i) for i in selected}
+        try:
+            start_idx = self.tree.index(self._drag_item)
+            curr_idx = self.tree.index(item)
+        except tk.TclError:
+            return
+        lo = min(start_idx, curr_idx)
+        hi = max(start_idx, curr_idx)
+        upd_lo = lo if self._drag_lo is None else min(lo, self._drag_lo)
+        upd_hi = hi if self._drag_hi is None else max(hi, self._drag_hi)
+        self._drag_lo, self._drag_hi = lo, hi
+        selected = visible[lo:hi+1]
+        self._selected_uids = {self._item_to_uid[i] for i in selected}
         self.tree.selection_set(selected)
-        self._update_checkboxes()
+        for i in range(upd_lo, upd_hi + 1):
+            self.tree.set(visible[i], 'selected', "✓" if lo <= i <= hi else " ")
+
+    def _start_auto_scroll(self, units):
+        """启动/更新自动滚动循环。"""
+        if self._auto_scroll_after_id:
+            self.after_cancel(self._auto_scroll_after_id)
+        self._auto_scroll_tick(units)
+
+    def _stop_auto_scroll(self):
+        if self._auto_scroll_after_id:
+            self.after_cancel(self._auto_scroll_after_id)
+            self._auto_scroll_after_id = None
+
+    def _auto_scroll_tick(self, units):
+        """自动滚动一次并更新选择。"""
+        self.tree.yview_scroll(units, "units")
+        if self._drag_item:
+            item = self.tree.identify_row(self._last_drag_y)
+            self._do_drag_select(item)
+        self._auto_scroll_after_id = self.after(30, lambda: self._auto_scroll_tick(units))
+
+    def _on_drag(self, event):
+        """处理拖拽选多行。"""
+        self._dragging = True
+        self._last_drag_y = event.y
+        units = TreeviewScroller.compute_scroll_units(self.tree, event)
+        if units:
+            self._start_auto_scroll(units)
+        else:
+            self._stop_auto_scroll()
+        if not self._drag_item:
+            return
+        item = self.tree.identify_row(event.y)
+        self._do_drag_select(item)
 
     def _on_release(self, event):
         """处理释放事件"""
+        self._stop_auto_scroll()
         self._drag_start = None
         self._drag_item = None
+        self._drag_lo = None
+        self._drag_hi = None
+        if self._dragging:
+            self._sync_checkboxes()
         self._dragging = False
 
     def select_all(self, event=None):
-        """全选当前页。"""
+        """全选。"""
         visible = self.tree.get_children()
-        self._selected_uids.update(self._uid_of(i) for i in visible)
+        self._selected_uids.update(self._item_to_uid[i] for i in visible)
         self.tree.selection_set(visible)
-        self._update_checkboxes()
+        self._sync_checkboxes()
         return "break"
 
     def delete_selected(self):
@@ -218,32 +311,42 @@ class BaseTreeTab(ttk.Frame):
         self._on_delete()
 
     def toggle_all_selection(self):
-        """切换当前页全选状态。"""
+        """切换全选状态。"""
         visible = self.tree.get_children()
         if not visible:
             return
         all_sel = all(i in self.tree.selection() for i in visible)
         if all_sel:
-            self._selected_uids.difference_update(self._uid_of(i) for i in visible)
+            self._selected_uids.difference_update(self._item_to_uid[i] for i in visible)
             self.tree.selection_set([])
         else:
-            self._selected_uids.update(self._uid_of(i) for i in visible)
+            self._selected_uids.update(self._item_to_uid[i] for i in visible)
             self.tree.selection_set(visible)
-        self._update_checkboxes()
+        self._sync_checkboxes()
 
     def get_selected_uids(self):
         """返回所有已选 UID（跨页）。"""
         return self._selected_uids
 
-    def _update_checkboxes(self):
-        """根据 _selected_uids 刷新当前页复选框和选中高亮。"""
+    def _sync_checkboxes(self, uids=None):
+        """同步复选框和选中状态。
+        
+        Args:
+            uids: 若提供，只更新这些 UID 对应行的复选框（不更新 selection）。
+                  若为 None，全量同步（遍历所有行 + 重建 selection）。
+        """
+        if uids is not None:
+            for uid in uids:
+                item = self._uid_to_item.get(uid)
+                if item is None:
+                    continue
+                self.tree.set(item, 'selected', "✓" if uid in self._selected_uids else " ")
+            return
         sel = []
         for i in self.tree.get_children():
-            uid = self._uid_of(i)
+            uid = self._item_to_uid.get(i)
             selected = uid in self._selected_uids
-            vals = list(self.tree.item(i, 'values'))
-            vals[0] = "✓" if selected else " "
-            self.tree.item(i, values=vals)
+            self.tree.set(i, 'selected', "✓" if selected else " ")
             if selected:
                 sel.append(i)
         self.tree.selection_set(sel)
@@ -302,27 +405,6 @@ class BaseTreeTab(ttk.Frame):
             self._sort_tree_exec()
         else:
             self._sort_col = ''
-            self._update_sort_arrows()
-
-    def _rerender(self):
-        """用当前 _all_data 重建视图，并恢复选中状态。"""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        for row in self._all_data:
-            self.tree.insert("", tk.END, values=row)
-        self._update_checkboxes()
-
-    def _after_refresh(self):
-        """数据刷新后恢复排序状态 — 子类 refresh_* 末尾调用。"""
-        if self._user_sort and self._sort_col:
-            self._sort_tree_exec()
-        elif self.DEFAULT_SORT_COL:
-            self._sort_col = self.DEFAULT_SORT_COL
-            self._sort_rev = self.DEFAULT_SORT_REV
-            self._sort_tree_exec()
-        else:
-            self._sort_col = ''
-            self._rerender()
             self._update_sort_arrows()
 
     def _update_sort_arrows(self):

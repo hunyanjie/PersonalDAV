@@ -12,6 +12,7 @@ from network.auth_middleware import AuthMiddleware
 from network.carddav_handler import CardDAVHandler
 from network.caldav_handler import CalDAVHandler
 from network.webdav_file_handler import WebDAVFileHandler
+from network.attachment_handler import AttachmentHandler
 
 
 class DAVHandler(BaseHTTPRequestHandler):
@@ -62,6 +63,8 @@ class DAVHandler(BaseHTTPRequestHandler):
                 CardDAVHandler.do_GET(self)
             elif self.path.startswith("/events/"):
                 CalDAVHandler.do_GET(self)
+            elif self.path.startswith("/attachments/"):
+                AttachmentHandler.do_GET(self)
             elif self.path == "/":
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html; charset=utf-8')
@@ -312,7 +315,8 @@ class DAVServer:
     def start(self):
         self.start_time = time.time()
         self.server = HTTPServer(('', self.port), DAVHandler)
-        scheme = "HTTPS" if (self.ssl_enabled and self.ssl_certfile) else "HTTP"
+        self.server.sslmode = self.ssl_enabled and bool(self.ssl_certfile)
+        scheme = "HTTPS" if self.server.sslmode else "HTTP"
         if self.ssl_enabled and self.ssl_certfile:
             try:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

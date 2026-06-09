@@ -14,6 +14,8 @@ from config import SOFTWARE_NAME, SOFTWARE_VERSION
 from utils.logger import logger
 from models.event import EventModel
 from utils.timezone_helper import TimezoneHelper
+from utils import attachment_store
+from ui.dialogs.confirm_dialog import ConfirmDialog
 from models.constants import (
     STATUS_MAPPING, STATUS_REV_MAPPING,
     TRANSPARENCY_MAPPING, TRANSPARENCY_REV_MAPPING,
@@ -407,6 +409,7 @@ class EventDialog:
     def _add_exdate(self):
         from tkcalendar import Calendar
         w = tk.Toplevel(self.root); w.title("选择例外日期"); w.grab_set()
+        from utils.window_utils import center_window; center_window(w, self.root)
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         cal.pack(padx=10, pady=10)
         def confirm():
@@ -423,6 +426,7 @@ class EventDialog:
         old = self.exdate_listbox.get(idx)
         from tkcalendar import Calendar
         w = tk.Toplevel(self.root); w.title("编辑例外日期"); w.grab_set()
+        from utils.window_utils import center_window; center_window(w, self.root)
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         from datetime import datetime as _dt
         try: cal.selection_set(_dt.strptime(old, '%Y-%m-%d'))
@@ -523,9 +527,9 @@ class EventDialog:
                            '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                            '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
                 fmttype = fmt_map.get(ext, 'application/octet-stream')
-                b64 = base64.b64encode(data).decode('ascii')
-                self.attachments.append({'inline': True, 'data': b64, 'filename': name,
-                                         'fmttype': fmttype, 'size': len(data)})
+                rec = attachment_store.save(data, name, fmttype)
+                rec['inline'] = True
+                self.attachments.append(rec)
                 self._attach_refresh()
             except Exception as e:
                 messagebox.showerror("错误", f"无法读取文件:\n{e}", parent=self.root)
@@ -542,6 +546,7 @@ class EventDialog:
         for item in reversed(sel):
             idx = self.attach_tree.index(item)
             if 0 <= idx < len(self.attachments):
+                attachment_store.delete(self.attachments[idx])
                 self.attachments.pop(idx)
         self._attach_refresh()
 
@@ -552,11 +557,14 @@ class EventDialog:
         if idx < 0 or idx >= len(self.attachments): return
         a = self.attachments[idx]
         if a.get('inline'):
-            ext = os.path.splitext(a['filename'])[1] or '.bin'
+            data = attachment_store.read(a)
+            if data is None:
+                messagebox.showerror("错误", "附件文件不存在或无法读取", parent=self.root)
+                return
             tmp = os.path.join(os.environ.get('TEMP', os.environ.get('TMP', '.')), a['filename'])
             try:
                 with open(tmp, 'wb') as f:
-                    f.write(base64.b64decode(a['data']))
+                    f.write(data)
                 os.startfile(tmp)
             except Exception as e:
                 messagebox.showerror("错误", f"无法打开附件:\n{e}", parent=self.root)
@@ -583,10 +591,10 @@ class EventDialog:
                            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                            '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                            '.txt': 'text/plain', '.zip': 'application/zip', '.mp3': 'audio/mpeg'}
-                a['data'] = base64.b64encode(data).decode('ascii')
-                a['filename'] = name
-                a['fmttype'] = fmt_map.get(ext, 'application/octet-stream')
-                a['size'] = len(data)
+                attachment_store.delete(a)
+                new_rec = attachment_store.save(data, name, fmt_map.get(ext, 'application/octet-stream'))
+                new_rec['inline'] = True
+                self.attachments[idx] = new_rec
                 self._attach_refresh()
             except Exception as e:
                 messagebox.showerror("错误", f"无法替换文件:\n{e}", parent=self.root)
@@ -665,7 +673,7 @@ class EventDialog:
         key = self.other_key_var.get().strip()
         value = self.other_val_var.get().strip()
         if not key:
-            messagebox.showwarning("提示", "键不能为空", parent=self.root)
+            Toast.warning(self.root, "键不能为空")
             return
         self.other_fields.append({"key": key.upper(), "value": value})
         self._other_refresh()
@@ -673,13 +681,13 @@ class EventDialog:
     def _other_update(self):
         sel = self.other_tree.selection()
         if len(sel) != 1:
-            messagebox.showinfo("提示", "请选择一个字段", parent=self.root)
+            Toast.warning(self.root, "请选择一个字段")
             return
         idx = self.other_tree.index(sel[0])
         key = self.other_key_var.get().strip()
         value = self.other_val_var.get().strip()
         if not key:
-            messagebox.showwarning("提示", "键不能为空", parent=self.root)
+            Toast.warning(self.root, "键不能为空")
             return
         self.other_fields[idx] = {"key": key.upper(), "value": value}
         self._other_refresh()
@@ -687,7 +695,7 @@ class EventDialog:
     def _other_edit(self):
         sel = self.other_tree.selection()
         if len(sel) != 1:
-            messagebox.showinfo("提示", "请选择一个字段", parent=self.root)
+            Toast.warning(self.root, "请选择一个字段")
             return
         idx = self.other_tree.index(sel[0])
         self.other_key_var.set(self.other_fields[idx]['key'])
@@ -696,9 +704,9 @@ class EventDialog:
     def _other_delete(self):
         sel = self.other_tree.selection()
         if not sel:
-            messagebox.showinfo("提示", "请选择要删除的字段", parent=self.root)
+            Toast.warning(self.root, "请选择要删除的字段")
             return
-        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self.root):
+        if not ConfirmDialog.ask(self.root, "确认", f"确定删除选中的 {len(sel)} 个字段?"):
             return
         indices = sorted([self.other_tree.index(i) for i in sel], reverse=True)
         for idx in indices:
@@ -862,16 +870,19 @@ class EventDialog:
 
     def custom_repeat_settings(self):
         dialog = tk.Toplevel(self.root); dialog.title("自定义重复设置"); dialog.grab_set()
+        from utils.window_utils import center_window; center_window(dialog, self.root)
         main_f = ttk.Frame(dialog); main_f.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         ttk.Label(main_f, text="重复频率:").grid(row=0, column=0, sticky="w")
         self.freq_var = tk.StringVar(value="每周")
         ttk.Combobox(main_f, textvariable=self.freq_var, values=["每天", "每周", "每月", "每年"], state="readonly").grid(row=0, column=1, pady=5)
         ttk.Label(main_f, text="重复间隔:").grid(row=1, column=0, sticky="w")
         self.interval_var = tk.StringVar(value="1")
-        ttk.Spinbox(main_f, from_=1, to=99, textvariable=self.interval_var, width=5).grid(row=1, column=1, pady=5, sticky="w")
-        def save_custom():
+        interval_spin = ttk.Spinbox(main_f, from_=1, to=99, textvariable=self.interval_var, width=5)
+        interval_spin.grid(row=1, column=1, pady=5, sticky="w")
+        def save_custom(*_):
             self.custom_repeat_data = {'freq': FREQ_MAPPING.get(self.freq_var.get(), "WEEKLY"), 'interval': self.interval_var.get()}
             dialog.destroy()
+        interval_spin.bind("<Return>", save_custom); dialog.bind("<Return>", save_custom)
         ttk.Button(main_f, text="确定", command=save_custom).grid(row=2, column=1, pady=20)
 
     def update_reminder_listbox(self):
@@ -897,7 +908,7 @@ class EventDialog:
     def edit_reminder(self):
         s = self.reminder_listbox.curselection()
         if s: self._edit_reminder(s[0])
-        else: messagebox.showwarning("提示", "请先选择要编辑的提醒", parent=self.root)
+        else: Toast.warning(self.root, "请先选择要编辑的提醒")
 
     def _open_reminder_editor(self, initial_alarm=None, callback=None):
         """打开提醒编辑器对话框 (精细化)"""
@@ -997,6 +1008,7 @@ class EventDialog:
 
     def show_raw_data(self):
         win = tk.Toplevel(self.root); win.title("原始数据")
+        from utils.window_utils import center_window; center_window(win, self.root)
         sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
         txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
         RightClickMenu(txt, "text", actions=["copy", None, "select_all"])

@@ -299,6 +299,12 @@ class ImportPreviewFrame(BaseTreeTab):
             return f"{label}(覆盖)"
         return f"{label}(重置)"
 
+    def _set_item_checkbox(self, iid, value):
+        vals = list(self.tree.item(iid, 'values'))
+        if vals:
+            vals[0] = value
+            self.tree.item(iid, values=vals)
+
     def selected_items(self):
         result = []
         for iid in self.tree.get_children():
@@ -317,7 +323,10 @@ class ImportPreviewFrame(BaseTreeTab):
         self._sync_all_checkboxes()
 
     def _sync_all_checkboxes(self):
-        self._update_checkboxes(list(self.tree.selection()))
+        """同步复选框与 Treeview 选中状态。"""
+        sel = set(self.tree.selection())
+        for iid in self.tree.get_children():
+            self._set_item_checkbox(iid, "✓" if iid in sel else " ")
 
     def _on_double_click(self, event):
         iid = self.tree.identify_row(event.y)

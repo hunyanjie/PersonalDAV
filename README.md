@@ -19,6 +19,9 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
 - 🗜️ **数据库压缩** — 删除数据后空闲空间不浪费，可在设置页手动压缩或启动时自动整理
 - 🛡️ **IP 访问控制** — 白名单/黑名单/CIDR/通配符，支持本机免密码
+- 🔑 **URL 鉴权** — 附件下载链接带防伪签名，防止盗链和滥用
+- 🌐 **Referer 防盗链** — 只允许指定来源的请求访问，防止外部引用
+- 📡 **远程鉴权** — 将请求转发到外部服务验证，可对接自定义认证系统
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
 - 📂 **FTP / FTPS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
 - 🌐 **SMB / CIFS 网络共享** — 连接远程 SMB 服务器，浏览目录、挂载共享
@@ -93,11 +96,13 @@ python tests/run_all.py
 
 1. 在"设置 → 安全设置"中：
     - 设置统一访问密码（PBKDF2 加密）
-    - 开启 TOTP 双因素认证（兼容 Google Authenticator / Authy）
     - 复制 MCP 令牌供 AI 连接
     - 配置 IP 黑白名单
     - 开启/关闭本机免密码
     - 配置指定 IP 免密码访问
+    - **URL 鉴权**：开启后附件下载链接自动添加防伪签名，防止链接被盗用。可在设置中调整签名有效期
+    - **Referer 防盗链**：设置允许的 Referer 来源（如您的网站地址），不在列表的请求自动拒绝
+    - **远程鉴权**：填入外部认证服务的地址，每次请求都会转发到该服务验证，支持自定义认证逻辑
 
 ### MCP 服务
 
@@ -163,35 +168,75 @@ PersonalDAV/
 ├── data/                    # 运行产物（自动创建）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
+│   ├── attachments/         # 附件独立文件存储
 │   └── log/                 # 日志文件
-├── mcp_tools/               # MCP 工具模块
-│   ├── server_tools.py      # DAV 服务器启停
-│   ├── contact_tools.py     # 联系人 CRUD
-│   ├── event_tools.py       # 日历事件 CRUD
-│   ├── config_tools.py      # 系统配置/健康检查
-│   ├── webdav_tools.py      # WebDAV 文件操作
-│   ├── ftp_tools.py         # FTP/SFTP 远程操作
-│   └── smb_tools.py         # SMB 共享浏览
+├── mcp_tools/               # MCP 工具模块（分文件管理）
 ├── models/                  # 数据模型层（dataclass）
 ├── database/                # 数据访问层（SQLite + Repository）
 │   └── repositories/        # 泛型 CRUD 仓储
 ├── services/                # 业务逻辑层
-│   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP控制）
+│   ├── base_service.py      # 泛型 Serivce 基类
+│   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP 访问控制）
 │   ├── mcp_server.py        # MCP SSE 服务器
 │   ├── ftp_service.py       # FTP/FTPS/SFTP/TFTP 服务器
+│   ├── sync_service.py      # Nextcloud 定时同步
 │   └── ...
 ├── network/                 # 网络层
 │   ├── dav_server.py        # CardDAV + CalDAV + WebDAV HTTP 服务
+│   ├── dav_client.py        # WebDAV 客户端（远程导入）
 │   └── webdav_helper.py     # XML 响应构建
 ├── ui/                      # 视图层（Tkinter）
+│   ├── app.py               # 主窗口 / 菜单 / 事件总线
 │   ├── tabs/                # 标签页（联系人/日历/服务器/远程）
-│   ├── dialogs/             # 对话框（设置/事件/联系人/导入）
-│   └── widgets/             # 自定义控件（提示框/右键菜单）
+│   ├── dialogs/             # 对话框（设置/事件/联系人/向导/确认）
+│   └── widgets/             # 自定义控件（Toast/右键菜单/工具提示）
 ├── utils/                   # 工具层
+│   ├── validators.py        # 端口/IP/密码强度校验
+│   ├── attachment_store.py  # 附件文件存储管理
 │   ├── crypto.py            # Fernet 加密
-│   ├── vcard_parser.py      # 回退式 vCard 解析
 │   └── ...
-└── tests/                   # 单元测试（23 项，325 子测试）
+└── tests/                   # 测试（pytest：23 项/325 子测试）
+```
+
+```mermaid
+graph TB
+    subgraph GUI["视图层（Tkinter）"]
+        direction LR
+        Contacts["联系人标签页"]
+        Calendar["日历标签页"]
+        Server["服务器标签页"]
+        Remote["远程文件标签页"]
+        Settings["设置对话框"]
+    end
+
+    subgraph Service["业务逻辑层"]
+        direction LR
+        ContactSvc["ContactService"]
+        EventSvc["EventService"]
+        AuthSvc["AuthService"]
+        SyncSvc["SyncService"]
+        FTPSvc["FTPService"]
+    end
+
+    subgraph Network["网络层"]
+        direction LR
+        DAV["DAV Server<br/>CardDAV+CalDAV+WebDAV"]
+        MCP["MCP Server<br/>FastMCP+SSE"]
+        FTP["FTP/FTPS/SFTP"]
+    end
+
+    subgraph Data["数据层"]
+        DB[("SQLite (WAL)")]
+        FS[("文件系统<br/>attachments/")]
+    end
+
+    GUI --> Service
+    Service --> Data
+    Network --> Service
+    Network --> Data
+    MCP -->|HTTP SSE| AI["AI 工具<br/>opencode / Claude"]
+    DAV -->|HTTP| Client["DAV 客户端<br/>手机/电脑"]
+    FTP -->|TCP| FTPClient["FTP 客户端"]
 ```
 
 ## 技术栈
@@ -216,9 +261,37 @@ PersonalDAV/
 
 ## 贡献
 
-欢迎贡献代码！请提交[Pull Request](https://github.com/hunyanjie/PersonalDAV/compare)。
+欢迎贡献代码、报告问题或提出建议！
 
-## 想提意见？
+### 报告问题
+
+- 搜索 [Issues](https://github.com/hunyanjie/PersonalDAV/issues) 确认是否已有相同报告
+- 提供复现步骤、操作系统、Python 版本等信息
+- 如有相关日志，一并附上
+
+### 提交 Pull Request
+
+1. Fork 仓库并创建特性分支
+2. 确保代码风格一致（参考现有代码）
+3. 运行测试确保不破坏现有功能：`python tests/run_all.py`
+4. 提交 PR 时说明改动目的和实现方式
+
+### 开发环境
+
+```bash
+pip install -e ".[dev]"
+python tests/run_all.py   # pytest 23 项 + MCP 测试 + 鉴权测试
+```
+
+### 代码规范
+
+- Python 3.10+，使用类型注解
+- 新代码须通过 `mypy --strict` 检查
+- 导入顺序：标准库 → 第三方 → 本地模块
+- 类名 `PascalCase`，函数/变量 `snake_case`
+- 提交消息格式：`类型(模块): 描述`（`feat` `fix` `refactor` `perf` `docs` `test` `chore`）
+
+### 想提意见？
 
 支持[提issue](https://github.com/hunyanjie/PersonalDAV/issues)。
 

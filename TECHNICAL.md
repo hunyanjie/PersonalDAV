@@ -34,6 +34,7 @@ main()
   ├── argparse 解析命令行参数（--port / --db-path / --log-level）
   ├── logging.basicConfig 初始化日志系统
   ├── Database(db_path=...)  [仅当 --db-path 或 --data-dir 指定时]
+  │     ├── WAL mode + _start_wal_checkpoint() (PASSIVE, 每60s)
   │     └── _vacuum_if_needed() 空闲页 > 50% 自动 VACUUM
   ├── _migrate_old_files() 旧版本文件迁移
   ├── TkinterDnD.Tk() 创建主窗口
@@ -47,6 +48,7 @@ main()
         ├── EventBus 订阅
         ├── TrayManager.start() [pystray 可用时]
         └── root.after_idle(_deferred_startup)
+              ├── _show_setup_wizard() [首次启动时弹出]
               ├── _sync_mcp_server() [后台线程，不阻塞]
               ├── 自动启动 DAV 服务器 [按设置]
               ├── 自动检查更新 [后台线程]
@@ -120,6 +122,8 @@ PersonalDAV/
 │   ├── encoding_helper.py     # QP/Base64 编解码
 │   ├── vcard_parser.py        # RobustVCardParser 回退解析（策略模式）
 │   ├── window_utils.py        # center_window() 窗口居中工具
+│   ├── validators.py          # 端口/IP/密码强度验证（v2.8）
+│   ├── attachment_store.py    # 附件文件存储管理（v2.8）
 │   └── logger.py              # 日志系统（RotatingFile + GUI 输出）
 ├── tests/                     # 单元测试
 │   ├── test_config.py         # 配置常量验证
@@ -133,7 +137,7 @@ PersonalDAV/
 └── ui/                        # 视图层
     ├── app.py                 # DAVServerApp 主应用类
     ├── tabs/
-    │   ├── base_tab.py        # BaseTreeTab 泛型 Treeview 基类（搜索/排序/多选）
+    │   ├── base_tab.py        # BaseTreeTab 泛型 Treeview 基类（搜索/排序/多选/批量插入/加速滚动）
     │   ├── contacts_tab.py    # ContactsTab
     │   ├── calendar_tab.py    # CalendarTab（含月视图）
     │   ├── server_tab.py      # ServerTab（FTP/SFTP/TFTP/WebDAV 控制）
@@ -144,12 +148,15 @@ PersonalDAV/
     │   ├── contact_dialog.py     # 联系人编辑对话框
     │   ├── import_preview_dialog.py # 导入预览 + 对比对话框
     │   ├── text_import_dialog.py
-    │   └── webdav_import_dialog.py
+    │   ├── webdav_import_dialog.py
+    │   ├── confirm_dialog.py     # 标准化确认对话框（v2.8）
+    │   └── setup_wizard.py       # 首次启动向导（v2.8）
     └── widgets/
         ├── enhanced_tooltip.py   # 悬浮提示框
         ├── right_click_menu.py   # 右键菜单（上下文感知）
         ├── progress_window.py    # 通用进度窗口
-        └── treeview_scroller.py  # 拖拽自动滚动
+        ├── toast.py              # 非模态 Toast 通知（v2.8 类型化）
+        └── treeview_scroller.py  # 拖拽自动加速滚动（compute_scroll_units）
 ```
 
 > v2.6 数据目录重组：数据库、密钥、日志统一归入 `data/`，`main.py` 启动时自动从旧路径迁移文件。所有路径通过 `config.py` 的 `DEFAULT_DB_PATH` / `DEFAULT_LOG_FILE` 集中管理。
@@ -579,10 +586,35 @@ def vacuum_full(self) -> int | None:
 
 - 搜索栏（实时过滤，子类实现 `apply_filter`）(v2.0)
 - 全选/反选（单击第一列复选框列头）(v1.2)
-- 拖拽多选（`B1-Motion` 事件）(v1.2)
+- 拖拽多选 + 自动加速滚动（`B1-Motion` → 边缘 10% 区域触发 `after(30ms)` 循环，越靠近边缘越快，1~50 行/tick）(v2.8)
+- 增量式复选框同步（`_sync_checkboxes(uids=None)`，传 UIDs 时只更新指定行，不传时全量遍历）(v2.8)
+- `_uid_to_item` / `_item_to_uid` 字典映射，避免 `tree.item()` Tcl 往返 (v2.8)
 - 三态排序 (v2.0)
 - 右键菜单（通过 `RightClickMenu`）(v2.0)
 - 全局 `Ctrl+A` / `Delete` 快捷键 (v2.0)
+
+### 大批量数据处理
+
+`BaseTreeTab` 不再使用虚拟滚动（v2.8 之前 `PAGE_SIZE=500` 的窗口方案），而是全量数据一次性插入 Treeview，通过以下手段保证性能：
+
+| 手段 | 说明 |
+|------|------|
+| `BATCH_SIZE=200` 分批异步插入 | `_batch_insert()` 每批插入 200 行，用 `after(1)` 调度下一批，初始加载不卡 UI |
+| `_uid_to_item` / `_item_to_uid` 映射 | 在 `_batch_insert` 时建立，`_rerender` 时清空。UID ↔ item_id O(1) 双向查找，替代 `tree.item()` Tcl 调用 |
+| `tree.set(column, value)` 单列写入 | 更新复选框时只写 `'selected'` 列，替代 `tree.item(values)` 读写全部列，Tcl 调用减半 |
+| 增量式 `_sync_checkboxes(uids)` | 点击时只更新 `old_sel ^ new_sel` 变化的 UIDs；拖拽时只更新 `union(old_range, new_range)` 范围内的行 |
+| `_drag_lo` / `_drag_hi` 范围追踪 | 拖拽期间跟踪已滚过的最大/最小行索引，确保复选框正确勾选/取消 |
+
+### 拖拽自动加速滚动 (v2.8)
+
+`TreeviewScroller.compute_scroll_units()` 根据鼠标在 Treeview 中的相对位置计算滚动速度：
+
+```
+深度 = (阈值 - 相对距离) / 阈值      # 0~1，越靠近边缘越大
+脉冲数 = max(1, int(深度 * MAX_SCROLL_UNITS=50))
+```
+
+`_on_drag` 根据返回值调度 `after(30ms)` 定时循环 `_auto_scroll_tick()`，手离边缘即 `_stop_auto_scroll()` 取消定时器。
 
 ### 子类需覆盖
 
@@ -801,10 +833,13 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 `_check_auth()` 在每个 `do_*` 方法开头调用，处理流程（按顺序）：
 
-1. **IP 访问控制** — 调用 `AuthService().check_ip(client_ip)`，被拒绝时 `log_auth()` 记录并返回 403
-2. **密码开关** — 未设密码直接放行
-3. **免密码 IP** — 调用 `AuthService().ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
-4. **Basic Auth 校验** — 解析 `Authorization` 头，密码错误/格式错误/缺失均返回 401 + `WWW-Authenticate` 头
+1. **URL 鉴权（仅 `/attachments/`）** — 若 `url_auth_enabled=True`，要求请求携带 `?token=&ts=&nonce=` 参数。通过 MD5 签名 + 时间窗口校验后直接放行（跳过其余鉴权）
+2. **Referer 鉴权** — 若 `referer_enabled=True`，校验 `Referer` 头是否在白名单前缀中，不匹配则 403
+3. **远程鉴权** — 若 `remote_auth_enabled=True`，POST JSON 到远程 URL：`{"path","method","headers","client_ip","timestamp"}`。返回 `allow`/`ok`/`true`/`1`/`yes` 表示允许，此时跳过密码校验
+4. **IP 访问控制** — 调用 `AuthService().check_ip(client_ip)`，被拒绝时 `log_auth()` 记录并返回 403
+5. **密码开关** — 未设密码直接放行
+6. **免密码 IP** — 调用 `AuthService().ip_bypasses_auth(client_ip)`，命中则放行 + 记录 `"免密 IP"`
+7. **Basic Auth 校验** — 解析 `Authorization` 头，密码错误/格式错误/缺失均返回 401 + `WWW-Authenticate` 头
 
 每次鉴权结果（成功/失败/拒绝/免密）均通过 `log_auth()` 记录，含客户端 IP 和 User-Agent。
 
@@ -897,6 +932,60 @@ TOTP 在 v2.5 开发中实现并随后移除。原因：设置对话框保存后
 ### 扩展指南
 
 添加新服务时，调用 `AuthService().verify_password(password)` 或 `verify_mcp_token(token)` 即可。如需 IP 控制，在请求入口处依次调用 `check_ip(client_ip)` → `ip_bypasses_auth(client_ip)` → `verify_*()` → `log_auth()`。
+
+### URL 鉴权（v2.8）
+
+用于保护附件下载链接不被盗用。令牌生成和校验逻辑均在 `AuthService` 中：
+
+```python
+def generate_url_token(path: str) -> (token, ts, nonce):
+    secret = get_url_auth_secret()          # 首次自动生成，存入 DB
+    ts = str(int(time.time()))
+    nonce = secrets.token_hex(8)
+    raw = f"{secret}|{ts}|{nonce}|{path}"
+    token = hashlib.md5(raw).hexdigest()
+    return token, ts, nonce
+
+def verify_url_token(path, token, ts, nonce) -> bool:
+    expected = md5(secret | ts | nonce | path)
+    compare_digest(expected, token)         # 防时序攻击
+    now - int(ts) <= expiry(默认300s)       # 时间窗口校验
+```
+
+令牌通过 `?token=&ts=&nonce=` 追加到附件 URL 末尾，`ical_builder.py` 的 URI 模式自动生成。`AuthMiddleware.check_auth()` 对 `/attachments/` 路径自动校验，通过后直通（跳过密码）。
+
+### Referer 鉴权（v2.8）
+
+白名单前缀匹配，支持多行配置（每行一个，匹配开头）：
+
+```python
+def check_referer(referer: str) -> bool:
+    for pattern in referer_whitelist:
+        if referer.startswith(pattern.rstrip('/')):
+            return True
+    return False
+```
+
+在 `AuthMiddleware.check_auth()` 中于 URL 鉴权之后、远程鉴权之前执行。
+
+### 远程鉴权（v2.8）
+
+将请求全文转发到外部 HTTP 服务验证，可作为替代密码校验的鉴权方式：
+
+```
+POST {remote_auth_url}
+Content-Type: application/json
+
+{
+  "path": "/contacts/uid.vcf",
+  "method": "GET",
+  "headers": {"User-Agent": "...", "Referer": "..."},
+  "client_ip": "192.168.1.100",
+  "timestamp": 1717000000
+}
+```
+
+响应必须是 HTTP 200，Body 为 `allow` / `ok` / `true` / `1` / `yes`（大小写不敏感）表示放行，其余拒绝。通过后跳过密码校验。
 
 ### 远程连接密码加密（v2.6）
 

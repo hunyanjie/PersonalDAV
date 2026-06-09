@@ -1,6 +1,9 @@
 import hashlib
 import secrets
 import ipaddress
+import time
+import json
+import urllib.request
 from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
@@ -195,6 +198,101 @@ class AuthService:
         if not allowed:
             logger.warning(f"[{client_ip}] 频率限制已触发 ({max_req}/分钟)")
         return allowed
+
+    # ── URL 鉴权（时间戳+随机数+MD5） ──────────────────────────
+
+    def get_url_auth_secret(self) -> str:
+        s = SettingsService()
+        secret = s.get_setting("url_auth_secret", "")
+        if not secret:
+            secret = secrets.token_hex(32)
+            s.set_setting("url_auth_secret", secret)
+        return secret
+
+    def is_url_auth_enabled(self) -> bool:
+        return SettingsService().get_setting("url_auth_enabled", "False") == "True"
+
+    def generate_url_token(self, path: str) -> tuple[str, str, str]:
+        secret = self.get_url_auth_secret()
+        ts = str(int(time.time()))
+        nonce = secrets.token_hex(8)
+        raw = f"{secret}|{ts}|{nonce}|{path}"
+        token = hashlib.md5(raw.encode('utf-8')).hexdigest()
+        return token, ts, nonce
+
+    def verify_url_token(self, path: str, token: str, ts: str, nonce: str) -> bool:
+        secret = self.get_url_auth_secret()
+        raw = f"{secret}|{ts}|{nonce}|{path}"
+        expected = hashlib.md5(raw.encode('utf-8')).hexdigest()
+        if not secrets.compare_digest(expected, token):
+            logger.warning(f"URL 鉴权: token 不匹配 path={path}")
+            return False
+        try:
+            expiry = int(SettingsService().get_setting("url_auth_expiry", "300"))
+            now = int(time.time())
+            req_ts = int(ts)
+            if now - req_ts > expiry or req_ts > now + 60:
+                logger.warning(f"URL 鉴权: 时间戳过期 path={path} ts={ts} expiry={expiry}s")
+                return False
+        except (ValueError, TypeError):
+            return False
+        return True
+
+    # ── Referer 鉴权 ────────────────────────────────────────────
+
+    def is_referer_enabled(self) -> bool:
+        return SettingsService().get_setting("referer_enabled", "False") == "True"
+
+    def check_referer(self, referer: str) -> bool:
+        raw = SettingsService().get_setting("referer_whitelist", "").strip()
+        if not raw:
+            return False
+        allowed = [line.strip() for line in raw.replace('\r', '').split('\n') if line.strip()]
+        if not allowed:
+            return False
+        for pattern in allowed:
+            p = pattern.rstrip('/')
+            if referer.startswith(p):
+                return True
+        return False
+
+    # ── 远程鉴权（转发请求到外部服务器） ───────────────────────
+
+    def is_remote_auth_enabled(self) -> bool:
+        return SettingsService().get_setting("remote_auth_enabled", "False") == "True"
+
+    def check_remote_auth(self, handler) -> tuple[bool, bool]:
+        url = SettingsService().get_setting("remote_auth_url", "").strip()
+        if not url:
+            return False, False
+        try:
+            timeout = int(SettingsService().get_setting("remote_auth_timeout", "10"))
+        except (ValueError, TypeError):
+            timeout = 10
+        body = json.dumps({
+            "path": handler.path,
+            "method": handler.command,
+            "headers": dict(handler.headers),
+            "client_ip": handler.client_address[0],
+            "timestamp": int(time.time()),
+        }).encode('utf-8')
+        req = urllib.request.Request(url, data=body, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        req.add_header('User-Agent', 'PersonalDAV/1.0')
+        try:
+            resp = urllib.request.urlopen(req, timeout=timeout)
+            if resp.status != 200:
+                logger.warning(f"远程鉴权: HTTP {resp.status} from {url}")
+                return False, False
+            data = resp.read().decode('utf-8').strip().lower()
+            if data in ('allow', 'ok', 'true', '1', 'yes'):
+                logger.info(f"远程鉴权: 允许 path={handler.path}")
+                return True, True
+            logger.warning(f"远程鉴权: 拒绝 path={handler.path} response={data}")
+            return False, True
+        except Exception as e:
+            logger.warning(f"远程鉴权: 请求失败 {url} - {e}")
+            return False, False
 
     # ── 鉴权日志（防抵赖哈希链） ────────────────────────────────
 

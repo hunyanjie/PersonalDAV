@@ -12,6 +12,8 @@ import base64
 import io
 import os
 from PIL import Image, ImageTk
+from ui.widgets.toast import Toast
+from ui.dialogs.confirm_dialog import ConfirmDialog
 
 
 class ContactDialog(tk.Toplevel):
@@ -159,6 +161,7 @@ class ContactDialog(tk.Toplevel):
 
     def pick_date(self):
         w = tk.Toplevel(self); w.title("选择日期"); w.grab_set()
+        from utils.window_utils import center_window; center_window(w, self)
         cal = Calendar(w, date_pattern='yyyy-mm-dd')
         cal.pack(padx=10, pady=10)
         ttk.Button(w, text="确定", command=lambda: [self.birthday_var.set(cal.get_date()), w.destroy()]).pack(pady=5)
@@ -173,9 +176,8 @@ class ContactDialog(tk.Toplevel):
         try:
             size = os.path.getsize(path)
             if size > 2 * 1024 * 1024:
-                if not messagebox.askyesno("提示", f"图片大小为 {size/1024/1024:.1f}MB，"
-                                            f"将自动缩放为缩略图，建议使用更小的图片。\n\n是否继续？",
-                                            parent=self):
+                if not ConfirmDialog.ask(self, "提示",
+                    f"图片大小为 {size/1024/1024:.1f}MB，将自动缩放为缩略图，建议使用更小的图片。\n\n是否继续？"):
                     return
             img = Image.open(path)
             if img.width * img.height > 2000 * 2000:
@@ -287,6 +289,7 @@ class ContactDialog(tk.Toplevel):
     def show_raw(self):
         if not self.vcard and not self.raw_vcard_data: return
         w = tk.Toplevel(self); w.title("vCard 源码")
+        from utils.window_utils import center_window; center_window(w, self)
         scroll_v = ttk.Scrollbar(w, orient=tk.VERTICAL)
         t = tk.Text(w, wrap=tk.CHAR, yscrollcommand=scroll_v.set)
         RightClickMenu(t, "text", actions=["copy", None, "select_all"])
@@ -306,7 +309,7 @@ class ContactDialog(tk.Toplevel):
         key = self.other_key_var.get().strip()
         value = self.other_val_var.get().strip()
         if not key:
-            messagebox.showwarning("提示", "键不能为空", parent=self)
+            Toast.warning(self, "键不能为空")
             return
         self.other_fields.append({"key": key.upper(), "value": value})
         self._other_refresh()
@@ -314,13 +317,13 @@ class ContactDialog(tk.Toplevel):
     def _other_update(self):
         sel = self.other_tree.selection()
         if len(sel) != 1:
-            messagebox.showinfo("提示", "请选择一个字段", parent=self)
+            Toast.warning(self, "请选择一个字段")
             return
         idx = self.other_tree.index(sel[0])
         key = self.other_key_var.get().strip()
         value = self.other_val_var.get().strip()
         if not key:
-            messagebox.showwarning("提示", "键不能为空", parent=self)
+            Toast.warning(self, "键不能为空")
             return
         self.other_fields[idx] = {"key": key.upper(), "value": value}
         self._other_refresh()
@@ -328,7 +331,7 @@ class ContactDialog(tk.Toplevel):
     def _other_edit(self):
         sel = self.other_tree.selection()
         if len(sel) != 1:
-            messagebox.showinfo("提示", "请选择一个字段", parent=self)
+            Toast.warning(self, "请选择一个字段")
             return
         idx = self.other_tree.index(sel[0])
         self.other_key_var.set(self.other_fields[idx]['key'])
@@ -337,9 +340,9 @@ class ContactDialog(tk.Toplevel):
     def _other_delete(self):
         sel = self.other_tree.selection()
         if not sel:
-            messagebox.showinfo("提示", "请选择要删除的字段", parent=self)
+            Toast.warning(self, "请选择要删除的字段")
             return
-        if not messagebox.askyesno("确认", f"确定删除选中的 {len(sel)} 个字段?", parent=self):
+        if not ConfirmDialog.ask(self, "确认", f"确定删除选中的 {len(sel)} 个字段?"):
             return
         indices = sorted([self.other_tree.index(i) for i in sel], reverse=True)
         for idx in indices:

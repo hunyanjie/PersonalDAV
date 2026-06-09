@@ -132,7 +132,7 @@ class DAVServerApp:
 
         self.status_bar_mgr = StatusBarManager(
             self.status_bar, self.contact_service, self.event_service,
-            self.mcp_server, self.server_tab)
+            lambda: self.mcp_server, self.server_tab)
 
         self.status_bar_mgr.refresh()
 
@@ -141,10 +141,22 @@ class DAVServerApp:
         event_bus.subscribe(EVENT_SERVER_STATE_CHANGED, self.status_bar_mgr.refresh)
         event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.status_bar_mgr.refresh)
 
+    def _show_setup_wizard(self):
+        completed = self.settings_service.get_setting("setup_wizard_completed", "False")
+        if completed == "True":
+            return
+        from ui.dialogs.setup_wizard import SetupWizard
+        wiz = SetupWizard(self.root)
+        self.root.wait_window(wiz)
+        self.settings_service.set_setting("setup_wizard_completed", "True")
+
     def _deferred_startup(self):
+        self._show_setup_wizard()
         self._sync_mcp_server()
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
             self.server_tab.start_server()
+        if self.settings_service.get_setting("auto_start_ftp", "False") == "True":
+            self.server_tab._auto_start_ftp()
         from utils.auto_start import set_auto_start, is_auto_start
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         if auto_start and not is_auto_start():
@@ -186,10 +198,28 @@ class DAVServerApp:
         from ui.dialogs.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self.root, self.settings_service, self.on_settings_saved)
         self.root.wait_window(dialog)
+        if getattr(dialog, 'restart_requested', False):
+            self._after_import_backup()
+
+    def _after_import_backup(self):
+        from ui.dialogs.confirm_dialog import ConfirmDialog
+        if self.server_tab.server_instance is not None:
+            if ConfirmDialog.ask(self.root, "重启服务器",
+                                  "设置已恢复。\n是否立即重启服务器使更改生效？"):
+                self.server_tab.stop_server()
+                self.server_tab.start_server()
+                from ui.widgets.toast import Toast
+                Toast.success(self.root, "服务器已重启")
+            else:
+                messagebox.showinfo("提示", "部分更改将在下次启动服务器时生效。")
+        from utils.auto_start import set_auto_start
+        auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
+        set_auto_start(auto_start)
 
     def on_settings_saved(self, ssl_toggled=False):
         if ssl_toggled and self.server_tab.server_instance is not None:
-            if messagebox.askyesno("重启服务器", "HTTPS 设置已更改，是否立即重启服务器以生效？"):
+            from ui.dialogs.confirm_dialog import ConfirmDialog
+            if ConfirmDialog.ask(self.root, "重启服务器", "HTTPS 设置已更改，是否立即重启服务器以生效？"):
                 self.server_tab.stop_server()
                 self.server_tab.start_server()
             else:
@@ -198,7 +228,7 @@ class DAVServerApp:
         auto_start = self.settings_service.get_setting("auto_start_app", "False") == "True"
         set_auto_start(auto_start)
         from ui.widgets.toast import Toast
-        Toast.show(self.root, "设置已保存")
+        Toast.success(self.root, "设置已保存")
 
     def _sync_mcp_server(self):
         enabled = self.settings_service.get_setting("mcp_enabled", "False") == "True"
@@ -208,9 +238,11 @@ class DAVServerApp:
                 self.mcp_server = MCPServer()
             if not self.mcp_server.is_running:
                 port = int(self.settings_service.get_setting("mcp_port", "8100"))
-                self.mcp_server.start(port=port)
+                self.mcp_server.start(port=port,
+                    on_ready=lambda: event_bus.publish(EVENT_SERVER_STATE_CHANGED))
         elif self.mcp_server is not None and self.mcp_server.is_running:
             self.mcp_server.stop()
+            event_bus.publish(EVENT_SERVER_STATE_CHANGED)
 
     def process_log_queue(self):
         self.logging_manager.process_queue(self.server_tab)

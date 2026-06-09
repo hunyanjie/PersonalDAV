@@ -269,7 +269,8 @@ class CalendarTab(BaseTreeTab):
     def delete_event(self):
         uids = list(self._selected_uids)
         if not uids: return
-        if messagebox.askyesno("确认", f"确定删除选中的 {len(uids)} 个事件吗？"):
+        from ui.dialogs.confirm_dialog import ConfirmDialog
+        if ConfirmDialog.ask(self, "确认", f"确定删除选中的 {len(uids)} 个事件吗？"):
             for uid in uids:
                 self.db.delete(uid)
             self.refresh_events()
@@ -289,6 +290,7 @@ class CalendarTab(BaseTreeTab):
             data = self.db.combine_raw_events(events)
         if data:
             win = tk.Toplevel(self); win.title("原始数据")
+            from utils.window_utils import center_window; center_window(win, self)
             sb_v = ttk.Scrollbar(win, orient=tk.VERTICAL)
             txt = tk.Text(win, wrap=tk.CHAR, yscrollcommand=sb_v.set)
             RightClickMenu(txt, "text", actions=["copy", None, "select_all"])
@@ -337,7 +339,7 @@ class CalendarTab(BaseTreeTab):
         if not uids:
             messagebox.showinfo("提示", "请先选择要导出的事件", parent=self)
             return
-        events = self.db.get_selected_raw(uids)
+        events = self.db.get_selected_full_raw(uids)
 
         initial = ""
         if len(uids) == 1:
