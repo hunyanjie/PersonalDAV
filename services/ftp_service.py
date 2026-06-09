@@ -432,11 +432,15 @@ class FTPService:
 
     def _run_ftp(self, port: int, root: str) -> None:
         try:
-            from pyftpdlib.handlers import TLS_FTPHandler
             from pyftpdlib.servers import FTPServer as PyFTPD
         except ImportError:
             logger.error("FTP server failed: pyftpdlib not installed")
             return
+
+        try:
+            from pyftpdlib.handlers import TLS_FTPHandler
+        except ImportError:
+            TLS_FTPHandler = None
 
         try:
             authorizer = AuthServiceAuthorizer()
@@ -445,7 +449,7 @@ class FTPService:
             certfile = settings.get_setting("ssl_certfile", "")
             keyfile = settings.get_setting("ssl_keyfile", "")
             LoggedFTPHandler = _make_ftp_handler()
-            if use_tls and certfile:
+            if use_tls and certfile and TLS_FTPHandler is not None:
                 handler = type("LoggedTLSFTPHandler", (LoggedFTPHandler, TLS_FTPHandler), {})
                 handler.certfile = certfile
                 handler.keyfile = keyfile or certfile
