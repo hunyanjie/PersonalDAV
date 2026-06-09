@@ -16,7 +16,7 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
-- 🖥️ **无界面服务器模式** — 可单独运行 `python -m personaldavd`，不打开图形界面也能提供服务
+- 🖥️ **无界面服务器模式** — 通过 `main.py --headless` 或 `python -m personaldavd` 运行，不打开图形界面也能提供服务
 - 🌐 **REST API** — 通过 HTTP 接口管理联系人和日历事件，方便集成到其他程序
 - 🔗 **远程连接** — GUI 可通过 `--remote` 参数连接到远程服务器，管理远端数据
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
@@ -67,8 +67,23 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 
 4. 无界面模式（服务器模式）：
    ```bash
+   # 通过 GUI 入口（推荐 — 打包成 exe 后也适用）
+   python main.py --headless --port 8000
+
+   # 或直接启动 daemon
    python -m personaldavd --port 8000
    ```
+
+   `--headless` 完整的参数列表：
+
+   | 参数 | 默认值 | 说明 |
+   |------|--------|------|
+   | `--host` | 127.0.0.1 | 监听地址 |
+   | `--port`, `-p` | 8000 | 监听端口 |
+   | `--log-level` | INFO | 日志级别 (DEBUG/INFO/WARNING/ERROR/CRITICAL) |
+   | `--log-json` | — | JSON 结构化日志输出 |
+   | `--db-path` | data/dav_data.db | 数据库路径 |
+   | `--dav-root` | ./dav_root | WebDAV 根目录 |
 
 5. 远程连接（GUI 连到远程服务器）：
    ```bash
@@ -136,7 +151,7 @@ python tests/run_all.py
 3. 如果设置了密码，还需要添加 `Authorization: Bearer <令牌>`（令牌从安全设置页复制）
 
 > [!NOTE]
-> 如果使用无界面模式（`python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
+> 如果使用无界面模式（`main.py --headless` / `python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
 
 ### REST API
 

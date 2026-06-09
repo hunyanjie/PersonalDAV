@@ -3,8 +3,6 @@ import logging
 import os
 import shutil
 import base64
-from tkinterdnd2 import TkinterDnD
-from ui.app import DAVServerApp
 
 def _migrate_old_files():
     os.makedirs("data/log", exist_ok=True)
@@ -116,10 +114,39 @@ def main():
                         help="daemon 地址（默认 http://127.0.0.1:8000）")
     parser.add_argument("--remote-token", type=str, default="",
                         help="Bearer token（可选）")
+    parser.add_argument("--headless", action="store_true",
+                        help="无头模式 — 启动 daemon 服务而不显示 GUI")
+    head_group = parser.add_argument_group("headless 专有参数")
+    head_group.add_argument("--host", type=str, default=None,
+                            help="daemon 监听地址（默认 127.0.0.1）")
+    head_group.add_argument("--log-json", action="store_true",
+                            help="JSON 格式日志输出")
+    head_group.add_argument("--dav-root", type=str, default=None,
+                            help="WebDAV 根目录（默认 ./dav_root）")
     args = parser.parse_args()
 
     log_level = getattr(logging, args.log_level.upper(), logging.INFO)
     logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    if args.headless:
+        from config import SOFTWARE_NAME
+        from personaldavd.config import DaemonConfig
+        from personaldavd.daemon import run_daemon
+        cfg = DaemonConfig()
+        if args.host:
+            cfg.host = args.host
+        if args.port:
+            cfg.port = args.port
+        if args.log_level:
+            cfg.log_level = args.log_level
+        cfg.log_json = args.log_json
+        if args.db_path:
+            cfg.db_path = args.db_path
+        if args.dav_root:
+            cfg.dav_root = args.dav_root
+        logging.getLogger(__name__).info(f"{SOFTWARE_NAME} 以无头模式启动 (port={cfg.port})")
+        run_daemon(cfg)
+        return
 
     db_path = args.db_path
     if not db_path and args.data_dir:
@@ -133,6 +160,8 @@ def main():
     _migrate_attachment_folder()
     _migrate_inline_attachments()
 
+    from tkinterdnd2 import TkinterDnD
+    from ui.app import DAVServerApp
     root = TkinterDnD.Tk()
     if args.remote:
         from services.backend import RemoteBackend
