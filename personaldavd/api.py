@@ -2,6 +2,7 @@
 
 import time
 from fastapi import APIRouter, Depends, HTTPException, Query
+from config import SOFTWARE_VERSION
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
@@ -62,7 +63,7 @@ async def health():
     cs = ContactService()
     es = EventService()
     return HealthOut(
-        status="ok", version="3.0.0",
+        status="ok", version=SOFTWARE_VERSION,
         uptime=time.time() - _start_time,
         contacts_count=cs.count(),
         events_count=es.count(),

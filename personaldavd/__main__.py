@@ -11,7 +11,8 @@ from .config import DaemonConfig
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PersonalDAV headless daemon")
+    from config import SOFTWARE_NAME
+    parser = argparse.ArgumentParser(description=f"{SOFTWARE_NAME} headless daemon")
     parser.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],

@@ -51,7 +51,7 @@ class EventUpdate(BaseModel):
 
 class HealthOut(BaseModel):
     status: str = "ok"
-    version: str = "3.0.0"
+    version: str = ""
     uptime: float = 0.0
     contacts_count: int = 0
     events_count: int = 0

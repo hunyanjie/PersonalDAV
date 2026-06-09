@@ -11,7 +11,8 @@ def create_mcp_app():
     that handles ``/sse`` and ``/messages/`` routes.
     """
 
-    mcp = FastMCP("PersonalDAV")
+    from config import SOFTWARE_NAME
+    mcp = FastMCP(SOFTWARE_NAME)
 
     from mcp_tools import server_tools, contact_tools, event_tools
     from mcp_tools import config_tools, webdav_tools, ftp_tools, smb_tools

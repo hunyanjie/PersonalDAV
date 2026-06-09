@@ -104,5 +104,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # No auth
         svc.log_auth(False, client_ip, "ASGI", "No credentials")
         resp = Response("Authorization required", status_code=401)
-        resp.headers["WWW-Authenticate"] = 'Basic realm="PersonalDAV"'
+        from config import SOFTWARE_NAME
+        resp.headers["WWW-Authenticate"] = f'Basic realm="{SOFTWARE_NAME}"'
         return resp

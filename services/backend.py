@@ -74,9 +74,10 @@ class LocalBackend(Backend):
         return self._settings
 
     def health(self) -> dict[str, Any]:
+        from config import SOFTWARE_VERSION
         return {
             "status": "ok",
-            "version": "3.0.0",
+            "version": SOFTWARE_VERSION,
             "uptime": time.time() - self._start_time,
             "contacts_count": self._contact.count(),
             "events_count": self._event.count(),
