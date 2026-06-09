@@ -1,5 +1,6 @@
 from mcp_tools._state import get_contact_svc
 from mcp_tools.helpers import safe_json, check_readonly, make_contact_summary
+from services.embeddings import EmbeddingService
 from utils.logger import logger
 
 
@@ -77,6 +78,18 @@ def register(mcp):
             return safe_json({"uid": uid, "deleted": ok})
         except Exception as e:
             logger.exception(f"MCP 异常: delete_contact uid={uid}")
+            return safe_json({"error": str(e)})
+
+    @mcp.tool(description="搜索联系人（支持语义搜索，关键词为空时返回最新列表）")
+    def search_contacts(query: str = "", limit: int = 10) -> str:
+        logger.info(f"MCP 调用: search_contacts query={query!r} limit={limit}")
+        try:
+            svc = EmbeddingService()
+            results = svc.search_contacts(query, top_k=limit)
+            logger.info(f"MCP 返回: search_contacts -> {len(results)} 条")
+            return safe_json(results)
+        except Exception as e:
+            logger.exception("MCP 异常: search_contacts")
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="通过结构化参数创建联系人（姓名、邮箱、电话）")

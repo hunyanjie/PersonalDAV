@@ -1,5 +1,6 @@
 from mcp_tools._state import get_event_svc
 from mcp_tools.helpers import safe_json, check_readonly, make_event_summary
+from services.embeddings import EmbeddingService
 from utils.logger import logger
 
 
@@ -69,6 +70,18 @@ def register(mcp):
             return safe_json({"uid": uid, "operation": op})
         except Exception as e:
             logger.exception(f"MCP 异常: update_event uid={uid}")
+            return safe_json({"error": str(e)})
+
+    @mcp.tool(description="搜索事件（支持语义搜索和时间范围过滤）")
+    def search_events(query: str = "", date_from: str = "", date_to: str = "", limit: int = 10) -> str:
+        logger.info(f"MCP 调用: search_events query={query!r} date_from={date_from} date_to={date_to} limit={limit}")
+        try:
+            svc = EmbeddingService()
+            results = svc.search_events(query, top_k=limit, date_from=date_from, date_to=date_to)
+            logger.info(f"MCP 返回: search_events -> {len(results)} 条")
+            return safe_json(results)
+        except Exception as e:
+            logger.exception("MCP 异常: search_events")
             return safe_json({"error": str(e)})
 
     @mcp.tool(description="删除指定 UID 的事件")
