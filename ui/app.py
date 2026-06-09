@@ -151,6 +151,7 @@ class DAVServerApp:
         self.settings_service.set_setting("setup_wizard_completed", "1")
 
     def _deferred_startup(self):
+        self._show_setup_wizard()
         self._sync_mcp_server()
         if self.settings_service.get_setting("auto_start_server", "False") == "True":
             self.server_tab.start_server()
