@@ -221,21 +221,28 @@ class SettingsDialog(tk.Toplevel):
 
     # ── 服务器设置 ──────────────────────────────────────────────
 
-    def create_server_settings(self, parent):
-        f = ttk.LabelFrame(parent, text="服务器控制")
-        f.pack(fill=tk.X, padx=5, pady=5)
-        self._build_simple(f, "服务器控制")
-        var_to_key = {str(getattr(self, f"{k}_var")): k for k in ("default_port", "mcp_port") if hasattr(self, f"{k}_var")}
-        for child in f.winfo_children():
-            if not isinstance(child, ttk.Entry): continue
-            key = var_to_key.get(str(child.cget("textvariable")))
-            if not key: continue
-            var = getattr(self, f"{key}_var")
+    def _setup_port_validation(self, parent_frame, key):
+        if not hasattr(self, f"{key}_var"):
+            return
+        var = getattr(self, f"{key}_var")
+        target = str(var)
+        for child in parent_frame.winfo_children():
+            if not isinstance(child, ttk.Entry):
+                continue
+            if str(child.cget("textvariable")) != target:
+                continue
             def _ck(*_, entry=child):
                 ok, msg = validate_port(entry.get())
                 entry.config(foreground="red" if not ok else "orange" if msg else "black")
             var.trace("w", _ck)
             _ck()
+            break
+
+    def create_server_settings(self, parent):
+        f = ttk.LabelFrame(parent, text="服务器控制")
+        f.pack(fill=tk.X, padx=5, pady=5)
+        self._build_simple(f, "服务器控制")
+        self._setup_port_validation(f, "default_port")
 
         close_f = ttk.LabelFrame(parent, text="关闭行为")
         close_f.pack(fill=tk.X, padx=5, pady=5)
@@ -357,6 +364,8 @@ class SettingsDialog(tk.Toplevel):
         self._mcp_url_label.pack(anchor="w", padx=10, pady=5)
         ttk.Label(info, text="提示：更改端口后需重启程序或重新打开设置以刷新 URL。",
                   foreground="gray", wraplength=500).pack(anchor="w", padx=10, pady=5)
+
+        self._setup_port_validation(f, "mcp_port")
 
         def update_url(*_):
             port = self.mcp_port_var.get() if hasattr(self, 'mcp_port_var') else "8100"

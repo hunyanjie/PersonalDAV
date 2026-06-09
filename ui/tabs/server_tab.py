@@ -258,6 +258,9 @@ class ServerTab(ttk.Frame):
                 if not ok:
                     messagebox.showerror("端口错误", f"{name}: {msg}", parent=self)
                     return
+                if msg:
+                    from ui.widgets.toast import Toast
+                    Toast.warning(self, f"{name}: {msg}")
             self.settings_service.set_setting("ftp_enabled", str(self.ftp_enabled.get()))
             self.settings_service.set_setting("ftp_port", self.ftp_port_var.get())
             self.settings_service.set_setting("ftp_root", self.ftp_root_var.get())
