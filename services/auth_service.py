@@ -90,10 +90,15 @@ class AuthService:
     # ── MCP 令牌（可轮换） ──────────────────────────────────────
 
     def _mcp_token_seed(self) -> str:
-        stored = SettingsService().get_setting("access_password_hash", "")
+        s = SettingsService()
+        stored = s.get_setting("access_password_hash", "")
         if not stored:
-            return ""
-        salt = SettingsService().get_setting("mcp_token_salt", "")
+            salt = s.get_setting("mcp_token_salt", "")
+            if not salt:
+                salt = secrets.token_hex(16)
+                s.set_setting("mcp_token_salt", salt)
+            return f"mcp:nopass:{salt}"
+        salt = s.get_setting("mcp_token_salt", "")
         return f"mcp:{stored}:{salt}" if salt else f"mcp:{stored}"
 
     def get_mcp_token(self) -> str:

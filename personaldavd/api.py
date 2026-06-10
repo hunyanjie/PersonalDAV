@@ -76,15 +76,22 @@ async def health():
 # ── Auth / Token ────────────────────────────────────────────────
 
 @api_router.post("/auth/token", response_model=AuthTokenOut, summary="获取访问令牌")
-async def get_token(req: AuthTokenRequest):
+async def get_token(body: AuthTokenRequest, request: Request):
     """用管理员密码换取 Bearer Token，后续请求携带此令牌即可通过鉴权。"""
     svc = AuthService()
-    if not svc.verify_password(req.password):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    # IP 本机免密或未设密码时直接放行
+    if svc.ip_bypasses_auth(client_ip) or not svc.is_password_required():
+        token = svc.get_mcp_token()
+        return AuthTokenOut(token=token, scopes=body.scopes)
+
+    if not svc.verify_password(body.password):
         raise HTTPException(401, "密码错误")
     token = svc.get_mcp_token()
     if not token:
         raise HTTPException(403, "未设置密码，无法生成令牌")
-    return AuthTokenOut(token=token, scopes=req.scopes)
+    return AuthTokenOut(token=token, scopes=body.scopes)
 
 
 # ── Contacts ────────────────────────────────────────────────────
