@@ -1,10 +1,13 @@
 <template>
   <div>
     <div class="toolbar">
+      <button class="btn-plain" @click="monthOffset-=12">&lt;&lt;</button>
       <button class="btn-plain" @click="monthOffset--">&lt; 上月</button>
       <span class="month-label">{{ year }} 年 {{ month }} 月</span>
       <button class="btn-plain" @click="monthOffset++">下月 &gt;</button>
+      <button class="btn-plain" @click="monthOffset+=12">&gt;&gt;</button>
       <span style="flex:1" />
+      <input v-model="jumpDate" type="date" class="date-input" @change="jumpToDate" />
       <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
       <router-link to="/calendar/new" class="btn-primary">+ 新建</router-link>
     </div>
@@ -48,7 +51,7 @@ function icalDateToStr(dtstart) {
 }
 
 export default {
-  data: () => ({ events: [], monthOffset: 0, selectedDay: null, searchQuery: '', _searchTimer: null, errorMsg: '' }),
+  data: () => ({ events: [], monthOffset: 0, selectedDay: null, searchQuery: '', jumpDate: '', _searchTimer: null, errorMsg: '' }),
   watch: {
     monthOffset() { this.selectedDay = null; this.load() },
   },
@@ -89,10 +92,9 @@ export default {
     monthRange() {
       const y = this.now.getFullYear(), m = this.now.getMonth() + 1
       const pad = n => String(n).padStart(2, '0')
-      const from = `${y}${pad(m)}01`
-      const lastDay = new Date(y, m, 0).getDate()
-      const to = m === 12 ? `${y+1}0101` : `${y}${pad(m+1)}01`
-      return { from, to, lastDay }
+      const from = `${y}-${pad(m)}-01`
+      const to = m === 12 ? `${y+1}-01-01` : `${y}-${pad(m+1)}-01`
+      return { from, to }
     },
     async load() {
       this.errorMsg = ''
@@ -132,6 +134,12 @@ export default {
         }),
       }
     },
+    jumpToDate() {
+      if (!this.jumpDate) return
+      const d = new Date(this.jumpDate)
+      if (isNaN(d.getTime())) return
+      this.monthOffset = (d.getFullYear() - new Date().getFullYear()) * 12 + (d.getMonth() - new Date().getMonth())
+    },
   },
 }
 </script>
@@ -139,6 +147,7 @@ export default {
 <style scoped>
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .search-input { padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; width: 180px; }
+.date-input { padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
 .btn-plain { padding: 6px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .month-label { font-size: 16px; font-weight: bold; min-width: 140px; text-align: center; }
 .btn-primary { padding: 8px 16px; background: #1677ff; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; }
