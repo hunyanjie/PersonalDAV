@@ -24,6 +24,10 @@ class ContactStructuredCreate(BaseModel):
     full_name: str
     email: str = ""
     phone: str = ""
+    groups: str = ""
+    address: str = ""
+    org: str = ""
+    note: str = ""
 
 
 class ContactUpdate(BaseModel):

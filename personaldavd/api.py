@@ -155,6 +155,14 @@ async def create_contact_structured(body: ContactStructuredCreate, token: str = 
         vcard += f"EMAIL:{body.email}\r\n"
     if body.phone:
         vcard += f"TEL:{body.phone}\r\n"
+    if body.groups:
+        vcard += f"CATEGORIES:{body.groups}\r\n"
+    if body.address:
+        vcard += f"ADR:{body.address}\r\n"
+    if body.org:
+        vcard += f"ORG:{body.org}\r\n"
+    if body.note:
+        vcard += f"NOTE:{body.note}\r\n"
     vcard += "END:VCARD\r\n"
     svc = ContactService()
     uid, op = svc.add_contact(vcard)
@@ -274,8 +282,7 @@ async def search_events(
 @api_router.get("/settings", summary="获取所有设置")
 async def list_settings(token: str = Depends(get_current_token)):
     s = SettingsService()
-    rows = s.db.query("SELECT key, value FROM settings")
-    return {r[0]: r[1] for r in rows}
+    return s.get_all_settings()
 
 
 @api_router.get("/settings/{key}", summary="获取单个设置")

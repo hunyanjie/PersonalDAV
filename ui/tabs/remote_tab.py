@@ -180,8 +180,12 @@ class RemoteTab(ttk.Frame):
 
     def _on_protocol_change(self, event=None) -> None:
         proto = self.protocol_var.get()
-        default_port = self.PROTOCOLS.get(proto, 80) if proto == "WebDAV" else self.PROTOCOLS.get(proto, 21)
-        self.port_var.set(str(default_port))
+        if proto == "WebDAV":
+            from services.settings_service import SettingsService
+            server_port = SettingsService().get_setting("default_port", "8000")
+            self.port_var.set(server_port)
+        else:
+            self.port_var.set(str(self.PROTOCOLS.get(proto, 21)))
         if proto == "SMB":
             self.mount_btn.config(text="挂载 / 保存连接")
         else:
