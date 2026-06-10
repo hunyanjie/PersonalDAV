@@ -69,9 +69,10 @@ export default {
   },
   methods: {
     async load() {
-      const from = `${this.year}-${String(this.month).padStart(2,'0')}-01`
-      const to = `${this.year}-${String(this.month + 1).padStart(2,'0')}-01`
-      try { this.events = (await api.searchEvents('', from, to, 500)).items || [] } catch(e) { this.events = [] }
+      try {
+        const res = await api.listEvents(0, 500)
+        this.events = Array.isArray(res) ? res : (res.items || [])
+      } catch(e) { this.events = [] }
     },
     showDay(day) {
       const dateStr = `${this.year}-${String(this.month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
