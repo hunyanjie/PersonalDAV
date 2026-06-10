@@ -47,7 +47,7 @@ export default {
   searchContacts(q, limit = 10) { return request('GET', '/contacts/search', { params: qs({ q, limit }) }) },
 
   // Events
-  listEvents(offset = 0, limit = 50) { return request('GET', '/events', { params: { offset, limit } }) },
+  listEvents(offset = 0, limit = 50, dateFrom = '', dateTo = '') { return request('GET', '/events', { params: qs({ offset, limit, date_from: dateFrom, date_to: dateTo }) }) },
   getEvent(uid) { return request('GET', `/events/${uid}`) },
   createEvent(icalData) { return request('POST', '/events', { body: { ical_data: icalData } }) },
   updateEvent(uid, icalData) { return request('PUT', `/events/${uid}`, { body: { ical_data: icalData } }) },

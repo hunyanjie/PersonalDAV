@@ -198,10 +198,16 @@ async def delete_contact(uid: str, token: str = Depends(get_current_token)):
 async def list_events(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    date_from: str = Query("", description="起始日期 YYYYMMDD"),
+    date_to: str = Query("", description="结束日期 YYYYMMDD（不含）"),
     token: str = Depends(get_current_token),
 ):
-    """返回日历事件的摘要列表（标题、起止时间），支持分页。"""
+    """返回日历事件的摘要列表（标题、起止时间），支持分页和日期范围筛选。"""
     svc = EventService()
+    if date_from and date_to:
+        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to, limit)
+        items = [o for r in raw_list if (o := _event_to_out(r))]
+        return {"items": items, "total": len(items)}
     raw_list, total = svc.get_all_raw_paginated(offset, limit)
     items = [o for r in raw_list if (o := _event_to_out(r))]
     return {"items": items, "total": total}

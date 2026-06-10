@@ -11,6 +11,13 @@ class EventRepository(BaseRepository[EventModel]):
     def search_by_date_range(self, start: str, end: str) -> list[EventModel]:
         return super().search_by_date_range('dtstart', 'dtend', start, end)
 
+    def get_by_dtstart_range(self, start: str, end: str, limit: int = 366) -> list[EventModel]:
+        rows = self.db.query(
+            f"SELECT {self._col_str} FROM {self.table} WHERE dtstart >= ? AND dtstart < ? ORDER BY dtstart LIMIT ?",
+            (start, end, limit)
+        )
+        return [self._to_model(row) for row in rows]
+
     def __init__(self):
         super().__init__(
             table='events',

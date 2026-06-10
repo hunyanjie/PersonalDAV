@@ -38,6 +38,11 @@ class BaseService:
         total = self.count()
         return items, total
 
+    def get_raw_by_dtstart_range(self, start: str, end: str, limit: int = 366) -> list[str]:
+        if hasattr(self.repo, 'get_by_dtstart_range'):
+            return [getattr(c, self._raw_field) for c in self.repo.get_by_dtstart_range(start, end, limit)]
+        return []
+
     def get_all_items(self) -> list[tuple[str, str]]:
         return [(getattr(c, 'uid'), getattr(c, self._raw_field)) for c in self.repo.get_all()]
 

@@ -86,10 +86,19 @@ export default {
     },
   },
   methods: {
+    monthRange() {
+      const y = this.now.getFullYear(), m = this.now.getMonth() + 1
+      const pad = n => String(n).padStart(2, '0')
+      const from = `${y}${pad(m)}01`
+      const lastDay = new Date(y, m, 0).getDate()
+      const to = m === 12 ? `${y+1}0101` : `${y}${pad(m+1)}01`
+      return { from, to, lastDay }
+    },
     async load() {
       this.errorMsg = ''
+      const { from, to } = this.monthRange()
       try {
-        const res = await api.listEvents(0, 500)
+        const res = await api.listEvents(0, 366, from, to)
         if (res === null || res === undefined) { this.events = []; return }
         if (Array.isArray(res)) { this.events = res; return }
         if (res.items && Array.isArray(res.items)) { this.events = res.items; return }
