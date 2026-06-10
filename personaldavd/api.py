@@ -84,13 +84,17 @@ async def get_token(body: AuthTokenRequest, request: Request):
     # IP 本机免密或未设密码时直接放行
     if svc.ip_bypasses_auth(client_ip) or not svc.is_password_required():
         token = svc.get_mcp_token()
+        svc.log_auth(True, client_ip, "WebUI", "IP 免密放行")
         return AuthTokenOut(token=token, scopes=body.scopes)
 
     if not svc.verify_password(body.password):
+        svc.log_auth(False, client_ip, "WebUI", "密码错误")
         raise HTTPException(401, "密码错误")
     token = svc.get_mcp_token()
     if not token:
+        svc.log_auth(False, client_ip, "WebUI", "未设置密码无法生成令牌")
         raise HTTPException(403, "未设置密码，无法生成令牌")
+    svc.log_auth(True, client_ip, "WebUI", "密码登录成功")
     return AuthTokenOut(token=token, scopes=body.scopes)
 
 
