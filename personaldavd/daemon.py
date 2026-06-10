@@ -2,6 +2,7 @@
 
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -31,7 +32,6 @@ def _init_environment(cfg: "DaemonConfig"):
     import sqlite3
     os.makedirs(os.path.dirname(cfg.db_path) or ".", exist_ok=True)
     os.makedirs(cfg.dav_root, exist_ok=True)
-    # Touch DB so tables are created on first service access
     conn = sqlite3.connect(cfg.db_path)
     conn.close()
 
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     _init_environment(cfg)
     logger.info(f"{SOFTWARE_NAME} daemon starting", extra={"version": SOFTWARE_VERSION, "host": cfg.host, "port": cfg.port})
     yield
-    logger.info("PersonalDAV daemon stopped")
+    logger.info(f"{SOFTWARE_NAME} daemon stopped")
 
 
 def create_app(config: DaemonConfig | None = None) -> FastAPI:
@@ -78,8 +78,38 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     return app
 
 
+class DaemonServer:
+    """统一 FastAPI 服务器封装，接口与旧 DAVServer 兼容。
+
+    start() / stop() 生命周期管理，内部使用 uvicorn.Server 程序化启停，
+    同时提供 REST API、MCP、Web UI SPA 以及传统 DAV 协议。
+    """
+
+    def __init__(self, config: DaemonConfig):
+        self.config = config
+        self._uvicorn_server = None
+
+    def start(self):
+        import uvicorn
+        app = create_app(self.config)
+        uv_config = uvicorn.Config(
+            app,
+            host=self.config.host,
+            port=self.config.port,
+            log_level=self.config.log_level.lower(),
+            ssl_keyfile=self.config.ssl_keyfile if self.config.ssl_enabled and self.config.ssl_keyfile else None,
+            ssl_certfile=self.config.ssl_certfile if self.config.ssl_enabled and self.config.ssl_certfile else None,
+        )
+        self._uvicorn_server = uvicorn.Server(uv_config)
+        self._uvicorn_server.run()
+
+    def stop(self):
+        if self._uvicorn_server:
+            self._uvicorn_server.should_exit = True
+            self._uvicorn_server = None
+
+
 def run_daemon(config: DaemonConfig | None = None):
-    import uvicorn
     cfg = config or DaemonConfig()
-    app = create_app(cfg)
-    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level=cfg.log_level.lower())
+    server = DaemonServer(cfg)
+    server.start()

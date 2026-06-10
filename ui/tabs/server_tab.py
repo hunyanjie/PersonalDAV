@@ -4,7 +4,8 @@ import threading
 import logging
 import os
 import socket
-from network.dav_server import DAVServer
+from personaldavd.config import DaemonConfig
+from personaldavd.daemon import DaemonServer
 from ui.widgets.right_click_menu import RightClickMenu
 from services.ftp_service import FTPService
 from utils.logger import logger, GUIHandler
@@ -405,7 +406,10 @@ class ServerTab(ttk.Frame):
         if tftp_enabled:
             ftp_lines += f"\n  TFTP:     tftp://{ip_lines}:{tftp_port}"
 
-        self.info_label.config(text=f"""CardDAV 配置:
+        self.info_label.config(text=f"""Web 管理面板:
+  {scheme}://localhost:{port}/ - 浏览器管理联系人/日历/文件
+
+CardDAV 配置:
   服务器地址: {scheme}://localhost:{port}/contacts/
   用户名: (任意)  密码: (任意)
 
@@ -417,10 +421,13 @@ WebDAV 文件服务:
   服务器地址: {scheme}://localhost:{port}/dav/
   用户名: (任意)  密码: (任意)
 
+REST API 文档:
+  {scheme}://localhost:{port}/api/docs - 在线接口文档
+
 文件服务:{ftp_lines}
 
 在浏览器中测试:
-  {scheme}://localhost:{port}/ - 查看服务信息
+  {scheme}://localhost:{port}/ - 管理面板
   {scheme}://localhost:{port}/contacts/ - 所有联系人
   {scheme}://localhost:{port}/events/ - 所有日历事件""")
 
@@ -450,8 +457,17 @@ WebDAV 文件服务:
         self.settings_service.set_setting("dav_root", dav_root)
         os.makedirs(os.path.expanduser(os.path.expandvars(dav_root)), exist_ok=True)
 
+        cfg = DaemonConfig(
+            host="0.0.0.0",
+            port=port,
+            log_level=self.settings_service.get_setting("log_level", "INFO"),
+            dav_root=dav_root,
+            ssl_enabled=ssl_enabled,
+            ssl_certfile=ssl_cert,
+            ssl_keyfile=ssl_key,
+        )
         try:
-            self.server_instance = DAVServer(port, ssl_enabled, ssl_cert, ssl_key)
+            self.server_instance = DaemonServer(cfg)
             self.server_thread = threading.Thread(target=self.server_instance.start, daemon=True)
             self.server_thread.start()
         except Exception as e:

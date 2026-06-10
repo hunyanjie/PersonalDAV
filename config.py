@@ -4,7 +4,7 @@
 
 SOFTWARE_NAME = "PersonalDAV"
 SOFTWARE_DESCRIPTION = "全能 DAV 服务 (CardDAV + CalDAV + WebDAV)"
-SOFTWARE_VERSION = "3.1"
+SOFTWARE_VERSION = "3.2"
 SOFTWARE_AUTHOR = "hunyanjie"
 
 # 数据库路径
