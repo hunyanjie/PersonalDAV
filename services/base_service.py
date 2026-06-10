@@ -33,6 +33,11 @@ class BaseService:
     def get_all_raw(self) -> list[str]:
         return [getattr(c, self._raw_field) for c in self.repo.get_all()]
 
+    def get_all_raw_paginated(self, offset: int = 0, limit: int = 50) -> tuple[list[str], int]:
+        items = [getattr(c, self._raw_field) for c in self.repo.get_all_paginated(offset, limit)]
+        total = self.count()
+        return items, total
+
     def get_all_items(self) -> list[tuple[str, str]]:
         return [(getattr(c, 'uid'), getattr(c, self._raw_field)) for c in self.repo.get_all()]
 

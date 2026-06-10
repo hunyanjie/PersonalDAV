@@ -39,15 +39,16 @@
 import api from '../api.js'
 export default {
   data: () => ({ events: [], monthOffset: 0, selectedDay: null }),
-  async mounted() { this.load() },
-  watch: { monthOffset() { this.selectedDay = null } },
+  watch: {
+    monthOffset() { this.selectedDay = null; this.load() },
+  },
   computed: {
     now() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + this.monthOffset, 1) },
     year() { return this.now.getFullYear() },
     month() { return this.now.getMonth() + 1 },
     weeks() {
       const y = this.now.getFullYear(), m = this.now.getMonth()
-      const first = new Date(y, m, 1).getDay() || 7 // mon=1
+      const first = new Date(y, m, 1).getDay() || 7
       const daysInMonth = new Date(y, m + 1, 0).getDate()
       const daysInPrev = new Date(y, m, 0).getDate()
       const weeks = []; let row = []
@@ -68,7 +69,9 @@ export default {
   },
   methods: {
     async load() {
-      try { this.events = await api.listEvents() } catch(e) {}
+      const from = `${this.year}-${String(this.month).padStart(2,'0')}-01`
+      const to = `${this.year}-${String(this.month + 1).padStart(2,'0')}-01`
+      try { this.events = (await api.searchEvents('', from, to, 500)).items || [] } catch(e) { this.events = [] }
     },
     showDay(day) {
       const dateStr = `${this.year}-${String(this.month).padStart(2,'0')}-${String(day).padStart(2,'0')}`

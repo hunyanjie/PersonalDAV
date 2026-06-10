@@ -61,10 +61,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         svc = AuthService()
         client_ip = request.client.host if request.client else "127.0.0.1"
+        ua = request.headers.get("user-agent", "")
+        referer = request.headers.get("referer", "")
 
         # IP check
         if not svc.check_ip(client_ip):
             return Response("IP denied", status_code=403)
+
+        # Referer check (FastAPI 中间件中补充)
+        if svc.is_referer_enabled():
+            if not referer:
+                return Response("Referer required", status_code=403)
+            if not svc.check_referer_advanced(referer):
+                return Response("Referer denied", status_code=403)
+
+        # User-Agent check
+        if ua and not svc.check_user_agent(ua):
+            return Response("User-Agent denied", status_code=403)
 
         # Rate limit
         if not svc.check_rate_limit(client_ip):

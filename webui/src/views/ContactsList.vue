@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="toolbar">
-      <input v-model="query" placeholder="搜索联系人..." @input="onSearch" class="search-input" />
+      <input v-model="query" placeholder="搜索联系人..." @input="debounceSearch" class="search-input" />
       <router-link to="/contacts/new" class="btn-primary">+ 新建</router-link>
     </div>
     <table v-if="items.length" class="data-table">
@@ -21,22 +21,38 @@
         </tr>
       </tbody>
     </table>
-    <div v-else class="empty">暂无联系人</div>
+    <div v-else class="empty">{{ loading ? '加载中...' : '暂无联系人' }}</div>
+    <div v-if="total > pageSize" class="pagination">
+      <button :disabled="page === 0" @click="page--" class="btn-sm">&lt; 上一页</button>
+      <span class="page-info">{{ page + 1 }} / {{ Math.ceil(total / pageSize) }}</span>
+      <button :disabled="(page + 1) * pageSize >= total" @click="page++" class="btn-sm">下一页 &gt;</button>
+    </div>
   </div>
 </template>
 
 <script>
 import api from '../api.js'
 export default {
-  data: () => ({ items: [], query: '' }),
+  data: () => ({ items: [], query: '', page: 0, pageSize: 50, total: 0, loading: false, _timer: null }),
+  watch: { page() { this.load() } },
   async mounted() { this.load() },
   methods: {
     async load() {
-      try { this.items = await api.listContacts() } catch(e) {}
+      this.loading = true
+      try {
+        if (this.query.trim()) {
+          this.items = await api.searchContacts(this.query)
+          this.total = this.items.length
+        } else {
+          const res = await api.listContacts(this.page * this.pageSize, this.pageSize)
+          this.items = res.items; this.total = res.total
+        }
+      } catch(e) { this.items = []; this.total = 0 }
+      finally { this.loading = false }
     },
-    async onSearch() {
-      if (!this.query.trim()) { this.load(); return }
-      try { this.items = await api.searchContacts(this.query) } catch(e) {}
+    debounceSearch() {
+      clearTimeout(this._timer)
+      this._timer = setTimeout(() => { this.page = 0; this.load() }, 300)
     },
     async doDelete(uid) {
       if (!confirm('确认删除该联系人？')) return
@@ -57,4 +73,6 @@ export default {
 .btn-sm { padding: 4px 12px; border-radius: 4px; font-size: 13px; text-decoration: none; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
 .btn-danger { color: #cf1322; border-color: #ffa39e; }
 .empty { text-align: center; color: #999; padding: 48px; font-size: 14px; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
+.page-info { font-size: 14px; color: #555; }
 </style>

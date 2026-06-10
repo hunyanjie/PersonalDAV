@@ -4,6 +4,7 @@ import ipaddress
 import time
 import json
 import urllib.request
+import fnmatch
 from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
@@ -160,11 +161,61 @@ class AuthService:
             if '/' in pattern:
                 return ip in ipaddress.ip_network(pattern, strict=False)
             if '*' in pattern:
-                import fnmatch
                 return fnmatch.fnmatch(ip_str, pattern)
             return ip_str == pattern
         except ValueError:
             return False
+
+    # ── Referer / User-Agent / Fingerprint 访问控制 ────────────
+
+    @staticmethod
+    def _wildcard_match(value: str, pattern: str) -> bool:
+        """通配符匹配（? 单字符，* 多字符），支持 fnmatch 语法。"""
+        return fnmatch.fnmatch(value.lower(), pattern.lower())
+
+    @staticmethod
+    def _load_list(setting_key: str) -> list[str]:
+        """从设置读取多行/逗号分隔的规则列表。"""
+        raw = SettingsService().get_setting(setting_key, "").strip()
+        if not raw:
+            return []
+        import re
+        return [line.strip() for line in re.split(r'[\n,，]+', raw) if line.strip()]
+
+    def _match_any(self, value: str, patterns: list[str]) -> bool:
+        return any(self._wildcard_match(value, p) for p in patterns)
+
+    def check_referer_advanced(self, referer: str) -> bool:
+        """Referer 黑白名单检测（含通配符）。"""
+        wl = self._load_list("referer_whitelist")
+        bl = self._load_list("referer_blacklist")
+        if bl and self._match_any(referer, bl):
+            return False
+        if wl:
+            return self._match_any(referer, wl)
+        return True
+
+    def check_user_agent(self, ua: str) -> bool:
+        """User-Agent 黑白名单检测。"""
+        wl = self._load_list("ua_whitelist")
+        bl = self._load_list("ua_blacklist")
+        if bl and self._match_any(ua, bl):
+            return False
+        if wl:
+            return self._match_any(ua, wl)
+        return True
+
+    def check_fingerprint(self, fp: str) -> bool:
+        """浏览器指纹黑白名单检测。"""
+        if not fp:
+            return True
+        wl = self._load_list("fingerprint_whitelist")
+        bl = self._load_list("fingerprint_blacklist")
+        if bl and self._match_any(fp, bl):
+            return False
+        if wl:
+            return self._match_any(fp, wl)
+        return True
 
     def check_ip(self, client_ip: str) -> bool:
         whitelist = self.get_whitelist()

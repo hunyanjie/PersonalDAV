@@ -38,7 +38,7 @@ export default {
   },
 
   // Contacts
-  listContacts() { return request('GET', '/contacts') },
+  listContacts(offset = 0, limit = 50) { return request('GET', '/contacts', { params: { offset, limit } }) },
   getContact(uid) { return request('GET', `/contacts/${uid}`) },
   createContact(vcardData) { return request('POST', '/contacts', { body: { vcard_data: vcardData } }) },
   createContactStructured(data) { return request('POST', '/contacts/structured', { body: data }) },
@@ -47,7 +47,7 @@ export default {
   searchContacts(q, limit = 10) { return request('GET', '/contacts/search', { params: qs({ q, limit }) }) },
 
   // Events
-  listEvents() { return request('GET', '/events') },
+  listEvents(offset = 0, limit = 50) { return request('GET', '/events', { params: { offset, limit } }) },
   getEvent(uid) { return request('GET', `/events/${uid}`) },
   createEvent(icalData) { return request('POST', '/events', { body: { ical_data: icalData } }) },
   updateEvent(uid, icalData) { return request('PUT', `/events/${uid}`, { body: { ical_data: icalData } }) },

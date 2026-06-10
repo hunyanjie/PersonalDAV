@@ -36,6 +36,10 @@ class BaseRepository(Generic[T]):
         rows = self.db.query(f"SELECT {self._col_str} FROM {self.table}")
         return [self._to_model(row) for row in rows]
 
+    def get_all_paginated(self, offset: int = 0, limit: int = 50) -> List[T]:
+        rows = self.db.query(f"SELECT {self._col_str} FROM {self.table} ORDER BY id LIMIT ? OFFSET ?", (limit, offset))
+        return [self._to_model(row) for row in rows]
+
     def get_selected_columns(self, column_names: List[str]) -> List[tuple]:
         col_str = ', '.join(column_names)
         return self.db.query(f"SELECT {col_str} FROM {self.table}")

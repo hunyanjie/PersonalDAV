@@ -83,6 +83,11 @@ async def get_token(body: AuthTokenRequest, request: Request):
     ua = request.headers.get("user-agent", "")
     fp = body.fingerprint
 
+    # 浏览器指纹检查
+    if fp and not svc.check_fingerprint(fp):
+        svc.log_auth(False, client_ip, "WebUI", "浏览器指纹被拒绝", user_agent=ua, fingerprint=fp)
+        raise HTTPException(403, "浏览器指纹被拒绝")
+
     # IP 本机免密或未设密码时直接放行
     if svc.ip_bypasses_auth(client_ip) or not svc.is_password_required():
         token = svc.get_mcp_token()
@@ -102,12 +107,17 @@ async def get_token(body: AuthTokenRequest, request: Request):
 
 # ── Contacts ────────────────────────────────────────────────────
 
-@api_router.get("/contacts", response_model=list[ContactOut], summary="列出所有联系人")
-async def list_contacts(token: str = Depends(get_current_token)):
-    """返回所有联系人的摘要列表（姓名、邮箱、电话、分组）。"""
+@api_router.get("/contacts", summary="列出所有联系人")
+async def list_contacts(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    token: str = Depends(get_current_token),
+):
+    """返回联系人的摘要列表（姓名、邮箱、电话、分组），支持分页。"""
     svc = ContactService()
-    raw_list = svc.get_all_raw()
-    return [o for r in raw_list if (o := _contact_to_out(r))]
+    raw_list, total = svc.get_all_raw_paginated(offset, limit)
+    items = [o for r in raw_list if (o := _contact_to_out(r))]
+    return {"items": items, "total": total}
 
 
 @api_router.get("/contacts/{uid}", response_model=ContactOut, summary="获取单个联系人")
@@ -176,12 +186,17 @@ async def delete_contact(uid: str, token: str = Depends(get_current_token)):
 
 # ── Events ──────────────────────────────────────────────────────
 
-@api_router.get("/events", response_model=list[EventOut], summary="列出所有事件")
-async def list_events(token: str = Depends(get_current_token)):
-    """返回所有日历事件的摘要列表（标题、起止时间）。"""
+@api_router.get("/events", summary="列出所有事件")
+async def list_events(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    token: str = Depends(get_current_token),
+):
+    """返回日历事件的摘要列表（标题、起止时间），支持分页。"""
     svc = EventService()
-    raw_list = svc.get_all_raw()
-    return [o for r in raw_list if (o := _event_to_out(r))]
+    raw_list, total = svc.get_all_raw_paginated(offset, limit)
+    items = [o for r in raw_list if (o := _event_to_out(r))]
+    return {"items": items, "total": total}
 
 
 @api_router.get("/events/{uid}", response_model=EventOut, summary="获取单个事件")
