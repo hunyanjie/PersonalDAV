@@ -398,17 +398,4 @@ async def webdav_handler(request: Request, rest: str = ""):
     return Response(status_code=405)
 
 
-# ── Home ─────────────────────────────────────────────────────────
 
-@dav_router.get("/")
-async def home():
-    from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION
-    content = (
-        f"<h1>{SOFTWARE_NAME} v{SOFTWARE_VERSION}</h1>"
-        f"<p>{SOFTWARE_DESCRIPTION}</p>"
-        "<p>CardDAV: <a href='/contacts/'>/contacts/</a></p>"
-        "<p>CalDAV: <a href='/events/'>/events/</a></p>"
-        "<p>WebDAV: <a href='/dav/'>/dav/</a></p>"
-        "<p>REST API: <a href='/api/docs'>/api/docs</a></p>"
-    )
-    return Response(content=content, media_type="text/html; charset=utf-8")
