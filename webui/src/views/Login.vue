@@ -24,7 +24,7 @@ export default {
         localStorage.setItem('token', res.token)
         this.$router.push('/')
       } catch (e) {
-        this.error = '密码错误或无法连接服务器'
+        this.error = e.message || '登录失败'
       } finally { this.loading = false }
     },
   },
