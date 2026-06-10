@@ -88,9 +88,12 @@ class DaemonServer:
     def __init__(self, config: DaemonConfig):
         self.config = config
         self._uvicorn_server = None
+        self.start_time = 0.0
 
     def start(self):
+        import time as _time
         import uvicorn
+        self.start_time = _time.time()
         app = create_app(self.config)
         uv_config = uvicorn.Config(
             app,
