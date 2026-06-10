@@ -64,6 +64,7 @@ class AuthTokenOut(BaseModel):
 
 class AuthTokenRequest(BaseModel):
     password: str
+    fingerprint: str = ""
     scopes: list[str] = ["contacts:read", "contacts:write", "events:read", "events:write", "dav:read", "dav:write"]
 
 
@@ -90,6 +91,8 @@ class AuthLogOut(BaseModel):
     success: bool
     method: str
     detail: str
+    user_agent: str = ""
+    fingerprint: str = ""
     prev_hash: str = ""
     hash: str = ""
 

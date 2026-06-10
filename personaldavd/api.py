@@ -1,7 +1,7 @@
 """REST API router — CRUD for contacts, events, system."""
 
 import time, os
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
 from services.contact_service import ContactService
@@ -80,21 +80,23 @@ async def get_token(body: AuthTokenRequest, request: Request):
     """用管理员密码换取 Bearer Token，后续请求携带此令牌即可通过鉴权。"""
     svc = AuthService()
     client_ip = request.client.host if request.client else "127.0.0.1"
+    ua = request.headers.get("user-agent", "")
+    fp = body.fingerprint
 
     # IP 本机免密或未设密码时直接放行
     if svc.ip_bypasses_auth(client_ip) or not svc.is_password_required():
         token = svc.get_mcp_token()
-        svc.log_auth(True, client_ip, "WebUI", "IP 免密放行")
+        svc.log_auth(True, client_ip, "WebUI", "IP 免密放行", user_agent=ua, fingerprint=fp)
         return AuthTokenOut(token=token, scopes=body.scopes)
 
     if not svc.verify_password(body.password):
-        svc.log_auth(False, client_ip, "WebUI", "密码错误")
+        svc.log_auth(False, client_ip, "WebUI", "密码错误", user_agent=ua, fingerprint=fp)
         raise HTTPException(401, "密码错误")
     token = svc.get_mcp_token()
     if not token:
-        svc.log_auth(False, client_ip, "WebUI", "未设置密码无法生成令牌")
+        svc.log_auth(False, client_ip, "WebUI", "未设置密码无法生成令牌", user_agent=ua, fingerprint=fp)
         raise HTTPException(403, "未设置密码，无法生成令牌")
-    svc.log_auth(True, client_ip, "WebUI", "密码登录成功")
+    svc.log_auth(True, client_ip, "WebUI", "密码登录成功", user_agent=ua, fingerprint=fp)
     return AuthTokenOut(token=token, scopes=body.scopes)
 
 

@@ -115,6 +115,10 @@ class Database:
         for col in ['prev_hash', 'hash']:
             try: c.execute(f"ALTER TABLE auth_logs ADD COLUMN {col} TEXT DEFAULT ''")
             except Exception: pass
+        # 迁移: 为 auth_logs 添加 user_agent / fingerprint
+        for col in ['user_agent', 'fingerprint']:
+            try: c.execute(f"ALTER TABLE auth_logs ADD COLUMN {col} TEXT DEFAULT ''")
+            except Exception: pass
         # 回填现有行的哈希链
         missing = c.execute("SELECT COUNT(*) FROM auth_logs WHERE hash IS NULL OR hash = ''").fetchone()[0]
         if missing:

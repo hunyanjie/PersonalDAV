@@ -66,16 +66,17 @@
       <div v-else class="empty">暂无设置</div>
     </section>
 
-    <section class="section">
+        <section class="section">
       <h3>鉴权日志（最近 20 条）</h3>
       <table class="data-table" v-if="authLogs.length">
-        <thead><tr><th>时间</th><th>协议</th><th>客户端</th><th>结果</th></tr></thead>
+        <thead><tr><th>时间</th><th>协议</th><th>客户端</th><th>结果</th><th>指纹</th></tr></thead>
         <tbody>
           <tr v-for="log in authLogs" :key="log.id">
-            <td>{{ log.created_at }}</td>
-            <td>{{ log.protocol }}</td>
-            <td>{{ log.client_info }}</td>
+            <td>{{ log.time }}</td>
+            <td>{{ log.method }}</td>
+            <td :title="`UA: ${log.user_agent || '-'}`">{{ log.detail }}</td>
             <td>{{ log.success ? '成功' : '失败' }}</td>
+            <td :title="`UA: ${log.user_agent || '-'}`">{{ log.fingerprint ? log.fingerprint.substring(0, 8) : '-' }}</td>
           </tr>
         </tbody>
       </table>

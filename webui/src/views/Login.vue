@@ -17,10 +17,26 @@ import api from '../api.js'
 export default {
   data: () => ({ password: '', loading: false, error: '' }),
   methods: {
+    browserFingerprint() {
+      const parts = [
+        navigator.userAgent || '',
+        navigator.language || '',
+        screen.width + 'x' + screen.height,
+        screen.colorDepth || '',
+        navigator.platform || '',
+        new Date().getTimezoneOffset(),
+      ]
+      let s = parts.join('||')
+      let h = 0
+      for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h) + s.charCodeAt(i); h |= 0
+      }
+      return h.toString(16)
+    },
     async doLogin() {
       this.loading = true; this.error = ''
       try {
-        const res = await api.login(this.password)
+        const res = await api.login(this.password, this.browserFingerprint())
         localStorage.setItem('token', res.token)
         this.$router.push('/')
       } catch (e) {

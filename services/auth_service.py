@@ -311,7 +311,7 @@ class AuthService:
         data = f"{prev_hash}|{timestamp}|{ip}|{success}|{method}|{detail}"
         return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
-    def log_auth(self, success: bool, client_ip: str, method: str = "", extra: str = ""):
+    def log_auth(self, success: bool, client_ip: str, method: str = "", extra: str = "", user_agent: str = "", fingerprint: str = ""):
         status = "登录成功" if success else "登录失败"
         parts = f"[{client_ip}] {status}"
         if method:
@@ -328,8 +328,8 @@ class AuthService:
             prev_hash = self._get_last_hash()
             h = self._compute_hash(prev_hash, ts, client_ip, succ, method, extra)
             Database().execute(
-                "INSERT INTO auth_logs (timestamp, ip, success, method, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (ts, client_ip, succ, method, extra, prev_hash, h)
+                "INSERT INTO auth_logs (timestamp, ip, success, method, detail, user_agent, fingerprint, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, client_ip, succ, method, extra, user_agent, fingerprint, prev_hash, h)
             )
         except Exception as e:
             logger.warning(f"写入鉴权日志失败: {e}")
@@ -352,16 +352,16 @@ class AuthService:
         try:
             if protocol:
                 rows = Database().query(
-                    "SELECT id, timestamp, ip, success, method, detail FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
+                    "SELECT id, timestamp, ip, success, method, detail, user_agent, fingerprint FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
                     (f"%{protocol}%", limit)
                 )
             else:
                 rows = Database().query(
-                    "SELECT id, timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                    "SELECT id, timestamp, ip, success, method, detail, user_agent, fingerprint FROM auth_logs ORDER BY id DESC LIMIT ?",
                     (limit,)
                 )
             return [
-                {"id": r[0], "time": r[1], "ip": r[2], "success": bool(r[3]), "method": r[4] or "", "detail": r[5] or ""}
+                {"id": r[0], "time": r[1], "ip": r[2], "success": bool(r[3]), "method": r[4] or "", "detail": r[5] or "", "user_agent": r[6] or "", "fingerprint": r[7] or ""}
                 for r in rows
             ]
         except Exception:
@@ -370,11 +370,11 @@ class AuthService:
     def get_auth_logs(self, limit: int = 200) -> list[dict]:
         try:
             rows = Database().query(
-                "SELECT timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                "SELECT timestamp, ip, success, method, detail, user_agent, fingerprint FROM auth_logs ORDER BY id DESC LIMIT ?",
                 (limit,)
             )
             return [
-                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or ""}
+                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or "", "user_agent": r[5] or "", "fingerprint": r[6] or ""}
                 for r in rows
             ]
         except Exception:

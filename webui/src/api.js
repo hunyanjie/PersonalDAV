@@ -33,8 +33,8 @@ function qs(params) {
 
 export default {
   // Auth
-  login(password) {
-    return request('POST', '/auth/token', { body: { password } })
+  login(password, fingerprint = '') {
+    return request('POST', '/auth/token', { body: { password, fingerprint } })
   },
 
   // Contacts
