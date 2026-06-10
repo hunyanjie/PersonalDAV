@@ -5,6 +5,7 @@ import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.routing import APIRoute
 
 from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION
@@ -64,6 +65,16 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     app.include_router(files_router, prefix="/api")
     app.include_router(dav_router)
     app.mount("/mcp", create_mcp_app(), name="mcp")
+
+    # SPA static files
+    webui_dist = os.path.join(os.path.dirname(__file__), "..", "webui", "dist")
+    if os.path.isdir(webui_dist):
+        from fastapi.responses import FileResponse
+        app.mount("/assets", StaticFiles(directory=os.path.join(webui_dist, "assets")), name="spa_assets")
+
+        @app.get("/", include_in_schema=False)
+        async def serve_spa():
+            return FileResponse(os.path.join(webui_dist, "index.html"))
     return app
 
 

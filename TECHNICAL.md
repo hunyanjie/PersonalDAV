@@ -5,6 +5,7 @@
 | 层面 | 技术 | 用途 |
 |------|------|------|
 | 语言 | Python 3.12+ | 类型注解、dataclass、match 语句 |
+| Web UI | Vue 3 + Vite + vue-router (v3.2) | 浏览器管理界面，hash 路由，SPA |
 | GUI | tkinter / ttk / tkinterdnd2 | 桌面界面、原生控件、文件拖放 |
 | 日历控件 | tkcalendar (Calendar) | 日历月视图、日期选择 |
 | 数据库 | SQLite3（内置） | 本地存储，WAL 模式，单文件 |
@@ -212,7 +213,27 @@ PersonalDAV/
 │   ├── auth.py                # 统一鉴权中间件
 │   ├── mcp.py                 # MCP 子应用工厂
 │   ├── models.py              # Pydantic 模型
+│   ├── files.py               # 文件管理 REST API（v3.2 新增）
 │   └── logging.py             # 结构化日志
+├── webui/                     # v3.2 Web 管理界面 (Vue 3 + Vite)
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/
+│       ├── main.js
+│       ├── App.vue
+│       ├── api.js              # REST API 客户端封装
+│       ├── router/index.js     # Hash 路由
+│       ├── components/AppLayout.vue
+│       └── views/
+│           ├── Login.vue
+│           ├── Dashboard.vue
+│           ├── ContactsList.vue
+│           ├── ContactEdit.vue
+│           ├── Calendar.vue
+│           ├── CalendarEventEdit.vue
+│           ├── Files.vue
+│           └── Settings.vue
 ├── data/                      # 运行产物（启动时自动创建）
 │   ├── dav_data.db            # SQLite 数据库
 │   ├── dav_data.db.bak        # 自动备份
