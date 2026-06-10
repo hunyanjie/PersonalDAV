@@ -13,14 +13,22 @@ from datetime import datetime, date
 from utils.encoding_helper import decode_ical_value
 
 
+def _extract_categories(ical_data: str) -> str:
+    for line in ical_data.splitlines():
+        if line.upper().startswith("CATEGORIES"):
+            return line.split(":", 1)[-1].strip() if ":" in line else ""
+    return ""
+
+
 class CalendarTab(BaseTreeTab):
     """日历管理标签页"""
-    COLUMNS = ("uid", "summary", "start", "end", "created_at", "updated_at")
+    COLUMNS = ("uid", "summary", "start", "end", "categories", "created_at", "updated_at")
     HEADINGS = {
         "uid": "ID",
         "summary": "事件",
         "start": "开始时间",
         "end": "结束时间",
+        "categories": "分类",
         "created_at": "添加时间",
         "updated_at": "修改时间"
     }
@@ -41,17 +49,25 @@ class CalendarTab(BaseTreeTab):
         event_bus.subscribe(EVENT_EVENTS_CHANGED, self.refresh_events)
 
     def get_column_width(self, col):
-        widths = {"uid": 150, "summary": 300, "start": 200, "end": 200, "created_at": 160, "updated_at": 160}
+        widths = {"uid": 150, "summary": 300, "start": 200, "end": 200, "categories": 120, "created_at": 160, "updated_at": 160}
         return widths.get(col, 100)
 
     def create_widgets(self):
         self.setup_search_ui(self)
 
-        view_f = ttk.Frame(self)
-        view_f.pack(fill=tk.X, padx=10, pady=(0, 5))
-        ttk.Label(view_f, text="视图:").pack(side=tk.LEFT, padx=(0, 5))
+        # 分类筛选
+        filter_frame = ttk.Frame(self)
+        filter_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        ttk.Label(filter_frame, text="分类筛选:").pack(side=tk.LEFT, padx=(0, 5))
+        self._cat_filter_var = tk.StringVar(value="全部")
+        self._cat_filter_combo = ttk.Combobox(filter_frame, textvariable=self._cat_filter_var,
+                                               values=["全部"], state="readonly", width=18)
+        self._cat_filter_combo.pack(side=tk.LEFT)
+        self._cat_filter_var.trace("w", lambda *a: self._apply_cat_filter())
+
+        ttk.Label(filter_frame, text="  视图:").pack(side=tk.LEFT, padx=(10, 5))
         self._view_var = tk.StringVar(value="议程")
-        self._view_combo = ttk.Combobox(view_f, textvariable=self._view_var,
+        self._view_combo = ttk.Combobox(filter_frame, textvariable=self._view_var,
                                           values=["议程", "月视图"], state="readonly", width=10)
         self._view_combo.pack(side=tk.LEFT)
         self._view_var.trace("w", self._on_view_changed)
@@ -231,19 +247,47 @@ class CalendarTab(BaseTreeTab):
     def refresh_events(self):
         raw = self.db.get_list_data()
         self._all_raw = raw
+        self._raw_by_uid = {}
+        self._update_cat_filter()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
         if self._view_var.get() == "月视图":
             self._refresh_month_view()
 
+    def _update_cat_filter(self):
+        cats = set()
+        for event in self._all_raw:
+            uid = event[0]
+            ical = self.db.get_by_uid(uid)
+            if ical:
+                self._raw_by_uid[uid] = ical
+                raw_cat = _extract_categories(ical)
+                if raw_cat:
+                    for c in raw_cat.split(","):
+                        c = c.strip()
+                        if c:
+                            cats.add(c)
+        all_vals = ["全部"] + sorted(cats)
+        self._cat_filter_combo['values'] = all_vals
+        if self._cat_filter_var.get() not in all_vals:
+            self._cat_filter_var.set("全部")
+
+    def _apply_cat_filter(self):
+        query = getattr(self, 'search_var', None) and self.search_var.get().lower() or ""
+        self.apply_filter(query)
+
     def apply_filter(self, query):
+        selected_cat = self._cat_filter_var.get()
         self._all_data = []
         for event in self._all_raw:
             uid, summary, start, end, created_at, updated_at = event
             match = not query or any(query in str(v).lower() for v in event)
             if match:
-                disp_summary = decode_ical_value(summary) if summary else summary
-                self._all_data.append((" ", uid, disp_summary, start, end, created_at, updated_at))
+                ical = self._raw_by_uid.get(uid, "")
+                raw_cat = _extract_categories(ical)
+                if selected_cat == "全部" or selected_cat in raw_cat.split(","):
+                    disp_summary = decode_ical_value(summary) if summary else summary
+                    self._all_data.append((" ", uid, disp_summary, start, end, raw_cat, created_at, updated_at))
         self._rerender()
         if self._view_var.get() == "月视图":
             self._refresh_month_view()

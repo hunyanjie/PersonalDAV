@@ -5,6 +5,7 @@
       <span class="month-label">{{ year }} 年 {{ month }} 月</span>
       <button class="btn-plain" @click="monthOffset++">下月 &gt;</button>
       <span style="flex:1" />
+      <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
       <router-link to="/calendar/new" class="btn-primary">+ 新建</router-link>
     </div>
     <table class="cal-table">
@@ -37,8 +38,15 @@
 
 <script>
 import api from '../api.js'
+
+function icalDateToStr(dtstart) {
+  if (!dtstart) return ''
+  const m = dtstart.match(/^(\d{4})(\d{2})(\d{2})/)
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : dtstart.substring(0, 10)
+}
+
 export default {
-  data: () => ({ events: [], monthOffset: 0, selectedDay: null }),
+  data: () => ({ events: [], monthOffset: 0, selectedDay: null, searchQuery: '', _searchTimer: null }),
   watch: {
     monthOffset() { this.selectedDay = null; this.load() },
   },
@@ -56,7 +64,11 @@ export default {
       for (let i = prev; i <= daysInPrev; i++) row.push({ day: i, current: false, hasEvent: false, events: [] })
       for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
-        const dayEvents = this.events.filter(e => e.dtstart && e.dtstart.startsWith(dateStr))
+        const dayEvents = this.events.filter(e => {
+          if (!e.dtstart) return false
+          const ds = icalDateToStr(e.dtstart)
+          return ds === dateStr
+        })
         row.push({ day: d, current: true, hasEvent: dayEvents.length > 0, events: dayEvents })
         if (row.length === 7) { weeks.push(row); row = [] }
       }
@@ -74,11 +86,26 @@ export default {
         this.events = Array.isArray(res) ? res : (res.items || [])
       } catch(e) { this.events = [] }
     },
+    doSearch() {
+      clearTimeout(this._searchTimer)
+      this._searchTimer = setTimeout(() => {
+        if (this.searchQuery.trim()) {
+          api.searchEvents(this.searchQuery, '', '', 200).then(results => {
+            this.events = Array.isArray(results) ? results : (results.items || [])
+          }).catch(() => {})
+        } else {
+          this.load()
+        }
+      }, 300)
+    },
     showDay(day) {
       const dateStr = `${this.year}-${String(this.month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
       this.selectedDay = {
         year: this.year, month: this.month, day,
-        events: this.events.filter(e => e.dtstart && e.dtstart.startsWith(dateStr)),
+        events: this.events.filter(e => {
+          if (!e.dtstart) return false
+          return icalDateToStr(e.dtstart) === dateStr
+        }),
       }
     },
   },
@@ -86,7 +113,8 @@ export default {
 </script>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.search-input { padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; width: 180px; }
 .btn-plain { padding: 6px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .month-label { font-size: 16px; font-weight: bold; min-width: 140px; text-align: center; }
 .btn-primary { padding: 8px 16px; background: #1677ff; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; }

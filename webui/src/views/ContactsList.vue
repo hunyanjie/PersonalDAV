@@ -24,8 +24,17 @@
     <div v-else class="empty">{{ loading ? '加载中...' : '暂无联系人' }}</div>
     <div v-if="total > pageSize" class="pagination">
       <button :disabled="page === 0" @click="page--" class="btn-sm">&lt; 上一页</button>
-      <span class="page-info">{{ page + 1 }} / {{ Math.ceil(total / pageSize) }}</span>
+      <span class="page-info">
+        第 <input class="page-jump" v-model.number="pageInput" type="number" :min="1" :max="maxPage" @keyup.enter="jumpPage" />
+        / {{ maxPage }} 页（共 {{ total }} 条）
+      </span>
       <button :disabled="(page + 1) * pageSize >= total" @click="page++" class="btn-sm">下一页 &gt;</button>
+      <select class="page-size" v-model.number="localPageSize" @change="changePageSize">
+        <option :value="50">50 条/页</option>
+        <option :value="100">100 条/页</option>
+        <option :value="200">200 条/页</option>
+        <option :value="500">500 条/页</option>
+      </select>
     </div>
   </div>
 </template>
@@ -33,8 +42,11 @@
 <script>
 import api from '../api.js'
 export default {
-  data: () => ({ items: [], query: '', page: 0, pageSize: 50, total: 0, loading: false, _timer: null }),
-  watch: { page() { this.load() } },
+  data: () => ({ items: [], query: '', page: 0, pageSize: 50, total: 0, loading: false, _timer: null, pageInput: 1, localPageSize: 50 }),
+  computed: {
+    maxPage() { return Math.max(1, Math.ceil(this.total / this.pageSize)) },
+  },
+  watch: { page() { this.pageInput = this.page + 1; this.load() } },
   async mounted() { this.load() },
   methods: {
     async load() {
@@ -53,6 +65,14 @@ export default {
     debounceSearch() {
       clearTimeout(this._timer)
       this._timer = setTimeout(() => { this.page = 0; this.load() }, 300)
+    },
+    changePageSize() {
+      this.pageSize = this.localPageSize
+      this.page = 0
+    },
+    jumpPage() {
+      const p = Math.max(1, Math.min(this.maxPage, this.pageInput || 1)) - 1
+      if (p !== this.page) this.page = p
     },
     async doDelete(uid) {
       if (!confirm('确认删除该联系人？')) return
@@ -73,6 +93,8 @@ export default {
 .btn-sm { padding: 4px 12px; border-radius: 4px; font-size: 13px; text-decoration: none; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
 .btn-danger { color: #cf1322; border-color: #ffa39e; }
 .empty { text-align: center; color: #999; padding: 48px; font-size: 14px; }
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
-.page-info { font-size: 14px; color: #555; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.page-info { font-size: 14px; color: #555; display: flex; align-items: center; gap: 4px; }
+.page-jump { width: 48px; padding: 2px 4px; border: 1px solid #d9d9d9; border-radius: 4px; text-align: center; font-size: 13px; }
+.page-size { padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
 </style>

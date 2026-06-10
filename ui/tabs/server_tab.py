@@ -38,6 +38,7 @@ class ServerTab(ttk.Frame):
         self.ssl_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var = tk.StringVar(value=self.settings_service.get_setting("ssl_certfile", ""))
         self.ssl_key_var = tk.StringVar(value=self.settings_service.get_setting("ssl_keyfile", ""))
+        self.webui_enabled = tk.BooleanVar(value=self.settings_service.get_setting("webui_enabled", "True") == "True")
 
         # FTP/SFTP/TFTP 服务器相关变量
         self.ftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ftp_enabled", "True") == "True")
@@ -67,6 +68,7 @@ class ServerTab(ttk.Frame):
         self.ssl_enabled.set(self.settings_service.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var.set(self.settings_service.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(self.settings_service.get_setting("ssl_keyfile", ""))
+        self.webui_enabled.set(self.settings_service.get_setting("webui_enabled", "True") == "True")
         self.ftp_enabled.set(self.settings_service.get_setting("ftp_enabled", "True") == "True")
         self.ftp_port_var.set(self.settings_service.get_setting("ftp_port", "21"))
         self.ftp_root_var.set(self.settings_service.get_setting("ftp_root", "./ftp_root"))
@@ -115,6 +117,9 @@ class ServerTab(ttk.Frame):
 
         self.stop_btn = ttk.Button(port_frame, text="停止服务器", command=self.stop_server, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
+
+        self._webui_cb = ttk.Checkbutton(port_frame, text="Web面板", variable=self.webui_enabled)
+        self._webui_cb.pack(side=tk.LEFT, padx=2)
 
         ttk.Label(port_frame, text="DAV 目录:").pack(side=tk.LEFT, padx=5)
         self.dav_root_entry = ttk.Entry(port_frame, textvariable=self.dav_root_var, width=25)
@@ -406,30 +411,26 @@ class ServerTab(ttk.Frame):
         if tftp_enabled:
             ftp_lines += f"\n  TFTP:     tftp://{ip_lines}:{tftp_port}"
 
-        self.info_label.config(text=f"""Web 管理面板:
+        webui_lines = ""
+        if self.webui_enabled.get():
+            webui_lines = f"""
+Web 管理面板:
   {scheme}://localhost:{port}/ - 浏览器管理联系人/日历/文件
-
-CardDAV 配置:
-  服务器地址: {scheme}://localhost:{port}/contacts/
-  用户名: (任意)  密码: (任意)
-
-CalDAV 配置:
-  服务器地址: {scheme}://localhost:{port}/events/
-  用户名: (任意)  密码: (任意)
-
-WebDAV 文件服务:
-  服务器地址: {scheme}://localhost:{port}/dav/
-  用户名: (任意)  密码: (任意)
 
 REST API 文档:
   {scheme}://localhost:{port}/api/docs - 在线接口文档
 
-文件服务:{ftp_lines}
-
 在浏览器中测试:
   {scheme}://localhost:{port}/ - 管理面板
   {scheme}://localhost:{port}/contacts/ - 所有联系人
-  {scheme}://localhost:{port}/events/ - 所有日历事件""")
+  {scheme}://localhost:{port}/events/ - 所有日历事件"""
+
+        self.info_label.config(text=f"""DAV 服务:
+  CardDAV: {scheme}://localhost:{port}/contacts/
+  CalDAV:  {scheme}://localhost:{port}/events/
+  WebDAV:  {scheme}://localhost:{port}/dav/{webui_lines}
+
+文件服务:{ftp_lines}""")
 
     LEVEL_TAGS = {50: "CRITICAL", 40: "ERROR", 30: "WARNING", 20: "INFO", 10: "DEBUG"}
 
@@ -452,6 +453,7 @@ REST API 文档:
         self.settings_service.set_setting("ssl_enabled", str(ssl_enabled))
         self.settings_service.set_setting("ssl_certfile", ssl_cert)
         self.settings_service.set_setting("ssl_keyfile", ssl_key)
+        self.settings_service.set_setting("webui_enabled", str(self.webui_enabled.get()))
 
         dav_root = self.dav_root_var.get().strip() or "./dav_root"
         self.settings_service.set_setting("dav_root", dav_root)
@@ -465,6 +467,7 @@ REST API 文档:
             ssl_enabled=ssl_enabled,
             ssl_certfile=ssl_cert,
             ssl_keyfile=ssl_key,
+            webui_enabled=self.webui_enabled.get(),
         )
         try:
             self.server_instance = DaemonServer(cfg)

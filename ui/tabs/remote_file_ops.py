@@ -17,7 +17,7 @@ class RemoteFileOps:
     # ── 辅助方法 ──
 
     def is_ftp_connected(self):
-        return self.tab._is_connected and self.tab._current_protocol != "SMB"
+        return self.tab._is_connected and self.tab._current_protocol not in ("SMB",)
 
     def get_selected_name(self):
         sel = self.tab.tree.selection()
@@ -84,7 +84,7 @@ class RemoteFileOps:
 
     def upload_file(self):
         if not self.is_ftp_connected():
-            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持上传")
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP/WebDAV 协议支持上传")
             return
         file_path = filedialog.askopenfilename(title="选择要上传的文件")
         if not file_path:
@@ -94,11 +94,20 @@ class RemoteFileOps:
         self.set_ops_state(True)
         threading.Thread(target=self._upload_thread, args=(file_path, remote_path), daemon=True).start()
 
+    def _get_client(self):
+        if self.tab._current_protocol == "WebDAV":
+            return self.tab.dav_client
+        return self.tab.ftp_client
+
+    def _get_default_port(self):
+        return 80 if self.tab._current_protocol == "WebDAV" else 21
+
     def _upload_thread(self, local, remote):
-        server, port = self.tab._parse_server(self.tab._current_server)
+        server, port = self.tab._parse_server(self.tab._current_server, self._get_default_port())
         username = self.tab.username_var.get().strip() or "anonymous"
         password = self.tab.password_var.get()
-        result = self.tab.ftp_client.upload(
+        client = self._get_client()
+        result = client.upload(
             self.tab._current_protocol.lower(), server, port, username, password, local, remote,
             encoding=self.tab.encoding_var.get())
         self.tab.after(0, lambda: self._op_done(result, "上传"))
@@ -107,7 +116,7 @@ class RemoteFileOps:
 
     def download_selected(self):
         if not self.is_ftp_connected():
-            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持下载")
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP/WebDAV 协议支持下载")
             return
         sel = self.tab.tree.selection()
         if not sel:
@@ -136,14 +145,15 @@ class RemoteFileOps:
         threading.Thread(target=self._download_all_thread, args=(files_to_dl,), daemon=True).start()
 
     def _download_all_thread(self, files):
-        server, port = self.tab._parse_server(self.tab._current_server)
+        server, port = self.tab._parse_server(self.tab._current_server, self._get_default_port())
         username = self.tab.username_var.get().strip() or "anonymous"
         password = self.tab.password_var.get()
         encoding = self.tab.encoding_var.get()
         proto = self.tab._current_protocol.lower()
+        client = self._get_client()
         ok = 0
         for local, remote in files:
-            r = self.tab.ftp_client.download(proto, server, port, username, password, remote, local, encoding)
+            r = client.download(proto, server, port, username, password, remote, local, encoding)
             if r["success"]:
                 ok += 1
         self.tab.after(0, lambda: self._multi_op_done(ok, len(files), "下载"))
@@ -152,7 +162,7 @@ class RemoteFileOps:
 
     def delete_selected(self):
         if not self.is_ftp_connected():
-            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持删除")
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP/WebDAV 协议支持删除")
             return
         sel = self.tab.tree.selection()
         if not sel:
@@ -172,13 +182,14 @@ class RemoteFileOps:
         threading.Thread(target=self._delete_all_thread, args=(paths,), daemon=True).start()
 
     def _delete_all_thread(self, paths):
-        server, port = self.tab._parse_server(self.tab._current_server)
+        server, port = self.tab._parse_server(self.tab._current_server, self._get_default_port())
         username = self.tab.username_var.get().strip() or "anonymous"
         password = self.tab.password_var.get()
         encoding = self.tab.encoding_var.get()
         proto = self.tab._current_protocol.lower()
+        client = self._get_client()
         ok = sum(1 for p in paths
-                 if self.tab.ftp_client.delete(proto, server, port, username, password, p, encoding)["success"])
+                 if client.delete(proto, server, port, username, password, p, encoding)["success"])
         self.tab.after(0, lambda: self._multi_op_done(ok, len(paths), "删除"))
 
     # ── 重命名 ──
@@ -188,7 +199,7 @@ class RemoteFileOps:
         if not old_path:
             return
         if not self.is_ftp_connected():
-            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持重命名")
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP/WebDAV 协议支持重命名")
             return
         name = self.get_selected_name()
         new_name = simpledialog.askstring("重命名", "新名称:", initialvalue=name, parent=self.tab)
@@ -199,10 +210,11 @@ class RemoteFileOps:
         threading.Thread(target=self._rename_thread, args=(old_path, new_path), daemon=True).start()
 
     def _rename_thread(self, old, new):
-        server, port = self.tab._parse_server(self.tab._current_server)
+        server, port = self.tab._parse_server(self.tab._current_server, self._get_default_port())
         username = self.tab.username_var.get().strip() or "anonymous"
         password = self.tab.password_var.get()
-        result = self.tab.ftp_client.rename(
+        client = self._get_client()
+        result = client.rename(
             self.tab._current_protocol.lower(), server, port, username, password, old, new,
             encoding=self.tab.encoding_var.get())
         self.tab.after(0, lambda: self._op_done(result, "重命名"))
@@ -211,7 +223,7 @@ class RemoteFileOps:
 
     def new_folder(self):
         if not self.is_ftp_connected():
-            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP 协议支持新建文件夹")
+            Toast.warning(self.tab, "仅 FTP/FTPS/SFTP/WebDAV 协议支持新建文件夹")
             return
         dir_name = simpledialog.askstring("新建文件夹", "文件夹名称:", parent=self.tab)
         if not dir_name:
@@ -221,10 +233,11 @@ class RemoteFileOps:
         threading.Thread(target=self._mkdir_thread, args=(new_path,), daemon=True).start()
 
     def _mkdir_thread(self, path):
-        server, port = self.tab._parse_server(self.tab._current_server)
+        server, port = self.tab._parse_server(self.tab._current_server, self._get_default_port())
         username = self.tab.username_var.get().strip() or "anonymous"
         password = self.tab.password_var.get()
-        result = self.tab.ftp_client.mkdir(
+        client = self._get_client()
+        result = client.mkdir(
             self.tab._current_protocol.lower(), server, port, username, password, path,
             encoding=self.tab.encoding_var.get())
         self.tab.after(0, lambda: self._op_done(result, "新建文件夹"))

@@ -5,6 +5,7 @@ import os
 from typing import Any
 from services.smb_service import SMBService
 from services.ftp_client_service import FTPClientService
+from services.dav_client_service import DAVClientService
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
 from utils.logger import logger
@@ -32,7 +33,7 @@ class RemoteTab(ttk.Frame):
     tree: ttk.Treeview
     mounts_tree: ttk.Treeview
 
-    PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 21, "SFTP": 22}
+    PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 21, "SFTP": 22, "WebDAV": 80}
     ENCODINGS = [
         "utf-8", "utf-16be", "utf-16le", "utf-32be", "utf-32le",
         "gb2312", "gb18030", "gbk", "big5", "big5-hkscs",
@@ -53,6 +54,7 @@ class RemoteTab(ttk.Frame):
         self.settings_service = settings_service
         self.smb_service = SMBService()
         self.ftp_client = FTPClientService()
+        self.dav_client = DAVClientService()
         self._current_protocol = "SMB"
         self._current_server = ""
         self._current_share = ""
@@ -178,7 +180,8 @@ class RemoteTab(ttk.Frame):
 
     def _on_protocol_change(self, event=None) -> None:
         proto = self.protocol_var.get()
-        self.port_var.set(str(self.PROTOCOLS.get(proto, "21")))
+        default_port = self.PROTOCOLS.get(proto, 80) if proto == "WebDAV" else self.PROTOCOLS.get(proto, 21)
+        self.port_var.set(str(default_port))
         if proto == "SMB":
             self.mount_btn.config(text="挂载 / 保存连接")
         else:
@@ -207,6 +210,8 @@ class RemoteTab(ttk.Frame):
     def _connect_thread(self, protocol: str, server: str, port: str, username: str, password: str) -> None:
         if protocol == "SMB":
             result = self.smb_service.list_shares(server, username, password)
+        elif protocol == "WebDAV":
+            result = self.dav_client.list_dir("webdav", server, int(port), username, password, "/", encoding=self.encoding_var.get())
         else:
             result = self.ftp_client.list_dir(protocol.lower(), server, int(port), username, password, "/", encoding=self.encoding_var.get())
         self.after(0, lambda: self._connect_done(protocol, server, port, username, password, result))
@@ -220,7 +225,10 @@ class RemoteTab(ttk.Frame):
             return
 
         account = f"{username}@" if username and username != "anonymous" else ""
-        self._current_server = f"{protocol}://{account}{server}:{port}"
+        if protocol == "WebDAV" and port in ("80", "443"):
+            self._current_server = f"{protocol}://{account}{server}"
+        else:
+            self._current_server = f"{protocol}://{account}{server}:{port}"
         self._current_share = ""
         self._current_path = "/"
         self._is_connected = True
@@ -324,10 +332,16 @@ class RemoteTab(ttk.Frame):
         return host, port
 
     def _browse_ftp_thread(self, path: str, username: str, password: str) -> None:
-        server, port = self._parse_server(self._current_server)
-        result = self.ftp_client.list_dir(
-            self._current_protocol.lower(), server, port, username, password, path, encoding=self.encoding_var.get()
-        )
+        default_port = 80 if self._current_protocol == "WebDAV" else 21
+        server, port = self._parse_server(self._current_server, default_port)
+        if self._current_protocol == "WebDAV":
+            result = self.dav_client.list_dir(
+                "webdav", server, port, username, password, path, encoding=self.encoding_var.get()
+            )
+        else:
+            result = self.ftp_client.list_dir(
+                self._current_protocol.lower(), server, port, username, password, path, encoding=self.encoding_var.get()
+            )
         self.after(0, lambda: self._display_files(result["data"] if result["success"] else []))
 
     def on_double_click(self, event: tk.Event) -> None:

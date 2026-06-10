@@ -14,3 +14,4 @@ class DaemonConfig:
     ssl_enabled: bool = False
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
+    webui_enabled: bool = True
