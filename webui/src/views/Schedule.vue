@@ -8,6 +8,13 @@
       </div>
 
       <div class="scroll-viewport" ref="listRef" @scroll="onScroll">
+        <div class="floating-date-header" v-if="stickyHeader">
+          <div class="fh-left">
+            <span class="fh-date">{{ stickyHeader.label }}</span>
+            <span class="fh-weekday">{{ stickyHeader.weekday }}</span>
+          </div>
+          <div class="fh-right">{{ stickyHeader.lunar }}</div>
+        </div>
         <div class="virtual-list" :style="{ height: totalHeight + 'px' }">
           <div v-for="item in visibleItems" :key="item.key"
             class="list-item"
@@ -17,7 +24,7 @@
             @contextmenu.prevent="onCtxMenu(item, $event)">
             
             <template v-if="item.type === 'header'">
-              <div class="date-header" :style="{ position: 'sticky', top: 0, zIndex: 10 }">
+              <div class="date-header">
                 <div class="dh-left">
                   <span class="dh-date">{{ item.label }}</span>
                   <span class="dh-weekday">{{ item.weekday }}</span>
@@ -230,6 +237,7 @@ export default {
     ctxMenu: { show: false, x: 0, y: 0, uids: [] },
     currentTime: new Date(),
     _nowTimer: null,
+    _initialScrolled: false,
     _loadStart: '2000-01-01',
     _loadEnd: '2099-12-31',
   }),
@@ -319,6 +327,16 @@ export default {
       }
       return current || this.virtualItems.find(i => i.type === 'header')
     },
+    stickyHeader() {
+      if (!this.virtualItems.length) return null
+      let current = null
+      const scrollTop = this.scrollTop
+      for (const item of this.virtualItems) {
+        if (item.type === 'header') current = item
+        if (item.top + item.height > scrollTop) break
+      }
+      return current
+    },
     currentYearMonth() {
       const d = this.floatingDateItem ? icalDateToObj(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
       return d ? `${d.getFullYear()}年${d.getMonth() + 1}月` : ''
@@ -341,12 +359,20 @@ export default {
         this.loadInitial()
       }
     })
+    // force initial scroll when virtualItems change after load
+    this._unwatchItems = this.$watch('virtualItems', () => {
+      if (!this._initialScrolled && this.virtualItems.length && this.$refs.listRef) {
+        this._initialScrolled = true
+        this.$nextTick(() => this.scrollToToday())
+      }
+    })
     window.addEventListener('resize', this.onResize)
     document.addEventListener('click', () => { this.ctxMenu.show = false })
   },
   beforeUnmount() {
     window.removeEventListener('resize', this.onResize)
     clearInterval(this._nowTimer)
+    if (this._unwatchItems) this._unwatchItems()
   },
   methods: {
     fmtTime,
@@ -494,15 +520,37 @@ export default {
         this.selectedUids = []
       } catch (e) { alert('部分删除失败') }
     },
+    _toICS(events) {
+      const vevents = events.map(e => [
+        'BEGIN:VEVENT',
+        `UID:${e.uid || ''}`,
+        `DTSTART:${(e.dtstart || '').replace(/[-:]/g, '')}`,
+        `DTEND:${(e.dtend || '').replace(/[-:]/g, '')}`,
+        `SUMMARY:${e.summary || ''}`,
+        e.description ? `DESCRIPTION:${e.description}` : '',
+        e.location ? `LOCATION:${e.location}` : '',
+        e.categories ? `CATEGORIES:${e.categories}` : '',
+        'END:VEVENT',
+      ].filter(Boolean).join('\r\n')).join('\r\n')
+      return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${vevents}\r\nEND:VCALENDAR`
+    },
+    _downloadIcs(content, name) {
+      const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = name
+      a.click(); URL.revokeObjectURL(url)
+    },
     exportSingle(e) {
-      const text = `${fmtTime(e.dtstart)} - ${fmtTime(e.dtend)} ${e.summary || ''}`
-      navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'))
+      const content = this._toICS([e])
+      this._downloadIcs(content, `${e.summary || '日程'}.ics`)
     },
     exportSelected() {
-      const text = this.events.filter(e => this.selectedUids.includes(e.uid))
+      const items = this.events.filter(e => this.selectedUids.includes(e.uid))
         .sort((a,b) => a.dtstart.localeCompare(b.dtstart))
-        .map(e => `${fmtTime(e.dtstart)} - ${fmtTime(e.dtend)} ${e.summary || ''}`).join('\n')
-      navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'))
+      const content = this._toICS(items)
+      this._downloadIcs(content, `日程_${Date.now()}.ics`)
+      this.ctxMenu.show = false
     },
     createForFloatingDate() {
       const fd = this.floatingDateItem
@@ -534,6 +582,10 @@ export default {
 .list-item { position: absolute; left: 0; right: 0; padding: 0 16px; box-sizing: border-box; }
 
 .date-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 8px; border-bottom: 1px solid #f5f5f5; background: #fff; }
+.floating-date-header { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; border-bottom: 1px solid #e8e8e8; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.06); min-height: 44px; }
+.fh-date { font-weight: 700; color: #333; font-size: 15px; }
+.fh-weekday { margin-left: 8px; color: #999; font-size: 13px; }
+.fh-right { font-size: 12px; color: #aaa; }
 .dh-date { font-weight: 700; color: #333; font-size: 15px; }
 .dh-weekday { margin-left: 8px; color: #999; font-size: 13px; }
 .dh-right { font-size: 12px; color: #aaa; }
