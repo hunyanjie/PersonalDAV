@@ -71,7 +71,8 @@ async def download_file(
     if not os.path.isfile(abs_path):
         raise HTTPException(404, "文件不存在")
     from fastapi.responses import FileResponse
-    return FileResponse(abs_path)
+    filename = os.path.basename(abs_path)
+    return FileResponse(abs_path, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @files_router.get("/files/preview", summary="预览文件内容")

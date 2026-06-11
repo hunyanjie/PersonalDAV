@@ -57,6 +57,12 @@ class StructuredLogger:
             h = LogBufferHandler()
             h.setFormatter(logging.Formatter('%(message)s'))
             root.addHandler(h)
+        for name in ("personaldavd", "PersonalDAV"):
+            lg = logging.getLogger(name)
+            if not any(isinstance(h, LogBufferHandler) for h in lg.handlers):
+                buf = LogBufferHandler()
+                buf.setFormatter(logging.Formatter('%(message)s'))
+                lg.addHandler(buf)
         if not any(isinstance(h, RotatingFileHandler) for h in root.handlers):
             setup_file_logging()
 
