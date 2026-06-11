@@ -23,7 +23,7 @@
             @click="day.current && selectDay(day)">
             <div class="day-num">{{ day.day }}</div>
             <div class="event-dots">
-              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': day.isPast || isEventPast(e) }" :title="e.summary || e.uid" />
+              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
             </div>
           </td>
         </tr>
@@ -325,9 +325,9 @@ export default {
     cardSideStyle(e) {
       const st = eventStatus(e, this.currentTime)
       const endStr = icalDateToStr(e.dtend) || icalDateToStr(e.dtstart)
-      const isPastDay = !this.isTodaySelected && endStr < this.todayStr
+      const isPastDay = endStr < this.todayStr
       if (st === 'ended' || isPastDay) return { background: '#d9d9d9' }
-      if (st === 'upcoming' || !this.isTodaySelected) return { background: 'var(--theme,#1677ff)' }
+      if (st === 'upcoming') return { background: 'var(--theme,#1677ff)' }
       
       const stDate = icalDateToObj(e.dtstart)
       const etDate = icalDateToObj(e.dtend)
@@ -381,26 +381,41 @@ export default {
     openDetail(e) { this.detailEvent = e; this.ctxMenu.show = false },
 
     // Export
+    _toICS(events) {
+      const vevents = events.map(e => [
+        'BEGIN:VEVENT',
+        `UID:${e.uid || ''}`,
+        `DTSTART:${(e.dtstart || '').replace(/[-:]/g, '')}`,
+        `DTEND:${(e.dtend || '').replace(/[-:]/g, '')}`,
+        `SUMMARY:${e.summary || ''}`,
+        e.description ? `DESCRIPTION:${e.description}` : '',
+        e.location ? `LOCATION:${e.location}` : '',
+        e.categories ? `CATEGORIES:${e.categories}` : '',
+        'END:VEVENT',
+      ].filter(Boolean).join('\r\n')).join('\r\n')
+      return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${vevents}\r\nEND:VCALENDAR`
+    },
+    _downloadIcs(content, name) {
+      const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = name
+      a.click(); URL.revokeObjectURL(url)
+    },
     exportDay() {
-      const text = this.dayEvents.map(e =>
-        `${this.formatTime(e.dtstart)} - ${this.formatTime(e.dtend)}  ${e.summary || ''}`
-      ).join('\n')
-      navigator.clipboard.writeText(text).then(() => alert('日程已复制到剪贴板')).catch(() => {})
+      const content = this._toICS(this.dayEvents)
+      this._downloadIcs(content, `日程_${this.todayStr}.ics`)
     },
     exportSingle(e) {
-      const text = `${this.formatTime(e.dtstart)} - ${this.formatTime(e.dtend)}  ${e.summary || ''}`
-      navigator.clipboard.writeText(text).then(() => {
-        this.detailEvent = null; alert('已复制')
-      }).catch(() => {})
+      const content = this._toICS([e])
+      this._downloadIcs(content, `${e.summary || '日程'}.ics`)
+      this.detailEvent = null
     },
     exportSelected() {
-      const items = this.dayEvents.filter(e => this.ctxMenu.uids.includes(e.uid))
-      const text = items.map(e =>
-        `${this.formatTime(e.dtstart)} - ${this.formatTime(e.dtend)}  ${e.summary || ''}`
-      ).join('\n')
-      navigator.clipboard.writeText(text).then(() => {
-        this.ctxMenu.show = false; alert('已复制')
-      }).catch(() => {})
+      const items = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid))
+      const content = this._toICS(items)
+      this._downloadIcs(content, `日程_${Date.now()}.ics`)
+      this.ctxMenu.show = false
     },
     editSelected() {
       if (this.ctxMenu.uids.length !== 1) return
