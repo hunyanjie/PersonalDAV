@@ -37,18 +37,19 @@ def _required_scope(method: str, path: str) -> str | None:
 
 async def get_current_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    token: str | None = None,
 ) -> str:
     svc = AuthService()
     if not svc.is_password_required():
         return "bypass"
-    if credentials is None:
-        raise HTTPException(401, "Authorization header required")
-    if not svc.verify_mcp_token(credentials.credentials):
+    raw = credentials.credentials if credentials else None
+    if not raw:
+        raw = token
+    if not raw:
+        raise HTTPException(401, "Authorization header or token query param required")
+    if not svc.verify_mcp_token(raw):
         raise HTTPException(403, "Invalid token")
-    scope = getattr(credentials, "_scope", None)
-    if scope and scope not in credentials.credentials:
-        raise HTTPException(403, f"Insufficient scope: {scope}")
-    return credentials.credentials
+    return raw
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
