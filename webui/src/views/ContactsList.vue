@@ -22,7 +22,7 @@
       </tbody>
     </table>
     <div v-else class="empty">{{ loading ? '加载中...' : '暂无联系人' }}</div>
-    <div v-if="total > pageSize" class="pagination">
+    <div v-if="!query.trim() && total > pageSize" class="pagination">
       <button :disabled="page === 0" @click="page--" class="btn-sm">&lt; 上一页</button>
       <span class="page-info">
         第 <input class="page-jump" v-model.number="pageInput" type="number" :min="1" :max="maxPage" @keyup.enter="jumpPage" />
