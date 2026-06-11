@@ -52,6 +52,7 @@ function icalDateToStr(dtstart) {
 
 export default {
   data: () => ({ events: [], monthOffset: 0, selectedDay: null, searchQuery: '', jumpDate: '', _searchTimer: null, errorMsg: '' }),
+  mounted() { this.load() },
   watch: {
     monthOffset() { this.selectedDay = null; this.load() },
   },
@@ -164,7 +165,7 @@ export default {
 .cal-table td { padding: 6px; text-align: center; vertical-align: top; height: 64px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background .15s; }
 .cal-table td.other-month { color: #ccc; }
 .cal-table td.has-event { background: #e6f4ff; border-bottom: 3px solid #1677ff; }
-.cal-table td.selected { box-shadow: inset 0 0 0 2px #1677ff; }
+.cal-table td.selected .day-num { border: 2px solid #1677ff; color: #1677ff; border-radius: 50%; width: 28px; height: 28px; line-height: 24px; display: inline-block; }
 .cal-table td.today .day-num { background: #1677ff; color: #fff; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; display: inline-block; }
 .day-num { font-size: 15px; font-weight: 500; }
 .event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 4px; }
