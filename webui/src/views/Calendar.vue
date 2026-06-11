@@ -23,7 +23,7 @@
             @click="day.current && selectDay(day)">
             <div class="day-num">{{ day.day }}</div>
             <div class="event-dots">
-              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': day.isPast }" :title="e.summary || e.uid" />
+              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': day.isPast || isEventEndedToday(e) }" :title="e.summary || e.uid" />
             </div>
           </td>
         </tr>
@@ -42,16 +42,12 @@
         <div class="tl-hours">
           <div v-for="h in 24" :key="h" class="tl-hour-label">{{ h }}</div>
         </div>
-        <div class="tl-track" ref="tlTrack">
-          <div v-for="e in dayEvents" :key="e.uid"
-            class="tl-dot"
-            :style="{ left: eventLeft(e) }"
-            :title="e.summary"
-            @click.stop="openDetail(e)" />
-          <div class="tl-now" :style="{ left: nowLeft }" v-if="isTodaySelected">
-            <div class="tl-now-line" />
-          </div>
-        </div>
+        <div class="tl-now-bar" :style="{ left: nowLeft }" v-if="isTodaySelected"></div>
+        <div v-for="e in dayEvents" :key="e.uid"
+          class="tl-dot"
+          :style="{ left: eventLeft(e) }"
+          :title="e.summary"
+          @click.stop="openDetail(e)" />
       </div>
 
       <!-- Event Cards -->
@@ -244,6 +240,11 @@ export default {
       }
       this.selectToday()
     },
+    isEventEndedToday(e) {
+      if (!this.isTodaySelected) return false
+      const et = icalDateToObj(e.dtend)
+      return et && et <= this._now
+    },
     selectToday() {
       if (this.selectedDay) return
       const today = this.todayDate
@@ -329,7 +330,7 @@ export default {
       const total = etDate.getTime() - stDate.getTime()
       const elapsed = this._now.getTime() - stDate.getTime()
       const pct = total > 0 ? Math.min(elapsed / total * 100, 100) : 100
-      return { background: `linear-gradient(to top, #ccc ${pct}%, var(--theme,#1677ff) ${pct}%)` }
+      return { background: `linear-gradient(to bottom, #ccc ${pct}%, var(--theme,#1677ff) ${pct}%)` }
     },
     formatTime(s) {
       const d = icalDateToObj(s)
@@ -448,13 +449,11 @@ export default {
 .panel-date { font-size: 16px; font-weight: bold; }
 
 /* Timeline */
-.timeline { display: flex; align-items: stretch; height: 40px; margin-bottom: 16px; position: relative; overflow: hidden; user-select: none; }
-.tl-hours { display: flex; width: 100%; position: relative; }
+.timeline { height: 40px; margin-bottom: 16px; position: relative; user-select: none; }
+.tl-hours { display: flex; height: 100%; width: 100%; }
 .tl-hour-label { flex: 1; text-align: center; font-size: 11px; color: #999; border-left: 1px solid #eee; padding-top: 2px; }
-.tl-track { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
-.tl-dot { position: absolute; top: 16px; width: 10px; height: 10px; background: #1677ff; border-radius: 50%; transform: translateX(-50%); pointer-events: auto; cursor: pointer; }
-.tl-now { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); transition: left 30s linear; pointer-events: none; }
-.tl-now-line { width: 2px; background: #1677ff; height: 100%; }
+.tl-dot { position: absolute; top: 16px; width: 10px; height: 10px; background: #1677ff; border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 1; }
+.tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: #1677ff; z-index: 2; pointer-events: none; transition: left 2s linear; }
 
 /* Event Cards */
 .event-cards { display: flex; flex-direction: column; gap: 8px; }

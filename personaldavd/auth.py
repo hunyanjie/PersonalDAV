@@ -95,11 +95,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Try Bearer token (for REST API / MCP)
         auth_header = request.headers.get("Authorization", "")
+        token = ""
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if svc.verify_mcp_token(token):
-                svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
-                return await call_next(request)
+        elif request.method == "GET" and request.url.path.startswith("/api/files/"):
+            token = request.query_params.get("token", "")
+        if token and svc.verify_mcp_token(token):
+            svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
+            return await call_next(request)
 
         # Try Basic Auth (for DAV clients)
         if auth_header.startswith("Basic "):
