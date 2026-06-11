@@ -93,6 +93,10 @@ class DAVServerApp:
             current_tab.select_all(event)
 
     def on_tab_changed(self, event):
+        # 取消所有标签页的进行中任务
+        for tab in (self.contacts_tab, self.calendar_tab):
+            if hasattr(tab, 'cancel_pending'):
+                tab.cancel_pending()
         current_tab = self.notebook.select()
         tab_text = self.notebook.tab(current_tab, "text")
         if tab_text == "联系人":

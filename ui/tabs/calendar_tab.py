@@ -9,7 +9,7 @@ from tkinterdnd2 import DND_FILES
 
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from utils.encoding_helper import decode_ical_value
 
 
@@ -156,6 +156,13 @@ class CalendarTab(BaseTreeTab):
         except Exception as e:
             messagebox.showerror("同步失败", str(e), parent=self)
 
+    def _month_boundary(self, dt: date = None) -> tuple[str, str]:
+        if dt is None:
+            dt = self._month_cal.selection_get() or date.today()
+        start = date(dt.year, dt.month, 1)
+        end = (start + timedelta(days=32)).replace(day=1)
+        return start.isoformat(), end.isoformat()
+
     def _on_view_changed(self, *args):
         view = self._view_var.get()
         if view == "月视图":
@@ -173,8 +180,12 @@ class CalendarTab(BaseTreeTab):
     def _refresh_month_view(self):
         cal_date = self._month_cal.selection_get()
         self._sync_month_combos()
+        # Load only this month's events (plus 1-day buffer)
+        s, e = self._month_boundary(cal_date)
+        raw = self.db.get_list_data_range(s, e)
+        self._month_data = raw
         self._month_cal.calevent_remove('all')
-        for ev in getattr(self, '_all_data', []):
+        for ev in raw:
             _, uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
@@ -215,16 +226,21 @@ class CalendarTab(BaseTreeTab):
             return
         if not cal_date:
             return
-        for ev in getattr(self, '_all_data', []):
+        data = getattr(self, '_month_data', getattr(self, '_all_data', []))
+        day_events = []
+        for ev in data:
             _, uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
                 if dt.date() == cal_date:
-                    disp = decode_ical_value(summary or "(无标题)")
-                    self._month_events_listbox.insert(tk.END, f"{dt.strftime('%H:%M')} {disp}")
-                    self._month_event_uids.append(uid)
+                    day_events.append((dt, uid, summary))
             except Exception:
                 pass
+        day_events.sort(key=lambda x: x[0])
+        for dt, uid, summary in day_events:
+            disp = decode_ical_value(summary or "(无标题)")
+            self._month_events_listbox.insert(tk.END, f"{dt.strftime('%H:%M')} {disp}")
+            self._month_event_uids.append(uid)
 
     def _month_edit_event(self, event=None):
         sel = self._month_events_listbox.curselection()
@@ -245,6 +261,7 @@ class CalendarTab(BaseTreeTab):
                 self.refresh_events()
 
     def refresh_events(self):
+        self.cancel_pending()
         raw = self.db.get_list_data()
         self._all_raw = raw
         self._raw_by_uid = {}

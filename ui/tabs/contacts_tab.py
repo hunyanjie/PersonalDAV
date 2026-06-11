@@ -114,6 +114,7 @@ class ContactsTab(BaseTreeTab):
 
     def refresh_contacts(self):
         """刷新联系人列表（虚拟滚动版）。"""
+        self.cancel_pending()
         raw = self.db.get_list_data()
         self._all_raw = raw
         self._update_group_filter()

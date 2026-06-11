@@ -30,6 +30,12 @@ class BaseService:
             return self.repo.get_selected_columns(list(self._list_fields))
         return [tuple(getattr(c, f) for f in self._list_fields) for c in self.repo.get_all()]
 
+    def get_list_data_range(self, start: str, end: str) -> list[tuple[Any, ...]]:
+        if not hasattr(self.repo, 'get_by_dtstart_range'):
+            return self.get_list_data()
+        rows = self.repo.get_by_dtstart_range(start, end)
+        return [tuple(getattr(c, f) for f in self._list_fields) for c in rows]
+
     def get_all_raw(self) -> list[str]:
         return [getattr(c, self._raw_field) for c in self.repo.get_all()]
 
