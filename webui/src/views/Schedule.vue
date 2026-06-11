@@ -17,7 +17,7 @@
             @contextmenu.prevent="onCtxMenu(item, $event)">
             
             <template v-if="item.type === 'header'">
-              <div class="date-header" :class="{ 'is-sticky': item.isSticky }">
+              <div class="date-header" :style="{ position: 'sticky', top: 0, zIndex: 10 }">
                 <div class="dh-left">
                   <span class="dh-date">{{ item.label }}</span>
                   <span class="dh-weekday">{{ item.weekday }}</span>
