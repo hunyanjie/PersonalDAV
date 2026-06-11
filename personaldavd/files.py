@@ -22,26 +22,42 @@ async def list_files(
     path: str = Query("/", description="目录路径"),
     token: str = Depends(get_current_token),
 ):
-    root = _get_dav_root()
+    from .daemon import logger
+    root = os.path.abspath(_get_dav_root())
     abs_path = os.path.normpath(os.path.join(root, path.lstrip("/")))
-    if not abs_path.startswith(os.path.normpath(root)):
+    
+    if logger:
+        logger.debug(f"Listing files", path=path, root=root, abs_path=abs_path)
+
+    if not abs_path.startswith(root):
+        if logger: logger.warning(f"Path traversal attempt", path=path, abs_path=abs_path)
         raise HTTPException(403, "路径越权")
     if not os.path.exists(abs_path):
+        if logger: logger.warning(f"Path not found", abs_path=abs_path)
         raise HTTPException(404, "路径不存在")
     if not os.path.isdir(abs_path):
         raise HTTPException(400, "不是目录")
     items = []
-    for name in sorted(os.listdir(abs_path)):
-        full = os.path.join(abs_path, name)
-        st = os.stat(full)
-        rel = os.path.relpath(full, root).replace("\\", "/")
-        items.append({
-            "name": name,
-            "path": "/" + rel,
-            "is_dir": os.path.isdir(full),
-            "size": st.st_size if os.path.isfile(full) else 0,
-            "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
-        })
+    try:
+        filenames = sorted(os.listdir(abs_path))
+        if logger: logger.debug(f"Found {len(filenames)} items in {abs_path}")
+        for name in filenames:
+            full = os.path.join(abs_path, name)
+            try:
+                st = os.stat(full)
+                rel = os.path.relpath(full, root).replace("\\", "/")
+                items.append({
+                    "name": name,
+                    "path": "/" + rel,
+                    "is_dir": os.path.isdir(full),
+                    "size": st.st_size if os.path.isfile(full) else 0,
+                    "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+                })
+            except Exception as e:
+                if logger: logger.error(f"Failed to stat {full}: {e}")
+    except Exception as e:
+        if logger: logger.error(f"Failed to list directory {abs_path}: {e}")
+        raise HTTPException(500, f"读取目录失败: {e}")
     return items
 
 
