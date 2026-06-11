@@ -14,7 +14,8 @@
           <td>{{ c.email }}</td>
           <td>{{ c.phone }}</td>
           <td>{{ c.groups }}</td>
-          <td class="actions">
+            <td class="actions">
+            <button class="btn-sm" @click="doExport(c)">导出</button>
             <router-link :to="`/contacts/${c.uid}/edit`" class="btn-sm">编辑</router-link>
             <button class="btn-sm btn-danger" @click="doDelete(c.uid)">删除</button>
           </td>
@@ -77,6 +78,16 @@ export default {
     async doDelete(uid) {
       if (!confirm('确认删除该联系人？')) return
       try { await api.deleteContact(uid); this.load() } catch(e) {}
+    },
+    async doExport(c) {
+      try {
+        const vcard = await api.getContact(c.uid)
+        const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = `${c.full_name || '联系人'}.vcf`
+        a.click(); URL.revokeObjectURL(url)
+      } catch(e) { alert('导出失败: ' + (e.message || e)) }
     },
   },
 }
