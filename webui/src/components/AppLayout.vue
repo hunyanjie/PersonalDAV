@@ -5,7 +5,8 @@
       <nav>
         <router-link to="/" exact-active-class="active">📊 概览</router-link>
         <router-link to="/contacts" active-class="active">👤 联系人</router-link>
-        <router-link to="/calendar" active-class="active">📅 日历</router-link>
+        <router-link to="/calendar" active-class="active">📅 月视图</router-link>
+        <router-link to="/calendar/schedule" active-class="active">📋 日程视图</router-link>
         <router-link to="/files" active-class="active">📁 文件</router-link>
         <router-link to="/settings" active-class="active">⚙️ 设置</router-link>
       </nav>
