@@ -31,7 +31,7 @@ class LogBufferHandler(logging.Handler):
 def setup_file_logging(log_path: str | None = None):
     """Add RotatingFileHandler to the root logger for persistence."""
     if not log_path:
-        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "personaldavd.log")
+        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "log", "personaldavd.log")
     root = logging.getLogger()
     for h in root.handlers:
         if isinstance(h, RotatingFileHandler):
@@ -49,6 +49,8 @@ class StructuredLogger:
     def __init__(self, json_mode: bool = False):
         self._json_mode = json_mode
         self._logger = logging.getLogger("personaldavd")
+        self._logger.setLevel(logging.DEBUG)
+        self._logger.propagate = True
         
         root = logging.getLogger()
         if not any(isinstance(h, LogBufferHandler) for h in root.handlers):
