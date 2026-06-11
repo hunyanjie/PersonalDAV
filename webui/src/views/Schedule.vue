@@ -1,110 +1,149 @@
 <template>
-  <div class="schedule-layout">
-    <div class="schedule-left">
-      <div class="schedule-top">
-        <div class="st-year-month">{{ currentYearMonth }}</div>
-        <div class="st-week">第 {{ currentWeek }} 周</div>
+  <div class="agenda-container">
+    <div class="agenda-list-side">
+      <div class="agenda-header">
+        <div class="ah-title">{{ currentYearMonth }}</div>
+        <div class="ah-week">第 {{ currentWeek }} 周</div>
+        <button class="btn-create" @click="editModal = { isNew: true }">+ 新建日程</button>
       </div>
-      <div class="schedule-scroll">
-        <div class="floating-header" v-if="floatingDate">
-          <div class="fh-left">
-            <span class="fh-date">{{ floatingDate.label }}</span>
-            <span class="fh-weekday">{{ floatingDate.weekday }}</span>
-          </div>
-          <div class="fh-right">
-            <button class="btn-xs" @click="createForDate(floatingDate.dateStr)">+ 新建</button>
-          </div>
-        </div>
-        <div class="schedule-list" ref="listRef" @scroll="onScroll">
-          <div class="vl-total" :style="{ height: totalHeight + 'px' }">
-            <div v-for="item in visibleItems" :key="item.key"
-              class="vl-row"
-              :class="{ 'vl-date-header': item.type === 'header', 'vl-event': item.type === 'event', 'vl-selected': item.type === 'event' && selectedUids.length === 1 && selectedUids[0] === item.uid }"
-              :style="{ transform: 'translateY(' + item.top + 'px)' }"
-              @click="item.type === 'event' && onEventClick(item, $event)"
-              @contextmenu.prevent="item.type === 'event' && onCtxMenu(item, $event)">
-              <template v-if="item.type === 'header'">
+
+      <div class="scroll-viewport" ref="listRef" @scroll="onScroll">
+        <div class="virtual-list" :style="{ height: totalHeight + 'px' }">
+          <div v-for="item in visibleItems" :key="item.key"
+            class="list-item"
+            :class="{ 'type-header': item.type === 'header', 'type-event': item.type === 'event', 'type-empty': item.type === 'empty', 'is-selected': isSelected(item) }"
+            :style="{ transform: `translateY(${item.top}px)` }"
+            @click="onItemClick(item, $event)"
+            @contextmenu.prevent="onCtxMenu(item, $event)">
+            
+            <template v-if="item.type === 'header'">
+              <div class="date-header" :class="{ 'is-sticky': item.isSticky }">
                 <div class="dh-left">
                   <span class="dh-date">{{ item.label }}</span>
                   <span class="dh-weekday">{{ item.weekday }}</span>
                 </div>
-                <div class="dh-right" v-if="item.lunar">{{ item.lunar }}</div>
-              </template>
-              <template v-else>
-                <div class="card-side" :style="cardSideStyle(item)"></div>
-                <div class="card-body">
-                  <div class="card-title" :class="{ 'card-ended': item.status === 'ended' }">{{ item.summary || '(无标题)' }}</div>
-                  <div class="card-time" :class="{ 'card-ended': item.status === 'ended' }">{{ item.range }}</div>
-                  <div v-if="item.description" class="card-desc" :class="{ 'card-ended': item.status === 'ended' }">{{ item.description }}</div>
+                <div class="dh-right">{{ item.lunar }}</div>
+              </div>
+            </template>
+
+            <template v-else-if="item.type === 'event'">
+              <div class="event-card-wrapper">
+                <div class="card-side-bar" :style="cardSideStyle(item)"></div>
+                <div class="card-content">
+                  <div class="card-main">
+                    <div class="card-title" :class="{ 'is-ended': item.status === 'ended' }">
+                      <span class="title-text">{{ item.summary || '(无标题)' }}</span>
+                    </div>
+                    <div class="card-time" :class="{ 'is-ended': item.status === 'ended' }">{{ item.range }}</div>
+                  </div>
+                  <div v-if="item.description" class="card-desc" :class="{ 'is-ended': item.status === 'ended' }">
+                    {{ item.description }}
+                  </div>
                 </div>
-              </template>
+              </div>
+            </template>
+
+            <template v-else-if="item.type === 'empty'">
+              <div class="empty-day">今日无日程</div>
+            </template>
+          </div>
+        </div>
+        <div v-if="loading" class="list-loading">加载中...</div>
+      </div>
+    </div>
+
+    <div class="agenda-detail-side">
+      <div v-if="selectedEvent" class="detail-box">
+        <div class="detail-header">
+          <h2>{{ selectedEvent.summary || '(无标题)' }}</h2>
+          <div class="detail-meta">
+            <span class="meta-tag">{{ selectedEvent.categories || '默认' }}</span>
+          </div>
+        </div>
+        <div class="detail-body">
+          <div class="detail-row">
+            <i class="icon">🕒</i>
+            <div class="row-val">
+              <div class="time-range">{{ fmtTime(selectedEvent.dtstart) }} - {{ fmtTime(selectedEvent.dtend) }}</div>
+              <div class="date-val">{{ fmtFullDate(selectedEvent.dtstart) }}</div>
             </div>
           </div>
-          <div v-if="loading" class="vl-loading">加载中...</div>
+          <div v-if="selectedEvent.location" class="detail-row">
+            <i class="icon">📍</i>
+            <div class="row-val">{{ selectedEvent.location }}</div>
+          </div>
+          <div v-if="selectedEvent.description" class="detail-row">
+            <i class="icon">📝</i>
+            <div class="row-val desc-text">{{ selectedEvent.description }}</div>
+          </div>
+        </div>
+        <div class="detail-footer">
+          <button class="btn-action" @click="exportSingle(selectedEvent)">分享/导出</button>
+          <button class="btn-action" @click="startEdit(selectedEvent)">编辑</button>
+          <button class="btn-action btn-danger" @click="deleteSingle(selectedEvent)">删除</button>
         </div>
       </div>
+      <div v-else-if="selectedUids.length > 1" class="detail-empty">
+        <div class="empty-icon">👥</div>
+        <p>选择了 {{ selectedUids.length }} 个日程</p>
+        <button class="btn-action" @click="exportSelected">批量导出</button>
+        <button class="btn-action btn-danger" @click="deleteSelected">批量删除</button>
+      </div>
+      <div v-else class="detail-empty">
+        <div class="empty-icon">📅</div>
+        <p>选择日程查看详情</p>
+      </div>
     </div>
-    <div class="schedule-right">
-      <template v-if="selectedEvent">
-        <h3>{{ selectedEvent.summary || '(无标题)' }}</h3>
-        <div class="sd-row"><label>时间</label><span>{{ fmtTime(selectedEvent.dtstart) }} - {{ fmtTime(selectedEvent.dtend) }}</span></div>
-        <div v-if="selectedEvent.description" class="sd-row"><label>描述</label><span>{{ selectedEvent.description }}</span></div>
-        <div v-if="selectedEvent.location" class="sd-row"><label>地点</label><span>{{ selectedEvent.location }}</span></div>
-        <div v-if="selectedEvent.categories" class="sd-row"><label>分类</label><span>{{ selectedEvent.categories }}</span></div>
-        <div class="sd-actions">
-          <button class="btn-sm" @click="exportSingle">分享/导出</button>
-          <button class="btn-sm" @click="editModal = selectedEvent">编辑</button>
-          <button class="btn-sm btn-danger" @click="deleteSingle">删除</button>
-        </div>
-      </template>
-      <div class="sd-empty" v-else-if="selectedUids.length > 1">请选择单个日程查看详情</div>
-      <div class="sd-empty" v-else>点击左侧日程查看详情</div>
-    </div>
-    <!-- Detail/Edit Modal -->
-    <div v-if="detailEvent" class="modal-overlay" @click.self="detailEvent = null">
+
+    <!-- Edit Modal -->
+    <div v-if="editModal" class="modal-overlay" @click.self="editModal = null">
       <div class="modal-card">
         <div class="modal-header">
-          <h3>{{ detailEvent.summary || '(无标题)' }}</h3>
-          <button class="btn-plain close-btn" @click="detailEvent = null">&times;</button>
+          <h3>{{ editModal.isNew ? '新建日程' : '编辑日程' }}</h3>
+          <button class="btn-close" @click="editModal = null">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="modal-row"><label>时间</label><span>{{ fmtTime(detailEvent.dtstart) }} - {{ fmtTime(detailEvent.dtend) }}</span></div>
-          <div v-if="detailEvent.description" class="modal-row"><label>描述</label><span>{{ detailEvent.description }}</span></div>
-          <div v-if="detailEvent.location" class="modal-row"><label>地点</label><span>{{ detailEvent.location }}</span></div>
-          <div v-if="detailEvent.categories" class="modal-row"><label>分类</label><span>{{ detailEvent.categories }}</span></div>
+          <div class="form-group">
+            <label>标题</label>
+            <input v-model="editForm.summary" placeholder="日程标题" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>开始时间</label>
+              <input v-model="editForm.dtstart" type="datetime-local" />
+            </div>
+            <div class="form-group">
+              <label>结束时间</label>
+              <input v-model="editForm.dtend" type="datetime-local" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>地点</label>
+            <input v-model="editForm.location" placeholder="添加地点" />
+          </div>
+          <div class="form-group">
+            <label>描述</label>
+            <textarea v-model="editForm.description" rows="4" placeholder="添加描述..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>分类</label>
+            <input v-model="editForm.categories" placeholder="用逗号分隔" />
+          </div>
         </div>
-        <div class="modal-actions">
-          <button class="btn-sm" @click="exportSingle(detailEvent)">分享/导出</button>
-          <button class="btn-sm" @click="editModal = detailEvent; detailEvent = null">编辑</button>
-          <button class="btn-sm btn-danger" @click="deleteSingle(detailEvent)">删除</button>
+        <div class="modal-footer">
+          <button class="btn-cancel" @click="editModal = null">取消</button>
+          <button class="btn-save" @click="saveEdit" :disabled="saving">
+            {{ saving ? '保存中...' : '保存' }}
+          </button>
         </div>
       </div>
     </div>
-    <div v-if="editModal" class="modal-overlay" @click.self="editModal = null">
-      <div class="modal-card modal-card-wide">
-        <div class="modal-header">
-          <h3>编辑日程</h3>
-          <button class="btn-plain close-btn" @click="editModal = null">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-row"><label>标题</label><input v-model="editForm.summary" /></div>
-          <div class="form-row"><label>开始</label><input v-model="editForm.dtstart" type="datetime-local" /></div>
-          <div class="form-row"><label>结束</label><input v-model="editForm.dtend" type="datetime-local" /></div>
-          <div class="form-row"><label>地点</label><input v-model="editForm.location" /></div>
-          <div class="form-row"><label>描述</label><textarea v-model="editForm.description" rows="3"></textarea></div>
-          <div class="form-row"><label>分类</label><input v-model="editForm.categories" /></div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn-sm btn-primary" @click="saveEdit">保存</button>
-          <button class="btn-sm" @click="editModal = null">取消</button>
-        </div>
-      </div>
-    </div>
+
     <!-- Context Menu -->
     <div v-if="ctxMenu.show" class="ctx-menu" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
-      <div class="ctx-item" @click="exportCtx">分享/导出</div>
-      <div class="ctx-item" @click="editCtx" :class="{ disabled: ctxMenu.uids.length !== 1 }">编辑</div>
-      <div class="ctx-item danger" @click="deleteCtx">删除</div>
+      <div class="ctx-item" @click="exportSelected">分享/导出</div>
+      <div class="ctx-item" @click="startEdit(eventsMap[ctxMenu.uids[0]])" v-if="ctxMenu.uids.length === 1">编辑</div>
+      <div class="ctx-item danger" @click="deleteSelected">删除</div>
     </div>
   </div>
 </template>
@@ -123,8 +162,9 @@ function icalDateToObj(s) {
 
 function icalToDatetimeLocal(s) {
   if (!s) return ''
-  if (s.includes('T')) return s.substring(0, 16)
-  return s.substring(0, 10) + 'T00:00'
+  const o = icalDateToObj(s)
+  if (!o) return ''
+  return `${o.getFullYear()}-${pad(o.getMonth()+1)}-${pad(o.getDate())}T${pad(o.getHours())}:${pad(o.getMinutes())}`
 }
 
 function fmtDate(d) {
@@ -145,8 +185,17 @@ function fmtTime(s) {
   return `${ampm} ${h12}:${m}`
 }
 
-function fmtTimeRange(s, e) {
-  return fmtTime(s) + ' - ' + fmtTime(e)
+function getLunar(dStr) {
+  // A very simple placeholder or logic for lunar calendar
+  // Since we don't have a library, we'll just return an empty string or a static label for now
+  // In a real app, we'd use lunar-javascript or similar.
+  return '' 
+}
+
+function weekNumber(d) {
+  const s = new Date(d.getFullYear(), 0, 1)
+  const diff = d - s + (s.getTimezoneOffset() - d.getTimezoneOffset()) * 60000
+  return Math.ceil((diff / 86400000 + s.getDay() + 1) / 7)
 }
 
 function eventStatus(e, now) {
@@ -158,78 +207,47 @@ function eventStatus(e, now) {
   return 'upcoming'
 }
 
-function weekNumber(d) {
-  const s = new Date(d.getFullYear(), 0, 1)
-  const diff = d - s + (s.getTimezoneOffset() - d.getTimezoneOffset()) * 60000
-  return Math.ceil((diff / 86400000 + s.getDay() + 1) / 7)
-}
-
 const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六']
-const HEADER_HEIGHT = 44
-const ITEM_HEIGHT = 72
-const OVERSCAN = 10
+const HEADER_HEIGHT = 48
+const ITEM_HEIGHT = 80
+const EMPTY_HEIGHT = 40
+const OVERSCAN = 15
 
 export default {
   data: () => ({
     events: [],
     loading: false,
+    saving: false,
     scrollTop: 0,
-    containerHeight: 600,
+    containerHeight: 800,
     selectedUids: [],
-    selectedEvent: null,
-    detailEvent: null,
     editModal: null,
     editForm: { summary: '', dtstart: '', dtend: '', location: '', description: '', categories: '' },
     ctxMenu: { show: false, x: 0, y: 0, uids: [] },
-    now: new Date(),
+    currentTime: new Date(),
     _nowTimer: null,
     _loadStart: '2000-01-01',
     _loadEnd: '2099-12-31',
   }),
-  mounted() {
-    this.now = new Date()
-    this._nowTimer = setInterval(() => { this.now = new Date() }, 30000)
-    this.$nextTick(() => {
-      if (this.$refs.listRef) {
-        this.containerHeight = this.$refs.listRef.clientHeight
-        this.loadRange()
-      }
-    })
-    window.addEventListener('resize', this.onResize)
-    document.addEventListener('click', this.onClickAway)
-  },
-  beforeUnmount() {
-    window.removeEventListener('resize', this.onResize)
-    document.removeEventListener('click', this.onClickAway)
-    clearInterval(this._nowTimer)
-  },
   computed: {
     grouped() {
       const groups = {}
       for (const e of this.events) {
         const d = fmtDate(e.dtstart)
-        if (!groups[d]) groups[d] = { date: d, events: [], lunar: '' }
+        if (!groups[d]) groups[d] = { date: d, events: [] }
         groups[d].events.push(e)
       }
       const keys = Object.keys(groups).sort()
-      const today = fmtDate(new Date())
+      const today = fmtDate(this.currentTime)
       const result = []
       for (const k of keys) {
         const g = groups[k]
         g.events.sort((a, b) => (a.dtstart || '').localeCompare(b.dtstart || ''))
-        if (k === today || g.events.length > 0) {
-          result.push(g)
-        }
+        if (k === today || g.events.length > 0) result.push(g)
       }
-      if (!result.find(g => g.date === today) && keys.length) {
-        const now = fmtDate(new Date())
-        if (!result.find(g => g.date === now)) {
-          result.push({ date: now, events: [], lunar: '' })
-        }
+      if (!result.find(g => g.date === today)) {
+        result.push({ date: today, events: [] })
         result.sort((a, b) => a.date.localeCompare(b.date))
-      }
-      if (!result.length) {
-        result.push({ date: fmtDate(new Date()), events: [], lunar: '' })
       }
       return result
     },
@@ -245,21 +263,19 @@ export default {
         const dt = icalDateToObj(g.date + 'T00:00:00')
         const wd = dt ? WEEKDAY_NAMES[dt.getDay()] : ''
         const label = `${parseInt(g.date.split('-')[1])}月${parseInt(g.date.split('-')[2])}日`
-        items.push({ type: 'header', key: 'h-' + g.date, top, height: HEADER_HEIGHT, dateStr: g.date, label, weekday: '周' + wd, lunar: g.lunar })
+        items.push({ type: 'header', key: 'h-' + g.date, top, height: HEADER_HEIGHT, dateStr: g.date, label, weekday: '周' + wd, lunar: getLunar(g.date) })
         top += HEADER_HEIGHT
         if (!g.events.length) {
-          items.push({ type: 'empty', key: 'e-' + g.date, top, height: ITEM_HEIGHT, dateStr: g.date })
-          top += ITEM_HEIGHT
+          items.push({ type: 'empty', key: 'e-' + g.date, top, height: EMPTY_HEIGHT, dateStr: g.date })
+          top += EMPTY_HEIGHT
         }
         for (const e of g.events) {
-          const st = eventStatus(e, this.now)
-          const startLabel = fmtTime(e.dtstart)
-          const endLabel = fmtTime(e.dtend)
+          const st = eventStatus(e, this.currentTime)
           items.push({
-            type: 'event', key: 'e-' + e.uid, top, height: ITEM_HEIGHT,
+            type: 'event', key: 'ev-' + e.uid, top, height: ITEM_HEIGHT,
             uid: e.uid, dateStr: g.date, summary: e.summary, description: e.description,
             dtstart: e.dtstart, dtend: e.dtend,
-            time: startLabel, range: startLabel + ' - ' + endLabel,
+            range: fmtTime(e.dtstart) + ' - ' + fmtTime(e.dtend),
             status: st,
           })
           top += ITEM_HEIGHT
@@ -267,213 +283,137 @@ export default {
       }
       return items
     },
-    totalHeight() { return this.virtualItems.reduce((s, i) => s + i.height, 0) },
+    totalHeight() { return this.virtualItems.length ? this.virtualItems[this.virtualItems.length - 1].top + this.virtualItems[this.virtualItems.length - 1].height : 0 },
     visibleItems() {
       const start = Math.max(0, this.scrollTop - OVERSCAN * ITEM_HEIGHT)
       const end = this.scrollTop + this.containerHeight + OVERSCAN * ITEM_HEIGHT
-      let items = this.virtualItems.filter(i => i.top + i.height >= start && i.top <= end)
-      if (items.length && items[0].type === 'event') {
-        const hTop = this.virtualItems.find(i => i.type === 'header' && i.dateStr === items[0].dateStr)
-        if (hTop && !items.includes(hTop)) {
-          items = [hTop, ...items]
-        }
-      }
-      return items
+      return this.virtualItems.filter(i => i.top + i.height >= start && i.top <= end)
     },
-    floatingDate() {
+    floatingDateItem() {
       if (!this.virtualItems.length) return null
       let current = null
       for (const item of this.virtualItems) {
         if (item.type === 'header') current = item
-        if (item.top + item.height > this.scrollTop) break
+        if (item.top > this.scrollTop) break
       }
       return current || this.virtualItems.find(i => i.type === 'header')
     },
     currentYearMonth() {
-      const d = this.floatingDate ? icalDateToObj(this.floatingDate.dateStr + 'T00:00:00') : new Date()
-      if (!d) return ''
-      return `${d.getFullYear()}年${d.getMonth() + 1}月`
+      const d = this.floatingDateItem ? icalDateToObj(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
+      return d ? `${d.getFullYear()}年${d.getMonth() + 1}月` : ''
     },
     currentWeek() {
-      const d = this.floatingDate ? icalDateToObj(this.floatingDate.dateStr + 'T00:00:00') : new Date()
+      const d = this.floatingDateItem ? icalDateToObj(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
       return d ? weekNumber(d) : ''
     },
+    selectedEvent() {
+      if (this.selectedUids.length !== 1) return null
+      return this.eventsMap[this.selectedUids[0]]
+    },
+  },
+  mounted() {
+    this.currentTime = new Date()
+    this._nowTimer = setInterval(() => { this.currentTime = new Date() }, 30000)
+    this.$nextTick(() => {
+      if (this.$refs.listRef) {
+        this.containerHeight = this.$refs.listRef.clientHeight
+        this.loadInitial()
+      }
+    })
+    window.addEventListener('resize', this.onResize)
+    document.addEventListener('click', () => { this.ctxMenu.show = false })
+  },
+  beforeUnmount() {
+    window.removeEventListener('resize', this.onResize)
+    clearInterval(this._nowTimer)
   },
   methods: {
     fmtTime,
-    async loadRange(dir) {
+    fmtFullDate(s) {
+      const d = icalDateToObj(s)
+      return d ? `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日` : ''
+    },
+    async loadInitial() {
+      this.loading = true
+      const now = this.currentTime
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() + 2, 0)
+      this._loadStart = fmtDate(start)
+      this._loadEnd = fmtDate(end)
+      try {
+        const res = await api.listEvents(0, 1000, this._loadStart, this._loadEnd)
+        this.events = Array.isArray(res) ? res : (res.items || [])
+        this.$nextTick(() => this.scrollToToday())
+      } catch (e) {}
+      this.loading = false
+    },
+    async loadMore(dir) {
       if (this.loading) return
       this.loading = true
-      const now = new Date()
-      let fromStr, toStr
+      let from, to
       if (dir === 'prev') {
-        const s = new Date(this._loadStart)
-        s.setMonth(s.getMonth() - 2)
-        fromStr = `${s.getFullYear()}-${pad(s.getMonth() + 1)}-01`
-        toStr = this._loadEnd
-      } else if (dir === 'next') {
-        fromStr = this._loadStart
-        const e = new Date(this._loadEnd)
-        e.setMonth(e.getMonth() + 2)
-        toStr = `${e.getFullYear()}-${pad(e.getMonth() + 1)}-${pad(new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate())}`
+        const s = new Date(this._loadStart); s.setMonth(s.getMonth() - 2)
+        from = fmtDate(s); to = this._loadStart
       } else {
-        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        const end = new Date(now.getFullYear(), now.getMonth() + 2, 0)
-        fromStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
-        toStr = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`
+        const e = new Date(this._loadEnd); e.setMonth(e.getMonth() + 2)
+        from = this._loadEnd; to = fmtDate(e)
       }
       try {
-        const res = await api.listEvents(0, 500, fromStr, toStr)
+        const res = await api.listEvents(0, 500, from, to)
         const items = Array.isArray(res) ? res : (res.items || [])
-        if (dir) {
-          const existing = new Map()
-          for (const e of this.events) existing.set(e.uid, e)
-          for (const e of items) existing.set(e.uid, e)
-          this.events = [...existing.values()]
-          if (dir === 'prev') this._loadStart = fromStr
-          else this._loadEnd = toStr
-        } else {
-          this.events = items
-          this._loadStart = fromStr
-          this._loadEnd = toStr
-        }
-      } catch (e) { /* ignore */ }
+        const existing = new Map(this.events.map(e => [e.uid, e]))
+        items.forEach(e => existing.set(e.uid, e))
+        this.events = [...existing.values()]
+        if (dir === 'prev') this._loadStart = from; else this._loadEnd = to
+      } catch (e) {}
       this.loading = false
-      if (!dir) this.$nextTick(() => this.scrollToInitial())
     },
-    extendRange(dir) {
-      if (this.loading) return
-      this.loadRange(dir)
-    },
-    scrollToInitial() {
-      if (!this.$refs.listRef || !this.virtualItems.length) return
-      const now = this.now
-      const todayStr = fmtDate(now)
-      let foundItem = null
-      for (const item of this.virtualItems) {
-        if (item.type !== 'event') continue
-        const e = this.eventsMap[item.uid]
-        if (!e) continue
-        const st = icalDateToObj(e.dtstart)
-        const et = icalDateToObj(e.dtend)
-        if (st && et && now >= st && now <= et) {
-          foundItem = item
-          break
-        }
-      }
-      if (foundItem) {
-        this.$refs.listRef.scrollTop = Math.max(0, foundItem.top - this.containerHeight / 3)
-        return
-      }
-      const todayGroup = this.grouped.find(g => g.date === todayStr)
-      if (todayGroup && todayGroup.events.length) {
-        const totalG = todayGroup.events.length * ITEM_HEIGHT + HEADER_HEIGHT
-        const daySec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
-        const ratio = Math.min(daySec / 86400, 1)
-        const headerTop = this.virtualItems.find(i => i.type === 'header' && i.dateStr === todayStr)
-        if (headerTop) {
-          this.$refs.listRef.scrollTop = Math.max(0, headerTop.top + HEADER_HEIGHT + totalG * ratio - this.containerHeight / 2)
-          return
-        }
-      }
-      const todayHeader = this.virtualItems.find(i => i.type === 'header' && i.dateStr === todayStr)
-      if (todayHeader) {
-        this.$refs.listRef.scrollTop = Math.max(0, todayHeader.top - 60)
+    scrollToToday() {
+      const todayStr = fmtDate(this.currentTime)
+      const h = this.virtualItems.find(i => i.type === 'header' && i.dateStr === todayStr)
+      if (h && this.$refs.listRef) {
+        this.$refs.listRef.scrollTop = h.top - 20
       }
     },
     onScroll() {
       if (!this.$refs.listRef) return
       this.scrollTop = this.$refs.listRef.scrollTop
-      this.checkLoadMore()
+      const threshold = 500
+      if (this.scrollTop < threshold) this.loadMore('prev')
+      else if (this.scrollTop + this.containerHeight > this.totalHeight - threshold) this.loadMore('next')
     },
-    onResize() {
-      if (this.$refs.listRef) this.containerHeight = this.$refs.listRef.clientHeight
-    },
-    checkLoadMore() {
-      if (this.loading) return
-      const threshold = 400
-      if (this.scrollTop < threshold) {
-        this.extendRange('prev')
-      } else if (this.scrollTop + this.containerHeight > this.totalHeight - threshold) {
-        this.extendRange('next')
-      }
-    },
-    onClickAway() { this.ctxMenu.show = false },
-    onEventClick(item, ev) {
+    onResize() { if (this.$refs.listRef) this.containerHeight = this.$refs.listRef.clientHeight },
+    isSelected(item) { return item.type === 'event' && this.selectedUids.includes(item.uid) },
+    onItemClick(item, ev) {
+      if (item.type !== 'event') return
       if (ev.ctrlKey || ev.metaKey) {
         const idx = this.selectedUids.indexOf(item.uid)
-        if (idx >= 0) this.selectedUids.splice(idx, 1)
-        else this.selectedUids.push(item.uid)
-        this.selectedEvent = null
-        return
-      }
-      if (ev.shiftKey && this.selectedUids.length) {
+        if (idx >= 0) this.selectedUids.splice(idx, 1); else this.selectedUids.push(item.uid)
+      } else if (ev.shiftKey && this.selectedUids.length) {
         const all = this.virtualItems.filter(i => i.type === 'event')
         const lastIdx = all.findIndex(i => i.uid === this.selectedUids[this.selectedUids.length - 1])
         const curIdx = all.findIndex(i => i.uid === item.uid)
         if (lastIdx >= 0 && curIdx >= 0) {
-          const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx]
-          const range = all.slice(start, end + 1).map(i => i.uid)
-          const combined = new Set([...this.selectedUids, ...range])
-          this.selectedUids = [...combined]
+          const [s, e] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx]
+          this.selectedUids = [...new Set([...this.selectedUids, ...all.slice(s, e+1).map(i => i.uid)])]
         }
-        this.selectedEvent = null
-        return
+      } else {
+        this.selectedUids = [item.uid]
       }
-      if (this.selectedUids.length === 1 && this.selectedUids[0] === item.uid) {
-        this.detailEvent = this.eventsMap[item.uid] || null
-        return
-      }
-      this.selectedUids = [item.uid]
-      this.selectedEvent = this.eventsMap[item.uid] || null
     },
     onCtxMenu(item, ev) {
-      if (!this.selectedUids.includes(item.uid)) {
-        this.selectedUids = [item.uid]
-        this.selectedEvent = this.eventsMap[item.uid] || null
-      }
+      if (!this.selectedUids.includes(item.uid)) this.selectedUids = [item.uid]
       this.ctxMenu = { show: true, x: ev.clientX, y: ev.clientY, uids: [...this.selectedUids] }
     },
     cardSideStyle(item) {
-      if (item.status === 'ended') return { background: '#ccc' }
+      if (item.status === 'ended') return { background: '#e0e0e0' }
       if (item.status === 'upcoming') return { background: 'var(--theme,#1677ff)' }
-      if (item.status === 'empty') return { background: 'transparent' }
-      const e = this.eventsMap[item.uid]
-      if (!e) return { background: 'var(--theme,#1677ff)' }
-      const st = icalDateToObj(e.dtstart)
-      const et = icalDateToObj(e.dtend)
+      const st = icalDateToObj(item.dtstart), et = icalDateToObj(item.dtend)
       if (!st || !et) return { background: 'var(--theme,#1677ff)' }
-      const total = et.getTime() - st.getTime()
-      const elapsed = this.now.getTime() - st.getTime()
-      const pct = total > 0 ? Math.min(elapsed / total * 100, 100) : 100
-      return { background: `linear-gradient(to bottom, #ccc ${pct}%, var(--theme,#1677ff) ${pct}%)` }
+      const pct = Math.min(Math.max((this.currentTime - st) / (et - st) * 100, 0), 100)
+      return { background: `linear-gradient(to bottom, #e0e0e0 ${pct}%, var(--theme,#1677ff) ${pct}%)` }
     },
-    createForDate(dateStr) {
-      this.$router.push('/calendar/new?date=' + dateStr)
-    },
-    openDetail(e) {
-      this.detailEvent = e
-      this.ctxMenu.show = false
-    },
-    exportSingle(e) {
-      const ev = e || this.selectedEvent
-      if (!ev) return
-      const text = fmtTimeRange(ev.dtstart, ev.dtend) + '  ' + (ev.summary || '')
-      navigator.clipboard.writeText(text).then(() => {
-        alert('已复制')
-        this.detailEvent = null
-      }).catch(() => {})
-    },
-    exportCtx() {
-      const uids = this.ctxMenu.uids
-      const items = this.events.filter(e => uids.includes(e.uid))
-      const text = items.map(e => fmtTimeRange(e.dtstart, e.dtend) + '  ' + (e.summary || '')).join('\n')
-      navigator.clipboard.writeText(text).then(() => { this.ctxMenu.show = false; alert('已复制') }).catch(() => {})
-    },
-    editCtx() {
-      if (this.ctxMenu.uids.length !== 1) return
-      const e = this.eventsMap[this.ctxMenu.uids[0]]
-      if (!e) return
+    startEdit(e) {
       this.editForm = {
         summary: e.summary || '',
         dtstart: icalToDatetimeLocal(e.dtstart),
@@ -482,114 +422,125 @@ export default {
         description: e.description || '',
         categories: e.categories || '',
       }
-      this.editModal = e
-      this.ctxMenu.show = false
-    },
-    async deleteCtx() {
-      const count = this.ctxMenu.uids.length
-      if (!confirm(`确认删除 ${count} 个日程？`)) return
-      try {
-        await Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid)))
-        this.ctxMenu.show = false
-        this.events = this.events.filter(e => !this.ctxMenu.uids.includes(e.uid))
-        this.selectedUids = this.selectedUids.filter(uid => !this.ctxMenu.uids.includes(uid))
-        this.selectedEvent = null
-      } catch (e) { alert('删除失败') }
-    },
-    async deleteSingle(e) {
-      const ev = e || this.selectedEvent
-      if (!ev || !confirm('确认删除此日程？')) return
-      try {
-        await api.deleteEvent(ev.uid)
-        this.events = this.events.filter(x => x.uid !== ev.uid)
-        this.selectedUids = this.selectedUids.filter(uid => uid !== ev.uid)
-        this.selectedEvent = null
-        this.detailEvent = null
-      } catch (e) { alert('删除失败') }
+      this.editModal = { ...e, isNew: false }
     },
     async saveEdit() {
-      if (!this.editModal) return
-      const e = this.editModal
-      const lines = []
-      lines.push('BEGIN:VEVENT')
-      lines.push('UID:' + e.uid)
-      lines.push('DTSTART:' + this.editForm.dtstart.replace(/[^0-9T]/g, ''))
-      lines.push('DTEND:' + this.editForm.dtend.replace(/[^0-9T]/g, ''))
-      if (this.editForm.summary) lines.push('SUMMARY:' + this.editForm.summary)
-      if (this.editForm.location) lines.push('LOCATION:' + this.editForm.location)
-      if (this.editForm.description) lines.push('DESCRIPTION:' + this.editForm.description)
-      if (this.editForm.categories) lines.push('CATEGORIES:' + this.editForm.categories)
-      lines.push('END:VEVENT')
+      if (!this.editForm.summary || !this.editForm.dtstart || !this.editForm.dtend) return alert('请填写完整信息')
+      this.saving = true
+      const ical = [
+        'BEGIN:VEVENT',
+        `UID:${this.editModal.isNew ? '' : this.editModal.uid}`,
+        `SUMMARY:${this.editForm.summary}`,
+        `DTSTART:${this.editForm.dtstart.replace(/[-:]/g, '')}00`,
+        `DTEND:${this.editForm.dtend.replace(/[-:]/g, '')}00`,
+        `LOCATION:${this.editForm.location}`,
+        `DESCRIPTION:${this.editForm.description}`,
+        `CATEGORIES:${this.editForm.categories}`,
+        'END:VEVENT'
+      ].join('\r\n')
       try {
-        await api.updateEvent(e.uid, lines.join('\r\n'))
+        if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(this.editModal.uid, ical)
         this.editModal = null
-        this.loadRange()
+        this.loadInitial()
       } catch (e) { alert('保存失败') }
+      this.saving = false
     },
-  },
+    async deleteSingle(e) {
+      if (!confirm('确认删除此日程？')) return
+      try { await api.deleteEvent(e.uid); this.events = this.events.filter(x => x.uid !== e.uid); this.selectedUids = [] } catch (e) { alert('删除失败') }
+    },
+    async deleteSelected() {
+      if (!confirm(`确认删除选中的 ${this.selectedUids.length} 个日程？`)) return
+      try {
+        await Promise.all(this.selectedUids.map(uid => api.deleteEvent(uid)))
+        this.events = this.events.filter(e => !this.selectedUids.includes(e.uid))
+        this.selectedUids = []
+      } catch (e) { alert('部分删除失败') }
+    },
+    exportSingle(e) {
+      const text = `${fmtTime(e.dtstart)} - ${fmtTime(e.dtend)} ${e.summary || ''}`
+      navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'))
+    },
+    exportSelected() {
+      const text = this.events.filter(e => this.selectedUids.includes(e.uid))
+        .sort((a,b) => a.dtstart.localeCompare(b.dtstart))
+        .map(e => `${fmtTime(e.dtstart)} - ${fmtTime(e.dtend)} ${e.summary || ''}`).join('\n')
+      navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'))
+    }
+  }
 }
 </script>
 
 <style scoped>
-.schedule-layout { display: flex; gap: 0; height: 100%; }
-.schedule-left { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
-.schedule-top { flex-shrink: 0; padding: 14px 16px 8px; border-bottom: 1px solid #f0f0f0; }
-.st-year-month { font-size: 18px; font-weight: 700; color: #000; }
-.st-week { font-size: 13px; color: #999; margin-top: 2px; }
-.schedule-scroll { flex: 1; position: relative; overflow: hidden; }
-.floating-header { position: absolute; top: 0; left: 0; right: 0; height: 40px; z-index: 10; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #f0f0f0; }
-.fh-left { display: flex; align-items: center; gap: 6px; }
-.fh-date { font-size: 14px; font-weight: 600; color: #333; }
-.fh-weekday { font-size: 12px; color: #999; }
-.btn-xs { padding: 3px 10px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; font-size: 12px; cursor: pointer; }
-.schedule-list { height: 100%; overflow-y: auto; padding-top: 40px; }
-.vl-total { position: relative; }
-.vl-row { position: absolute; left: 0; right: 0; will-change: transform; }
-.vl-date-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
-.dh-left { display: flex; gap: 6px; align-items: baseline; }
-.dh-date { font-size: 14px; font-weight: 600; color: #333; }
-.dh-weekday { font-size: 12px; color: #999; }
-.dh-right { font-size: 12px; color: #999; }
-.vl-event { display: flex; gap: 10px; padding: 0; cursor: pointer; border-bottom: 1px solid #f5f5f5; transition: background .1s; border-radius: 0; }
-.vl-event:hover { background: #fafafa; }
-.vl-event.vl-selected { background: #e6f4ff; }
-.card-side { width: 4px; flex-shrink: 0; align-self: stretch; }
-.card-body { flex: 1; min-width: 0; padding: 10px 14px 10px 0; }
-.card-title { font-size: 14px; font-weight: 600; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-title.card-ended { color: #999; }
-.card-time { font-size: 12px; color: #555; margin-top: 2px; }
-.card-time.card-ended { color: #bbb; }
-.card-desc { font-size: 12px; color: #888; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-desc.card-ended { color: #ccc; }
-.vl-loading { padding: 16px; text-align: center; color: #999; font-size: 13px; }
-.schedule-right { width: 340px; flex-shrink: 0; background: #fff; border-radius: 8px; padding: 20px; margin-left: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow-y: auto; }
-.schedule-right h3 { margin: 0 0 16px; font-size: 16px; }
-.sd-row { display: flex; gap: 8px; margin-bottom: 10px; font-size: 14px; }
-.sd-row label { color: #888; min-width: 48px; flex-shrink: 0; }
-.sd-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px; }
-.sd-actions { display: flex; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0f0f0; flex-wrap: wrap; }
-.sd-actions .btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; text-decoration: none; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
-.btn-primary { background: #1677ff; color: #fff; border-color: #1677ff; }
-.btn-danger { color: #cf1322; border-color: #ffa39e; }
-.ctx-menu { position: fixed; z-index: 1000; background: #fff; border: 1px solid #e8e8e8; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); min-width: 120px; padding: 4px 0; }
-.ctx-item { padding: 8px 16px; font-size: 13px; cursor: pointer; }
+.agenda-container { display: flex; height: 100%; background: #f8f9fa; gap: 20px; padding: 20px; box-sizing: border-box; }
+
+.agenda-list-side { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); overflow: hidden; }
+.agenda-header { padding: 20px 24px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+.ah-title { font-size: 22px; font-weight: 700; color: #1a1a1a; }
+.ah-week { font-size: 14px; color: #888; margin-top: 4px; }
+.btn-create { margin-top: 12px; padding: 8px 16px; background: var(--theme, #1677ff); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+
+.scroll-viewport { flex: 1; overflow-y: auto; position: relative; scroll-behavior: smooth; }
+.virtual-list { position: relative; width: 100%; }
+.list-item { position: absolute; left: 0; right: 0; padding: 0 16px; box-sizing: border-box; }
+
+.date-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 8px; border-bottom: 1px solid #f5f5f5; background: #fff; }
+.dh-date { font-weight: 700; color: #333; font-size: 15px; }
+.dh-weekday { margin-left: 8px; color: #999; font-size: 13px; }
+.dh-right { font-size: 12px; color: #aaa; }
+
+.event-card-wrapper { display: flex; background: #fff; border-radius: 12px; margin: 4px 0; height: 72px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+.event-card-wrapper:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-color: #eee; }
+.is-selected .event-card-wrapper { background: #e6f4ff; border-color: #1677ff; }
+
+.card-side-bar { width: 4px; border-radius: 4px 0 0 12px; flex-shrink: 0; }
+.card-content { flex: 1; padding: 12px 16px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.card-main { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.card-title { font-weight: 600; font-size: 15px; color: #1a1a1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-title.is-ended { color: #999; }
+.card-time { font-size: 13px; color: #666; flex-shrink: 0; }
+.card-time.is-ended { color: #bbb; }
+.card-desc { font-size: 12px; color: #888; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-desc.is-ended { color: #ccc; }
+
+.empty-day { padding: 10px 8px; color: #bbb; font-size: 13px; font-style: italic; }
+
+.agenda-detail-side { width: 380px; flex-shrink: 0; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 32px; overflow-y: auto; }
+.detail-header h2 { margin: 0; font-size: 24px; color: #1a1a1a; }
+.detail-meta { margin-top: 12px; }
+.meta-tag { display: inline-block; padding: 2px 10px; background: #f0f2f5; border-radius: 4px; font-size: 12px; color: #666; }
+.detail-body { margin-top: 32px; display: flex; flex-direction: column; gap: 24px; }
+.detail-row { display: flex; gap: 16px; }
+.detail-row .icon { font-style: normal; font-size: 18px; color: #888; }
+.row-val { font-size: 15px; color: #333; line-height: 1.5; }
+.time-range { font-weight: 600; font-size: 17px; }
+.date-val { color: #888; font-size: 14px; margin-top: 2px; }
+.desc-text { white-space: pre-wrap; word-break: break-all; }
+.detail-footer { margin-top: 48px; border-top: 1px solid #f0f0f0; padding-top: 24px; display: flex; flex-wrap: wrap; gap: 12px; }
+
+.btn-action { padding: 10px 20px; border-radius: 8px; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+.btn-action:hover { border-color: #1677ff; color: #1677ff; }
+.btn-danger:hover { border-color: #ff4d4f; color: #ff4d4f; }
+
+.detail-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #aaa; text-align: center; }
+.empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+
+.modal-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.modal-card { background: #fff; width: 500px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group label { font-size: 13px; font-weight: 600; color: #666; }
+.form-group input, .form-group textarea { padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.modal-footer { padding: 16px 24px; background: #fafafa; display: flex; justify-content: flex-end; gap: 12px; }
+.btn-save { background: #1677ff; color: #fff; border: none; padding: 8px 24px; border-radius: 8px; cursor: pointer; }
+.btn-cancel { background: transparent; border: 1px solid #d9d9d9; padding: 8px 24px; border-radius: 8px; cursor: pointer; }
+
+.ctx-menu { position: fixed; z-index: 1100; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px; min-width: 140px; }
+.ctx-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; }
 .ctx-item:hover { background: #f5f5f5; }
-.ctx-item.disabled { color: #ccc; cursor: default; }
-.ctx-item.danger { color: #cf1322; }
-.ctx-item.danger:hover { background: #fff2f0; }
-.modal-overlay { position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; }
-.modal-card { background: #fff; border-radius: 12px; min-width: 360px; max-width: 480px; box-shadow: 0 8px 24px rgba(0,0,0,.15); overflow: hidden; }
-.modal-card-wide { min-width: 420px; }
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; }
-.modal-header h3 { margin: 0; font-size: 16px; }
-.close-btn { font-size: 20px; line-height: 1; padding: 4px 8px; border: none; background: none; cursor: pointer; }
-.modal-body { padding: 16px 20px; }
-.modal-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: 14px; }
-.modal-row label { color: #888; min-width: 48px; flex-shrink: 0; }
-.modal-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #f0f0f0; }
-.modal-actions .btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; text-decoration: none; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
-.form-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
-.form-row label { color: #888; min-width: 48px; flex-shrink: 0; font-size: 14px; }
-.form-row input, .form-row textarea { flex: 1; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
-.form-row textarea { resize: vertical; }
+.ctx-item.danger { color: #ff4d4f; }
+
+.list-loading { padding: 20px; text-align: center; color: #999; }
 </style>
