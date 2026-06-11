@@ -120,6 +120,13 @@ function icalDateToStr(s) {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : s.substring(0, 10)
 }
 
+function eventSpansDate(e, dateStr) {
+  const start = icalDateToStr(e.dtstart)
+  if (!start) return false
+  const end = icalDateToStr(e.dtend) || start
+  return dateStr >= start && dateStr <= end
+}
+
 function toHours(d) {
   if (!d) return 0
   return d.getHours() + d.getMinutes() / 60
@@ -191,10 +198,7 @@ export default {
       for (let i = prev; i <= daysInPrev; i++) row.push({ day: i, current: false, hasEvent: false, events: [], isToday: false, isPast: false })
       for (let d = 1; d <= daysInMonth; d++) {
         const dateStr = `${y}-${pad(m + 1)}-${pad(d)}`
-        const dayEvents = this.events.filter(e => {
-          if (!e.dtstart) return false
-          return icalDateToStr(e.dtstart) === dateStr
-        })
+        const dayEvents = this.events.filter(e => eventSpansDate(e, dateStr))
         const isPast = dateStr < today
         const isToday = dateStr === today
         row.push({ day: d, current: true, hasEvent: dayEvents.length > 0, events: dayEvents, isToday, isPast })
@@ -211,7 +215,7 @@ export default {
       const { year, month, day } = this.selectedDay
       const dateStr = `${year}-${pad(month)}-${pad(day)}`
       return this.events
-        .filter(e => e.dtstart && icalDateToStr(e.dtstart) === dateStr)
+        .filter(e => eventSpansDate(e, dateStr))
         .sort((a, b) => (a.dtstart || '').localeCompare(b.dtstart || ''))
     },
     nowLeft() {
@@ -309,7 +313,8 @@ export default {
     // Event card styling
     eventCardClass(e) {
       const st = eventStatus(e, this.currentTime)
-      const isPastDay = !this.isTodaySelected && (icalDateToStr(e.dtstart) < this.todayStr)
+      const endStr = icalDateToStr(e.dtend) || icalDateToStr(e.dtstart)
+      const isPastDay = !this.isTodaySelected && endStr < this.todayStr
       return {
         'card-ended': (st === 'ended' && this.isTodaySelected) || isPastDay,
         'card-ongoing': st === 'ongoing' && this.isTodaySelected,
@@ -319,7 +324,8 @@ export default {
     },
     cardSideStyle(e) {
       const st = eventStatus(e, this.currentTime)
-      const isPastDay = !this.isTodaySelected && (icalDateToStr(e.dtstart) < this.todayStr)
+      const endStr = icalDateToStr(e.dtend) || icalDateToStr(e.dtstart)
+      const isPastDay = !this.isTodaySelected && endStr < this.todayStr
       if (st === 'ended' || isPastDay) return { background: '#d9d9d9' }
       if (st === 'upcoming' || !this.isTodaySelected) return { background: 'var(--theme,#1677ff)' }
       
