@@ -31,8 +31,8 @@ def setup_logger(name: str = __name__, level: int | None = None, log_file: str |
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    # 禁用向上传播到根日志器，防止重复输出
-    logger.propagate = False
+    # 启用向上传播到根日志器，以便 WebUI 日志缓冲器能捕获
+    logger.propagate = True
 
     # 创建滚动文件处理器 (每个 10MB，保留 5 个)
     if log_file:

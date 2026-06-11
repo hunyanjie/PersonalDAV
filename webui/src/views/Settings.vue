@@ -98,7 +98,7 @@
         </div>
       </section>
 
-      <!-- Logs -->
+      <!-- Auth Logs -->
       <section v-if="activeSection === 'logs'" class="config-section">
         <div class="section-header">
           <h3>🛡️ 鉴权审计日志</h3>
@@ -109,7 +109,7 @@
             <thead><tr><th>时间</th><th>协议</th><th>详情</th><th>结果</th></tr></thead>
             <tbody>
               <tr v-for="log in authLogs" :key="log.id" :class="{ 'log-fail': !log.success }">
-                <td class="nowrap">{{ log.time.split(' ')[1] }}</td>
+                <td class="nowrap">{{ log.time.replace('T', ' ').split(' ')[1].split('.')[0] }}</td>
                 <td><span class="proto-tag">{{ log.method }}</span></td>
                 <td :title="log.user_agent">{{ log.detail }}</td>
                 <td>
@@ -120,6 +120,23 @@
             </tbody>
           </table>
           <div v-else class="empty-logs">暂无最近鉴权记录</div>
+        </div>
+      </section>
+
+      <!-- System Logs -->
+      <section v-if="activeSection === 'syslogs'" class="config-section">
+        <div class="section-header">
+          <h3>📋 系统运行日志</h3>
+          <button class="btn-refresh" @click="loadSystemLogs">刷新</button>
+        </div>
+        <div class="syslogs-wrapper" ref="syslogContainer">
+          <div v-for="(l, i) in systemLogs" :key="i" class="syslog-line" :class="'lv-' + l.level.toLowerCase()">
+            <span class="sl-time">[{{ l.time.split('T')[1].split('.')[0] }}]</span>
+            <span class="sl-lv">[{{ l.level }}]</span>
+            <span class="sl-name">[{{ l.name }}]</span>
+            <span class="sl-msg">{{ l.message }}</span>
+          </div>
+          <div v-if="!systemLogs.length" class="empty-logs">暂无系统日志</div>
         </div>
       </section>
     </div>
@@ -150,13 +167,16 @@ export default {
       { id: 'app', label: '通用选项', icon: '⚙️' },
       { id: 'mcp', label: 'AI 服务', icon: '🤖' },
       { id: 'logs', label: '安全审计', icon: '🛡️' },
+      { id: 'syslogs', label: '系统日志', icon: '📋' },
     ],
     serverConfig: {},
     settings: {},
     authLogs: [],
+    systemLogs: [],
     editingKey: null,
     editValue: '',
     editableDefs: SETTING_DEFS,
+    _logTimer: null,
   }),
   computed: {
     mcpSafetyLabel() {
@@ -165,13 +185,18 @@ export default {
       return map[mode] || mode
     }
   },
-  async mounted() { await this.load() },
+  async mounted() { 
+    await this.load()
+    this._logTimer = setInterval(() => {
+      if (this.activeSection === 'syslogs') this.loadSystemLogs()
+    }, 5000)
+  },
+  beforeUnmount() { clearInterval(this._logTimer) },
   methods: {
     async load() {
       try { this.serverConfig = await api.serverConfig() } catch(e) {}
       try { 
         const raw = await api.listSettings()
-        // Type conversion for checkboxes
         const processed = { ...raw }
         this.editableDefs.forEach(d => {
           if (d.type === 'check') processed[d.key] = raw[d.key] === 'True'
@@ -179,9 +204,19 @@ export default {
         this.settings = processed
       } catch(e) {}
       await this.loadLogs()
+      await this.loadSystemLogs()
     },
     async loadLogs() {
       try { this.authLogs = await api.authLogs(30) } catch(e) {}
+    },
+    async loadSystemLogs() {
+      try { 
+        this.systemLogs = await api.systemLogs() 
+        this.$nextTick(() => {
+          const el = this.$refs.syslogContainer
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      } catch(e) {}
     },
     startEdit(key, value) {
       this.editingKey = key; this.editValue = value
@@ -261,4 +296,14 @@ export default {
 .status-dot.ok { background: #52c41a; }
 .status-dot.fail { background: #ff4d4f; }
 .empty-logs { text-align: center; padding: 40px; color: #ccc; }
+
+.syslogs-wrapper { margin-top: 16px; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; height: 400px; overflow-y: auto; line-height: 1.6; }
+.syslog-line { margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }
+.sl-time { color: #888; margin-right: 8px; }
+.sl-lv { font-weight: bold; margin-right: 8px; }
+.sl-name { color: #569cd6; margin-right: 8px; }
+.lv-info .sl-lv { color: #52c41a; }
+.lv-warning .sl-lv { color: #faad14; }
+.lv-error .sl-lv { color: #f5222d; }
+.lv-debug .sl-lv { color: #888; }
 </style>

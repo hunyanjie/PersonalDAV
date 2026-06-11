@@ -101,6 +101,13 @@ class AuthLogOut(BaseModel):
     hash: str = ""
 
 
+class SystemLogOut(BaseModel):
+    time: str
+    level: str
+    name: str
+    message: str
+
+
 class StatsOut(BaseModel):
     contacts_count: int = 0
     events_count: int = 0

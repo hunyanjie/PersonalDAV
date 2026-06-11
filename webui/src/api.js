@@ -94,5 +94,6 @@ export default {
   authLogs(limit = 100, protocol = '') {
     return request('GET', '/auth/logs', { params: qs({ limit, protocol }) })
   },
+  systemLogs() { return request('GET', '/logs') },
   health() { return request('GET', '/health') },
 }
