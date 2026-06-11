@@ -107,7 +107,7 @@ class CalendarTab(BaseTreeTab):
         for meth in ('_prev_month', '_next_month', '_prev_year', '_next_year'):
             orig = getattr(self._month_cal, meth)
             def _wrap(m=orig):
-                return lambda: [m(), self._sync_month_combos()]
+                return lambda: [m(), self._sync_month_combos(), self._refresh_month_view()]
             setattr(self._month_cal, meth, _wrap())
 
         ev_f = ttk.LabelFrame(self._month_frame, text="选定日事件")
@@ -265,14 +265,17 @@ class CalendarTab(BaseTreeTab):
 
     def refresh_events(self):
         self.cancel_pending()
+        if self._view_var.get() == "月视图":
+            self._refresh_month_view()
+            self._all_raw = self._month_data or []
+            self._after_refresh()
+            return
         raw = self.db.get_list_data()
         self._all_raw = raw
         self._raw_by_uid = {}
         self._update_cat_filter()
         self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
         self._after_refresh()
-        if self._view_var.get() == "月视图":
-            self._refresh_month_view()
 
     def _update_cat_filter(self):
         cats = set()
