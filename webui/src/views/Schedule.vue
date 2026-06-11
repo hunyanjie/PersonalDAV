@@ -341,7 +341,7 @@ export default {
       this._loadStart = fmtDate(start)
       this._loadEnd = fmtDate(end)
       try {
-        const res = await api.listEvents(0, 1000, this._loadStart, this._loadEnd)
+        const res = await api.listEvents(0, 500, this._loadStart, this._loadEnd)
         this.events = Array.isArray(res) ? res : (res.items || [])
         this.$nextTick(() => this.scrollToToday())
       } catch (e) {}

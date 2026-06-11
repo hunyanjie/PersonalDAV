@@ -12,9 +12,10 @@ from services.embeddings import EmbeddingService
 from .models import (
     ContactOut, ContactCreate, ContactStructuredCreate, ContactUpdate,
     EventOut, EventCreate, EventUpdate, HealthOut, AuthTokenOut, AuthTokenRequest,
-    ServerConfigOut, AuthLogOut, StatsOut, ErrorOut,
+    ServerConfigOut, AuthLogOut, StatsOut, ErrorOut, SystemLogOut,
 )
 from .auth import get_current_token
+from .logging import LOG_QUEUE
 
 api_router = APIRouter(tags=["API 接口"])
 _start_time = time.time()
@@ -231,7 +232,7 @@ async def delete_contact(uid: str, token: str = Depends(get_current_token)):
 @api_router.get("/events", summary="列出所有事件")
 async def list_events(
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=1000),
     date_from: str = Query("", description="起始日期 YYYYMMDD"),
     date_to: str = Query("", description="结束日期 YYYYMMDD（不含）"),
     token: str = Depends(get_current_token),
@@ -343,6 +344,12 @@ async def auth_logs(
 ):
     svc = AuthService()
     return svc.get_auth_logs_filtered(protocol=protocol, limit=limit)
+
+
+@api_router.get("/logs", response_model=list[SystemLogOut], summary="获取系统运行日志")
+async def system_logs(token: str = Depends(get_current_token)):
+    """获取内存中最近的系统日志。"""
+    return list(LOG_QUEUE.queue)
 
 
 # ── Stats ──────────────────────────────────────────────────────
