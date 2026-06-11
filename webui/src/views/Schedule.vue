@@ -4,7 +4,7 @@
       <div class="agenda-header">
         <div class="ah-title">{{ currentYearMonth }}</div>
         <div class="ah-week">第 {{ currentWeek }} 周</div>
-        <button class="btn-create" @click="editModal = { isNew: true }">+ 新建日程</button>
+        <button class="btn-create" @click="createForFloatingDate">+ 新建日程</button>
       </div>
 
       <div class="scroll-viewport" ref="listRef" @scroll="onScroll">
@@ -24,6 +24,10 @@
                 </div>
                 <div class="dh-right">{{ item.lunar }}</div>
               </div>
+            </template>
+
+            <template v-else-if="item.type === 'nowbar'">
+              <div class="now-bar-wrapper"><div class="now-bar-line" /></div>
             </template>
 
             <template v-else-if="item.type === 'event'">
@@ -232,13 +236,22 @@ export default {
   computed: {
     grouped() {
       const groups = {}
+      const today = fmtDate(this.currentTime)
       for (const e of this.events) {
-        const d = fmtDate(e.dtstart)
-        if (!groups[d]) groups[d] = { date: d, events: [] }
-        groups[d].events.push(e)
+        const start = fmtDate(e.dtstart)
+        const end = fmtDate(e.dtend) || start
+        if (!start) continue
+        let d = new Date(start)
+        const endD = new Date(end)
+        while (d <= endD) {
+          const ds = fmtDate(d)
+          if (!groups[ds]) groups[ds] = { date: ds, events: [] }
+          if (!groups[ds].events.find(x => x.uid === e.uid))
+            groups[ds].events.push(e)
+          d.setDate(d.getDate() + 1)
+        }
       }
       const keys = Object.keys(groups).sort()
-      const today = fmtDate(this.currentTime)
       const result = []
       for (const k of keys) {
         const g = groups[k]
@@ -258,6 +271,10 @@ export default {
     },
     virtualItems() {
       const items = []
+      const now = this.currentTime
+      const todayStr = fmtDate(now)
+      const secondsPast = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
+      const daySeconds = 86400
       let top = 0
       for (const g of this.grouped) {
         const dt = icalDateToObj(g.date + 'T00:00:00')
@@ -265,6 +282,10 @@ export default {
         const label = `${parseInt(g.date.split('-')[1])}月${parseInt(g.date.split('-')[2])}日`
         items.push({ type: 'header', key: 'h-' + g.date, top, height: HEADER_HEIGHT, dateStr: g.date, label, weekday: '周' + wd, lunar: getLunar(g.date) })
         top += HEADER_HEIGHT
+        if (g.date === todayStr && g.events.length > 0) {
+          const nowY = top + (secondsPast / daySeconds) * (g.events.length * ITEM_HEIGHT + 4)
+          items.push({ type: 'nowbar', key: 'now-' + g.date, top: nowY, height: 2, dateStr: g.date })
+        }
         if (!g.events.length) {
           items.push({ type: 'empty', key: 'e-' + g.date, top, height: EMPTY_HEIGHT, dateStr: g.date })
           top += EMPTY_HEIGHT
@@ -370,10 +391,26 @@ export default {
     },
     scrollToToday() {
       const todayStr = fmtDate(this.currentTime)
-      const h = this.virtualItems.find(i => i.type === 'header' && i.dateStr === todayStr)
-      if (h && this.$refs.listRef) {
-        this.$refs.listRef.scrollTop = h.top - 20
+      const now = this.currentTime
+      const items = this.virtualItems
+      const header = items.find(i => i.type === 'header' && i.dateStr === todayStr)
+      if (!header || !this.$refs.listRef) return
+      let scrollPos = header.top
+      const todayEvents = items.filter(i => i.type === 'event' && i.dateStr === todayStr && i.status !== 'ended')
+      const ongoing = todayEvents.find(i => i.status === 'ongoing')
+      if (ongoing) {
+        scrollPos = ongoing.top + ongoing.height / 2 - this.containerHeight / 2
+      } else if (todayEvents.length > 0) {
+        const first = todayEvents[0]
+        const last = todayEvents[todayEvents.length - 1]
+        const mid = (first.top + last.top + last.height) / 2
+        scrollPos = mid - this.containerHeight / 2
+      } else {
+        const hours = now.getHours() + now.getMinutes() / 60
+        const ratio = hours / 24
+        scrollPos = header.top + 60 + ratio * (EMPTY_HEIGHT + 20)
       }
+      this.$refs.listRef.scrollTop = Math.max(0, scrollPos)
     },
     onScroll() {
       if (!this.$refs.listRef) return
@@ -466,6 +503,18 @@ export default {
         .sort((a,b) => a.dtstart.localeCompare(b.dtstart))
         .map(e => `${fmtTime(e.dtstart)} - ${fmtTime(e.dtend)} ${e.summary || ''}`).join('\n')
       navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'))
+    },
+    createForFloatingDate() {
+      const fd = this.floatingDateItem
+      const dateStr = fd ? fd.dateStr : fmtDate(this.currentTime)
+      const startH = this.currentTime.getHours()
+      const endH = Math.min(startH + 1, 23)
+      this.editForm = {
+        summary: '', dtstart: `${dateStr}T${pad(startH)}:00`,
+        dtend: `${dateStr}T${pad(endH)}:00`,
+        location: '', description: '', categories: '',
+      }
+      this.editModal = { isNew: true }
     }
   }
 }
@@ -493,7 +542,7 @@ export default {
 .event-card-wrapper:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-color: #eee; }
 .is-selected .event-card-wrapper { background: #e6f4ff; border-color: #1677ff; }
 
-.card-side-bar { width: 4px; border-radius: 4px 0 0 12px; flex-shrink: 0; }
+.card-side-bar { width: 4px; border-radius: 4px 0 0 4px; flex-shrink: 0; }
 .card-content { flex: 1; padding: 12px 16px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .card-main { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .card-title { font-weight: 600; font-size: 15px; color: #1a1a1a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -504,6 +553,8 @@ export default {
 .card-desc.is-ended { color: #ccc; }
 
 .empty-day { padding: 10px 8px; color: #bbb; font-size: 13px; font-style: italic; }
+.now-bar-wrapper { display: flex; align-items: center; padding: 0 24px; }
+.now-bar-line { flex: 1; height: 2px; background: #ff4d4f; border-radius: 2px; box-shadow: 0 0 6px rgba(255,77,79,0.4); }
 
 .agenda-detail-side { width: 380px; flex-shrink: 0; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); padding: 32px; overflow-y: auto; }
 .detail-header h2 { margin: 0; font-size: 24px; color: #1a1a1a; }
