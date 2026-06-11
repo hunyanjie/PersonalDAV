@@ -147,7 +147,7 @@ export default {
       const toStr = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`
       this._loadedRange = { start: fromStr, end: toStr }
       try {
-        const res = await api.listEvents(0, 9999, fromStr, toStr)
+        const res = await api.listEvents(0, 500, fromStr, toStr)
         const items = Array.isArray(res) ? res : (res.items || [])
         this.events = items
       } catch (e) { this.events = [] }

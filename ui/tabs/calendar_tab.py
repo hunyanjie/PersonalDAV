@@ -112,7 +112,10 @@ class CalendarTab(BaseTreeTab):
 
         ev_f = ttk.LabelFrame(self._month_frame, text="选定日事件")
         ev_f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self._month_events_listbox = tk.Listbox(ev_f, exportselection=False)
+        ev_scroll = ttk.Scrollbar(ev_f, orient=tk.VERTICAL)
+        self._month_events_listbox = tk.Listbox(ev_f, exportselection=False, yscrollcommand=ev_scroll.set)
+        ev_scroll.config(command=self._month_events_listbox.yview)
+        ev_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self._month_events_listbox.pack(fill=tk.BOTH, expand=True)
         self._month_events_listbox.bind("<Double-1>", self._month_edit_event)
         self._month_event_uids = []
@@ -186,10 +189,10 @@ class CalendarTab(BaseTreeTab):
         self._month_data = raw
         self._month_cal.calevent_remove('all')
         for ev in raw:
-            _, uid, summary, start, end, *_ = ev
+            uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
-                self._month_cal.calevent_create(dt.date(), summary[:20], 'event')
+                self._month_cal.calevent_create(dt.date(), (summary or "(无标题)")[:20], 'event')
             except Exception:
                 pass
         self._month_cal.tag_config('event', background='#3498db', foreground='white')
@@ -229,7 +232,7 @@ class CalendarTab(BaseTreeTab):
         data = getattr(self, '_month_data', getattr(self, '_all_data', []))
         day_events = []
         for ev in data:
-            _, uid, summary, start, end, *_ = ev
+            uid, summary, start, end, *_ = ev
             try:
                 dt = datetime.fromisoformat(start)
                 if dt.date() == cal_date:
