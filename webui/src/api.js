@@ -44,7 +44,7 @@ export default {
   createContactStructured(data) { return request('POST', '/contacts/structured', { body: data }) },
   updateContact(uid, vcardData) { return request('PUT', `/contacts/${uid}`, { body: { vcard_data: vcardData } }) },
   deleteContact(uid) { return request('DELETE', `/contacts/${uid}`) },
-  searchContacts(q, limit = 10) { return request('GET', '/contacts/search', { params: qs({ q, limit }) }) },
+  searchContacts(q, offset = 0, limit = 50) { return request('GET', '/contacts/search', { params: qs({ q, offset, limit }) }) },
 
   // Events
   listEvents(offset = 0, limit = 50, dateFrom = '', dateTo = '') { return request('GET', '/events', { params: qs({ offset, limit, date_from: dateFrom, date_to: dateTo }) }) },
@@ -52,8 +52,8 @@ export default {
   createEvent(icalData) { return request('POST', '/events', { body: { ical_data: icalData } }) },
   updateEvent(uid, icalData) { return request('PUT', `/events/${uid}`, { body: { ical_data: icalData } }) },
   deleteEvent(uid) { return request('DELETE', `/events/${uid}`) },
-  searchEvents(q, dateFrom = '', dateTo = '', limit = 10) {
-    return request('GET', '/events/search', { params: qs({ q, date_from: dateFrom, date_to: dateTo, limit }) })
+  searchEvents(q, dateFrom = '', dateTo = '', offset = 0, limit = 200) {
+    return request('GET', '/events/search', { params: qs({ q, date_from: dateFrom, date_to: dateTo, offset, limit }) })
   },
 
   // Files

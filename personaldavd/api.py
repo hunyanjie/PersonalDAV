@@ -125,11 +125,15 @@ async def list_contacts(
 @api_router.get("/contacts/search", summary="搜索联系人")
 async def search_contacts(
     q: str = Query("", description="关键词"),
-    limit: int = Query(10, description="返回条数"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
     token: str = Depends(get_current_token),
 ):
     svc = EmbeddingService()
-    return svc.search_contacts(q, top_k=limit)
+    all_results = svc.search_contacts(q, top_k=100000)
+    total = len(all_results)
+    items = all_results[offset:offset + limit]
+    return {"items": items, "total": total}
 
 
 # ── Events Search (MUST be before {uid} routes) ─────────────
@@ -139,11 +143,15 @@ async def search_events(
     q: str = Query("", description="关键词"),
     date_from: str = Query("", description="起始时间"),
     date_to: str = Query("", description="结束时间"),
-    limit: int = Query(10, description="返回条数"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
     token: str = Depends(get_current_token),
 ):
     svc = EmbeddingService()
-    return svc.search_events(q, date_from=date_from, date_to=date_to, top_k=limit)
+    all_results = svc.search_events(q, date_from=date_from, date_to=date_to, top_k=100000)
+    total = len(all_results)
+    items = all_results[offset:offset + limit]
+    return {"items": items, "total": total}
 
 
 @api_router.get("/contacts/{uid}", response_model=ContactOut, summary="获取单个联系人")

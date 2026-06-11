@@ -22,7 +22,7 @@
       </tbody>
     </table>
     <div v-else class="empty">{{ loading ? '加载中...' : '暂无联系人' }}</div>
-    <div v-if="!query.trim() && total > pageSize" class="pagination">
+    <div v-if="total > pageSize" class="pagination">
       <button :disabled="page === 0" @click="page--" class="btn-sm">&lt; 上一页</button>
       <span class="page-info">
         第 <input class="page-jump" v-model.number="pageInput" type="number" :min="1" :max="maxPage" @keyup.enter="jumpPage" />
@@ -53,8 +53,8 @@ export default {
       this.loading = true
       try {
         if (this.query.trim()) {
-          this.items = await api.searchContacts(this.query, 200)
-          this.total = this.items.length
+          const res = await api.searchContacts(this.query, this.page * this.pageSize, this.pageSize)
+          this.items = res.items; this.total = res.total
         } else {
           const res = await api.listContacts(this.page * this.pageSize, this.pageSize)
           this.items = res.items; this.total = res.total

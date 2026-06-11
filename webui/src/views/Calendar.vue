@@ -116,7 +116,7 @@ export default {
       clearTimeout(this._searchTimer)
       this._searchTimer = setTimeout(() => {
         if (this.searchQuery.trim()) {
-          api.searchEvents(this.searchQuery, '', '', 200).then(results => {
+          api.searchEvents(this.searchQuery, '', '', 0, 500).then(results => {
             this.events = Array.isArray(results) ? results : (results.items || [])
             this.errorMsg = ''
           }).catch(() => { this.errorMsg = '搜索失败' })
