@@ -73,7 +73,7 @@
             <td class="col-time">{{ formatDate(item.modified_at) }}</td>
             <td class="col-actions">
               <div class="row-actions">
-                <a v-if="!item.is_dir" :href="api.downloadUrl(item.path)" class="btn-icon" title="下载">📥</a>
+                <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载">📥</a>
                 <button class="btn-icon" @click="startRename(item)" title="重命名">✏️</button>
                 <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除">🗑️</button>
               </div>
