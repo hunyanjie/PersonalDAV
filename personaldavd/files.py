@@ -32,11 +32,9 @@ async def list_files(
     if not abs_path.startswith(root):
         if logger: logger.warning(f"Path traversal attempt", path=path, abs_path=abs_path)
         raise HTTPException(403, "路径越权")
-    if not os.path.exists(abs_path):
-        if logger: logger.warning(f"Path not found", abs_path=abs_path)
-        raise HTTPException(404, "路径不存在")
     if not os.path.isdir(abs_path):
-        raise HTTPException(400, "不是目录")
+        if logger: logger.info(f"Creating directory", abs_path=abs_path)
+        os.makedirs(abs_path, exist_ok=True)
     items = []
     try:
         filenames = sorted(os.listdir(abs_path))
