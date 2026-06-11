@@ -19,7 +19,7 @@
       <tbody>
         <tr v-for="(week, wi) in weeks" :key="wi">
           <td v-for="(day, di) in week" :key="di"
-            :class="{ 'other-month': !day.current, 'has-event': day.hasEvent, 'today': day.isToday }"
+            :class="{ 'other-month': !day.current, 'has-event': day.hasEvent, 'today': day.isToday, 'selected': isSelected(day) }"
             @click="day.current && showDay(day.day)">
             <div class="day-num">{{ day.day }}</div>
             <div class="event-dots">
@@ -124,6 +124,12 @@ export default {
         }
       }, 300)
     },
+    isSelected(day) {
+      return !!this.selectedDay && day.current
+        && this.selectedDay.year === this.year
+        && this.selectedDay.month === this.month
+        && this.selectedDay.day === day.day
+    },
     showDay(day) {
       const dateStr = `${this.year}-${String(this.month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
       this.selectedDay = {
@@ -158,6 +164,7 @@ export default {
 .cal-table td { padding: 6px; text-align: center; vertical-align: top; height: 64px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background .15s; }
 .cal-table td.other-month { color: #ccc; }
 .cal-table td.has-event { background: #e6f4ff; border-bottom: 3px solid #1677ff; }
+.cal-table td.selected { box-shadow: inset 0 0 0 2px #1677ff; }
 .cal-table td.today .day-num { background: #1677ff; color: #fff; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; display: inline-block; }
 .day-num { font-size: 15px; font-weight: 500; }
 .event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 4px; }
