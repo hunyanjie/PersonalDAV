@@ -2,9 +2,11 @@
 
 import json
 import logging
+import os
 import sys
 import queue
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 
 # Global log buffer for WebUI
 LOG_QUEUE = queue.Queue(maxsize=1000)
@@ -26,6 +28,21 @@ class LogBufferHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
+def setup_file_logging(log_path: str | None = None):
+    """Add RotatingFileHandler to the root logger for persistence."""
+    if not log_path:
+        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "personaldavd.log")
+    root = logging.getLogger()
+    for h in root.handlers:
+        if isinstance(h, RotatingFileHandler):
+            return
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    fh = RotatingFileHandler(log_path, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+    fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    fh.setLevel(logging.DEBUG)
+    root.addHandler(fh)
+
+
 class StructuredLogger:
     """Minimal structured logger — outputs JSON lines when json_mode=True."""
 
@@ -33,11 +50,13 @@ class StructuredLogger:
         self._json_mode = json_mode
         self._logger = logging.getLogger("personaldavd")
         
-        # Ensure our buffer handler is attached to the root logger or personaldavd logger
-        if not any(isinstance(h, LogBufferHandler) for h in logging.getLogger().handlers):
+        root = logging.getLogger()
+        if not any(isinstance(h, LogBufferHandler) for h in root.handlers):
             h = LogBufferHandler()
             h.setFormatter(logging.Formatter('%(message)s'))
-            logging.getLogger().addHandler(h)
+            root.addHandler(h)
+        if not any(isinstance(h, RotatingFileHandler) for h in root.handlers):
+            setup_file_logging()
 
     def _log(self, level: str, message: str, extra: dict | None = None):
         # Also log via standard logging so LogBufferHandler picks it up
