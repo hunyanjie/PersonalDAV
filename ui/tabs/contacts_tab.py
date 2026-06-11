@@ -11,6 +11,7 @@ import re
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
 from utils.logger import logger
 import os
+import threading
 
 
 class ContactsTab(BaseTreeTab):
@@ -140,7 +141,6 @@ class ContactsTab(BaseTreeTab):
             
             self.after(0, _done)
         
-        import threading
         threading.Thread(target=_scan, daemon=True).start()
 
     def _apply_group_filter(self):

@@ -9,6 +9,7 @@ from tkinterdnd2 import DND_FILES
 
 from utils.event_bus import event_bus, EVENT_EVENTS_CHANGED
 import os
+import threading
 from datetime import datetime, date, timedelta
 from utils.encoding_helper import decode_ical_value
 
