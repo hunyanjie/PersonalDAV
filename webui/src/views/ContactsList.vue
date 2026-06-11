@@ -53,7 +53,7 @@ export default {
       this.loading = true
       try {
         if (this.query.trim()) {
-          this.items = await api.searchContacts(this.query)
+          this.items = await api.searchContacts(this.query, 200)
           this.total = this.items.length
         } else {
           const res = await api.listContacts(this.page * this.pageSize, this.pageSize)

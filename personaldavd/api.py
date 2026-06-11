@@ -120,6 +120,32 @@ async def list_contacts(
     return {"items": items, "total": total}
 
 
+# ── Contacts Search (MUST be before {uid} routes) ───────────
+
+@api_router.get("/contacts/search", summary="搜索联系人")
+async def search_contacts(
+    q: str = Query("", description="关键词"),
+    limit: int = Query(10, description="返回条数"),
+    token: str = Depends(get_current_token),
+):
+    svc = EmbeddingService()
+    return svc.search_contacts(q, top_k=limit)
+
+
+# ── Events Search (MUST be before {uid} routes) ─────────────
+
+@api_router.get("/events/search", summary="搜索事件")
+async def search_events(
+    q: str = Query("", description="关键词"),
+    date_from: str = Query("", description="起始时间"),
+    date_to: str = Query("", description="结束时间"),
+    limit: int = Query(10, description="返回条数"),
+    token: str = Depends(get_current_token),
+):
+    svc = EmbeddingService()
+    return svc.search_events(q, date_from=date_from, date_to=date_to, top_k=limit)
+
+
 @api_router.get("/contacts/{uid}", response_model=ContactOut, summary="获取单个联系人")
 async def get_contact(uid: str, token: str = Depends(get_current_token)):
     """根据 UID 获取联系人的完整 vCard 数据。"""
@@ -255,32 +281,6 @@ async def delete_event(uid: str, token: str = Depends(get_current_token)):
         raise HTTPException(404, "事件不存在")
     ok = svc.delete(uid)
     return {"deleted": ok}
-
-
-# ── Contacts Search ────────────────────────────────────────────
-
-@api_router.get("/contacts/search", summary="搜索联系人")
-async def search_contacts(
-    q: str = Query("", description="关键词"),
-    limit: int = Query(10, description="返回条数"),
-    token: str = Depends(get_current_token),
-):
-    svc = EmbeddingService()
-    return svc.search_contacts(q, top_k=limit)
-
-
-# ── Events Search ──────────────────────────────────────────────
-
-@api_router.get("/events/search", summary="搜索事件")
-async def search_events(
-    q: str = Query("", description="关键词"),
-    date_from: str = Query("", description="起始时间"),
-    date_to: str = Query("", description="结束时间"),
-    limit: int = Query(10, description="返回条数"),
-    token: str = Depends(get_current_token),
-):
-    svc = EmbeddingService()
-    return svc.search_events(q, date_from=date_from, date_to=date_to, top_k=limit)
 
 
 # ── Settings ───────────────────────────────────────────────────
