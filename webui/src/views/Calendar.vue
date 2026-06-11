@@ -23,7 +23,7 @@
             @click="day.current && selectDay(day)">
             <div class="day-num">{{ day.day }}</div>
             <div class="event-dots">
-              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': day.isPast || isEventEndedToday(e) }" :title="e.summary || e.uid" />
+              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': day.isPast || isEventPast(e) }" :title="e.summary || e.uid" />
             </div>
           </td>
         </tr>
@@ -45,6 +45,7 @@
         <div class="tl-now-bar" :style="{ left: nowLeft }" v-if="isTodaySelected"></div>
         <div v-for="e in dayEvents" :key="e.uid"
           class="tl-dot"
+          :class="{ 'tl-dot-past': isEventPast(e) }"
           :style="{ left: eventLeft(e) }"
           :title="e.summary"
           @click.stop="openDetail(e)" />
@@ -239,6 +240,10 @@ export default {
         this.errorMsg = '加载日程失败: ' + (e.message || e)
       }
       this.selectToday()
+    },
+    isEventPast(e) {
+      const et = icalDateToObj(e.dtend)
+      return et && et < this.currentTime
     },
     isEventEndedToday(e) {
       if (!this.isTodaySelected) return false
@@ -447,6 +452,7 @@ export default {
 .tl-hours { display: flex; height: 100%; width: 100%; }
 .tl-hour-label { flex: 1; text-align: center; font-size: 11px; color: #999; border-left: 1px solid #eee; padding-top: 2px; }
 .tl-dot { position: absolute; top: 16px; width: 10px; height: 10px; background: #1677ff; border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 1; }
+.tl-dot.tl-dot-past { background: #bbb; }
 .tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: #1677ff; z-index: 2; pointer-events: none; transition: left 2s linear; }
 
 /* Event Cards */
