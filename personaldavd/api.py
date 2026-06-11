@@ -205,7 +205,7 @@ async def list_events(
     """返回日历事件的摘要列表（标题、起止时间），支持分页和日期范围筛选。"""
     svc = EventService()
     if date_from and date_to:
-        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to, limit)
+        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
         items = [o for r in raw_list if (o := _event_to_out(r))]
         return {"items": items, "total": len(items)}
     raw_list, total = svc.get_all_raw_paginated(offset, limit)

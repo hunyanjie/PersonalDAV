@@ -11,10 +11,10 @@ class EventRepository(BaseRepository[EventModel]):
     def search_by_date_range(self, start: str, end: str) -> list[EventModel]:
         return super().search_by_date_range('dtstart', 'dtend', start, end)
 
-    def get_by_dtstart_range(self, start: str, end: str, limit: int = 366) -> list[EventModel]:
+    def get_by_dtstart_range(self, start: str, end: str) -> list[EventModel]:
         rows = self.db.query(
-            f"SELECT {self._col_str} FROM {self.table} WHERE dtstart >= ? AND dtstart < ? ORDER BY dtstart LIMIT ?",
-            (start, end, limit)
+            f"SELECT {self._col_str} FROM {self.table} WHERE dtstart >= ? AND dtstart < ? ORDER BY dtstart",
+            (start, end)
         )
         return [self._to_model(row) for row in rows]
 

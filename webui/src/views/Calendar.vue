@@ -100,7 +100,7 @@ export default {
       this.errorMsg = ''
       const { from, to } = this.monthRange()
       try {
-        const res = await api.listEvents(0, 366, from, to)
+        const res = await api.listEvents(0, 366, from, to) // limit ignored when date_from/date_to set
         if (res === null || res === undefined) { this.events = []; return }
         if (Array.isArray(res)) { this.events = res; return }
         if (res.items && Array.isArray(res.items)) { this.events = res.items; return }
