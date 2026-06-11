@@ -279,6 +279,7 @@ class CalendarTab(BaseTreeTab):
 
     def refresh_events(self):
         self.cancel_pending()
+        token = self._cancel_token
         if self._view_var.get() == "月视图":
             self._refresh_month_view()
             self._all_raw = getattr(self, '_month_data', [])
@@ -288,7 +289,7 @@ class CalendarTab(BaseTreeTab):
         def _scan():
             import re
             raw = self.db.get_list_data()
-            if self._cancel_token: return
+            if self._cancel_token != token: return
             self._all_raw = raw
             
             cats = set()
@@ -296,7 +297,7 @@ class CalendarTab(BaseTreeTab):
             cat_re = re.compile(r'^CATEGORIES:(.*)$', re.IGNORECASE | re.MULTILINE)
             
             for event in raw:
-                if self._cancel_token: return
+                if self._cancel_token != token: return
                 uid = event[0]
                 ical = self.db.get_by_uid(uid)
                 if ical:
@@ -308,7 +309,7 @@ class CalendarTab(BaseTreeTab):
                             if c: cats.add(c)
             
             def _done():
-                if self._cancel_token: return
+                if self._cancel_token != token: return
                 all_vals = ["全部"] + sorted(cats)
                 self._cat_filter_combo['values'] = all_vals
                 if self._cat_filter_var.get() not in all_vals:

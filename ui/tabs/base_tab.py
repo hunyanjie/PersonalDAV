@@ -35,7 +35,7 @@ class BaseTreeTab(ttk.Frame):
         self._insert_pending = False  # 批量插入进行中
         self._uid_to_item = {}    # uid -> tree item id
         self._item_to_uid = {}    # tree item id -> uid（反向映射，避免 Tcl 调用）
-        self._cancel_token = False  # 取消令牌：设为 True 时终止正在进行的批量插入
+        self._cancel_token = 0    # 取消令牌：每次取消时递增。任务记录起始值，若当前值不等于起始值则终止。
         self._drag_lo = None      # 拖拽最小行索引
         self._drag_hi = None      # 拖拽最大行索引
         self._auto_scroll_after_id = None  # 自动滚动定时器 ID
@@ -160,11 +160,12 @@ class BaseTreeTab(ttk.Frame):
 
     # ── 大批量数据分批插入 ──
 
-    def _batch_insert(self, start=0):
+    def _batch_insert(self, start=0, token=None):
         """分批插入 _all_data 到 Treeview，避免 UI 卡顿。支持取消令牌。"""
-        if self._cancel_token:
+        if token is None:
+            token = self._cancel_token
+        if self._cancel_token != token:
             self._insert_pending = False
-            self._cancel_token = False
             return
         self._insert_pending = True
         end = min(start + self.BATCH_SIZE, len(self._all_data))
@@ -176,14 +177,14 @@ class BaseTreeTab(ttk.Frame):
             self._uid_to_item[uid] = item_id
             self._item_to_uid[item_id] = uid
         if end < len(self._all_data):
-            self.after(1, lambda: self._batch_insert(end))
+            self.after(1, lambda: self._batch_insert(end, token))
         else:
             self._insert_pending = False
             self._sync_checkboxes()
 
     def cancel_pending(self):
         """取消正在进行的批量插入任务。"""
-        self._cancel_token = True
+        self._cancel_token += 1
 
     def _rerender(self):
         """用当前 _all_data 重建视图。"""
