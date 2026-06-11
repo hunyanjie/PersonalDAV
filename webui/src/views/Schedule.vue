@@ -325,9 +325,18 @@ export default {
       try {
         const res = await api.listEvents(0, 500, fromStr, toStr)
         const items = Array.isArray(res) ? res : (res.items || [])
-        this.events = items
-        this._loadStart = fromStr
-        this._loadEnd = toStr
+        if (dir) {
+          const existing = new Map()
+          for (const e of this.events) existing.set(e.uid, e)
+          for (const e of items) existing.set(e.uid, e)
+          this.events = [...existing.values()]
+          if (dir === 'prev') this._loadStart = fromStr
+          else this._loadEnd = toStr
+        } else {
+          this.events = items
+          this._loadStart = fromStr
+          this._loadEnd = toStr
+        }
       } catch (e) { /* ignore */ }
       this.loading = false
       if (!dir) this.$nextTick(() => this.scrollToInitial())
