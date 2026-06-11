@@ -145,12 +145,12 @@ export default {
     detailEvent: null,
     selectedUids: [],
     ctxMenu: { show: false, x: 0, y: 0, uids: [] },
-    _now: new Date(),
+    currentTime: new Date(),
     _nowTimer: null,
   }),
   mounted() {
     this.load()
-    this._nowTimer = setInterval(() => { this._now = new Date() }, 10000)
+    this._nowTimer = setInterval(() => { this.currentTime = new Date() }, 10000)
     document.addEventListener('click', this.onClickAway)
   },
   beforeUnmount() { clearInterval(this._nowTimer); document.removeEventListener('click', this.onClickAway) },
@@ -158,19 +158,19 @@ export default {
     monthOffset() { this.selectedDay = null; this.load() },
   },
   computed: {
-    now() { return this._now },
+    now() { return this.currentTime },
     todayStr() {
-      const d = this._now
+      const d = this.currentTime
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
     },
     todayDate() {
-      return { year: this._now.getFullYear(), month: this._now.getMonth() + 1, day: this._now.getDate() }
+      return { year: this.currentTime.getFullYear(), month: this.currentTime.getMonth() + 1, day: this.currentTime.getDate() }
     },
     nowMonth() {
-      const d = this._now
+      const d = this.currentTime
       return new Date(d.getFullYear(), d.getMonth(), 1)
     },
-    calNow() { const d = this._now; return new Date(d.getFullYear(), d.getMonth() + this.monthOffset, 1) },
+    calNow() { const d = this.currentTime; return new Date(d.getFullYear(), d.getMonth() + this.monthOffset, 1) },
     year() { return this.calNow.getFullYear() },
     month() { return this.calNow.getMonth() + 1 },
     isTodaySelected() {
@@ -213,6 +213,10 @@ export default {
         .filter(e => e.dtstart && icalDateToStr(e.dtstart) === dateStr)
         .sort((a, b) => (a.dtstart || '').localeCompare(b.dtstart || ''))
     },
+    nowLeft() {
+      const h = toHours(this.currentTime)
+      return Math.min(((h / 24) * 100), 100) + '%'
+    },
   },
   methods: {
     pad,
@@ -228,12 +232,8 @@ export default {
       if (this.searchQuery) return
       const { from, to } = this.monthRange()
       try {
-        const res = await api.listEvents(0, 366, from, to)
-        if (res === null || res === undefined) { this.events = []; return }
-        if (Array.isArray(res)) { this.events = res; return }
-        if (res.items && Array.isArray(res.items)) { this.events = res.items; return }
-        this.events = []
-        this.errorMsg = '接口返回格式异常'
+        const res = await api.listEvents(0, 500, from, to)
+        this.events = Array.isArray(res) ? res : (res.items || [])
       } catch (e) {
         this.events = []
         this.errorMsg = '加载日程失败: ' + (e.message || e)
@@ -243,7 +243,7 @@ export default {
     isEventEndedToday(e) {
       if (!this.isTodaySelected) return false
       const et = icalDateToObj(e.dtend)
-      return et && et <= this._now
+      return et && et <= this.currentTime
     },
     selectToday() {
       if (this.selectedDay) return
@@ -253,10 +253,6 @@ export default {
       }
     },
     selectDay(day) {
-      if (this.selectedDay && this.selectedDay.year === this.year && this.selectedDay.month === this.month && this.selectedDay.day === day.day && this.selectedUids.length) {
-        this.selectedUids = []
-        return
-      }
       this.selectedDay = { year: this.year, month: this.month, day: day.day }
       this.selectedUids = []
       this.ctxMenu.show = false
@@ -264,7 +260,7 @@ export default {
     cellClass(day) {
       return {
         'other-month': !day.current,
-        'has-event': day.hasEvent && !day.isPast,
+        'has-event': day.hasEvent,
         'today': day.isToday,
         'selected': this.isSelected(day),
         'past-day': day.isPast,
@@ -304,33 +300,31 @@ export default {
       const h = toHours(st)
       return ((h / 24) * 100) + '%'
     },
-    nowLeft() {
-      const h = toHours(this._now)
-      return Math.min(((h / 24) * 100), 100) + '%'
-    },
 
     // Event card styling
     eventCardClass(e) {
-      const st = eventStatus(e, this._now)
+      const st = eventStatus(e, this.currentTime)
+      const isPastDay = !this.isTodaySelected && (icalDateToStr(e.dtstart) < this.todayStr)
       return {
-        'card-ended': st === 'ended' && this.isTodaySelected,
-        'card-ongoing': st === 'ongoing',
-        'card-upcoming': st === 'upcoming',
+        'card-ended': (st === 'ended' && this.isTodaySelected) || isPastDay,
+        'card-ongoing': st === 'ongoing' && this.isTodaySelected,
+        'card-upcoming': st === 'upcoming' || (!this.isTodaySelected && !isPastDay),
         'card-selected': this.selectedUids.includes(e.uid),
       }
     },
     cardSideStyle(e) {
-      if (!this.isTodaySelected) return { background: 'var(--theme,#1677ff)' }
-      const st = eventStatus(e, this._now)
-      if (st === 'ended') return { background: '#ccc' }
-      if (st === 'upcoming') return { background: 'var(--theme,#1677ff)' }
+      const st = eventStatus(e, this.currentTime)
+      const isPastDay = !this.isTodaySelected && (icalDateToStr(e.dtstart) < this.todayStr)
+      if (st === 'ended' || isPastDay) return { background: '#d9d9d9' }
+      if (st === 'upcoming' || !this.isTodaySelected) return { background: 'var(--theme,#1677ff)' }
+      
       const stDate = icalDateToObj(e.dtstart)
       const etDate = icalDateToObj(e.dtend)
       if (!stDate || !etDate) return { background: 'var(--theme,#1677ff)' }
       const total = etDate.getTime() - stDate.getTime()
-      const elapsed = this._now.getTime() - stDate.getTime()
+      const elapsed = this.currentTime.getTime() - stDate.getTime()
       const pct = total > 0 ? Math.min(elapsed / total * 100, 100) : 100
-      return { background: `linear-gradient(to bottom, #ccc ${pct}%, var(--theme,#1677ff) ${pct}%)` }
+      return { background: `linear-gradient(to bottom, #d9d9d9 ${pct}%, var(--theme,#1677ff) ${pct}%)` }
     },
     formatTime(s) {
       const d = icalDateToObj(s)
