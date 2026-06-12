@@ -20,6 +20,9 @@ class FilesTab(ttk.Frame):
         self._sort_state: dict[str, bool | str] = {"column": "name", "ascending": True}
         self._heading_text = {"name": "名称", "type": "类型", "size": "大小", "modified": "修改时间"}
         self._mount_svc = None
+        self._all_entries: list[dict] = []
+        self._search_var = tk.StringVar()
+        self._search_var.trace("w", self._on_search_change)
         self.create_widgets()
 
     @staticmethod
@@ -79,6 +82,13 @@ class FilesTab(ttk.Frame):
         self.path_label = ttk.Label(toolbar, text="/")
         self.path_label.pack(side=tk.LEFT, padx=10)
 
+        search_f = ttk.Frame(browse_frame)
+        search_f.pack(fill=tk.X, padx=5, pady=(0, 5))
+        ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
+        self._search_entry = ttk.Entry(search_f, textvariable=self._search_var)
+        self._search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Button(search_f, text="清空", width=5, command=lambda: self._search_var.set("")).pack(side=tk.LEFT, padx=2)
+
         tree_frame = ttk.Frame(browse_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
@@ -114,7 +124,8 @@ class FilesTab(ttk.Frame):
         if not virtual_path:
             entries = svc.get_root_entries()
             self._current_fs_path = ""
-            self._display_entries(entries, is_mount_root=True)
+            self._all_entries = entries
+            self._display_entries_from_cache()
             self.path_label.config(text="/")
             self.up_btn.config(state=tk.DISABLED)
             return
@@ -154,17 +165,28 @@ class FilesTab(ttk.Frame):
                         "size": 0,
                         "modified": datetime.now(),
                     })
-            self._display_entries(entries, is_mount_root=False)
+            self._all_entries = entries
+            self._display_entries_from_cache()
         except OSError as e:
             messagebox.showerror("错误", f"无法读取目录: {e}", parent=self)
-            self._display_entries([], is_mount_root=False)
+            self._all_entries = []
+            self._display_entries_from_cache()
 
         display = "/" + virtual_path
         self.path_label.config(text=display)
         self.up_btn.config(state=tk.NORMAL)
 
+    def _on_search_change(self, *args) -> None:
+        self._display_entries_from_cache()
+
+    def _display_entries_from_cache(self) -> None:
+        self._display_entries(self._all_entries, self._virtual_path == "")
+
     def _display_entries(self, entries: list[dict], is_mount_root: bool = False) -> None:
         self.tree.delete(*self.tree.get_children())
+        query = self._search_var.get().lower().strip()
+        if query:
+            entries = [e for e in entries if query in e.get("name", "").lower()]
         for e in sorted(entries, key=lambda f: (0 if f.get("is_dir", False) else 1, f.get("name", "").lower())):
             if e.get("is_mount"):
                 ftype = "文件夹"
