@@ -40,6 +40,15 @@
       </div>
     </div>
 
+    <div v-if="dragOver" class="dropzone-overlay"
+      @dragenter.prevent @dragover.prevent @dragleave.prevent="dragOver = false"
+      @drop.prevent="onDrop">
+      <div class="dropzone-content">
+        <div class="drop-icon">📤</div>
+        <p>释放以上传文件</p>
+      </div>
+    </div>
+
     <div v-if="renaming" class="inline-modal-overlay" @click.self="renaming = null">
       <div class="inline-dialog">
         <h3>重命名</h3>
@@ -135,10 +144,15 @@ export default {
     sortField: 'name',
     sortDir: 'asc',
     previewItem: null,
+    dragOver: false,
   }),
   mounted() { 
     this.updateBreadcrumbs()
-    this.load() 
+    this.load()
+    document.addEventListener('dragenter', this.onDragEnter)
+  },
+  beforeUnmount() {
+    document.removeEventListener('dragenter', this.onDragEnter)
   },
   computed: {
     sortedItems() {
@@ -265,7 +279,24 @@ export default {
         mp3: '🎵', mp4: '🎬',
       }
       return icons[ext] || '📄'
-    }
+    },
+
+    // Drag & Drop
+    onDragEnter(e) {
+      this.dragOver = true
+    },
+    async onDrop(e) {
+      this.dragOver = false
+      const files = e.dataTransfer.files
+      if (!files.length) return
+      this.loading = true
+      for (const file of files) {
+        try { await api.uploadFile(file, this.currentPath) } catch(e) {
+          alert(`上传失败(${file.name}): ${e.message || e}`)
+        }
+      }
+      this.load()
+    },
   },
 }
 </script>
@@ -334,4 +365,9 @@ export default {
 .preview-iframe { width: 100%; height: 100%; border: none; }
 .preview-error { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 16px; }
 .preview-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #f0f0f0; }
+
+.dropzone-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(22,119,255,0.08); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.dropzone-content { background: #fff; border: 3px dashed #1677ff; border-radius: 20px; padding: 60px 80px; text-align: center; box-shadow: 0 8px 32px rgba(22,119,255,0.2); }
+.drop-icon { font-size: 64px; margin-bottom: 16px; }
+.dropzone-content p { font-size: 20px; color: #1677ff; font-weight: 500; margin: 0; }
 </style>
