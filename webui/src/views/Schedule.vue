@@ -1,16 +1,16 @@
 <template>
   <div class="agenda-container">
     <div class="agenda-list-side">
-      <div class="agenda-header">
+      <div class="agenda-header glass">
         <div class="ah-left">
           <span class="ah-title">{{ currentYearMonth }}</span>
-          <span class="ah-week">第 {{ currentWeek }} 周</span>
+          <span class="ah-week tag">第 {{ currentWeek }} 周</span>
         </div>
-        <button class="btn-create" @click="createForFloatingDate">+ 新建日程</button>
+        <button class="btn-create" @click="createForFloatingDate"><Plus :size="18" /> 新建日程</button>
       </div>
 
       <div class="scroll-viewport" ref="listRef" @scroll="onScroll">
-        <div class="floating-date-header" v-if="stickyHeader">
+        <div class="floating-date-header glass" v-if="stickyHeader">
           <div class="fh-left">
             <span class="fh-date">{{ stickyHeader.label }}</span>
             <span class="fh-weekday">{{ stickyHeader.weekday }}</span>
@@ -40,7 +40,7 @@
             </template>
 
             <template v-else-if="item.type === 'event'">
-              <div class="event-card-wrapper">
+              <div class="event-card-wrapper glass">
                 <div class="card-side-bar" :style="cardSideStyle(item)"></div>
                 <div class="card-content">
                   <div class="card-main">
@@ -61,64 +61,68 @@
             </template>
           </div>
         </div>
-        <div v-if="loading" class="list-loading">加载中...</div>
+        <div v-if="loading" class="list-loading">
+          <RotateCw :size="20" class="spinning" /> 正在加载更多...
+        </div>
       </div>
     </div>
 
-    <div class="agenda-detail-side">
+    <div class="agenda-detail-side glass">
       <div v-if="selectedEvent" class="detail-box">
         <div class="detail-header">
           <h2>{{ selectedEvent.summary || '(无标题)' }}</h2>
           <div class="detail-meta">
-            <span class="meta-tag">{{ selectedEvent.categories || '默认' }}</span>
+            <span class="meta-tag"><Tag :size="12" /> {{ selectedEvent.categories || '默认' }}</span>
           </div>
         </div>
         <div class="detail-body">
           <div class="detail-row">
-            <i class="icon">🕒</i>
+            <Clock :size="20" class="detail-icon" />
             <div class="row-val">
               <div class="time-range">{{ fmtTime(selectedEvent.dtstart) }} - {{ fmtTime(selectedEvent.dtend) }}</div>
               <div class="date-val">{{ fmtFullDate(selectedEvent.dtstart) }}</div>
             </div>
           </div>
           <div v-if="selectedEvent.location" class="detail-row">
-            <i class="icon">📍</i>
+            <MapPin :size="20" class="detail-icon" />
             <div class="row-val">{{ selectedEvent.location }}</div>
           </div>
           <div v-if="selectedEvent.description" class="detail-row">
-            <i class="icon">📝</i>
+            <FileText :size="20" class="detail-icon" />
             <div class="row-val desc-text">{{ selectedEvent.description }}</div>
           </div>
         </div>
         <div class="detail-footer">
-          <button class="btn-action" @click="exportSingle(selectedEvent)">分享/导出</button>
-          <button class="btn-action" @click="startEdit(selectedEvent)">编辑</button>
-          <button class="btn-action btn-danger" @click="deleteSingle(selectedEvent)">删除</button>
+          <button class="btn-action" @click="exportSingle(selectedEvent)"><Share2 :size="14" /> 导出</button>
+          <button class="btn-action" @click="startEdit(selectedEvent)"><Pencil :size="14" /> 编辑</button>
+          <button class="btn-action btn-danger" @click="deleteSingle(selectedEvent)"><Trash2 :size="14" /> 删除</button>
         </div>
       </div>
       <div v-else-if="selectedUids.length > 1" class="detail-empty">
-        <div class="empty-icon">👥</div>
-        <p>选择了 {{ selectedUids.length }} 个日程</p>
-        <button class="btn-action" @click="exportSelected">批量导出</button>
-        <button class="btn-action btn-danger" @click="deleteSelected">批量删除</button>
+        <div class="empty-icon"><Users :size="48" /></div>
+        <p>已选中 <strong>{{ selectedUids.length }}</strong> 个日程</p>
+        <div class="batch-actions">
+          <button class="btn-action" @click="exportSelected"><Share2 :size="14" /> 批量导出</button>
+          <button class="btn-action btn-danger" @click="deleteSelected"><Trash2 :size="14" /> 批量删除</button>
+        </div>
       </div>
       <div v-else class="detail-empty">
-        <div class="empty-icon">📅</div>
-        <p>选择日程查看详情</p>
+        <div class="empty-icon"><Calendar :size="48" /></div>
+        <p>选择日程查看详细内容</p>
       </div>
     </div>
 
     <!-- Edit Modal -->
     <div v-if="editModal" class="modal-overlay" @click.self="editModal = null">
-      <div class="modal-card">
+      <div class="modal-card glass">
         <div class="modal-header">
           <h3>{{ editModal.isNew ? '新建日程' : '编辑日程' }}</h3>
-          <button class="btn-close" @click="editModal = null">&times;</button>
+          <button class="btn-close-circle" @click="editModal = null"><X :size="20" /></button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label>标题</label>
-            <input v-model="editForm.summary" placeholder="日程标题" />
+            <label>日程标题</label>
+            <input v-model="editForm.summary" placeholder="给日程起个标题..." />
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -132,36 +136,41 @@
           </div>
           <div class="form-group">
             <label>地点</label>
-            <input v-model="editForm.location" placeholder="添加地点" />
+            <input v-model="editForm.location" placeholder="添加地点 (可选)" />
           </div>
           <div class="form-group">
             <label>描述</label>
-            <textarea v-model="editForm.description" rows="4" placeholder="添加描述..."></textarea>
+            <textarea v-model="editForm.description" rows="4" placeholder="添加更多细节说明..."></textarea>
           </div>
           <div class="form-group">
             <label>分类</label>
-            <input v-model="editForm.categories" placeholder="用逗号分隔" />
+            <input v-model="editForm.categories" placeholder="分类标签，用逗号分隔" />
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn-cancel" @click="editModal = null">取消</button>
           <button class="btn-save" @click="saveEdit" :disabled="saving">
-            {{ saving ? '保存中...' : '保存' }}
+            {{ saving ? '正在保存...' : '确认保存' }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- Context Menu -->
-    <div v-if="ctxMenu.show" class="ctx-menu" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
-      <div class="ctx-item" @click="exportSelected">分享/导出</div>
-      <div class="ctx-item" @click="startEdit(eventsMap[ctxMenu.uids[0]])" v-if="ctxMenu.uids.length === 1">编辑</div>
-      <div class="ctx-item danger" @click="deleteSelected">删除</div>
+    <div v-if="ctxMenu.show" class="ctx-menu glass" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
+      <div class="ctx-item" @click="exportSelected"><Share2 :size="14" /> 分享/导出</div>
+      <div class="ctx-item" @click="startEdit(eventsMap[ctxMenu.uids[0]])" v-if="ctxMenu.uids.length === 1"><Pencil :size="14" /> 编辑</div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item danger" @click="deleteSelected"><Trash2 :size="14" /> 删除</div>
     </div>
   </div>
 </template>
 
 <script>
+import { 
+  Plus, Clock, MapPin, FileText, Share2, Pencil, Trash2, 
+  Users, Calendar, X, RotateCw, Tag
+} from 'lucide-vue-next'
 import api from '../api.js'
 
 function pad(n) { return String(n).padStart(2, '0') }
@@ -217,9 +226,7 @@ const LUNAR_DATA = [
   0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06aa0,0x1a6c4,0x0aae0,
   0x092e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,
   0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,
-  0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,
-  0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a4d0,0x0d150,0x0f252,
-  0x0d520,
+  0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,14080,
 ]
 const LUNAR_MONTHS = ['正','二','三','四','五','六','七','八','九','十','冬','腊']
 const LUNAR_DAYS = ['初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十']
@@ -280,12 +287,13 @@ function getMinutes(icalStr) {
 }
 
 const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六']
-const HEADER_HEIGHT = 48
+const HEADER_HEIGHT = 56
 const ITEM_HEIGHT = 80
-const EMPTY_HEIGHT = 40
+const EMPTY_HEIGHT = 44
 const OVERSCAN = 15
 
 export default {
+  components: { Plus, Clock, MapPin, FileText, Share2, Pencil, Trash2, Users, Calendar, X, RotateCw, Tag },
   data: () => ({
     events: [],
     loading: false,
@@ -552,11 +560,11 @@ export default {
     },
     cardSideStyle(item) {
       if (item.status === 'ended') return { background: '#e0e0e0' }
-      if (item.status === 'upcoming') return { background: 'var(--theme,#1677ff)' }
+      if (item.status === 'upcoming') return { background: 'var(--brand)' }
       const st = icalDateToObj(item.dtstart), et = icalDateToObj(item.dtend)
-      if (!st || !et) return { background: 'var(--theme,#1677ff)' }
+      if (!st || !et) return { background: 'var(--brand)' }
       const pct = Math.min(Math.max((this.currentTime - st) / (et - st) * 100, 0), 100)
-      return { background: `linear-gradient(to bottom, #e0e0e0 ${pct}%, var(--theme,#1677ff) ${pct}%)` }
+      return { background: `linear-gradient(to bottom, #e0e0e0 ${pct}%, var(--brand) ${pct}%)` }
     },
     startEdit(e) {
       this.editForm = {
@@ -587,14 +595,6 @@ export default {
         const uid = this.editModal.uid
         if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(uid, ical)
         this.editModal = null
-        const idx = this.events.findIndex(e => e.uid === uid)
-        if (idx >= 0) this.events[idx] = {
-          ...this.events[idx],
-          summary: this.editForm.summary,
-          description: this.editForm.description,
-          location: this.editForm.location,
-          categories: this.editForm.categories,
-        }
         await this.loadInitial()
       } catch (e) { alert('保存失败: ' + (e.message || e)) }
       this.saving = false
@@ -648,9 +648,7 @@ export default {
       let dateStr, startH, endH
       if (fd && fd.dateStr) {
         dateStr = fd.dateStr
-        // pick noon-ish hour for the new event
-        startH = 10
-        endH = 11
+        startH = 10; endH = 11
       } else {
         dateStr = fmtDate(this.currentTime)
         startH = this.currentTime.getHours()
@@ -668,85 +666,92 @@ export default {
 </script>
 
 <style scoped>
-.agenda-container { display: flex; height: 100%; background: var(--bg-page); gap: 20px; padding: 20px; box-sizing: border-box; }
+.agenda-container { display: flex; height: 100%; background: transparent; gap: 20px; padding: 4px; box-sizing: border-box; }
 
-.agenda-list-side { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-card); border-radius: 16px; box-shadow: var(--shadow-sm); overflow: hidden; }
-.agenda-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
-.ah-left { display: flex; flex-direction: column; }
-.ah-title { font-size: 22px; font-weight: 700; color: var(--text-primary); }
-.ah-week { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
-.btn-create { padding: 8px 16px; background: var(--brand); color: var(--text-inverse); border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+.agenda-list-side { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; border: 1px solid var(--border-base); }
+.agenda-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; background: #fafafa; }
+.ah-left { display: flex; flex-direction: column; gap: 4px; }
+.ah-title { font-size: 20px; font-weight: 700; color: var(--text-primary); }
+.tag { display: inline-block; padding: 2px 8px; background: var(--bg-info); color: var(--brand); border-radius: 4px; font-size: 12px; font-weight: 600; width: fit-content; }
+
+.btn-create { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: var(--brand); color: var(--text-inverse); border: none; border-radius: var(--radius-md); cursor: pointer; font-weight: 600; font-size: 14px; transition: all .2s; }
+.btn-create:hover { background: var(--brand-hover); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.3); }
 
 .scroll-viewport { flex: 1; overflow-y: auto; position: relative; }
 .virtual-list { position: relative; width: 100%; }
-.list-item { position: absolute; left: 0; right: 0; padding: 0 16px; box-sizing: border-box; }
+.list-item { position: absolute; left: 0; right: 0; padding: 0 20px; box-sizing: border-box; }
 
-.date-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 8px; border-bottom: 1px solid var(--border-base); background: var(--bg-card); }
-.floating-date-header { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--border-base); background: var(--bg-card); box-shadow: var(--shadow-sm); min-height: 44px; }
-.fh-date { font-weight: 700; color: var(--text-primary); font-size: 15px; }
-.fh-weekday { margin-left: 8px; color: var(--text-tertiary); font-size: 13px; }
-.fh-right { font-size: 12px; color: var(--text-tertiary); }
-.dh-date { font-weight: 700; color: var(--text-primary); font-size: 15px; }
-.dh-weekday { margin-left: 8px; color: var(--text-tertiary); font-size: 13px; }
-.dh-right { font-size: 12px; color: var(--text-tertiary); }
+.date-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 8px 8px; border-bottom: 1px solid var(--border-base); background: var(--bg-card); }
+.floating-date-header { position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--border-base); background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); box-shadow: var(--shadow-sm); }
+.fh-date, .dh-date { font-weight: 700; color: var(--text-primary); font-size: 15px; }
+.fh-weekday, .dh-weekday { margin-left: 8px; color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+.fh-right, .dh-right { font-size: 12px; color: var(--text-tertiary); }
 
-.event-card-wrapper { display: flex; background: var(--bg-card); border-radius: 12px; margin: 4px 0; height: 72px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; box-shadow: var(--shadow-sm); }
-.event-card-wrapper:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-base); }
-.is-selected .event-card-wrapper { background: var(--bg-info); border-color: var(--brand); }
+.event-card-wrapper { display: flex; background: white; border-radius: var(--radius-md); margin: 6px 0; height: 68px; cursor: pointer; border: 1px solid var(--border-base); transition: all 0.2s; }
+.event-card-wrapper:hover { transform: translateX(4px); border-color: var(--brand); box-shadow: var(--shadow-sm); }
+.is-selected .event-card-wrapper { background: var(--bg-info); border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 
 .card-side-bar { width: 4px; border-radius: 4px 0 0 4px; flex-shrink: 0; }
-.card-content { flex: 1; padding: 12px 16px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.card-main { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.card-content { flex: 1; padding: 10px 16px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.card-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .card-title { font-weight: 600; font-size: 15px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-title.is-ended { color: var(--text-tertiary); }
-.card-time { font-size: 13px; color: var(--text-secondary); flex-shrink: 0; }
+.card-time { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; font-weight: 500; }
 .card-time.is-ended { color: var(--text-quaternary); }
-.card-desc { font-size: 12px; color: var(--text-secondary); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-desc.is-ended { color: var(--text-tertiary); }
+.card-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.empty-day { padding: 10px 8px; color: var(--text-quaternary); font-size: 13px; font-style: italic; }
+.empty-day { padding: 12px 8px; color: var(--text-quaternary); font-size: 13px; font-style: italic; }
 .now-bar-wrapper { display: flex; align-items: center; padding: 0 24px; }
-.now-bar-line { flex: 1; height: 2px; background: var(--danger); border-radius: 2px; box-shadow: 0 0 6px rgba(255,77,79,0.4); }
+.now-bar-line { flex: 1; height: 2px; background: var(--danger); border-radius: 2px; box-shadow: 0 0 8px rgba(255,77,79,0.5); }
 
-.agenda-detail-side { width: 380px; flex-shrink: 0; background: var(--bg-card); border-radius: 16px; box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; }
-.detail-header h2 { margin: 0; font-size: 24px; color: var(--text-primary); }
+.agenda-detail-side { width: 380px; flex-shrink: 0; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; border: 1px solid var(--border-base); }
+.detail-header h2 { margin: 0; font-size: 22px; color: var(--text-primary); line-height: 1.3; }
 .detail-meta { margin-top: 12px; }
-.meta-tag { display: inline-block; padding: 2px 10px; background: var(--bg-hover); border-radius: 4px; font-size: 12px; color: var(--text-secondary); }
-.detail-body { margin-top: 32px; display: flex; flex-direction: column; gap: 24px; }
-.detail-row { display: flex; gap: 16px; }
-.detail-row .icon { font-style: normal; font-size: 18px; color: var(--text-secondary); }
-.row-val { font-size: 15px; color: var(--text-primary); line-height: 1.5; }
-.time-range { font-weight: 600; font-size: 17px; }
-.date-val { color: var(--text-secondary); font-size: 14px; margin-top: 2px; }
-.desc-text { white-space: pre-wrap; word-break: break-all; }
-.detail-footer { margin-top: 48px; border-top: 1px solid var(--border-base); padding-top: 24px; display: flex; flex-wrap: wrap; gap: 12px; }
+.meta-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: var(--bg-hover); border-radius: 20px; font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 
-.btn-action { padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-card); cursor: pointer; font-size: 14px; transition: all 0.2s; }
-.btn-action:hover { border-color: var(--brand); color: var(--brand); }
-.btn-danger { border-color: var(--danger); color: var(--danger); }
-.btn-danger:hover { border-color: var(--danger); color: var(--danger); }
-.btn-close { border: none; background: transparent; cursor: pointer; font-size: 22px; color: var(--text-tertiary); padding: 4px 8px; line-height: 1; }
-.btn-close:hover { color: var(--text-primary); }
+.detail-body { margin-top: 32px; display: flex; flex-direction: column; gap: 28px; }
+.detail-row { display: flex; gap: 20px; }
+.detail-icon { color: var(--brand); flex-shrink: 0; margin-top: 2px; opacity: 0.8; }
+.row-val { font-size: 15px; color: var(--text-primary); line-height: 1.5; }
+.time-range { font-weight: 700; font-size: 18px; color: var(--text-primary); }
+.date-val { color: var(--text-secondary); font-size: 14px; margin-top: 2px; font-weight: 500; }
+.desc-text { white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
+
+.detail-footer { margin-top: 48px; border-top: 1px solid var(--border-base); padding-top: 24px; display: flex; flex-wrap: wrap; gap: 10px; }
+.btn-action { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; color: var(--text-secondary); }
+.btn-action:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
+.btn-danger { color: var(--danger); border-color: var(--danger-border); }
+.btn-danger:hover { background: var(--bg-danger); border-color: var(--danger); }
 
 .detail-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-tertiary); text-align: center; }
-.empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+.empty-icon { opacity: 0.15; margin-bottom: 20px; }
+.batch-actions { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.batch-actions .btn-action { justify-content: center; }
 
-.modal-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-.modal-card { background: var(--bg-card); width: 500px; border-radius: 20px; box-shadow: var(--shadow-xl); overflow: hidden; }
-.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; }
-.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-group label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.form-group input, .form-group textarea { padding: 10px 12px; border: 1px solid var(--border-input); border-radius: 8px; font-size: 14px; }
+.modal-card { background: white; border-radius: var(--radius-xl); width: 500px; box-shadow: var(--shadow-xl); overflow: hidden; border: 1px solid var(--glass-border); }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
+.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); transition: .2s; padding: 4px; display: flex; }
+.btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg); }
+
+.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group label { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+.form-group input, .form-group textarea { padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 14px; background: #fafafa; transition: all .2s; }
+.form-group input:focus, .form-group textarea:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); outline: none; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.modal-footer { padding: 16px 24px; background: var(--bg-table-header); display: flex; justify-content: flex-end; gap: 12px; }
-.btn-save { background: var(--brand); color: var(--text-inverse); border: none; padding: 8px 24px; border-radius: 8px; cursor: pointer; }
-.btn-cancel { background: transparent; border: 1px solid var(--border-strong); padding: 8px 24px; border-radius: 8px; cursor: pointer; }
 
-.ctx-menu { position: fixed; z-index: 1100; background: var(--bg-card); border-radius: 8px; box-shadow: var(--shadow-md); padding: 4px; min-width: 140px; }
-.ctx-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; }
-.ctx-item:hover { background: var(--bg-hover); }
-.ctx-item.danger { color: var(--danger); }
+.modal-footer { padding: 20px 24px; background: #fafafa; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--border-base); }
+.btn-save { background: var(--brand); color: var(--text-inverse); border: none; padding: 10px 28px; border-radius: var(--radius-md); cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
+.btn-save:hover { background: var(--brand-hover); }
+.btn-cancel { background: white; border: 1px solid var(--border-strong); padding: 10px 24px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500; color: var(--text-secondary); }
 
-.list-loading { padding: 20px; text-align: center; color: var(--text-tertiary); }
+.ctx-menu { position: fixed; z-index: 1100; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 6px; min-width: 150px; border: 1px solid var(--border-base); }
+.ctx-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; color: var(--text-secondary); }
+.ctx-item:hover { background: var(--brand); color: white; }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
+.ctx-item.danger:hover { background: var(--danger); }
+
+.list-loading { padding: 32px; text-align: center; color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>

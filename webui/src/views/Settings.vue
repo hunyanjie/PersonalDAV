@@ -1,18 +1,21 @@
 <template>
   <div class="settings-container">
-    <div class="settings-nav">
+    <div class="settings-nav glass">
       <button v-for="s in sections" :key="s.id" 
         class="nav-btn" :class="{ active: activeSection === s.id }"
         @click="activeSection = s.id">
-        {{ s.icon }} {{ s.label }}
+        <component :is="s.iconComp" :size="18" /> {{ s.label }}
       </button>
     </div>
 
-    <div class="settings-content">
+    <div class="settings-content glass">
       <!-- Server Settings -->
       <section v-if="activeSection === 'server'" class="config-section">
-        <h3>🚀 服务器核心配置</h3>
-        <div class="info-banner">只读信息，如需修改请编辑配置文件或在 GUI 中调整。</div>
+        <h3><Server :size="20" /> 服务器核心配置</h3>
+        <div class="info-banner">
+          <Info :size="16" />
+          <span>只读信息，如需修改请编辑配置文件或在 GUI 中调整。</span>
+        </div>
         <div class="form-grid">
           <div class="form-item">
             <label>运行主机</label>
@@ -41,8 +44,11 @@
 
       <!-- Mount Settings -->
       <section v-if="activeSection === 'mounts'" class="config-section">
-        <h3>📁 文件挂载点管理</h3>
-        <div class="info-banner">每个挂载点将作为根目录下的一个虚拟目录显示。单挂载点时 / 直接显示文件内容。</div>
+        <h3><FolderTree :size="20" /> 文件挂载点管理</h3>
+        <div class="info-banner">
+          <Info :size="16" />
+          <span>每个挂载点将作为根目录下的一个虚拟目录显示。单挂载点时 / 直接显示文件内容。</span>
+        </div>
         <div class="mount-list" v-if="mounts.length">
           <div class="mount-header">
             <span class="mh-name">挂载名称</span>
@@ -53,15 +59,15 @@
             <span class="mh-name">{{ m.name }}</span>
             <span class="mh-path">{{ m.path }}</span>
             <span class="mh-actions">
-              <button class="btn-edit-sm" @click="startEditMount(m)">编辑</button>
-              <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)">删除</button>
+              <button class="btn-edit-sm" @click="startEditMount(m)"><Pencil :size="12" /> 编辑</button>
+              <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)"><Trash2 :size="12" /> 删除</button>
             </span>
           </div>
         </div>
         <div v-else class="empty-logs">暂无挂载点</div>
 
         <!-- Add Mount Form -->
-        <div class="mount-form" v-if="showMountForm">
+        <div class="mount-form glass" v-if="showMountForm">
           <h4>{{ editingMount ? '编辑挂载点' : '添加挂载点' }}</h4>
           <div class="form-grid">
             <div class="form-item">
@@ -75,15 +81,17 @@
           </div>
           <div class="dialog-actions" style="margin-top:16px">
             <button class="btn-sm" @click="showMountForm = false; editingMount = null">取消</button>
-            <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存</button>
+            <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存挂载点</button>
           </div>
         </div>
-        <button class="btn-tool" @click="showAddMountForm" style="margin-top:12px">+ 添加挂载点</button>
+        <button class="btn-tool btn-primary" @click="showAddMountForm" style="margin-top:12px">
+          <Plus :size="18" /> 添加挂载点
+        </button>
       </section>
 
       <!-- MCP Settings -->
       <section v-if="activeSection === 'mcp'" class="config-section">
-        <h3>🤖 MCP (Model Context Protocol)</h3>
+        <h3><Bot :size="20" /> MCP (Model Context Protocol)</h3>
         <div class="form-grid">
           <div class="form-item full">
             <label class="checkbox-label">
@@ -110,7 +118,7 @@
 
       <!-- App Settings -->
       <section v-if="activeSection === 'app'" class="config-section">
-        <h3>⚙️ 可配置选项</h3>
+        <h3><Sliders :size="20" /> 可配置选项</h3>
         <div class="settings-list">
           <div v-for="def in editableDefs" :key="def.key" class="setting-row">
             <div class="setting-info">
@@ -143,8 +151,8 @@
       <!-- Auth Logs -->
       <section v-if="activeSection === 'logs'" class="config-section">
         <div class="section-header">
-          <h3>🛡️ 鉴权审计日志</h3>
-          <button class="btn-refresh" @click="loadLogs">刷新</button>
+          <h3><ShieldCheck :size="20" /> 鉴权审计日志</h3>
+          <button class="btn-refresh" @click="loadLogs"><RotateCw :size="14" :class="{spinning: loading}" /> 刷新</button>
         </div>
         <div class="logs-wrapper">
           <table v-if="authLogs.length" class="logs-table">
@@ -168,8 +176,8 @@
       <!-- System Logs -->
       <section v-if="activeSection === 'syslogs'" class="config-section">
         <div class="section-header">
-          <h3>📋 系统运行日志</h3>
-          <button class="btn-refresh" @click="loadSystemLogs">刷新</button>
+          <h3><Terminal :size="20" /> 系统运行日志</h3>
+          <button class="btn-refresh" @click="loadSystemLogs"><RotateCw :size="14" :class="{spinning: loading}" /> 刷新</button>
         </div>
         <div class="syslogs-wrapper" ref="syslogContainer">
           <div v-for="(l, i) in systemLogs" :key="i" class="syslog-line" :class="'lv-' + l.level.toLowerCase()">
@@ -184,8 +192,11 @@
 
       <!-- Theme -->
       <section v-if="activeSection === 'theme'" class="config-section">
-        <h3>🎨 主题自定义</h3>
-        <div class="info-banner">选择预设主题或自定义 HSL 调色板。修改后即时生效，自动保存至浏览器本地。</div>
+        <h3><Palette :size="20" /> 主题自定义</h3>
+        <div class="info-banner">
+          <Info :size="16" />
+          <span>选择预设主题或自定义 HSL 调色板。修改后即时生效。</span>
+        </div>
 
         <div class="theme-presets">
           <div class="preset-label">预设色板</div>
@@ -220,8 +231,8 @@
             </div>
           </div>
 
-          <div class="theme-preview">
-            <div class="preview-label">当前品牌色</div>
+          <div class="theme-preview glass">
+            <div class="preview-label">品牌色预览</div>
             <div class="preview-block">
               <div class="preview-swatch" :style="{ background: currentBrandColor }"></div>
               <div class="preview-samples">
@@ -233,7 +244,7 @@
             <div class="preview-code">hsl({{ themeH }}deg {{ themeS }}% {{ themeL }}%)</div>
           </div>
 
-          <button class="btn-sm" @click="resetTheme" style="margin-top:12px">恢复默认蓝色</button>
+          <button class="btn-sm" @click="resetTheme" style="margin-top:20px"><RotateCcw :size="14" /> 恢复默认蓝色</button>
         </div>
       </section>
     </div>
@@ -241,6 +252,11 @@
 </template>
 
 <script>
+import { 
+  Server, Sliders, FolderTree, Bot, ShieldCheck, 
+  Terminal, Palette, Info, Pencil, Trash2, Plus, 
+  RotateCw, RotateCcw
+} from 'lucide-vue-next'
 import api from '../api.js'
 
 const PRESETS = [
@@ -268,16 +284,21 @@ const SETTING_DEFS = [
 ]
 
 export default {
+  components: { 
+    Server, Sliders, FolderTree, Bot, ShieldCheck, 
+    Terminal, Palette, Info, Pencil, Trash2, Plus, 
+    RotateCw, RotateCcw
+  },
   data: () => ({
     activeSection: 'server',
     sections: [
-      { id: 'server', label: '核心配置', icon: '🚀' },
-      { id: 'app', label: '通用选项', icon: '⚙️' },
-      { id: 'mounts', label: '文件挂载', icon: '📁' },
-      { id: 'mcp', label: 'AI 服务', icon: '🤖' },
-      { id: 'logs', label: '安全审计', icon: '🛡️' },
-      { id: 'syslogs', label: '系统日志', icon: '📋' },
-      { id: 'theme', label: '主题', icon: '🎨' },
+      { id: 'server', label: '核心配置', iconComp: 'Server' },
+      { id: 'app', label: '通用选项', iconComp: 'Sliders' },
+      { id: 'mounts', label: '文件挂载', iconComp: 'FolderTree' },
+      { id: 'mcp', label: 'AI 服务', iconComp: 'Bot' },
+      { id: 'logs', label: '安全审计', iconComp: 'ShieldCheck' },
+      { id: 'syslogs', label: '系统日志', iconComp: 'Terminal' },
+      { id: 'theme', label: '视觉主题', iconComp: 'Palette' },
     ],
     serverConfig: {},
     settings: {},
@@ -296,6 +317,7 @@ export default {
     themeS: 88,
     themeL: 52,
     _isCustom: false,
+    loading: false
   }),
   computed: {
     mcpSafetyLabel() {
@@ -328,6 +350,7 @@ export default {
   },
   methods: {
     async load() {
+      this.loading = true
       try { this.serverConfig = await api.serverConfig() } catch(e) {}
       try { 
         const raw = await api.listSettings()
@@ -339,6 +362,7 @@ export default {
       } catch(e) {}
       await this.loadLogs()
       await this.loadSystemLogs()
+      this.loading = false
     },
     async loadLogs() {
       try { this.authLogs = await api.authLogs(30) } catch(e) {}
@@ -476,109 +500,101 @@ export default {
 <style scoped>
 .settings-container { display: flex; height: 100%; gap: 24px; }
 
-.settings-nav { width: 180px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
-.nav-btn { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border: none; background: transparent; border-radius: 8px; cursor: pointer; text-align: left; font-size: 14px; color: var(--text-secondary); transition: .2s; }
-.nav-btn:hover { background: var(--bg-hover); }
-.nav-btn.active { background: var(--brand); color: var(--text-inverse); font-weight: 500; }
+.settings-nav { width: 220px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; background: var(--bg-card); padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-base); box-shadow: var(--shadow-sm); height: fit-content; }
+.nav-btn { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: none; background: transparent; border-radius: var(--radius-md); cursor: pointer; text-align: left; font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: .2s; }
+.nav-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-btn.active { background: var(--brand); color: var(--text-inverse); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
-.settings-content { flex: 1; background: var(--bg-card); border-radius: 12px; box-shadow: var(--shadow-sm); padding: 24px; overflow-y: auto; }
+.settings-content { flex: 1; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; border: 1px solid var(--border-base); }
 
-.config-section h3 { margin: 0 0 20px; font-size: 18px; color: var(--text-primary); }
-.info-banner { background: var(--bg-info); border: 1px solid hsl(var(--brand-hue) 50% 86%); color: var(--brand-hover); padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 24px; }
+.config-section h3 { margin: 0 0 24px; font-size: 20px; color: var(--text-primary); display: flex; align-items: center; gap: 10px; }
+.info-banner { background: var(--bg-info); border: 1px solid hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); color: var(--brand-hover); padding: 12px 16px; border-radius: var(--radius-md); font-size: 14px; margin-bottom: 32px; display: flex; align-items: center; gap: 10px; }
 
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.form-item { display: flex; flex-direction: column; gap: 8px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.form-item { display: flex; flex-direction: column; gap: 10px; }
 .form-item.full { grid-column: span 2; }
-.form-item label { font-size: 13px; color: var(--text-secondary); }
-.form-item input, .form-item select { padding: 10px 12px; border: 1px solid var(--border-input); border-radius: 6px; background: var(--bg-table-header); font-size: 14px; }
-.form-item input:disabled { color: var(--text-secondary); }
+.form-item label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.form-item input, .form-item select { padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); background: #fafafa; font-size: 14px; transition: all .2s; }
+.form-item input:disabled { color: var(--text-secondary); cursor: not-allowed; }
 
-.checkbox-label { display: flex; align-items: center; gap: 10px; color: var(--text-primary) !important; cursor: pointer; }
-.checkbox-label input { width: 18px; height: 18px; }
+.checkbox-label { display: flex; align-items: center; gap: 12px; color: var(--text-primary) !important; cursor: pointer; font-weight: 500; }
+.checkbox-label input { width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--border-input); cursor: pointer; }
 
 .settings-list { display: flex; flex-direction: column; }
-.setting-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--border-base); }
+.setting-row { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid var(--border-base); }
 .setting-info { flex: 1; }
-.setting-label { font-size: 15px; font-weight: 500; color: var(--text-primary); }
-.setting-key { font-size: 12px; color: var(--text-tertiary); font-family: monospace; margin-top: 2px; }
+.setting-label { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.setting-key { font-size: 12px; color: var(--text-tertiary); font-family: monospace; margin-top: 4px; opacity: 0.8; }
 
-.setting-control select { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border-strong); }
-.input-group { display: flex; align-items: center; gap: 8px; }
-.val-text { color: var(--brand); font-weight: 500; }
-.edit-input { width: 120px; padding: 6px 10px; border: 1px solid var(--brand); border-radius: 4px; }
+.setting-control select { padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; }
+.input-group { display: flex; align-items: center; gap: 10px; }
+.val-text { color: var(--brand); font-weight: 700; font-size: 15px; }
+.edit-input { width: 140px; padding: 8px 12px; border: 1px solid var(--brand); border-radius: var(--radius-sm); outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
 
-.btn-tool { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1px solid var(--border-strong); background: var(--bg-card); border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s; }
-.btn-tool:hover { border-color: var(--brand); color: var(--brand); }
-.btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
-.btn-tool.btn-primary:hover { opacity: 0.9; }
+.btn-tool { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: var(--radius-md); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+.btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border: none; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
+.btn-tool.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.3); }
 
-.btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; border: 1px solid var(--border-strong); background: var(--bg-card); cursor: pointer; }
-.btn-sm.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
+.btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: white; cursor: pointer; transition: .2s; }
+.btn-sm:hover { border-color: var(--brand); color: var(--brand); }
+.btn-sm.btn-primary { background: var(--brand); color: var(--text-inverse); border: none; }
 
-.btn-edit-sm, .btn-save-sm, .btn-cancel-sm { padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-strong); background: var(--bg-card); }
-.btn-save-sm { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
-.btn-edit-sm:hover { border-color: var(--brand); color: var(--brand); }
+.btn-edit-sm, .btn-save-sm, .btn-cancel-sm { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border-strong); background: white; transition: .2s; }
+.btn-save-sm { background: var(--brand); color: var(--text-inverse); border: none; }
+.btn-edit-sm:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
 
-.section-header { display: flex; justify-content: space-between; align-items: baseline; }
-.btn-refresh { border: none; background: transparent; color: var(--brand); cursor: pointer; font-size: 13px; }
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.btn-refresh { border: none; background: transparent; color: var(--brand); cursor: pointer; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 8px; border-radius: var(--radius-sm); transition: .2s; }
+.btn-refresh:hover { background: var(--bg-info); }
 
-.logs-wrapper { margin-top: 10px; }
+.spinning { animation: rotate 1s linear infinite; }
+@keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 .logs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.logs-table th { text-align: left; padding: 12px; border-bottom: 2px solid var(--border-base); color: var(--text-secondary); font-weight: 500; }
-.logs-table td { padding: 12px; border-bottom: 1px solid var(--border-base); color: var(--text-secondary); }
+.logs-table th { text-align: left; padding: 14px; border-bottom: 2px solid var(--border-base); color: var(--text-secondary); font-weight: 600; background: #fafafa; }
+.logs-table td { padding: 14px; border-bottom: 1px solid var(--border-base); color: var(--text-secondary); }
 .log-fail { background: var(--bg-danger); }
-.nowrap { white-space: nowrap; }
-.proto-tag { background: var(--bg-hover); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
-.status-dot.ok { background: var(--success); }
-.status-dot.fail { background: var(--danger); }
-.empty-logs { text-align: center; padding: 40px; color: var(--text-quaternary); }
+.proto-tag { background: white; border: 1px solid var(--border-strong); padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.status-dot.ok { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.status-dot.fail { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
 
-.mount-list { border: 1px solid var(--border-base); border-radius: 8px; overflow: hidden; }
-.mount-header, .mount-row { display: flex; padding: 12px 16px; border-bottom: 1px solid var(--border-base); align-items: center; }
-.mount-header { background: var(--bg-table-header); font-weight: 600; color: var(--text-secondary); font-size: 13px; }
-.mount-row:last-child { border-bottom: none; }
+.mount-list { border: 1px solid var(--border-base); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.mount-header, .mount-row { display: flex; padding: 14px 20px; border-bottom: 1px solid var(--border-base); align-items: center; }
+.mount-header { background: #fafafa; font-weight: 700; color: var(--text-secondary); font-size: 13px; }
 .mount-row.editing { background: var(--bg-info); }
-.mh-name { width: 30%; }
-.mh-path { flex: 1; color: var(--text-secondary); font-family: monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mh-actions { width: 120px; text-align: right; display: flex; gap: 6px; justify-content: flex-end; }
-.btn-danger { color: var(--danger); border-color: var(--danger); }
-.mount-form { margin-top: 20px; padding: 20px; background: var(--bg-table-header); border-radius: 8px; border: 1px solid var(--border-base); }
-.mount-form h4 { margin: 0 0 16px; }
+.mh-name { width: 30%; font-weight: 600; color: var(--text-primary); }
+.mh-path { flex: 1; color: var(--text-secondary); font-family: monospace; font-size: 13px; opacity: 0.8; }
+.mh-actions { width: 160px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
 
-.syslogs-wrapper { margin-top: 16px; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; height: 400px; overflow-y: auto; line-height: 1.6; }
-.syslog-line { margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }
-.sl-time { color: #888; margin-right: 8px; }
-.sl-lv { font-weight: bold; margin-right: 8px; }
-.sl-name { color: #569cd6; margin-right: 8px; }
-.lv-info .sl-lv { color: #52c41a; }
-.lv-warning .sl-lv { color: #faad14; }
-.lv-error .sl-lv { color: #f5222d; }
-.lv-debug .sl-lv { color: #888; }
+.mount-form { margin-top: 24px; padding: 28px; background: #fafafa; border-radius: var(--radius-lg); border: 1px solid var(--border-base); }
+.mount-form h4 { margin: 0 0 20px; font-size: 16px; }
 
-/* Theme */
-.theme-presets { margin-bottom: 28px; }
-.preset-label { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
-.preset-grid { display: flex; gap: 12px; flex-wrap: wrap; }
-.preset-btn { width: 36px; height: 36px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: .2s; outline: none; flex-shrink: 0; }
-.preset-btn:hover { transform: scale(1.15); }
-.preset-btn.active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-card); }
+.syslogs-wrapper { margin-top: 16px; background: #1a1a1a; color: #e0e0e0; padding: 20px; border-radius: var(--radius-lg); font-family: 'Fira Code', 'Courier New', monospace; font-size: 12px; height: 500px; overflow-y: auto; line-height: 1.6; border: 4px solid #2a2a2a; }
+.syslog-line { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.sl-time { color: #666; margin-right: 12px; }
+.sl-lv { font-weight: 700; margin-right: 12px; display: inline-block; min-width: 60px; }
+.sl-name { color: #4fc3f7; margin-right: 12px; }
+.lv-info .sl-lv { color: #4caf50; }
+.lv-warning .sl-lv { color: #ffb300; }
+.lv-error .sl-lv { color: #f44336; }
 
-.theme-custom h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 16px; }
-.hsl-row { margin-bottom: 16px; }
-.hsl-row label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
-.hsl-val { font-family: monospace; font-size: 12px; color: var(--text-tertiary); }
-.slider-track { height: 24px; border-radius: 12px; position: relative; overflow: hidden; }
-.hue-track { border-radius: 12px; }
-.hsl-range { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; cursor: pointer; position: absolute; top: 0; left: 0; margin: 0; }
-.hsl-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--text-primary); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
-.hsl-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--text-primary); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.theme-presets { margin-bottom: 32px; }
+.preset-label { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
+.preset-grid { display: flex; gap: 14px; flex-wrap: wrap; }
+.preset-btn { width: 40px; height: 40px; border-radius: 12px; border: 3px solid transparent; cursor: pointer; transition: .2s; outline: none; }
+.preset-btn:hover { transform: scale(1.15) rotate(5deg); }
+.preset-btn.active { border-color: var(--text-primary); box-shadow: 0 0 0 4px var(--bg-info); }
 
-.theme-preview { margin-top: 20px; padding: 16px; background: var(--bg-page); border-radius: 8px; }
-.preview-label { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
-.preview-block { display: flex; align-items: center; gap: 16px; }
-.preview-swatch { width: 48px; height: 48px; border-radius: 8px; border: 1px solid var(--border-base); flex-shrink: 0; }
-.preview-samples { display: flex; gap: 8px; }
-.sample { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-base); }
-.preview-code { font-family: monospace; font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
+.hsl-row { margin-bottom: 24px; }
+.hsl-row label { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+.hsl-val { font-family: monospace; font-size: 14px; color: var(--brand); font-weight: 700; }
+.slider-track { height: 28px; border-radius: 14px; position: relative; overflow: hidden; border: 1px solid rgba(0,0,0,0.05); }
+.hsl-range { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; cursor: pointer; position: absolute; top: 0; left: 0; margin: 0; z-index: 2; }
+.hsl-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: white; border: 3px solid var(--text-primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+
+.theme-preview { margin-top: 32px; padding: 24px; background: #fafafa; border-radius: var(--radius-lg); border: 1px solid var(--border-base); }
+.preview-label { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
+.preview-block { display: flex; align-items: center; gap: 24px; }
+.preview-swatch { width: 64px; height: 64px; border-radius: var(--radius-md); border: 2px solid white; box-shadow: var(--shadow-md); flex-shrink: 0; }
 </style>

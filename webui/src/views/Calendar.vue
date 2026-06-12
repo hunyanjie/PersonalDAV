@@ -1,58 +1,81 @@
 <template>
-  <div>
-    <div class="toolbar">
-      <button class="btn-plain" @click="monthOffset-=12">&lt;&lt;</button>
-      <button class="btn-plain" @click="monthOffset--">&lt; 上月</button>
-      <span class="month-label">{{ year }} 年 {{ month }} 月</span>
-      <button class="btn-plain" @click="monthOffset++">下月 &gt;</button>
-      <button class="btn-plain" @click="monthOffset+=12">&gt;&gt;</button>
-      <span style="flex:1" />
-      <input v-model="jumpDate" type="date" class="date-input" @change="jumpToDate" />
-      <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
-      <label class="btn-primary btn-import">
-        📥 导入 .ics
-        <input type="file" accept=".ics" @change="doImportICS" hidden />
-      </label>
-      <router-link to="/calendar/new" class="btn-primary">+ 新建</router-link>
+  <div class="calendar-page">
+    <div class="toolbar glass">
+      <div class="nav-controls">
+        <button class="btn-icon" @click="monthOffset-=12" title="上一年"><ChevronsLeft :size="18" /></button>
+        <button class="btn-nav" @click="monthOffset--"><ChevronLeft :size="18" /> 上月</button>
+        <span class="month-label">{{ year }} 年 {{ month }} 月</span>
+        <button class="btn-nav" @click="monthOffset++">下月 <ChevronRight :size="18" /></button>
+        <button class="btn-icon" @click="monthOffset+=12" title="下一年"><ChevronsRight :size="18" /></button>
+      </div>
+      
+      <div class="toolbar-right">
+        <input v-model="jumpDate" type="date" class="date-input" @change="jumpToDate" />
+        <div class="search-box">
+          <Search :size="16" class="search-icon" />
+          <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
+        </div>
+        <label class="btn-tool btn-import">
+          <Download :size="18" /> 导入
+          <input type="file" accept=".ics" @change="doImportICS" hidden />
+        </label>
+        <router-link to="/calendar/new" class="btn-tool btn-primary">
+          <Plus :size="18" /> 新建
+        </router-link>
+      </div>
     </div>
-    <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
-    <!-- Month Grid -->
-    <table class="cal-table">
-      <thead><tr><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th><th>日</th></tr></thead>
-      <tbody>
-        <tr v-for="(week, wi) in weeks" :key="wi">
-          <td v-for="(day, di) in week" :key="di"
-            :class="cellClass(day)"
-            @click="day.current && selectDay(day)">
-            <div class="day-num">{{ day.day }}</div>
-            <div class="event-dots">
-              <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div v-if="errorMsg" class="error-banner">
+      <AlertCircle :size="16" /> {{ errorMsg }}
+    </div>
 
-    <!-- Timeline + Event List -->
-    <div v-if="selectedDay && !searchQuery" class="day-panel">
+    <div class="calendar-grid-wrapper glass">
+      <table class="cal-table">
+        <thead>
+          <tr><th v-for="d in ['一','二','三','四','五','六','日']" :key="d">{{ d }}</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(week, wi) in weeks" :key="wi">
+            <td v-for="(day, di) in week" :key="di"
+              :class="cellClass(day)"
+              @click="day.current && selectDay(day)">
+              <div class="day-cell-content">
+                <div class="day-num">{{ day.day }}</div>
+                <div class="event-dots">
+                  <span v-for="e in day.events.slice(0, 4)" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
+                  <span v-if="day.events.length > 4" class="dot-more">+{{ day.events.length - 4 }}</span>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Day Panel (Schedule style) -->
+    <div v-if="selectedDay && !searchQuery" class="day-panel glass">
       <div class="panel-header">
-        <span class="panel-date">{{ selectedDay.year }}-{{ pad(selectedDay.month) }}-{{ pad(selectedDay.day) }}</span>
-        <button class="btn-sm" @click="exportDay">导出今日日程</button>
+        <div class="panel-title">
+          <CalendarDays :size="20" class="title-icon" />
+          <span class="panel-date">{{ selectedDay.year }}年{{ pad(selectedDay.month) }}月{{ pad(selectedDay.day) }}日</span>
+        </div>
+        <button class="btn-sm" @click="exportDay"><Share2 :size="14" /> 导出今日</button>
       </div>
 
       <!-- Timeline -->
-      <div class="timeline" ref="timeline">
-        <div class="tl-hours">
-          <div v-for="h in 24" :key="h" class="tl-hour-label">{{ h }}</div>
+      <div class="timeline-container">
+        <div class="timeline" ref="timeline">
+          <div class="tl-hours">
+            <div v-for="h in 24" :key="h" class="tl-hour-label">{{ h }}</div>
+          </div>
+          <div class="tl-now-bar" :style="{ left: nowLeft }" v-if="isTodaySelected"></div>
+          <div v-for="e in dayEvents" :key="e.uid"
+            class="tl-dot"
+            :class="{ 'tl-dot-past': isEventPast(e) }"
+            :style="{ left: eventLeft(e) }"
+            :title="e.summary"
+            @click.stop="openDetail(e)" />
         </div>
-        <div class="tl-now-bar" :style="{ left: nowLeft }" v-if="isTodaySelected"></div>
-        <div v-for="e in dayEvents" :key="e.uid"
-          class="tl-dot"
-          :class="{ 'tl-dot-past': isEventPast(e) }"
-          :style="{ left: eventLeft(e) }"
-          :title="e.summary"
-          @click.stop="openDetail(e)" />
       </div>
 
       <!-- Event Cards -->
@@ -65,48 +88,80 @@
           @contextmenu.prevent="onContextMenu(e, $event)">
           <div class="card-side" :style="cardSideStyle(e)" />
           <div class="card-body">
-            <div class="card-title">{{ e.summary || '(无标题)' }}</div>
-            <div class="card-time">{{ formatTime(e.dtstart) }} - {{ formatTime(e.dtend) }}</div>
+            <div class="card-main">
+              <div class="card-title">{{ e.summary || '(无标题)' }}</div>
+              <div class="card-time"><Clock :size="12" /> {{ formatTime(e.dtstart) }} - {{ formatTime(e.dtend) }}</div>
+            </div>
             <div v-if="e.description" class="card-desc">{{ e.description }}</div>
           </div>
         </div>
-        <div v-if="!dayEvents.length" class="empty-hint">当日无日程</div>
+        <div v-if="!dayEvents.length" class="empty-day-hint">当日无日程，点击「新建」添加</div>
       </div>
     </div>
 
     <!-- Context Menu -->
-    <div v-if="ctxMenu.show" class="ctx-menu" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
-      <div class="ctx-item" @click="exportSelected">分享/导出</div>
-      <div class="ctx-item" @click="editSelected" :class="{ disabled: ctxMenu.uids.length !== 1 }">编辑</div>
-      <div class="ctx-item danger" @click="deleteSelected">删除</div>
+    <div v-if="ctxMenu.show" class="ctx-menu glass" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
+      <div class="ctx-item" @click="exportSelected"><Share2 :size="14" /> 分享/导出</div>
+      <div class="ctx-item" @click="editSelected" :class="{ disabled: ctxMenu.uids.length !== 1 }"><Pencil :size="14" /> 编辑</div>
+      <div class="ctx-divider"></div>
+      <div class="ctx-item danger" @click="deleteSelected"><Trash2 :size="14" /> 删除</div>
     </div>
 
     <!-- Detail Modal -->
     <div v-if="detailEvent" class="modal-overlay" @click.self="detailEvent = null">
-      <div class="modal-card">
+      <div class="modal-card glass">
         <div class="modal-header">
           <h3>{{ detailEvent.summary || '(无标题)' }}</h3>
-          <button class="btn-plain close-btn" @click="detailEvent = null">&times;</button>
+          <button class="btn-close-circle" @click="detailEvent = null"><X :size="20" /></button>
         </div>
         <div class="modal-body">
-          <div class="modal-row"><label>时间</label><span>{{ formatTime(detailEvent.dtstart) }} - {{ formatTime(detailEvent.dtend) }}</span></div>
-          <div v-if="detailEvent.description" class="modal-row"><label>描述</label><span>{{ detailEvent.description }}</span></div>
-          <div v-if="detailEvent.location" class="modal-row"><label>地点</label><span>{{ detailEvent.location }}</span></div>
-          <div v-if="detailEvent.categories" class="modal-row"><label>分类</label><span>{{ detailEvent.categories }}</span></div>
+          <div class="modal-row">
+            <Clock :size="18" class="row-icon" />
+            <div class="row-content">
+              <div class="row-val">{{ formatTime(detailEvent.dtstart) }} - {{ formatTime(detailEvent.dtend) }}</div>
+              <div class="row-label">{{ formatDateFull(detailEvent.dtstart) }}</div>
+            </div>
+          </div>
+          <div v-if="detailEvent.location" class="modal-row">
+            <MapPin :size="18" class="row-icon" />
+            <div class="row-content">
+              <div class="row-val">{{ detailEvent.location }}</div>
+            </div>
+          </div>
+          <div v-if="detailEvent.categories" class="modal-row">
+            <Layers :size="18" class="row-icon" />
+            <div class="row-content">
+              <div class="row-val">{{ detailEvent.categories }}</div>
+            </div>
+          </div>
+          <div v-if="detailEvent.description" class="modal-row">
+            <FileText :size="18" class="row-icon" />
+            <div class="row-content">
+              <div class="row-val desc-text">{{ detailEvent.description }}</div>
+            </div>
+          </div>
         </div>
-        <div class="modal-actions">
-          <button class="btn-sm" @click="exportSingle(detailEvent)">分享/导出</button>
-          <router-link :to="`/calendar/${detailEvent.uid}/edit`" class="btn-sm">编辑</router-link>
-          <button class="btn-sm btn-danger" @click="deleteSingle(detailEvent)">删除</button>
+        <div class="modal-footer">
+          <button class="btn-action" @click="exportSingle(detailEvent)"><Share2 :size="14" /> 导出</button>
+          <router-link :to="`/calendar/${detailEvent.uid}/edit`" class="btn-action"><Pencil :size="14" /> 编辑</router-link>
+          <button class="btn-action btn-danger" @click="deleteSingle(detailEvent)"><Trash2 :size="14" /> 删除</button>
         </div>
       </div>
     </div>
 
-    <p v-if="!events.length && !errorMsg && !selectedDay" class="empty-hint">当前月份无日程</p>
+    <div v-if="!events.length && !errorMsg && !selectedDay" class="empty-hint">
+      <CalendarIcon :size="48" class="empty-icon" />
+      <p>当前月份无日程</p>
+    </div>
   </div>
 </template>
 
 <script>
+import { 
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
+  Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
+  MapPin, Layers, FileText, X, Calendar as CalendarIcon
+} from 'lucide-vue-next'
 import api from '../api.js'
 
 function pad(n) { return String(n).padStart(2, '0') }
@@ -146,6 +201,11 @@ function eventStatus(e, now) {
 }
 
 export default {
+  components: { 
+    ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
+    Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
+    MapPin, Layers, FileText, X, CalendarIcon
+  },
   data: () => ({
     events: [],
     monthOffset: 0,
@@ -177,10 +237,6 @@ export default {
     },
     todayDate() {
       return { year: this.currentTime.getFullYear(), month: this.currentTime.getMonth() + 1, day: this.currentTime.getDate() }
-    },
-    nowMonth() {
-      const d = this.currentTime
-      return new Date(d.getFullYear(), d.getMonth(), 1)
     },
     calNow() { const d = this.currentTime; return new Date(d.getFullYear(), d.getMonth() + this.monthOffset, 1) },
     year() { return this.calNow.getFullYear() },
@@ -253,11 +309,6 @@ export default {
       const et = icalDateToObj(e.dtend)
       return et && et < this.currentTime
     },
-    isEventEndedToday(e) {
-      if (!this.isTodaySelected) return false
-      const et = icalDateToObj(e.dtend)
-      return et && et <= this.currentTime
-    },
     selectToday() {
       if (this.selectedDay) return
       const today = this.todayDate
@@ -305,16 +356,12 @@ export default {
       if (isNaN(d.getTime())) return
       this.monthOffset = (d.getFullYear() - new Date().getFullYear()) * 12 + (d.getMonth() - new Date().getMonth())
     },
-
-    // Timeline
     eventLeft(e) {
       const st = icalDateToObj(e.dtstart)
       if (!st) return '0%'
       const h = toHours(st)
       return ((h / 24) * 100) + '%'
     },
-
-    // Event card styling
     eventCardClass(e) {
       const st = eventStatus(e, this.currentTime)
       const endStr = icalDateToStr(e.dtend) || icalDateToStr(e.dtstart)
@@ -331,43 +378,30 @@ export default {
       const endStr = icalDateToStr(e.dtend) || icalDateToStr(e.dtstart)
       const isPastDay = endStr < this.todayStr
       if (st === 'ended' || isPastDay) return { background: '#d9d9d9' }
-      if (st === 'upcoming') return { background: 'var(--theme,#1677ff)' }
+      if (st === 'upcoming') return { background: 'var(--brand)' }
       
       const stDate = icalDateToObj(e.dtstart)
       const etDate = icalDateToObj(e.dtend)
-      if (!stDate || !etDate) return { background: 'var(--theme,#1677ff)' }
+      if (!stDate || !etDate) return { background: 'var(--brand)' }
       const total = etDate.getTime() - stDate.getTime()
       const elapsed = this.currentTime.getTime() - stDate.getTime()
       const pct = total > 0 ? Math.min(elapsed / total * 100, 100) : 100
-      return { background: `linear-gradient(to bottom, #d9d9d9 ${pct}%, var(--theme,#1677ff) ${pct}%)` }
+      return { background: `linear-gradient(to bottom, #d9d9d9 ${pct}%, var(--brand) ${pct}%)` }
     },
     formatTime(s) {
       const d = icalDateToObj(s)
       if (!d) return s || ''
-      const h = d.getHours()
-      const m = pad(d.getMinutes())
-      const ampm = h < 12 ? '上午' : '下午'
-      const h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h)
-      return `${ampm} ${h12}:${m}`
+      return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     },
-
-    // Card selection + multi-select
+    formatDateFull(s) {
+      const d = icalDateToObj(s)
+      return d ? d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }) : ''
+    },
     onCardClick(e, ev) {
       if (ev.ctrlKey || ev.metaKey) {
         const idx = this.selectedUids.indexOf(e.uid)
         if (idx >= 0) this.selectedUids.splice(idx, 1)
         else this.selectedUids.push(e.uid)
-        return
-      }
-      if (ev.shiftKey && this.selectedUids.length) {
-        const all = this.dayEvents.map(x => x.uid)
-        const lastIdx = all.indexOf(this.selectedUids[this.selectedUids.length - 1])
-        const curIdx = all.indexOf(e.uid)
-        if (lastIdx >= 0 && curIdx >= 0) {
-          const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx]
-          const range = all.slice(start, end + 1)
-          this.selectedUids = [...new Set([...this.selectedUids, ...range])]
-        }
         return
       }
       this.selectedUids = [e.uid]
@@ -380,11 +414,7 @@ export default {
       this.ctxMenu = { show: true, x: ev.clientX, y: ev.clientY, uids: [...this.selectedUids] }
     },
     onClickAway() { this.ctxMenu.show = false },
-
-    // Detail modal
     openDetail(e) { this.detailEvent = e; this.ctxMenu.show = false },
-
-    // Export
     _toICS(events) {
       const vevents = events.map(e => [
         'BEGIN:VEVENT',
@@ -460,80 +490,140 @@ export default {
 </script>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.search-input { padding: 6px 12px; border: 1px solid var(--border-input); border-radius: 6px; font-size: 13px; width: 180px; }
-.date-input { padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 13px; }
-.btn-plain { padding: 6px 14px; border: 1px solid var(--border-strong); background: var(--bg-card); border-radius: 6px; cursor: pointer; font-size: 13px; }
-.month-label { font-size: 16px; font-weight: bold; min-width: 140px; text-align: center; }
-.btn-primary { padding: 8px 16px; background: var(--brand); color: var(--text-inverse); text-decoration: none; border-radius: 6px; font-size: 14px; display: inline-flex; align-items: center; }
-.btn-import { cursor: pointer; }
-.error-banner { background: var(--bg-danger); border: 1px solid var(--danger-border-strong); border-radius: 6px; padding: 8px 16px; color: var(--danger-text); margin-bottom: 12px; font-size: 13px; }
-.empty-hint { text-align: center; color: var(--text-tertiary); padding: 24px; font-size: 14px; }
+.calendar-page { display: flex; flex-direction: column; gap: 16px; height: 100%; }
 
-/* Month Grid */
-.cal-table { width: 100%; background: var(--bg-card); border-radius: 8px; border-collapse: collapse; box-shadow: var(--shadow-sm); }
-.cal-table th { background: var(--bg-table-header); padding: 8px; font-size: 13px; text-align: center; }
-.cal-table td { padding: 6px; text-align: center; vertical-align: top; height: 64px; cursor: pointer; border-bottom: 1px solid var(--border-base); transition: background .15s; }
-.cal-table td.other-month { color: var(--text-quaternary); }
-.cal-table td.past-day { background: #f9f9f9; }
+.toolbar { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  background: var(--bg-card); 
+  padding: 12px 20px; 
+  border-radius: var(--radius-lg); 
+  box-shadow: var(--shadow-sm); 
+  border: 1px solid var(--border-base);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.nav-controls { display: flex; align-items: center; gap: 8px; }
+.btn-nav { 
+  padding: 8px 16px; 
+  border: 1px solid var(--border-strong); 
+  background: white; 
+  border-radius: var(--radius-sm); 
+  cursor: pointer; 
+  font-size: 14px; 
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  transition: .2s;
+}
+.btn-nav:hover { border-color: var(--brand); color: var(--brand); }
+.month-label { font-size: 18px; font-weight: 700; min-width: 140px; text-align: center; color: var(--text-primary); }
+
+.toolbar-right { display: flex; align-items: center; gap: 10px; }
+.search-box { position: relative; width: 200px; }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
+.search-input { width: 100%; padding: 8px 12px 8px 32px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); font-size: 13px; }
+.date-input { padding: 7px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); font-size: 13px; }
+
+.btn-tool { 
+  display: flex; 
+  align-items: center; 
+  gap: 6px; 
+  padding: 8px 16px; 
+  border: 1px solid var(--border-strong); 
+  background: white; 
+  border-radius: var(--radius-sm); 
+  cursor: pointer; 
+  font-size: 14px; 
+  text-decoration: none;
+  color: var(--text-secondary);
+  transition: .2s;
+}
+.btn-tool:hover { border-color: var(--brand); color: var(--brand); }
+.btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
+
+.calendar-grid-wrapper { 
+  background: var(--bg-card); 
+  border-radius: var(--radius-lg); 
+  padding: 1px; 
+  overflow: hidden; 
+  border: 1px solid var(--border-base);
+  box-shadow: var(--shadow-sm);
+}
+
+.cal-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.cal-table th { background: var(--bg-table-header); padding: 12px; font-size: 13px; font-weight: 600; color: var(--text-secondary); text-align: center; border-bottom: 1px solid var(--border-base); }
+.cal-table td { padding: 0; text-align: center; vertical-align: top; height: 100px; cursor: pointer; border-bottom: 1px solid var(--border-base); border-right: 1px solid var(--border-base); transition: background .15s; position: relative; }
+.cal-table td:last-child { border-right: none; }
+.cal-table tr:last-child td { border-bottom: none; }
+
+.day-cell-content { height: 100%; display: flex; flex-direction: column; padding: 10px; }
+.day-num { font-size: 16px; font-weight: 500; color: var(--text-secondary); }
+.cal-table td.other-month { opacity: 0.3; background: #fafafa; pointer-events: none; }
 .cal-table td.past-day .day-num { color: var(--text-quaternary); }
-.cal-table td.has-event { background: var(--bg-info); border-bottom: 3px solid var(--brand); }
-.cal-table td.selected .day-num { border: 2px solid var(--brand); color: var(--brand); border-radius: 50%; width: 28px; height: 28px; line-height: 24px; display: inline-block; }
-.cal-table td.today .day-num { background: var(--brand); color: var(--text-inverse); border-radius: 50%; width: 28px; height: 28px; line-height: 28px; display: inline-block; }
-.day-num { font-size: 15px; font-weight: 500; display: inline-block; }
-.event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 4px; }
-.dot { width: 6px; height: 6px; background: var(--brand); border-radius: 50%; display: inline-block; }
-.dot.dot-past { background: var(--text-quaternary); }
+.cal-table td.today { background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.03); }
+.cal-table td.today .day-num { background: var(--brand); color: white; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; margin: 0 auto; }
+.cal-table td.selected { background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.08); }
+.cal-table td.selected::after { content: ''; position: absolute; inset: 0; border: 2px solid var(--brand); pointer-events: none; }
 
-/* Day panel */
-.day-panel { margin-top: 16px; background: var(--bg-card); border-radius: 8px; padding: 16px; box-shadow: var(--shadow-sm); }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.panel-date { font-size: 16px; font-weight: bold; }
+.event-dots { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: auto; padding-bottom: 4px; }
+.dot { width: 6px; height: 6px; background: var(--brand); border-radius: 50%; }
+.dot-past { background: var(--text-quaternary); }
+.dot-more { font-size: 10px; color: var(--brand); font-weight: 600; }
 
-/* Timeline */
-.timeline { height: 40px; margin-bottom: 16px; position: relative; user-select: none; }
+.day-panel { margin-top: 16px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-md); border: 1px solid var(--border-base); }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.panel-title { display: flex; align-items: center; gap: 10px; }
+.title-icon { color: var(--brand); }
+.panel-date { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+
+.timeline-container { padding: 0 10px; margin-bottom: 24px; }
+.timeline { height: 48px; background: #f8f9fa; border-radius: var(--radius-md); position: relative; border: 1px solid var(--border-base); }
 .tl-hours { display: flex; height: 100%; width: 100%; }
-.tl-hour-label { flex: 1; text-align: center; font-size: 11px; color: var(--text-tertiary); border-left: 1px solid #eee; padding-top: 2px; }
-.tl-dot { position: absolute; top: 16px; width: 10px; height: 10px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 1; }
-.tl-dot.tl-dot-past { background: var(--text-quaternary); }
-.tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--brand-hover); z-index: 2; pointer-events: none; transition: left 2s linear; }
+.tl-hour-label { flex: 1; text-align: center; font-size: 10px; color: var(--text-tertiary); border-left: 1px solid rgba(0,0,0,0.03); padding-top: 4px; font-family: monospace; }
+.tl-dot { position: absolute; top: 20px; width: 12px; height: 12px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 1; box-shadow: 0 0 0 3px white; border: 1px solid var(--brand); }
+.tl-dot:hover { transform: translateX(-50%) scale(1.3); z-index: 5; }
+.tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); z-index: 2; pointer-events: none; }
 
-/* Event Cards */
-.event-cards { display: flex; flex-direction: column; gap: 8px; }
-.event-card { display: flex; border-radius: 8px; overflow: hidden; cursor: pointer; border: 1px solid var(--border-base); transition: box-shadow .15s, border-color .15s; }
-.event-card:hover { box-shadow: var(--shadow-md); }
-.event-card.card-selected { border-color: var(--brand); }
+.event-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.event-card { display: flex; background: white; border-radius: var(--radius-md); border: 1px solid var(--border-base); overflow: hidden; cursor: pointer; transition: all .2s; }
+.event-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--brand); }
+.event-card.card-selected { border-color: var(--brand); background: var(--bg-info); }
 .card-side { width: 4px; flex-shrink: 0; }
-.card-body { flex: 1; padding: 10px 14px; min-width: 0; }
-.card-title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-time { font-size: 13px; margin-top: 2px; }
-.card-desc { font-size: 12px; color: var(--text-secondary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-ended .card-title { color: var(--text-tertiary); }
-.card-ended .card-time { color: var(--text-quaternary); }
-.card-ended .card-desc { color: var(--text-tertiary); }
-.card-ongoing .card-title { color: #000; }
-.card-ongoing .card-time { color: var(--text-primary); }
-.card-upcoming .card-title { color: #000; }
-.card-upcoming .card-time { color: var(--text-primary); }
+.card-body { flex: 1; padding: 14px 16px; min-width: 0; }
+.card-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.card-title { font-weight: 600; font-size: 15px; color: var(--text-primary); }
+.card-time { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 
-/* Context Menu */
-.ctx-menu { position: fixed; z-index: 1000; background: var(--bg-card); border: 1px solid var(--border-base); border-radius: 6px; box-shadow: var(--shadow-md); min-width: 120px; padding: 4px 0; }
-.ctx-item { padding: 8px 16px; font-size: 13px; cursor: pointer; }
-.ctx-item:hover { background: var(--bg-hover); }
-.ctx-item.disabled { color: var(--text-tertiary); cursor: default; }
-.ctx-item.danger { color: var(--danger-text); }
-.ctx-item.danger:hover { background: var(--bg-danger); }
+.empty-day-hint { grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-tertiary); font-style: italic; }
 
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; }
-.modal-card { background: var(--bg-card); border-radius: 12px; min-width: 360px; max-width: 480px; box-shadow: var(--shadow-lg); overflow: hidden; }
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-base); }
-.modal-header h3 { margin: 0; font-size: 16px; }
-.modal-body { padding: 16px 20px; }
-.modal-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: 14px; }
-.modal-row label { color: var(--text-secondary); min-width: 48px; flex-shrink: 0; }
-.modal-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border-base); }
-.btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; border: 1px solid var(--border-strong); background: var(--bg-card); cursor: pointer; }
-.modal-actions .btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; text-decoration: none; border: 1px solid var(--border-strong); background: var(--bg-card); cursor: pointer; }
-.btn-danger { color: var(--danger-text); border-color: var(--danger-border); }
+.ctx-menu { position: fixed; z-index: 1000; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid var(--border-base); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 160px; padding: 6px; }
+.ctx-item { padding: 10px 14px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px; border-radius: var(--radius-sm); color: var(--text-secondary); }
+.ctx-item:hover { background: var(--brand); color: white; }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
+.ctx-item.danger:hover { background: var(--danger); }
+
+.modal-card { background: white; border-radius: var(--radius-lg); min-width: 400px; max-width: 520px; box-shadow: var(--shadow-xl); overflow: hidden; }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
+.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); display: flex; transition: .2s; }
+.btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg); }
+
+.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.modal-row { display: flex; gap: 16px; }
+.row-icon { color: var(--brand); margin-top: 2px; flex-shrink: 0; }
+.row-val { font-size: 16px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
+.row-label { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.desc-text { white-space: pre-wrap; font-weight: normal; font-size: 14px; color: var(--text-secondary); }
+
+.modal-footer { padding: 16px 24px; background: #fafafa; border-top: 1px solid var(--border-base); display: flex; gap: 12px; justify-content: flex-end; }
+.btn-action { padding: 8px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px; transition: .2s; }
+.btn-action:hover { border-color: var(--brand); color: var(--brand); }
+.btn-danger { color: var(--danger); border-color: var(--danger-border); }
+.btn-danger:hover { background: var(--bg-danger); }
+
+.empty-hint { text-align: center; padding: 100px 0; color: var(--text-quaternary); }
+.empty-icon { margin-bottom: 16px; opacity: 0.2; }
 </style>

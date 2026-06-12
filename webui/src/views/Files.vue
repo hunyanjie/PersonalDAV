@@ -1,10 +1,10 @@
 <template>
   <div class="files-container">
-    <div class="toolbar">
+    <div class="toolbar glass">
       <div class="breadcrumb-bar">
-        <button class="btn-crumb" @click="cd('')">根目录</button>
+        <button class="btn-crumb" @click="cd('')"><Home :size="16" /> 根目录</button>
         <div v-for="(seg, i) in breadcrumbs" :key="i" class="crumb-item">
-          <span class="sep">/</span>
+          <ChevronRight :size="14" class="sep" />
           <button class="btn-crumb" :class="{ 'is-last': i === breadcrumbs.length - 1 }" @click="cd(seg.path)">
             {{ seg.name }}
           </button>
@@ -12,25 +12,26 @@
       </div>
       <div class="toolbar-actions">
         <button class="btn-tool" @click="showNewFolder = true">
-          <span class="icon">📁</span>+ 目录
+          <FolderPlus :size="18" /> 目录
         </button>
         <label class="btn-tool btn-primary">
-          <span class="icon">📤</span> 上传
+          <Upload :size="18" /> 上传
           <input type="file" multiple @change="doUpload" hidden />
         </label>
         <button class="btn-tool" @click="load">
-          <span class="icon">🔄</span> 刷新
+          <RotateCw :size="18" :class="{ 'spinning': loading }" />
         </button>
       </div>
     </div>
 
     <div v-if="errorMsg" class="error-alert">
-      <span class="icon">⚠️</span> {{ errorMsg }}
+      <AlertCircle :size="18" /> {{ errorMsg }}
       <button class="btn-close" @click="errorMsg = ''">&times;</button>
     </div>
 
+    <!-- Modals (rest of logic same, just styling updates) -->
     <div v-if="showNewFolder" class="inline-modal-overlay" @click.self="showNewFolder = false">
-      <div class="inline-dialog">
+      <div class="inline-dialog glass">
         <h3>创建新目录</h3>
         <input v-model="newFolderName" placeholder="请输入目录名称" @keyup.enter="doMkdir" autofocus />
         <div class="dialog-actions">
@@ -43,14 +44,14 @@
     <div v-if="dragOver" class="dropzone-overlay"
       @dragenter.prevent @dragover.prevent @dragleave.prevent="dragOver = false"
       @drop.prevent="onDrop">
-      <div class="dropzone-content">
-        <div class="drop-icon">📤</div>
+      <div class="dropzone-content glass">
+        <div class="drop-icon"><Upload :size="48" /></div>
         <p>释放以上传文件</p>
       </div>
     </div>
 
     <div v-if="renaming" class="inline-modal-overlay" @click.self="renaming = null">
-      <div class="inline-dialog">
+      <div class="inline-dialog glass">
         <h3>重命名</h3>
         <input v-model="renameName" placeholder="请输入新名称" @keyup.enter="doRename" autofocus />
         <div class="dialog-actions">
@@ -62,10 +63,10 @@
 
     <!-- Preview Modal -->
     <div v-if="previewItem" class="inline-modal-overlay" @click.self="previewItem = null">
-      <div class="preview-dialog">
+      <div class="preview-dialog glass">
         <div class="preview-header">
           <h3>{{ previewItem.name }}</h3>
-          <button class="btn-close" @click="previewItem = null">&times;</button>
+          <button class="btn-close-preview" @click="previewItem = null"><X :size="20" /></button>
         </div>
         <div class="preview-body">
           <template v-if="previewSrc">
@@ -77,7 +78,7 @@
                 <button @click="zoomOut" class="zoom-btn" title="缩小">−</button>
                 <span class="zoom-label">{{ Math.round(_zoom * 100) }}%</span>
                 <button @click="zoomIn" class="zoom-btn" title="放大">+</button>
-                <button @click="zoomReset" class="zoom-btn" title="适应窗口">⟲</button>
+                <button @click="zoomReset" class="zoom-btn" title="适应窗口"><RefreshCw :size="14" /></button>
               </div>
             </div>
             <iframe v-else :src="previewSrc" class="preview-iframe" />
@@ -91,21 +92,30 @@
       </div>
     </div>
 
-    <div class="files-list-wrapper">
+    <div class="files-list-wrapper glass">
       <table v-if="sortedItems.length" class="files-table">
         <thead>
           <tr>
             <th class="col-name sortable" @click="toggleSort('name')">
               名称
-              <span v-if="sortField === 'name'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortField === 'name'" class="sort-indicator">
+                <ChevronUp v-if="sortDir === 'asc'" :size="12" />
+                <ChevronDown v-else :size="12" />
+              </span>
             </th>
             <th class="col-size sortable" @click="toggleSort('size')">
               大小
-              <span v-if="sortField === 'size'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortField === 'size'" class="sort-indicator">
+                <ChevronUp v-if="sortDir === 'asc'" :size="12" />
+                <ChevronDown v-else :size="12" />
+              </span>
             </th>
             <th class="col-time sortable" @click="toggleSort('modified_at')">
               修改时间
-              <span v-if="sortField === 'modified_at'" class="sort-indicator">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+              <span v-if="sortField === 'modified_at'" class="sort-indicator">
+                <ChevronUp v-if="sortDir === 'asc'" :size="12" />
+                <ChevronDown v-else :size="12" />
+              </span>
             </th>
             <th class="col-actions">操作</th>
           </tr>
@@ -113,8 +123,8 @@
         <tbody>
           <tr v-for="item in sortedItems" :key="item.path" class="file-row">
             <td class="col-name">
-              <div class="name-box" @click="item.is_dir ? cd(item.path) : null">
-                <span class="file-icon">{{ item.is_dir ? '📂' : getFileIcon(item.name) }}</span>
+              <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
+                <component :is="getFileIconComponent(item)" class="file-icon-comp" :class="{ 'dir-icon': item.is_dir }" :size="20" />
                 <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>
               </div>
             </td>
@@ -122,28 +132,42 @@
             <td class="col-time">{{ formatDate(item.modified_at) }}</td>
             <td class="col-actions">
               <div class="row-actions">
-                <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览">👁️</button>
-                <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载">📥</a>
-                <button class="btn-icon" @click="startRename(item)" title="重命名">✏️</button>
-                <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除">🗑️</button>
+                <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
+                <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
+                <button class="btn-icon" @click="startRename(item)" title="重命名"><Pencil :size="16" /></button>
+                <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
       <div v-else-if="!loading" class="empty-state">
-        <div class="empty-icon">📁</div>
-        <p>暂无文件</p>
+        <div class="empty-icon"><FolderOpen :size="48" /></div>
+        <p>此目录空空如也</p>
       </div>
-      <div v-if="loading" class="loading-state">正在加载文件列表...</div>
+      <div v-if="loading && !items.length" class="loading-state">正在加载文件列表...</div>
     </div>
   </div>
 </template>
 
 <script>
+import { 
+  Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
+  RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
+  File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
+  FileQuestion, Folder, FolderOpen, RefreshCw
+} from 'lucide-vue-next'
 import api from '../api.js'
+
 const PREVIEW_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'pdf', 'txt', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'log']
+
 export default {
+  components: { 
+    Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
+    RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
+    File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
+    FileQuestion, Folder, FolderOpen, RefreshCw
+  },
   data: () => ({
     items: [], 
     currentPath: '/', 
@@ -332,15 +356,28 @@ export default {
       if (!d) return ''
       return d.replace('T', ' ').substring(0, 16)
     },
-    getFileIcon(name) {
-      const ext = name.split('.').pop().toLowerCase()
-      const icons = {
-        pdf: '📄', ics: '📅', vcf: '👤', txt: '📝', 
-        jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️',
-        zip: '📦', rar: '📦', '7z': '📦',
-        mp3: '🎵', mp4: '🎬',
+    getFileIconComponent(item) {
+      if (item.is_dir) return 'Folder'
+      const ext = item.name.split('.').pop().toLowerCase()
+      const map = {
+        pdf: 'FileText',
+        txt: 'FileText',
+        md: 'FileText',
+        json: 'FileText',
+        jpg: 'FileImage',
+        jpeg: 'FileImage',
+        png: 'FileImage',
+        gif: 'FileImage',
+        webp: 'FileImage',
+        zip: 'FileArchive',
+        rar: 'FileArchive',
+        '7z': 'FileArchive',
+        mp3: 'FileMusic',
+        wav: 'FileMusic',
+        mp4: 'FileVideo',
+        mkv: 'FileVideo',
       }
-      return icons[ext] || '📄'
+      return map[ext] || 'File'
     },
 
     // Drag & Drop
@@ -364,80 +401,125 @@ export default {
 </script>
 
 <style scoped>
-.files-container { position: absolute; left: 24px; right: 24px; top: 24px; bottom: 24px; display: flex; flex-direction: column; }
+.files-container { height: 100%; display: flex; flex-direction: column; gap: 16px; }
 
-.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 16px; background: var(--bg-card); padding: 12px 20px; border-radius: 12px; box-shadow: var(--shadow-sm); }
-.breadcrumb-bar { flex: 1; display: flex; align-items: center; min-width: 0; font-size: 15px; }
-.btn-crumb { border: none; background: transparent; padding: 4px 8px; color: var(--brand); cursor: pointer; border-radius: 4px; transition: background 0.2s; white-space: nowrap; }
+.toolbar { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  background: var(--bg-card); 
+  padding: 12px 20px; 
+  border-radius: var(--radius-lg); 
+  box-shadow: var(--shadow-sm); 
+  border: 1px solid var(--border-base);
+}
+.breadcrumb-bar { flex: 1; display: flex; align-items: center; min-width: 0; font-size: 14px; }
+.btn-crumb { 
+  border: none; 
+  background: transparent; 
+  padding: 6px 10px; 
+  color: var(--brand); 
+  cursor: pointer; 
+  border-radius: var(--radius-sm); 
+  transition: all 0.2s; 
+  white-space: nowrap; 
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
 .btn-crumb:hover { background: var(--bg-info); }
 .btn-crumb.is-last { color: var(--text-primary); font-weight: 600; cursor: default; pointer-events: none; }
-.sep { color: var(--text-quaternary); margin: 0 4px; }
+.sep { color: var(--text-quaternary); margin: 0 4px; opacity: 0.5; }
 
-.toolbar-actions { display: flex; gap: 12px; }
-.btn-tool { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1px solid var(--border-strong); background: var(--bg-card); border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s; }
-.btn-tool:hover { border-color: var(--brand); color: var(--brand); }
+.toolbar-actions { display: flex; gap: 10px; }
+.btn-tool { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  padding: 8px 16px; 
+  border: 1px solid var(--border-strong); 
+  background: var(--bg-card); 
+  border-radius: var(--radius-md); 
+  cursor: pointer; 
+  font-size: 14px; 
+  transition: all 0.2s; 
+  color: var(--text-secondary);
+}
+.btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
 .btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
-.btn-tool.btn-primary:hover { opacity: 0.9; }
+.btn-tool.btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
-.error-alert { background: var(--bg-danger); border: 1px solid var(--danger-border-strong); color: var(--danger-text); padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.error-alert { background: var(--bg-danger); border: 1px solid var(--danger-border); color: var(--danger-text); padding: 10px 16px; border-radius: var(--radius-md); display: flex; align-items: center; gap: 12px; }
 .btn-close { margin-left: auto; border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--text-tertiary); }
 
-.files-list-wrapper { flex: 1; background: var(--bg-card); border-radius: 12px; box-shadow: var(--shadow-sm); overflow-y: auto; }
+.files-list-wrapper { 
+  flex: 1; 
+  background: var(--bg-card); 
+  border-radius: var(--radius-lg); 
+  box-shadow: var(--shadow-sm); 
+  overflow-y: auto; 
+  border: 1px solid var(--border-base);
+}
 .files-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.files-table th { background: var(--bg-table-header); padding: 14px 20px; text-align: left; font-size: 14px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); user-select: none; }
+.files-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); user-select: none; }
 .files-table th.sortable { cursor: pointer; }
-.files-table th.sortable:hover { background: var(--bg-hover); }
-.sort-indicator { font-size: 11px; margin-left: 4px; color: var(--brand); }
+.files-table th.sortable:hover { color: var(--brand); }
+.sort-indicator { margin-left: 4px; vertical-align: middle; color: var(--brand); }
 .files-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
 
-.col-name { width: 40%; }
-.col-size { width: 12%; }
-.col-time { width: 18%; }
-.col-actions { width: 30%; text-align: right !important; }
+.col-name { width: 45%; }
+.col-size { width: 15%; }
+.col-time { width: 20%; }
+.col-actions { width: 20%; text-align: right !important; }
 
+.file-row { transition: background .15s; }
 .file-row:hover { background: var(--bg-table-header); }
-.name-box { display: flex; align-items: center; gap: 10px; }
-[class] .name-box { cursor: default; }
-.name-box.dirs-clickable { cursor: default; }
-.file-icon { font-size: 18px; }
-.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-name.is-dir { color: var(--brand); font-weight: 500; }
+.name-box { display: flex; align-items: center; gap: 12px; transition: color .2s; }
+.name-box.is-clickable { cursor: pointer; }
+.name-box.is-clickable:hover .file-name { color: var(--brand); }
+.file-icon-comp { color: var(--text-tertiary); flex-shrink: 0; }
+.dir-icon { color: var(--brand); opacity: 0.8; }
+.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.file-name.is-dir { color: var(--text-primary); }
 
-.row-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.btn-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-card); cursor: pointer; text-decoration: none; font-size: 14px; transition: all 0.2s; }
-.btn-icon:hover { border-color: var(--brand); background: var(--bg-info); }
-.btn-icon.btn-danger:hover { border-color: var(--danger); background: var(--bg-danger); }
+.row-actions { display: flex; justify-content: flex-end; gap: 4px; opacity: 0.3; transition: opacity .2s; }
+.file-row:hover .row-actions { opacity: 1; }
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
+.btn-icon:hover { border-color: var(--border-base); background: white; color: var(--brand); box-shadow: var(--shadow-sm); }
+.btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
-.empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px; color: var(--text-tertiary); }
-.empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+.empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px; color: var(--text-tertiary); }
+.empty-icon { color: var(--border-strong); margin-bottom: 16px; opacity: 0.5; }
 
-.inline-modal-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
-.inline-dialog { background: var(--bg-card); width: 400px; padding: 24px; border-radius: 12px; box-shadow: var(--shadow-lg); }
-.inline-dialog h3 { margin: 0 0 16px; font-size: 16px; }
-.inline-dialog input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-input); border-radius: 6px; margin-bottom: 20px; box-sizing: border-box; }
+.inline-modal-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.inline-dialog { background: var(--bg-card); width: 400px; padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); }
+.inline-dialog h3 { margin: 0 0 20px; font-size: 18px; }
+.inline-dialog input { width: 100%; padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); margin-bottom: 24px; box-sizing: border-box; font-size: 15px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
-.btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; border: 1px solid var(--border-strong); background: var(--bg-card); cursor: pointer; }
-.btn-sm.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
-.btn-danger { color: var(--danger-text); border-color: var(--danger-border); }
 
-.preview-dialog { background: var(--bg-card); width: 80vw; height: 80vh; max-width: 960px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-lg); }
-.preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-base); }
-.preview-header h3 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.preview-body { flex: 1; overflow: hidden; background: var(--bg-page); }
-.preview-iframe { width: 100%; height: 100%; border: none; }
-.preview-error { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-tertiary); font-size: 16px; }
-.preview-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border-base); }
+.preview-dialog { background: var(--bg-card); width: 90vw; height: 85vh; max-width: 1100px; border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); }
+.preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-base); }
+.preview-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.btn-close-preview { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 50%; display: flex; transition: .2s; }
+.btn-close-preview:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-.img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--bg-page); position: relative; }
-.preview-img { max-width: 100%; max-height: 100%; cursor: grab; user-select: none; transition: transform 0.12s; }
+.preview-body { flex: 1; overflow: hidden; background: #fafafa; }
+.preview-iframe { width: 100%; height: 100%; border: none; background: white; }
+
+.img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
+.preview-img { max-width: 95%; max-height: 95%; cursor: grab; user-select: none; transition: transform 0.1s ease-out; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.1)); }
 .preview-img.dragging { cursor: grabbing; transition: none; }
-.img-zoom-bar { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); border-radius: 8px; display: flex; align-items: center; gap: 2px; padding: 4px; backdrop-filter: blur(4px); }
-.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
-.zoom-btn:hover { background: rgba(255,255,255,.15); }
-.zoom-label { color: #fff; font-size: 12px; min-width: 40px; text-align: center; }
+.img-zoom-bar { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); border-radius: 30px; display: flex; align-items: center; gap: 4px; padding: 6px 12px; backdrop-filter: blur(8px); }
+.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.zoom-btn:hover { background: rgba(255,255,255,0.2); }
+.zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
 
-.dropzone-overlay { position: fixed; inset: 0; z-index: 2000; background: hsl(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.08); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-.dropzone-content { background: var(--bg-card); border: 3px dashed var(--brand); border-radius: 20px; padding: 60px 80px; text-align: center; box-shadow: 0 8px 32px hsl(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
-.drop-icon { font-size: 64px; margin-bottom: 16px; }
-.dropzone-content p { font-size: 20px; color: var(--brand); font-weight: 500; margin: 0; }
+.dropzone-overlay { position: fixed; inset: 0; z-index: 2000; background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+.dropzone-content { background: white; border: 2px dashed var(--brand); border-radius: 32px; padding: 60px 100px; text-align: center; box-shadow: var(--shadow-xl); }
+.drop-icon { color: var(--brand); margin-bottom: 20px; }
+.dropzone-content p { font-size: 20px; color: var(--text-primary); font-weight: 600; margin: 0; }
 </style>

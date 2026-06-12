@@ -1,40 +1,75 @@
 <template>
-  <div class="form-card">
-    <h3>{{ isNew ? '新建事件' : '编辑事件' }}</h3>
-    <form @submit.prevent="save">
-      <label>标题</label>
-      <input v-model="form.summary" required />
-      <label>分类（逗号分隔）</label>
-      <input v-model="form.categories" placeholder="MEETING,WORK" />
-      <label>地点</label>
-      <input v-model="form.location" />
-      <label><input type="checkbox" v-model="form.allDay" /> 全天事件</label>
-      <label>开始时间</label>
-      <input v-model="form.dtstart" :type="form.allDay ? 'date' : 'datetime-local'" required />
-      <label>结束时间</label>
-      <input v-model="form.dtend" :type="form.allDay ? 'date' : 'datetime-local'" required />
-      <label>描述</label>
-      <textarea v-model="form.description" rows="4"></textarea>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary" :disabled="saving">{{ saving ? '保存中...' : '保存' }}</button>
-        <router-link to="/calendar" class="btn-cancel">取消</router-link>
+  <div class="edit-page">
+    <div class="form-card glass">
+      <div class="form-header">
+        <h3>{{ isNew ? '新建日程事件' : '编辑日程事件' }}</h3>
+        <p class="form-subtitle">管理您的个人日程并跨设备同步</p>
       </div>
-    </form>
+
+      <form @submit.prevent="save">
+        <div class="form-grid">
+          <div class="form-item full">
+            <label>日程标题</label>
+            <input v-model="form.summary" required placeholder="例如：团队周会" />
+          </div>
+
+          <div class="form-item">
+            <label>分类</label>
+            <input v-model="form.categories" placeholder="MEETING, WORK (逗号分隔)" />
+          </div>
+
+          <div class="form-item">
+            <label>地点</label>
+            <div class="input-with-icon">
+              <MapPin :size="16" class="inner-icon" />
+              <input v-model="form.location" placeholder="会议室或地理位置" />
+            </div>
+          </div>
+
+          <div class="form-item full checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="form.allDay" />
+              <span>全天事件</span>
+            </label>
+          </div>
+
+          <div class="form-item">
+            <label>开始时间</label>
+            <input v-model="form.dtstart" :type="form.allDay ? 'date' : 'datetime-local'" required />
+          </div>
+
+          <div class="form-item">
+            <label>结束时间</label>
+            <input v-model="form.dtend" :type="form.allDay ? 'date' : 'datetime-local'" required />
+          </div>
+
+          <div class="form-item full">
+            <label>日程描述</label>
+            <textarea v-model="form.description" rows="4" placeholder="添加更多关于此日程的详细备注..."></textarea>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" :disabled="saving">
+            <Save :size="18" v-if="!saving" />
+            <span v-else class="spinning-icon">⏳</span>
+            {{ saving ? '正在保存...' : '保存日程' }}
+          </button>
+          <router-link to="/calendar" class="btn-cancel">取消</router-link>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
 <script>
+import { Save, MapPin } from 'lucide-vue-next'
 import api from '../api.js'
 
 function toLocalISO(d) {
   if (!d) return ''
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-function toDateStr(d) {
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
 }
 
 function getField(lines, key) {
@@ -62,6 +97,7 @@ function setVeventField(lines, key, value) {
 }
 
 export default {
+  components: { Save, MapPin },
   data: () => ({
     form: { summary: '', dtstart: '', dtend: '', description: '', categories: '', location: '', allDay: false },
     saving: false, isNew: true, loadedUid: null, _rawIcal: '',
@@ -105,6 +141,7 @@ export default {
   },
   methods: {
     async save() {
+      if (!this.form.summary || !this.form.dtstart || !this.form.dtend) return alert('请填写完整必填信息')
       this.saving = true
       try {
         let ds, de
@@ -129,7 +166,7 @@ export default {
           setVeventField(lines, 'DTEND', de)
           await api.updateEvent(this.loadedUid, lines.join('\r\n'))
         } else {
-          const ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\nUID:${this.loadedUid}\r\nDTSTART:${ds}\r\nDTEND:${de}\r\nSUMMARY:${this.form.summary}\r\n${this.form.categories ? 'CATEGORIES:'+this.form.categories+'\r\n' : ''}${this.form.description ? 'DESCRIPTION:'+this.form.description+'\r\n' : ''}END:VEVENT\r\nEND:VCALENDAR\r\n`
+          const ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\nUID:${this.loadedUid}\r\nDTSTART:${ds}\r\nDTEND:${de}\r\nSUMMARY:${this.form.summary}\r\n${this.form.categories ? 'CATEGORIES:'+this.form.categories+'\r\n' : ''}${this.form.location ? 'LOCATION:'+this.form.location+'\r\n' : ''}${this.form.description ? 'DESCRIPTION:'+this.form.description+'\r\n' : ''}END:VEVENT\r\nEND:VCALENDAR\r\n`
           await api.updateEvent(this.loadedUid, ical)
         }
         this.$router.push('/calendar')
@@ -140,12 +177,87 @@ export default {
 </script>
 
 <style scoped>
-.form-card { background: var(--bg-card); border-radius: 8px; padding: 24px; max-width: 520px; box-shadow: var(--shadow-sm); }
-.form-card h3 { margin: 0 0 20px; }
-label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--text-secondary); }
-input, textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--border-input); border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px; font-family: inherit; }
-input[type="checkbox"] { width: auto; margin-right: 6px; }
-.form-actions { display: flex; gap: 12px; margin-top: 8px; }
-.btn-primary { padding: 8px 20px; background: var(--brand); color: var(--text-inverse); border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
-.btn-cancel { padding: 8px 20px; background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 6px; text-decoration: none; font-size: 14px; }
+.edit-page { display: flex; justify-content: center; padding-top: 20px; }
+
+.form-card { 
+  background: var(--bg-card); 
+  border-radius: var(--radius-lg); 
+  padding: 40px; 
+  width: 100%;
+  max-width: 680px; 
+  box-shadow: var(--shadow-lg); 
+  border: 1px solid var(--border-base);
+}
+
+.form-header { margin-bottom: 32px; border-bottom: 1px solid var(--border-base); padding-bottom: 20px; }
+.form-header h3 { margin: 0 0 8px; font-size: 22px; color: var(--text-primary); }
+.form-subtitle { margin: 0; color: var(--text-secondary); font-size: 14px; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.form-item.full { grid-column: span 2; }
+
+label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+input, textarea { 
+  width: 100%; 
+  padding: 12px 16px; 
+  border: 1px solid var(--border-input); 
+  border-radius: var(--radius-md); 
+  font-size: 15px; 
+  box-sizing: border-box; 
+  background: #fafafa;
+  font-family: inherit; 
+  transition: all .2s;
+}
+input:focus, textarea:focus {
+  border-color: var(--brand);
+  background: white;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+  outline: none;
+}
+
+.checkbox-row { margin-top: -12px; }
+.checkbox-label { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text-primary) !important; font-weight: 500; }
+.checkbox-label input { width: 18px; height: 18px; cursor: pointer; }
+
+.input-with-icon { position: relative; }
+.inner-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
+.input-with-icon input { padding-left: 36px; }
+
+.form-actions { display: flex; gap: 16px; margin-top: 40px; border-top: 1px solid var(--border-base); padding-top: 32px; }
+
+.btn-primary { 
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px; 
+  background: var(--brand); 
+  color: var(--text-inverse); 
+  border: none; 
+  border-radius: var(--radius-md); 
+  font-size: 15px; 
+  font-weight: 600;
+  cursor: pointer; 
+  transition: all .2s;
+  box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2);
+}
+.btn-primary:hover { background: var(--brand-hover); transform: translateY(-1px); box-shadow: 0 6px 16px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.3); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-cancel { 
+  padding: 12px 28px; 
+  background: white; 
+  color: var(--text-secondary); 
+  border: 1px solid var(--border-strong); 
+  border-radius: var(--radius-md); 
+  text-decoration: none; 
+  font-size: 15px; 
+  font-weight: 600;
+  transition: .2s;
+}
+.btn-cancel:hover { border-color: var(--text-primary); color: var(--text-primary); background: #fafafa; }
+
+@media (max-width: 600px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .form-card { padding: 24px; }
+}
 </style>
