@@ -220,6 +220,12 @@ function eventStatus(e, now) {
   return 'upcoming'
 }
 
+function getMinutes(icalStr) {
+  if (!icalStr) return 0
+  const d = icalDateToObj(icalStr)
+  return d ? d.getHours() * 60 + d.getMinutes() : 0
+}
+
 const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六']
 const HEADER_HEIGHT = 48
 const ITEM_HEIGHT = 80
@@ -241,6 +247,7 @@ export default {
     _nowTimer: null,
     _mounted: false,
     _loadingInitial: false,
+    _initialScrollGuard: false,
     _loadStart: '2000-01-01',
     _loadEnd: '2099-12-31',
   }),
@@ -379,9 +386,10 @@ export default {
     async loadInitial() {
       this.loading = true
       this._loadingInitial = true
+      this._initialScrollGuard = true
       const now = this.currentTime
-      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() + 2, 0)
+      const start = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() + 3, 0)
       this._loadStart = fmtDate(start)
       this._loadEnd = fmtDate(end)
       try {
@@ -390,10 +398,11 @@ export default {
       } catch (e) {}
       this._loadingInitial = false
       this.loading = false
-      setTimeout(() => this.scrollToToday(), 150)
+      await this.$nextTick()
+      this.scrollToToday()
     },
     async loadMore(dir) {
-      if (this.loading || this._loadingInitial) return
+      if (this.loading || this._loadingInitial || this._initialScrollGuard) return
       this.loading = true
       let from, to
       if (dir === 'prev') {
@@ -403,43 +412,62 @@ export default {
         const e = new Date(this._loadEnd); e.setMonth(e.getMonth() + 2)
         from = this._loadEnd; to = fmtDate(e)
       }
+      const oldHeight = this.totalHeight
       try {
         const res = await api.listEvents(0, 500, from, to)
         const items = Array.isArray(res) ? res : (res.items || [])
         const existing = new Map(this.events.map(e => [e.uid, e]))
         items.forEach(e => existing.set(e.uid, e))
         this.events = [...existing.values()]
-        if (dir === 'prev') this._loadStart = from; else this._loadEnd = to
+        if (dir === 'prev') {
+          this._loadStart = from
+          await this.$nextTick()
+          const newHeight = this.totalHeight
+          const diff = newHeight - oldHeight
+          if (this.$refs.listRef && diff > 0) {
+            this.$refs.listRef.scrollTop += diff
+            this.scrollTop = this.$refs.listRef.scrollTop
+          }
+        } else {
+          this._loadEnd = to
+        }
       } catch (e) {}
       this.loading = false
     },
     scrollToToday() {
+      this._initialScrollGuard = true
       const todayStr = fmtDate(this.currentTime)
       const now = this.currentTime
       const items = this.virtualItems
       const header = items.find(i => i.type === 'header' && i.dateStr === todayStr)
       if (!header || !this.$refs.listRef) return
       let scrollPos = header.top
-      const todayEvents = items.filter(i => i.type === 'event' && i.dateStr === todayStr && i.status !== 'ended')
-      const ongoing = todayEvents.find(i => i.status === 'ongoing')
+      const todayAllEvents = items.filter(i => i.type === 'event' && i.dateStr === todayStr)
+      const ongoing = todayAllEvents.find(i => i.status === 'ongoing')
       if (ongoing) {
         scrollPos = ongoing.top + ongoing.height / 2 - this.containerHeight / 2
-      } else if (todayEvents.length > 0) {
-        const first = todayEvents[0]
-        const last = todayEvents[todayEvents.length - 1]
-        const mid = (first.top + last.top + last.height) / 2
-        scrollPos = mid - this.containerHeight / 2
+      } else if (todayAllEvents.length > 0) {
+        const firstEv = todayAllEvents[0]
+        const lastEv = todayAllEvents[todayAllEvents.length - 1]
+        const firstMin = getMinutes(firstEv.dtstart)
+        const lastMin = getMinutes(lastEv.dtend)
+        const nowMin = now.getHours() * 60 + now.getMinutes()
+        const daySpan = Math.max(lastMin - firstMin, 60)
+        const ratio = Math.max(0, Math.min(1, (nowMin - firstMin) / daySpan))
+        const posY = firstEv.top + ratio * (lastEv.top + lastEv.height - firstEv.top)
+        scrollPos = posY - this.containerHeight / 2
       } else {
         const hours = now.getHours() + now.getMinutes() / 60
         const ratio = hours / 24
         scrollPos = header.top + 60 + ratio * (EMPTY_HEIGHT + 20)
       }
       this.$refs.listRef.scrollTop = Math.max(0, scrollPos)
+      requestAnimationFrame(() => { this._initialScrollGuard = false })
     },
     onScroll() {
-      if (!this.$refs.listRef || !this._mounted) return
+      if (!this.$refs.listRef || !this._mounted || this._initialScrollGuard) return
       this.scrollTop = this.$refs.listRef.scrollTop
-      const threshold = 500
+      const threshold = 600
       if (this.scrollTop < threshold) this.loadMore('prev')
       else if (this.scrollTop + this.containerHeight > this.totalHeight - threshold) this.loadMore('next')
     },
@@ -552,9 +580,17 @@ export default {
     },
     createForFloatingDate() {
       const fd = this.floatingDateItem
-      const dateStr = fd ? fd.dateStr : fmtDate(this.currentTime)
-      const startH = this.currentTime.getHours()
-      const endH = Math.min(startH + 1, 23)
+      let dateStr, startH, endH
+      if (fd && fd.dateStr) {
+        dateStr = fd.dateStr
+        // pick noon-ish hour for the new event
+        startH = 10
+        endH = 11
+      } else {
+        dateStr = fmtDate(this.currentTime)
+        startH = this.currentTime.getHours()
+        endH = Math.min(startH + 1, 23)
+      }
       this.editForm = {
         summary: '', dtstart: `${dateStr}T${pad(startH)}:00`,
         dtend: `${dateStr}T${pad(endH)}:00`,
