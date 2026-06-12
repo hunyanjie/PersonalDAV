@@ -34,11 +34,29 @@
 </template>
 
 <script>
+import api from '../api.js'
+
 export default {
   data: () => ({
     sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
   }),
+  async mounted() {
+    await this.syncServerTheme()
+  },
   methods: {
+    async syncServerTheme() {
+      try {
+        const res = await api.getSetting('theme_hsl')
+        if (res && res.value) {
+          const { h, s, l } = JSON.parse(res.value)
+          const root = document.documentElement
+          root.style.setProperty('--brand-hue', h + 'deg')
+          root.style.setProperty('--brand-sat', s + '%')
+          root.style.setProperty('--brand-lit', l + '%')
+          localStorage.setItem('theme_hsl', JSON.stringify({ h, s, l }))
+        }
+      } catch (e) { /* 服务器无主题色设置时保持本地值 */ }
+    },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed
       localStorage.setItem('sidebar_collapsed', this.sidebarCollapsed)

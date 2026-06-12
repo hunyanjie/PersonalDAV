@@ -496,7 +496,7 @@ export default {
 .tl-hour-label { flex: 1; text-align: center; font-size: 11px; color: var(--text-tertiary); border-left: 1px solid #eee; padding-top: 2px; }
 .tl-dot { position: absolute; top: 16px; width: 10px; height: 10px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 1; }
 .tl-dot.tl-dot-past { background: var(--text-quaternary); }
-.tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--brand); z-index: 2; pointer-events: none; transition: left 2s linear; }
+.tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--brand-hover); z-index: 2; pointer-events: none; transition: left 2s linear; }
 
 /* Event Cards */
 .event-cards { display: flex; flex-direction: column; gap: 8px; }

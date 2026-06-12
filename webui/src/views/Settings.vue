@@ -412,7 +412,7 @@ export default {
     },
 
     // Theme
-    loadTheme() {
+    async loadTheme() {
       try {
         const saved = localStorage.getItem('theme_hsl')
         if (saved) {
@@ -422,13 +422,24 @@ export default {
         const custom = localStorage.getItem('theme_hsl_custom')
         if (custom === 'true') this._isCustom = true
       } catch(e) {}
+      try {
+        const res = await api.getSetting('theme_hsl')
+        if (res && res.value) {
+          const { h, s, l } = JSON.parse(res.value)
+          this.themeH = h; this.themeS = s; this.themeL = l
+          this.applyTheme(h, s, l)
+        }
+      } catch (e) { /* 服务器无主题色设置时保持本地值 */ }
     },
-    applyTheme(h, s, l) {
+    async applyTheme(h, s, l) {
       const root = document.documentElement
       root.style.setProperty('--brand-hue', h + 'deg')
       root.style.setProperty('--brand-sat', s + '%')
       root.style.setProperty('--brand-lit', l + '%')
       localStorage.setItem('theme_hsl', JSON.stringify({ h, s, l }))
+      try {
+        await api.updateSetting('theme_hsl', JSON.stringify({ h, s, l }))
+      } catch (e) { /* 离线时仅保存本地 */ }
     },
     applyPreset(p) {
       this.themeH = p.h; this.themeS = p.s; this.themeL = p.l
@@ -445,7 +456,7 @@ export default {
       if (this._isCustom) return false
       return p.h === this.themeH && p.s === this.themeS && p.l === this.themeL
     },
-    resetTheme() {
+    async resetTheme() {
       this.themeH = 210; this.themeS = 88; this.themeL = 52
       this._isCustom = false
       localStorage.removeItem('theme_hsl')
@@ -454,6 +465,9 @@ export default {
       root.style.removeProperty('--brand-hue')
       root.style.removeProperty('--brand-sat')
       root.style.removeProperty('--brand-lit')
+      try {
+        await api.updateSetting('theme_hsl', '')
+      } catch (e) {}
     },
   },
 }
