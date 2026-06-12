@@ -2,6 +2,10 @@
   <div>
     <div class="toolbar">
       <input v-model="query" placeholder="搜索联系人..." @input="debounceSearch" class="search-input" />
+      <label class="btn-primary btn-import">
+        📥 导入 .vcf
+        <input type="file" accept=".vcf,.vcard" @change="doImport" hidden />
+      </label>
       <router-link to="/contacts/new" class="btn-primary">+ 新建</router-link>
     </div>
     <table v-if="items.length" class="data-table">
@@ -75,6 +79,22 @@ export default {
       const p = Math.max(1, Math.min(this.maxPage, this.pageInput || 1)) - 1
       if (p !== this.page) this.page = p
     },
+    async doImport(e) {
+      const file = e.target.files[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const blocks = text.split(/(?=BEGIN:VCARD)/).filter(Boolean)
+        let ok = 0, fail = 0
+        for (const block of blocks) {
+          try { await api.createContact(block.trim()); ok++ }
+          catch { fail++ }
+        }
+        alert(`导入完成：成功 ${ok} 条${fail ? `，失败 ${fail} 条` : ''}`)
+        this.load()
+      } catch(e) { alert('导入失败: ' + (e.message || e)) }
+      e.target.value = ''
+    },
     async doDelete(uid) {
       if (!confirm('确认删除该联系人？')) return
       try { await api.deleteContact(uid); this.load() } catch(e) {}
@@ -97,6 +117,7 @@ export default {
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
 .search-input { flex: 1; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; }
 .btn-primary { display: inline-flex; align-items: center; padding: 8px 16px; background: #1677ff; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; }
+.btn-import { cursor: pointer; }
 .data-table { width: 100%; background: #fff; border-radius: 8px; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .data-table th, .data-table td { padding: 10px 16px; text-align: left; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
 .data-table th { background: #fafafa; font-weight: 600; }

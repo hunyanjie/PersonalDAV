@@ -30,7 +30,7 @@
 > v2.6 变动：移除 `lxml` 依赖，改用标准库 `xml.etree.ElementTree`。`pyftpdlib`、`paramiko`、`pysmb` 改为惰性导入（首次使用时才加载），未安装时功能不可用但程序不崩溃。
 
 > v3.0 变动：引入 FastAPI + Uvicorn 作为统一 ASGI 运行时，替代 Python 内置 `http.server`。新增 `personaldavd/` 包支持无界面守护进程模式，新增 `services/backend.py` Backend 抽象层支持本地/远程切换。
->
+
 > v3.1 变动：新增 `services/embeddings.py` Embedding 抽象层 + `mcp_tools/analysis_tools.py` 冲突检测工具。ONNX Runtime 和 tokenizers 作为可选依赖，不安装时自动降级为关键词搜索。设置页新增「搜索」标签页，支持 provider 切换、ONNX 模型下载、API 配置。
 
 > v3.2 变动：新增 `webui/` Vue 3 + Vite SPA 前端项目，FastAPI 挂载 SPA 构建产物。新增 `personaldavd/files.py` 文件管理 REST API。新增 `services/file_mount_service.py` 多挂载点管理（替代单 dav_root）。新增 `ui/tabs/files_tab.py` 桌面文件管理标签页。统一日志系统添加 `LogBufferHandler` 支持 WebUI 实时日志查看。GUI 模式统一使用 FastAPI 替代 `http.server`。
@@ -1507,7 +1507,7 @@ pytest tests/ -v -q
 | `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 (v2.5) |
 | `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪）(v2.5)                |
 | `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 (v2.5)                       |
-| `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.2增加到31个，v3.2增加到41个)                              |
+| `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.1创建16个，v2.2增加到33个，v2.5增加到32个，v3.2增加到41个)         |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
 

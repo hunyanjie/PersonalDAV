@@ -9,6 +9,10 @@
       <span style="flex:1" />
       <input v-model="jumpDate" type="date" class="date-input" @change="jumpToDate" />
       <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
+      <label class="btn-primary btn-import">
+        📥 导入 .ics
+        <input type="file" accept=".ics" @change="doImportICS" hidden />
+      </label>
       <router-link to="/calendar/new" class="btn-primary">+ 新建</router-link>
     </div>
     <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
@@ -434,6 +438,23 @@ export default {
         this.detailEvent = null; this.load()
       }).catch(() => { this.errorMsg = '删除失败' })
     },
+    async doImportICS(e) {
+      const file = e.target.files[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const blocks = text.split(/(?=BEGIN:VEVENT)/).filter(Boolean)
+        let ok = 0, fail = 0
+        for (const block of blocks) {
+          const ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${block.trim()}\r\nEND:VCALENDAR`
+          try { await api.createEvent(ical); ok++ }
+          catch { fail++ }
+        }
+        alert(`导入完成：成功 ${ok} 条${fail ? `，失败 ${fail} 条` : ''}`)
+        this.load()
+      } catch(e) { alert('导入失败: ' + (e.message || e)) }
+      e.target.value = ''
+    },
   },
 }
 </script>
@@ -445,6 +466,7 @@ export default {
 .btn-plain { padding: 6px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .month-label { font-size: 16px; font-weight: bold; min-width: 140px; text-align: center; }
 .btn-primary { padding: 8px 16px; background: #1677ff; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; display: inline-flex; align-items: center; }
+.btn-import { cursor: pointer; }
 .error-banner { background: #fff2f0; border: 1px solid #ffccc7; border-radius: 6px; padding: 8px 16px; color: #cf1322; margin-bottom: 12px; font-size: 13px; }
 .empty-hint { text-align: center; color: #999; padding: 24px; font-size: 14px; }
 
