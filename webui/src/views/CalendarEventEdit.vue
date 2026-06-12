@@ -140,12 +140,12 @@ export default {
 </script>
 
 <style scoped>
-.form-card { background: #fff; border-radius: 8px; padding: 24px; max-width: 520px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.form-card { background: var(--bg-card); border-radius: 8px; padding: 24px; max-width: 520px; box-shadow: var(--shadow-sm); }
 .form-card h3 { margin: 0 0 20px; }
-label { display: block; margin-bottom: 4px; font-size: 14px; color: #555; }
-input, textarea { width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px; font-family: inherit; }
+label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--text-secondary); }
+input, textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--border-input); border-radius: 6px; font-size: 14px; box-sizing: border-box; margin-bottom: 16px; font-family: inherit; }
 input[type="checkbox"] { width: auto; margin-right: 6px; }
 .form-actions { display: flex; gap: 12px; margin-top: 8px; }
-.btn-primary { padding: 8px 20px; background: #1677ff; color: #fff; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
-.btn-cancel { padding: 8px 20px; background: #fff; color: #555; border: 1px solid #d9d9d9; border-radius: 6px; text-decoration: none; font-size: 14px; }
+.btn-primary { padding: 8px 20px; background: var(--brand); color: var(--text-inverse); border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
+.btn-cancel { padding: 8px 20px; background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-strong); border-radius: 6px; text-decoration: none; font-size: 14px; }
 </style>

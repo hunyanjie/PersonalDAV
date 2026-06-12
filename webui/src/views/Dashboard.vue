@@ -47,9 +47,9 @@ export default {
 
 <style scoped>
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
-.stat-card { background: #fff; border-radius: 8px; padding: 24px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.stat-num { font-size: 32px; font-weight: bold; color: #1677ff; }
-.stat-label { color: #888; margin-top: 4px; font-size: 14px; }
-.info-section { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.stat-card { background: var(--bg-card); border-radius: 8px; padding: 24px; text-align: center; box-shadow: var(--shadow-sm); }
+.stat-num { font-size: 32px; font-weight: bold; color: var(--brand); }
+.stat-label { color: var(--text-secondary); margin-top: 4px; font-size: 14px; }
+.info-section { background: var(--bg-card); border-radius: 8px; padding: 20px; box-shadow: var(--shadow-sm); }
 .info-section p { margin: 4px 0; font-size: 14px; }
 </style>

@@ -1,0 +1,44 @@
+:root {
+  --brand-hue: 210deg;
+  --brand-sat: 88%;
+  --brand-lit: 52%;
+
+  --brand: hsl(var(--brand-hue) var(--brand-sat) var(--brand-lit));
+  --brand-hover: hsl(var(--brand-hue) var(--brand-sat) calc(var(--brand-lit) - 8%));
+  --brand-active: hsl(var(--brand-hue) var(--brand-sat) calc(var(--brand-lit) - 14%));
+  --brand-soft: hsl(var(--brand-hue) calc(var(--brand-sat) - 34%) calc(var(--brand-lit) + 43%));
+  --brand-ring: hsl(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.24);
+
+  --theme: var(--brand);
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #666;
+  --text-tertiary: #999;
+  --text-quaternary: #bbb;
+  --text-inverse: #fff;
+
+  --bg-page: #f5f5f5;
+  --bg-card: #fff;
+  --bg-table-header: #fafafa;
+  --bg-hover: #f5f5f5;
+  --bg-info: #e6f4ff;
+  --bg-danger: #fff2f0;
+
+  --border-base: #f0f0f0;
+  --border-strong: #d9d9d9;
+  --border-input: #d9d9d9;
+
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --shadow-xl: 0 10px 40px rgba(0,0,0,0.2);
+
+  --danger: #ff4d4f;
+  --danger-text: #cf1322;
+  --danger-soft: #fff2f0;
+  --danger-border: #ffa39e;
+  --danger-border-strong: #ffccc7;
+
+  --success: #52c41a;
+  --warning: #faad14;
+}
