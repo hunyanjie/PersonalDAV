@@ -143,14 +143,14 @@ class FilesTab(ttk.Frame):
                     is_dir = os.path.isdir(full)
                     entries.append({
                         "name": name,
-                        "is_directory": is_dir,
+                        "is_dir": is_dir,
                         "size": st.st_size if not is_dir else 0,
                         "modified": datetime.fromtimestamp(st.st_mtime),
                     })
                 except OSError:
                     entries.append({
                         "name": name,
-                        "is_directory": False,
+                        "is_dir": False,
                         "size": 0,
                         "modified": datetime.now(),
                     })
@@ -165,14 +165,14 @@ class FilesTab(ttk.Frame):
 
     def _display_entries(self, entries: list[dict], is_mount_root: bool = False) -> None:
         self.tree.delete(*self.tree.get_children())
-        for e in sorted(entries, key=lambda f: (0 if f["is_directory"] else 1, f["name"].lower())):
+        for e in sorted(entries, key=lambda f: (0 if f.get("is_dir", False) else 1, f.get("name", "").lower())):
             if e.get("is_mount"):
                 ftype = "文件夹"
                 size_str = ""
                 modified_str = ""
             else:
-                ftype = "文件夹" if e["is_directory"] else (os.path.splitext(e["name"])[1].lstrip(".").upper() or "文件")
-                size_str = "" if e["is_directory"] else self._format_size(e["size"])
+                ftype = "文件夹" if e.get("is_dir", False) else (os.path.splitext(e["name"])[1].lstrip(".").upper() or "文件")
+                size_str = "" if e.get("is_dir", False) else self._format_size(e["size"])
                 mod = e.get("modified")
                 modified_str = mod.strftime("%Y-%m-%d %H:%M") if isinstance(mod, datetime) else str(mod or "")
             self.tree.insert("", tk.END, values=(e["name"], ftype, size_str, modified_str))
