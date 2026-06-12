@@ -1,6 +1,6 @@
 # PersonalDAV - 全能 DAV 服务 + MCP
 
-PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系人）、CalDAV（日历事件）和 WebDAV 于一体，支持通过 MCP（模型上下文协议）让 AI 直接操作您的数据。所有数据本地存储，无需订阅任何云服务。
+PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，集 CardDAV（联系人）、CalDAV（日历事件）和 WebDAV 于一体，支持通过 MCP（模型上下文协议）让 AI 直接操作您的数据。所有数据本地存储，无需订阅任何云服务。
 
 > [!NOTE]
 > 由于学习原因, 本项目的开发速度会有所缓慢。
@@ -10,6 +10,7 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 
 ## 功能特性
 
+- 🌐 **Web 管理界面（v3.2 新增）** — 打开浏览器就能管理所有数据！无需安装任何软件，联系人、日历、文件、设置一应俱全
 - 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
 - 📎 **事件附件** — 为日历事件添加文件或链接附件，支持 base64 内联存储
 - 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式，支持重复事件
@@ -28,11 +29,12 @@ PersonalDAV 是一个带图形界面的全能 DAV 服务，集 CardDAV（联系�
 - 🌐 **Referer 防盗链** — 只允许指定来源的请求访问，防止外部引用
 - 📡 **远程鉴权** — 将请求转发到外部服务验证，可对接自定义认证系统
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
-- 📂 **FTP / FTPS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
+- 📂 **FTP / FTFS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
 - 🌐 **SMB / CIFS 网络共享** — 连接远程 SMB 服务器，浏览目录、挂载共享
-- 🌐 **WebDAV 文件服务 `/dav/`** — 通过 WebDAV 协议远程管理文件，支持 PROPFIND/GET/PUT/DELETE/MKCOL
+- 🌐 **WebDAV 文件服务 `/dav/`** — 通过 WebDAV 协议远程管理文件，支持 PROPFIND/GET/PUT/DELETE/MKCOL，新增多挂载点支持
 - 🗂️ **远程文件浏览器** — 图形化浏览 FTP/FTPS/SFTP/SMB 远程文件，支持上传下载删除重命名
-- 📅 **日历月视图** — 按月份查看日程，点击日期查看详细事件，支持年份/月份下拉框快速跳转
+- 📁 **本地文件管理** — 桌面端新增文件管理标签页，双击打开文件，支持搜索过滤
+- 📅 **日历双视图** — 月视图按月份查看 + 日程视图虚拟滚动，多日事件跨天显示，当前时间定位线
 - 🖥️ **友好的GUI** — 图形界面操作，支持拖拽导入，所有窗口居中显示
 - 💾 **本地存储** — 使用SQLite存储数据，无需额外配置
 - 🔍 **类型安全** — 新代码强制 mypy --strict，持续提升代码质量
@@ -107,6 +109,7 @@ python tests/run_all.py
 1. 在"服务器管理"标签页中，设置端口号（默认为8000）
 2. 点击"启动服务器"按钮
 3. 服务器启动后，您将看到各协议对应的配置地址
+4. **Web 管理界面**：打开浏览器访问 `http://localhost:8000`，即可通过网页管理联系人、日历、文件和设置
 
 ### 联系人管理
 
@@ -155,18 +158,20 @@ python tests/run_all.py
 > [!NOTE]
 > 如果使用无界面模式（`main.py --headless` / `python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
 
-### REST API
+### REST API + Web UI
 
-服务器模式下可以通过 HTTP 接口管理数据：
+服务器模式下可以直接在浏览器中管理所有数据（访问 `http://localhost:8000`），也可以通过 HTTP 接口调用：
 
 | 接口 | 说明 |
 |------|------|
 | `GET /api/health` | 服务器健康检查 |
 | `POST /api/auth/token` | 获取访问令牌 |
-| `GET /api/contacts` | 联系人列表 |
-| `POST /api/contacts` | 创建联系人 |
-| `GET /api/events` | 事件列表 |
-| `POST /api/events` | 创建事件 |
+| `GET /api/contacts` / `POST /api/contacts` | 联系人列表 / 创建 |
+| `GET /api/events` / `POST /api/events` | 事件列表 / 创建 |
+| `GET /api/files` / `POST /api/files/upload` | 文件浏览 / 上传（v3.2） |
+| `GET /api/settings` / `PUT /api/settings/:key` | 设置读取 / 修改（v3.2） |
+| `GET /api/stats` | 服务器统计数据（v3.2） |
+| `GET /api/auth/logs` | 鉴权日志查询（v3.2） |
 
 详细文档访问服务器后打开 `http://localhost:8000/api/docs`。
 
@@ -189,7 +194,7 @@ python tests/run_all.py
 
 ## MCP 可用工具
 
-MCP 服务提供 38 个工具供 AI 调用：
+MCP 服务提供 41 个工具供 AI 调用：
 
 | 工具 | 说明 |
 |------|------|
@@ -204,6 +209,7 @@ MCP 服务提供 38 个工具供 AI 调用：
 | `ftp_servers_start` / `ftp_servers_stop` / `ftp_servers_status` | 管理 FTP/SFTP/TFTP 文件服务器启停和状态 |
 | `ftp_list_dir` / `ftp_download` / `ftp_upload` | 远程 FTP/SFTP 目录浏览、文件下载和上传 |
 | `ftp_delete` / `ftp_rename` / `ftp_mkdir` / `ftp_rmdir` | 远程 FTP/SFTP 文件/目录删除、重命名、创建、移除 |
+| `smb_servers_start` / `smb_servers_stop` / `smb_servers_status` | 管理 SMB/CIFS 文件共享服务启停和状态 |
 | `smb_list_shares` / `smb_list_files` | 查看 SMB 服务器上的共享目录和文件列表 |
 | `dav_list_files` / `dav_upload` / `dav_download` | WebDAV 文件浏览、上传、下载 |
 | `dav_delete` / `dav_mkdir` | WebDAV 文件删除和目录创建 |
@@ -215,7 +221,7 @@ MCP 服务提供 38 个工具供 AI 调用：
 
 ```
 PersonalDAV/
-├── main.py                  # 入口（TkinterDnD 主窗口）
+├── main.py                  # 入口（TkinterDnD 主窗口 / --headless 服务器）
 ├── config.py                # 软件元信息
 ├── personaldavd/            # 无界面服务器模式（v3.0 新增）
 │   ├── __main__.py          # 命令行入口：python -m personaldavd
@@ -223,22 +229,32 @@ PersonalDAV/
 │   ├── dav.py               # CardDAV + CalDAV + WebDAV ASGI 路由
 │   ├── api.py               # REST API 路由
 │   ├── auth.py              # 统一鉴权中间件
+│   ├── files.py             # 文件管理 REST API（v3.2 新增）
 │   ├── mcp.py               # MCP 集成模块
 │   ├── models.py            # Pydantic 数据模型
 │   ├── config.py            # 守护进程配置
-│   └── logging.py           # 结构化日志
+│   └── logging.py           # 结构化日志 + 实时日志队列
+├── webui/                   # v3.2 Web 管理界面（Vue 3 + Vite）
+│   ├── dist/                # SPA 构建产物
+│   ├── src/
+│   │   ├── api.js           # REST API 客户端封装
+│   │   ├── router/          # Hash 路由
+│   │   └── views/           # 登录/概览/联系人/日历/文件/设置
+│   └── package.json
 ├── data/                    # 运行产物（自动创建）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
 │   ├── attachments/         # 附件独立文件存储
 │   └── log/                 # 日志文件
-├── mcp_tools/               # MCP 工具模块（分文件管理）
+├── mcp_tools/               # MCP 工具模块（41 个工具，分文件管理）
 ├── models/                  # 数据模型层（dataclass）
 ├── database/                # 数据访问层（SQLite + Repository）
 │   └── repositories/        # 泛型 CRUD 仓储
 ├── services/                # 业务逻辑层
-│   ├── base_service.py      # 泛型 Serivce 基类
+│   ├── base_service.py      # 泛型 Service 基类
 │   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP 访问控制）
+│   ├── file_mount_service.py# 多挂载点管理服务（v3.2 新增）
+│   ├── dav_client_service.py# WebDAV 客户端（远程挂载，v3.2 新增）
 │   ├── mcp_server.py        # MCP SSE 服务器
 │   ├── ftp_service.py       # FTP/FTPS/SFTP/TFTP 服务器
 │   ├── sync_service.py      # Nextcloud 定时同步
@@ -249,7 +265,7 @@ PersonalDAV/
 │   └── webdav_helper.py     # XML 响应构建
 ├── ui/                      # 视图层（Tkinter）
 │   ├── app.py               # 主窗口 / 菜单 / 事件总线
-│   ├── tabs/                # 标签页（联系人/日历/服务器/远程）
+│   ├── tabs/                # 标签页（联系人/日历/服务器/远程/文件）
 │   ├── dialogs/             # 对话框（设置/事件/联系人/向导/确认）
 │   └── widgets/             # 自定义控件（Toast/右键菜单/工具提示）
 ├── utils/                   # 工具层
@@ -257,21 +273,32 @@ PersonalDAV/
 │   ├── attachment_store.py  # 附件文件存储管理
 │   ├── crypto.py            # Fernet 加密
 │   └── ...
-└── tests/                   # 测试（pytest：23 项/325 子测试）
+└── tests/                   # 测试（pytest + MCP 集成 + 鉴权测试）
 ```
 
 ```mermaid
 graph TB
+    subgraph WebUI["Web 管理界面 (Vue 3 SPA)"]
+        direction LR
+        WLogin["登录页"]
+        WDash["概览面板"]
+        WContacts["联系人管理"]
+        WCal["日历管理"]
+        WFiles["文件管理"]
+        WSettings["设置面板"]
+    end
+
     subgraph GUI["图形界面（Tkinter）"]
         direction LR
         Contacts["联系人标签页"]
         Calendar["日历标签页"]
         Server["服务器标签页"]
         Remote["远程文件标签页"]
+        Files["文件管理标签页"]
         Settings["设置对话框"]
     end
 
-    subgraph Daemon["无界面服务器（personaldavd）"]
+    subgraph Daemon["服务器（FastAPI + Uvicorn）"]
         direction LR
         DAV["DAV 协议"]
         REST["REST API"]
@@ -279,18 +306,12 @@ graph TB
         AUTH["统一鉴权"]
     end
 
-    subgraph Backend["服务层"]
-        direction LR
-        LB["LocalBackend"]
-        RB["RemoteBackend"]
-    end
-
     subgraph Service["业务逻辑层"]
         direction LR
         ContactSvc["ContactService"]
         EventSvc["EventService"]
         AuthSvc["AuthService"]
-        SyncSvc["SyncService"]
+        MountSvc["FileMountService"]
         FTPSvc["FTPService"]
     end
 
@@ -299,10 +320,9 @@ graph TB
         FS[("文件系统<br/>attachments/")]
     end
 
-    GUI -->|默认| LB
-    GUI -->|--remote| RB
-    LB --> Service
-    RB -->|HTTP| REST
+    WebUI -->|HTTP| REST
+    GUI -->|默认| Service
+    GUI -->|--remote| REST
     Daemon --> Service
     Service --> Data
     REST -->|HTTP| AI["AI 工具<br/>opencode / Claude"]
