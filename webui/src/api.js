@@ -18,6 +18,10 @@ async function request(method, path, options = {}) {
     window.location.hash = '#/login'
     throw new Error('未登录')
   }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || `请求失败 (${res.status})`)
+  }
   const ct = res.headers.get('content-type') || ''
   if (ct.includes('application/json')) {
     return res.json()
