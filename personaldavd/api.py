@@ -43,7 +43,7 @@ def _contact_to_out(raw: str) -> ContactOut | None:
 
 def _event_to_out(raw: str) -> EventOut | None:
     """Convert an iCal string to EventOut (minimal parse)."""
-    uid = summary = dtstart = dtend = ""
+    uid = summary = dtstart = dtend = description = location = categories = ""
     for line in raw.splitlines():
         if line.upper().startswith("UID:"):
             uid = line[4:].strip()
@@ -53,9 +53,16 @@ def _event_to_out(raw: str) -> EventOut | None:
             dtstart = line.split(":", 1)[-1].strip() if ":" in line else ""
         elif line.upper().startswith("DTEND"):
             dtend = line.split(":", 1)[-1].strip() if ":" in line else ""
+        elif line.upper().startswith("DESCRIPTION"):
+            description = line.split(":", 1)[-1].strip() if ":" in line else ""
+        elif line.upper().startswith("LOCATION"):
+            location = line.split(":", 1)[-1].strip() if ":" in line else ""
+        elif line.upper().startswith("CATEGORIES"):
+            categories = line.split(":", 1)[-1].strip() if ":" in line else ""
     if not uid:
         return None
-    return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend, ical=raw)
+    return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend,
+                    description=description, location=location, categories=categories, ical=raw)
 
 
 # ── Health ──────────────────────────────────────────────────────
