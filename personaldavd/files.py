@@ -16,6 +16,54 @@ def _mount_svc():
     return FileMountService()
 
 
+# ── Mount management API ──
+
+@files_router.get("/files/mounts", summary="列出所有挂载点")
+async def list_mounts(token: str = Depends(get_current_token)):
+    from services.file_mount_service import FileMountService
+    return FileMountService().get_mounts()
+
+
+@files_router.post("/files/mounts", summary="添加挂载点")
+async def add_mount(
+    body: dict,
+    token: str = Depends(get_current_token),
+):
+    from services.file_mount_service import FileMountService
+    svc = FileMountService()
+    try:
+        entry = svc.add_mount(body["name"], body["path"])
+        return entry
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@files_router.put("/files/mounts/{name}", summary="更新挂载点")
+async def update_mount(
+    name: str,
+    body: dict,
+    token: str = Depends(get_current_token),
+):
+    from services.file_mount_service import FileMountService
+    svc = FileMountService()
+    try:
+        entry = svc.update_mount(name, body.get("name", name), body.get("path", ""))
+        return entry
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@files_router.delete("/files/mounts/{name}", summary="删除挂载点")
+async def delete_mount(
+    name: str,
+    token: str = Depends(get_current_token),
+):
+    from services.file_mount_service import FileMountService
+    if FileMountService().remove_mount(name):
+        return {"deleted": True}
+    raise HTTPException(404, f"Mount '{name}' not found")
+
+
 @files_router.get("/files", summary="列出目录内容")
 async def list_files(
     path: str = Query("/", description="目录路径"),

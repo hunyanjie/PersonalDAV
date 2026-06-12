@@ -39,6 +39,48 @@
         </div>
       </section>
 
+      <!-- Mount Settings -->
+      <section v-if="activeSection === 'mounts'" class="config-section">
+        <h3>📁 文件挂载点管理</h3>
+        <div class="info-banner">每个挂载点将作为根目录下的一个虚拟目录显示。单挂载点时 / 直接显示文件内容。</div>
+        <div class="mount-list" v-if="mounts.length">
+          <div class="mount-header">
+            <span class="mh-name">挂载名称</span>
+            <span class="mh-path">文件系统路径</span>
+            <span class="mh-actions">操作</span>
+          </div>
+          <div v-for="m in mounts" :key="m.name" class="mount-row" :class="{ editing: editingMount === m.name }">
+            <span class="mh-name">{{ m.name }}</span>
+            <span class="mh-path">{{ m.path }}</span>
+            <span class="mh-actions">
+              <button class="btn-edit-sm" @click="startEditMount(m)">编辑</button>
+              <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)">删除</button>
+            </span>
+          </div>
+        </div>
+        <div v-else class="empty-logs">暂无挂载点</div>
+
+        <!-- Add Mount Form -->
+        <div class="mount-form" v-if="showMountForm">
+          <h4>{{ editingMount ? '编辑挂载点' : '添加挂载点' }}</h4>
+          <div class="form-grid">
+            <div class="form-item">
+              <label>挂载名称</label>
+              <input v-model="mountForm.name" placeholder="例如: Documents" />
+            </div>
+            <div class="form-item full">
+              <label>文件系统路径</label>
+              <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
+            </div>
+          </div>
+          <div class="dialog-actions" style="margin-top:16px">
+            <button class="btn-sm" @click="showMountForm = false; editingMount = null">取消</button>
+            <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存</button>
+          </div>
+        </div>
+        <button class="btn-tool" @click="showAddMountForm" style="margin-top:12px">+ 添加挂载点</button>
+      </section>
+
       <!-- MCP Settings -->
       <section v-if="activeSection === 'mcp'" class="config-section">
         <h3>🤖 MCP (Model Context Protocol)</h3>
@@ -165,6 +207,7 @@ export default {
     sections: [
       { id: 'server', label: '核心配置', icon: '🚀' },
       { id: 'app', label: '通用选项', icon: '⚙️' },
+      { id: 'mounts', label: '文件挂载', icon: '📁' },
       { id: 'mcp', label: 'AI 服务', icon: '🤖' },
       { id: 'logs', label: '安全审计', icon: '🛡️' },
       { id: 'syslogs', label: '系统日志', icon: '📋' },
@@ -177,6 +220,10 @@ export default {
     editValue: '',
     editableDefs: SETTING_DEFS,
     _logTimer: null,
+    mounts: [],
+    showMountForm: false,
+    editingMount: null,
+    mountForm: { name: '', path: '' },
   }),
   computed: {
     mcpSafetyLabel() {
@@ -187,11 +234,15 @@ export default {
   },
   async mounted() { 
     await this.load()
+    await this.loadMounts()
     this._logTimer = setInterval(() => {
       if (this.activeSection === 'syslogs') this.loadSystemLogs()
     }, 5000)
   },
   beforeUnmount() { clearInterval(this._logTimer) },
+  watch: {
+    activeSection(n) { if (n === 'mounts') this.loadMounts() },
+  },
   methods: {
     async load() {
       try { this.serverConfig = await api.serverConfig() } catch(e) {}
@@ -239,6 +290,42 @@ export default {
         await api.updateSetting(key, dbVal)
         this.settings[key] = value
       } catch(e) { alert('保存失败') }
+    },
+
+    // Mounts
+    async loadMounts() {
+      try { this.mounts = await api.listMounts() } catch(e) { this.mounts = [] }
+    },
+    showAddMountForm() {
+      this.editingMount = null
+      this.mountForm = { name: '', path: '' }
+      this.showMountForm = true
+    },
+    startEditMount(m) {
+      this.editingMount = m.name
+      this.mountForm = { name: m.name, path: m.path }
+      this.showMountForm = true
+    },
+    async saveMount() {
+      const { name, path } = this.mountForm
+      if (!name || !path) return
+      try {
+        if (this.editingMount) {
+          await api.updateMount(this.editingMount, name, path)
+        } else {
+          await api.addMount(name, path)
+        }
+        this.showMountForm = false
+        this.editingMount = null
+        await this.loadMounts()
+      } catch(e) { alert('保存失败：' + (e.message || e)) }
+    },
+    async doDeleteMount(name) {
+      if (!confirm(`确认删除挂载点「${name}」？`)) return
+      try {
+        await api.deleteMount(name)
+        await this.loadMounts()
+      } catch(e) { alert('删除失败：' + (e.message || e)) }
     },
   },
 }
@@ -296,6 +383,18 @@ export default {
 .status-dot.ok { background: #52c41a; }
 .status-dot.fail { background: #ff4d4f; }
 .empty-logs { text-align: center; padding: 40px; color: #ccc; }
+
+.mount-list { border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
+.mount-header, .mount-row { display: flex; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; align-items: center; }
+.mount-header { background: #fafafa; font-weight: 600; color: #666; font-size: 13px; }
+.mount-row:last-child { border-bottom: none; }
+.mount-row.editing { background: #e6f4ff; }
+.mh-name { width: 30%; }
+.mh-path { flex: 1; color: #888; font-family: monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mh-actions { width: 120px; text-align: right; display: flex; gap: 6px; justify-content: flex-end; }
+.btn-danger { color: #ff4d4f; border-color: #ff4d4f; }
+.mount-form { margin-top: 20px; padding: 20px; background: #fafafa; border-radius: 8px; border: 1px solid #e8e8e8; }
+.mount-form h4 { margin: 0 0 16px; }
 
 .syslogs-wrapper { margin-top: 16px; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; height: 400px; overflow-y: auto; line-height: 1.6; }
 .syslog-line { margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }

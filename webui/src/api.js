@@ -83,6 +83,12 @@ export default {
   deleteFile(path) { return request('DELETE', '/files', { params: { path } }) },
   mkdir(path) { return request('POST', '/files/mkdir', { params: { path } }) },
 
+  // Mounts
+  listMounts() { return request('GET', '/files/mounts') },
+  addMount(name, path) { return request('POST', '/files/mounts', { body: { name, path } }) },
+  updateMount(name, newName, newPath) { return request('PUT', `/files/mounts/${encodeURIComponent(name)}`, { body: { name: newName, path: newPath } }) },
+  deleteMount(name) { return request('DELETE', `/files/mounts/${encodeURIComponent(name)}`) },
+
   // Settings
   listSettings() { return request('GET', '/settings') },
   getSetting(key) { return request('GET', `/settings/${key}`) },
