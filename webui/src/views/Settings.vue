@@ -181,12 +181,78 @@
           <div v-if="!systemLogs.length" class="empty-logs">暂无系统日志</div>
         </div>
       </section>
+
+      <!-- Theme -->
+      <section v-if="activeSection === 'theme'" class="config-section">
+        <h3>🎨 主题自定义</h3>
+        <div class="info-banner">选择预设主题或自定义 HSL 调色板。修改后即时生效，自动保存至浏览器本地。</div>
+
+        <div class="theme-presets">
+          <div class="preset-label">预设色板</div>
+          <div class="preset-grid">
+            <button v-for="p in presets" :key="p.name"
+              class="preset-btn"
+              :class="{ active: isPresetActive(p) }"
+              :style="{ background: `hsl(${p.h}deg ${p.s}% ${p.l}%)` }"
+              @click="applyPreset(p)"
+              :title="p.name" />
+          </div>
+        </div>
+
+        <div class="theme-custom">
+          <h4>自定义调色</h4>
+          <div class="hsl-row">
+            <label>色相 <span class="hsl-val">{{ themeH }}°</span></label>
+            <div class="slider-track hue-track" :style="{ background: hueTrackBg }">
+              <input type="range" min="0" max="360" v-model.number="themeH" class="hsl-range" @input="applyCustom" />
+            </div>
+          </div>
+          <div class="hsl-row">
+            <label>饱和度 <span class="hsl-val">{{ themeS }}%</span></label>
+            <div class="slider-track" :style="{ background: `linear-gradient(to right, hsl(${themeH}deg 0% ${themeL}%), hsl(${themeH}deg 100% ${themeL}%))` }">
+              <input type="range" min="0" max="100" v-model.number="themeS" class="hsl-range" @input="applyCustom" />
+            </div>
+          </div>
+          <div class="hsl-row">
+            <label>明度 <span class="hsl-val">{{ themeL }}%</span></label>
+            <div class="slider-track" :style="{ background: `linear-gradient(to right, hsl(${themeH}deg ${themeS}% 0%), hsl(${themeH}deg ${themeS}% 100%))` }">
+              <input type="range" min="0" max="100" v-model.number="themeL" class="hsl-range" @input="applyCustom" />
+            </div>
+          </div>
+
+          <div class="theme-preview">
+            <div class="preview-label">当前品牌色</div>
+            <div class="preview-block">
+              <div class="preview-swatch" :style="{ background: currentBrandColor }"></div>
+              <div class="preview-samples">
+                <div class="sample" :style="{ background: currentBrandColor }"></div>
+                <div class="sample sample-hover" :style="{ background: `hsl(${themeH}deg ${themeS}% ${Math.max(themeL-8,0)}%)` }"></div>
+                <div class="sample sample-soft" :style="{ background: `hsl(${themeH}deg ${Math.max(themeS-34,0)}% ${Math.min(themeL+43,100)}%)` }"></div>
+              </div>
+            </div>
+            <div class="preview-code">hsl({{ themeH }}deg {{ themeS }}% {{ themeL }}%)</div>
+          </div>
+
+          <button class="btn-sm" @click="resetTheme" style="margin-top:12px">恢复默认蓝色</button>
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script>
 import api from '../api.js'
+
+const PRESETS = [
+  { name: '经典蓝', h: 210, s: 88, l: 52 },
+  { name: '深海蓝', h: 220, s: 85, l: 42 },
+  { name: '翡翠绿', h: 150, s: 80, l: 45 },
+  { name: '森林绿', h: 130, s: 75, l: 38 },
+  { name: '日落橙', h: 25, s: 90, l: 55 },
+  { name: '烈焰红', h: 0, s: 85, l: 55 },
+  { name: '薰衣紫', h: 265, s: 82, l: 58 },
+  { name: '樱花粉', h: 340, s: 80, l: 60 },
+]
 
 const SETTING_DEFS = [
   { key: 'auto_start_server', label: '启动时自动运行服务器', type: 'check' },
@@ -211,6 +277,7 @@ export default {
       { id: 'mcp', label: 'AI 服务', icon: '🤖' },
       { id: 'logs', label: '安全审计', icon: '🛡️' },
       { id: 'syslogs', label: '系统日志', icon: '📋' },
+      { id: 'theme', label: '主题', icon: '🎨' },
     ],
     serverConfig: {},
     settings: {},
@@ -224,15 +291,31 @@ export default {
     showMountForm: false,
     editingMount: null,
     mountForm: { name: '', path: '' },
+    presets: PRESETS,
+    themeH: 210,
+    themeS: 88,
+    themeL: 52,
+    _isCustom: false,
   }),
   computed: {
     mcpSafetyLabel() {
       const mode = this.serverConfig.mcp_safety_mode
       const map = { 'allow': '允许所有操作', 'confirm': '需要人工确认', 'safe': '完全禁止写操作' }
       return map[mode] || mode
-    }
+    },
+    currentBrandColor() {
+      return `hsl(${this.themeH}deg ${this.themeS}% ${this.themeL}%)`
+    },
+    hueTrackBg() {
+      const stops = []
+      for (let i = 0; i <= 360; i += 60) {
+        stops.push(`hsl(${i}deg ${this.themeS}% ${this.themeL}%)`)
+      }
+      return `linear-gradient(to right, ${stops.join(', ')})`
+    },
   },
   async mounted() { 
+    this.loadTheme()
     await this.load()
     await this.loadMounts()
     this._logTimer = setInterval(() => {
@@ -327,6 +410,51 @@ export default {
         await this.loadMounts()
       } catch(e) { alert('删除失败：' + (e.message || e)) }
     },
+
+    // Theme
+    loadTheme() {
+      try {
+        const saved = localStorage.getItem('theme_hsl')
+        if (saved) {
+          const { h, s, l } = JSON.parse(saved)
+          this.themeH = h; this.themeS = s; this.themeL = l
+        }
+        const custom = localStorage.getItem('theme_hsl_custom')
+        if (custom === 'true') this._isCustom = true
+      } catch(e) {}
+    },
+    applyTheme(h, s, l) {
+      const root = document.documentElement
+      root.style.setProperty('--brand-hue', h + 'deg')
+      root.style.setProperty('--brand-sat', s + '%')
+      root.style.setProperty('--brand-lit', l + '%')
+      localStorage.setItem('theme_hsl', JSON.stringify({ h, s, l }))
+    },
+    applyPreset(p) {
+      this.themeH = p.h; this.themeS = p.s; this.themeL = p.l
+      this._isCustom = false
+      localStorage.setItem('theme_hsl_custom', 'false')
+      this.applyTheme(p.h, p.s, p.l)
+    },
+    applyCustom() {
+      this._isCustom = true
+      localStorage.setItem('theme_hsl_custom', 'true')
+      this.applyTheme(this.themeH, this.themeS, this.themeL)
+    },
+    isPresetActive(p) {
+      if (this._isCustom) return false
+      return p.h === this.themeH && p.s === this.themeS && p.l === this.themeL
+    },
+    resetTheme() {
+      this.themeH = 210; this.themeS = 88; this.themeL = 52
+      this._isCustom = false
+      localStorage.removeItem('theme_hsl')
+      localStorage.removeItem('theme_hsl_custom')
+      const root = document.documentElement
+      root.style.removeProperty('--brand-hue')
+      root.style.removeProperty('--brand-sat')
+      root.style.removeProperty('--brand-lit')
+    },
   },
 }
 </script>
@@ -413,4 +541,30 @@ export default {
 .lv-warning .sl-lv { color: #faad14; }
 .lv-error .sl-lv { color: #f5222d; }
 .lv-debug .sl-lv { color: #888; }
+
+/* Theme */
+.theme-presets { margin-bottom: 28px; }
+.preset-label { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+.preset-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+.preset-btn { width: 36px; height: 36px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: .2s; outline: none; flex-shrink: 0; }
+.preset-btn:hover { transform: scale(1.15); }
+.preset-btn.active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-card); }
+
+.theme-custom h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0 0 16px; }
+.hsl-row { margin-bottom: 16px; }
+.hsl-row label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.hsl-val { font-family: monospace; font-size: 12px; color: var(--text-tertiary); }
+.slider-track { height: 24px; border-radius: 12px; position: relative; overflow: hidden; }
+.hue-track { border-radius: 12px; }
+.hsl-range { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; cursor: pointer; position: absolute; top: 0; left: 0; margin: 0; }
+.hsl-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--text-primary); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.hsl-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--text-primary); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+
+.theme-preview { margin-top: 20px; padding: 16px; background: var(--bg-page); border-radius: 8px; }
+.preview-label { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
+.preview-block { display: flex; align-items: center; gap: 16px; }
+.preview-swatch { width: 48px; height: 48px; border-radius: 8px; border: 1px solid var(--border-base); flex-shrink: 0; }
+.preview-samples { display: flex; gap: 8px; }
+.sample { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-base); }
+.preview-code { font-family: monospace; font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
 </style>
