@@ -141,6 +141,10 @@ class FileMountService:
         if self.is_single_mount:
             m = self._mounts[0]
             rel = api_path.lstrip("/")
+            if rel.startswith(m["name"] + "/"):
+                rel = rel[len(m["name"]) + 1:]
+            elif rel == m["name"]:
+                rel = ""
             abs_path = os.path.normpath(os.path.join(m["path"], rel))
             if not abs_path.startswith(os.path.normpath(m["path"])):
                 raise ValueError("Path traversal")
