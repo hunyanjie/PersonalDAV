@@ -77,6 +77,15 @@ export default {
     const t = token()
     return `${BASE}/files/preview?path=${encodeURIComponent(path)}${t ? `&token=${t}` : ''}`
   },
+  async previewFile(path) {
+    const t = token()
+    const url = `${BASE}/files/preview?path=${encodeURIComponent(path)}`
+    const headers = t ? { Authorization: `Bearer ${t}` } : {}
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error('预览请求失败')
+    const blob = await res.blob()
+    return URL.createObjectURL(blob)
+  },
   renameFile(path, newName) {
     return request('PUT', '/files/rename', { params: qs({ path, new_name: newName }) })
   },

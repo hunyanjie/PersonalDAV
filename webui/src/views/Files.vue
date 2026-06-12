@@ -69,7 +69,7 @@
         </div>
         <div class="preview-body">
           <iframe v-if="previewSrc" :src="previewSrc" class="preview-iframe" />
-          <div v-else class="preview-error">不支持预览该文件类型</div>
+          <div v-else class="preview-error">{{ previewError || '不支持预览该文件类型' }}</div>
         </div>
         <div class="preview-footer">
           <a :href="api().downloadUrl(previewItem.path)" class="btn-sm btn-primary">下载</a>
@@ -144,6 +144,9 @@ export default {
     sortField: 'name',
     sortDir: 'asc',
     previewItem: null,
+    _previewSrc: null,
+    _previewError: '',
+    _previewBlobUrl: '',
     dragOver: false,
   }),
   mounted() { 
@@ -169,10 +172,8 @@ export default {
       })
       return arr
     },
-    previewSrc() {
-      if (!this.previewItem) return null
-      return api().previewUrl(this.previewItem.path)
-    },
+    previewSrc() { return this._previewSrc },
+    previewError() { return this._previewError },
   },
   methods: {
     api() { return api },
@@ -184,7 +185,21 @@ export default {
       const ext = name.split('.').pop().toLowerCase()
       return PREVIEW_EXTS.includes(ext)
     },
-    doPreview(item) { this.previewItem = item },
+    async doPreview(item) {
+      this._previewSrc = null
+      this._previewError = ''
+      const ext = item.name.split('.').pop().toLowerCase()
+      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) {
+        this._previewSrc = api().previewUrl(item.path)
+      } else {
+        try {
+          this._previewSrc = await api.previewFile(item.path)
+        } catch (e) {
+          this._previewError = '预览失败: ' + (e.message || e)
+        }
+      }
+      this.previewItem = item
+    },
     async load() {
       this.loading = true
       this.errorMsg = ''
