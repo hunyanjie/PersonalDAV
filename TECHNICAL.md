@@ -5,6 +5,7 @@
 | 层面 | 技术 | 用途 |
 |------|------|------|
 | 语言 | Python 3.12+ | 类型注解、dataclass、match 语句 |
+| Web UI | Vue 3 + Vite + vue-router (v3.2) | 浏览器管理界面，hash 路由，SPA |
 | GUI | tkinter / ttk / tkinterdnd2 | 桌面界面、原生控件、文件拖放 |
 | 日历控件 | tkcalendar (Calendar) | 日历月视图、日期选择 |
 | 数据库 | SQLite3（内置） | 本地存储，WAL 模式，单文件 |
@@ -31,6 +32,8 @@
 > v3.0 变动：引入 FastAPI + Uvicorn 作为统一 ASGI 运行时，替代 Python 内置 `http.server`。新增 `personaldavd/` 包支持无界面守护进程模式，新增 `services/backend.py` Backend 抽象层支持本地/远程切换。
 >
 > v3.1 变动：新增 `services/embeddings.py` Embedding 抽象层 + `mcp_tools/analysis_tools.py` 冲突检测工具。ONNX Runtime 和 tokenizers 作为可选依赖，不安装时自动降级为关键词搜索。设置页新增「搜索」标签页，支持 provider 切换、ONNX 模型下载、API 配置。
+
+> v3.2 变动：新增 `webui/` Vue 3 + Vite SPA 前端项目，FastAPI 挂载 SPA 构建产物。新增 `personaldavd/files.py` 文件管理 REST API。新增 `services/file_mount_service.py` 多挂载点管理（替代单 dav_root）。新增 `ui/tabs/files_tab.py` 桌面文件管理标签页。统一日志系统添加 `LogBufferHandler` 支持 WebUI 实时日志查看。GUI 模式统一使用 FastAPI 替代 `http.server`。
 
 ---
 
@@ -104,95 +107,111 @@ main.py --headless
 
 ---
 
-## v3.0 架构变更
+## v3.2 — Web UI + 多挂载点架构
 
-### 统一 ASGI 运行时
+### Web 管理界面（Vue 3 + Vite SPA）
 
-v3.0 将原有 `http.server`（内置库）替换为 FastAPI + Uvicorn，形成了一个统一 ASGI 运行时：
+`webui/` 是全新的 Vue 3 + Vite 前端项目，通过 FastAPI 挂载 SPA 构建产物：
 
 ```
-┌──────────────────────────────────────────┐
-│           FastAPI App (Uvicorn)           │
-│                                          │
-│  ┌────────────┐  ┌────────────────────┐  │
-│  │ AuthMiddleware │  统一鉴权入口         │  │
-│  └──────┬─────┘  └────────────────────┘  │
-│         │                                 │
-│  ┌──────┴─────────────────────────────┐  │
-│  │  Router 分发                        │  │
-│  │  ├── DAV Routes  (/contacts/* etc)  │  │
-│  │  ├── REST API     (/api/*)          │  │
-│  │  └── MCP Mount    (/mcp/)           │  │
-│  └────────────────────────────────────┘  │
-└──────────────────────────────────────────┘
+webui/
+├── index.html               # 开发入口
+├── vite.config.js           # Vite 配置（开发代理 /api/ 到后端）
+├── package.json
+└── src/
+    ├── main.js               # Vue 应用入口
+    ├── App.vue               # 根组件
+    ├── api.js                # REST API 客户端封装（fetch + Bearer token）
+    ├── router/index.js       # Hash 路由（登录保护 beforeEach）
+    ├── components/
+    │   └── AppLayout.vue     # 侧边栏 + 内容区布局
+    └── views/
+        ├── Login.vue         # 登录页（发送 POST /api/auth/token）
+        ├── Dashboard.vue     # 概览面板（联系人/事件/文件统计）
+        ├── ContactsList.vue  # 联系人列表 + 搜索 + 删除
+        ├── ContactEdit.vue   # 联系人新建/编辑（结构化表单 → vCard）
+        ├── Calendar.vue      # 日历月视图（按月加载事件）
+        ├── Schedule.vue      # 日程议程视图（虚拟滚动/跨天/now-bar）
+        ├── CalendarEventEdit.vue  # 事件新建/编辑（iCal 表单）
+        ├── Files.vue         # 文件管理（上传/下载/预览/重命名/删除）
+        └── Settings.vue      # 设置面板（核心配置/通用选项/挂载点/MCP/日志）
 ```
 
-关键点：
-- 所有协议（DAV / REST / MCP）运行在同一个进程中、同一个端口上
-- AuthMiddleware 在路由器之前执行，统一处理鉴权
-- MCP 通过 `app.mount("/mcp", create_mcp_app())` 挂载为 Starlette 子应用
-- 移除了 `http.server.BaseHTTPRequestHandler` 继承体系
+关键集成点：
+- 构建产物 `webui/dist/` 纳入版本控制，运行时由 FastAPI 通过 `StaticFiles` 挂载到 `/`
+- SPA 使用 hash 路由（`/#/login`、`/#/contacts` 等），避免与后端路由冲突
+- 前端通过 `api.js` 封装所有 REST API 调用，`Bearer token` 从 `localStorage` 获取
+- `router.beforeEach` 检查 token 是否存在，未登录重定向到 `/login`
+- 登录页发送 `POST /api/auth/token` 获取 Bearer token，写入 `localStorage`
+- 401/403 响应自动清除 token 并跳转登录页
 
-### personaldavd 模块
+### 多挂载点文件架构
 
-`personaldavd/` 是无界面守护进程包，入口为 `python -m personaldavd`：
+#### FileMountService（单例）
 
-| 文件 | 职责 |
+`services/file_mount_service.py` 替代了原有的单 `dav_root` 配置，支持多个虚拟挂载点：
+
+```
+API Path           Resolution
+/                  单挂载 → 直接列出文件
+                   多挂载 → 列出挂载点入口
+/MountName          → mount_entry["path"]
+/MountName/sub      → mount_entry["path"]/sub
+```
+
+挂载点持久化到 `settings` 表的 `file_mounts` 键（JSON 数组）。
+
+兼容性：旧配置的 `dav_root` 在首次启动时自动迁移为单个挂载点。
+
+#### 新增文件
+
+| 文件 | 说明 |
 |------|------|
-| `__main__.py` | CLI 参数解析（--host/--port/--log-level/--log-json/--db-path/--dav-root） |
-| `daemon.py` | FastAPI app factory + lifespan（数据库/目录初始化） |
-| `dav.py` | DAV 协议 ASGI 路由（CardDAV + CalDAV + WebDAV + 附件） |
-| `api.py` | REST API 路由（联系人/事件 CRUD + 健康检查 + 令牌获取） |
-| `auth.py` | AuthMiddleware + 统一鉴权 + Scope 权限 |
-| `mcp.py` | MCP SSE 子应用工厂（挂载到 `/mcp/`） |
-| `models.py` | Pydantic 数据模型（ContactOut, EventOut, HealthOut 等） |
-| `config.py` | DaemonConfig dataclass |
-| `logging.py` | StructuredLogger（JSON/明文双模式） |
+| `personaldavd/files.py` | 文件管理 REST API（列出/下载/上传/重命名/删除/预览/挂载点 CRUD） |
+| `services/file_mount_service.py` | FileMountService 单例：挂载点 CRUD + 路径解析 + 目录遍历 |
+| `services/dav_client_service.py` | WebDAV 客户端服务（PROPFIND 目录浏览 + GET/PUT/DELETE/MOVE/MKCOL） |
+| `ui/tabs/files_tab.py` | tkinter 本地文件管理标签页（浏览/上传/下载/删除/重命名/新建文件夹/搜索） |
 
-### Backend 抽象层
-
-`services/backend.py` 定义 Backend 接口，支持本地/远程切换：
-
-```
-Backend (ABC)
-  ├── LocalBackend     直接实例化 Service 层，供 GUI 默认使用
-  └── RemoteBackend    通过 httpx 调用 daemon REST API
-```
-
-RemoteBackend 使用 `_RemoteContactService` / `_RemoteEventService` / `_RemoteSettings` 代理类，保持与 `ContactService` / `EventService` / `SettingsService` 相同的方法签名，使 GUI tab 代码无需修改。
-
-GUI 启动时可通过 `--remote` 参数切换到 RemoteBackend：
-
-```python
-# main.py
-if args.remote:
-    backend = RemoteBackend(base_url=args.remote_url, token=args.remote_token)
-else:
-    backend = LocalBackend()
-app = DAVServerApp(root, backend=backend)
-```
-
-### 路由对照
+#### 路由对照（v3.2 新增）
 
 | 路径 | 协议 | 实现文件 | 说明 |
 |------|------|---------|------|
-| `/contacts/` | CardDAV | `dav.py` | PROPFIND/REPORT/GET/PUT/DELETE |
-| `/events/` | CalDAV | `dav.py` | PROPFIND/REPORT/GET/PUT/DELETE |
-| `/dav/` | WebDAV | `dav.py` | PROPFIND/GET/PUT/DELETE/MKCOL/COPY/MOVE |
-| `/attachments/` | HTTP | `dav.py` | GET 附件文件（带鉴权） |
-| `/api/health` | REST | `api.py` | 健康检查 |
-| `/api/auth/token` | REST | `api.py` | 获取 Bearer token |
-| `/api/contacts` | REST | `api.py` | 联系人 CRUD |
-| `/api/events` | REST | `api.py` | 事件 CRUD |
-| `/api/docs` | OpenAPI | FastAPI 原生 | Swagger UI |
-| `/mcp/sse` | MCP SSE | `mcp.py` | SSE 端点 |
-| `/mcp/messages/` | MCP | `mcp.py` | 消息端点 |
+| `/api/files` | REST | `files.py` | 文件列表（挂载点感知） |
+| `/api/files/download` | REST | `files.py` | 文件下载（FileResponse） |
+| `/api/files/preview` | REST | `files.py` | 文件预览（text/image/pdf） |
+| `/api/files/upload` | REST | `files.py` | 文件上传（multipart/form-data） |
+| `/api/files/rename` | REST | `files.py` | 重命名 |
+| `/api/files/mkdir` | REST | `files.py` | 创建目录 |
+| `/api/files/mounts` | REST | `files.py` | 挂载点 CRUD |
+| `/api/settings` | REST | `api.py` | 设置列表/读写 |
+| `/api/stats` | REST | `api.py` | 服务器统计（联系人/事件/文件/磁盘） |
+| `/api/auth/logs` | REST | `api.py` | 鉴权日志查询 |
+| `/api/logs` | REST | `api.py` | 系统运行日志（实时缓冲区） |
+| `/` | SPA | FastAPI StaticFiles | Vue 3 SPA 入口 |
 
-### 与旧版本的兼容
+### 日志系统增强
 
-- GUI 模式（`python main.py`）仍然使用 `http.server`（`DAVServer`）提供服务，完全兼容 v2.x 行为
-- 无界面模式（`python -m personaldavd`）使用 FastAPI，数据格式和数据库结构不变
-- `RemoteBackend` 通过 REST API 与新旧版本兼容
+`personaldavd/logging.py` 新增 `LogBufferHandler`：
+
+- 维护一个全局 `queue.Queue(maxsize=1000)` 作为日志缓冲区
+- 所有日志记录推送到队列，WebUI 通过 `GET /api/logs` 轮询读取
+- `setup_file_logging()` 添加 `RotatingFileHandler`（5MB 轮转，保留 3 份）
+- GUI 模式也通过 `LogBufferHandler` 捕获后端日志
+
+### Referer/UA/Fingerprint 鉴权
+
+`services/auth_service.py` 扩展 `AuthMiddleware.check_auth()`：
+
+- **Referer 白名单**：检查请求 `Referer` 头是否匹配白名单前缀
+- **User-Agent 白名单**：检查 `User-Agent` 是否匹配白名单模式（通配符 `*`）
+- **Fingerprint 白名单**：检查 `X-Client-Fingerprint` 头是否在白名单中
+- 三种规则均支持通配符匹配，配置在 `referer_whitelist` / `ua_whitelist` / `fingerprint_whitelist` 设置中
+
+鉴权日志增加 `user_agent` 和 `fingerprint` 字段记录。
+
+### GUI 模式统一 FastAPI
+
+`ui/app.py` 中的 GUI 模式（`python main.py`）现在也使用 FastAPI 作为 DAV 服务器，与 `--headless` 模式共享同一套 ASGI 路由。这移除了对旧 `http.server` (`DAVServer`) 的依赖，使 GUI 模式也支持 Web 面板和 REST API。
 
 ---
 
@@ -200,38 +219,56 @@ app = DAVServerApp(root, backend=backend)
 
 ```
 PersonalDAV/
-├── main.py                    # 入口：TkinterDnD 主窗口
+├── main.py                    # 入口：TkinterDnD 主窗口 / --headless
 ├── config.py                  # 软件元信息（名称、版本、作者等）
 ├── personaldavd/              # v3.0 无界面守护进程
 │   ├── __init__.py
 │   ├── __main__.py            # CLI 入口
 │   ├── config.py              # DaemonConfig 数据类
-│   ├── daemon.py              # FastAPI 应用工厂
+│   ├── daemon.py              # FastAPI 应用工厂（含 SPA 挂载）
 │   ├── dav.py                 # DAV ASGI 路由
-│   ├── api.py                 # REST API 路由
+│   ├── api.py                 # REST API 路由（含 v3.2 扩展）
 │   ├── auth.py                # 统一鉴权中间件
 │   ├── mcp.py                 # MCP 子应用工厂
 │   ├── models.py              # Pydantic 模型
-│   └── logging.py             # 结构化日志
+│   ├── files.py               # 文件管理 REST API（v3.2）
+│   └── logging.py             # 结构化日志 + LogBufferHandler（v3.2）
+├── webui/                     # v3.2 Web 管理界面 (Vue 3 + Vite)
+│   ├── dist/                  # SPA 构建产物（FastAPI 挂载）
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/
+│       ├── main.js
+│       ├── App.vue
+│       ├── api.js              # REST API 客户端封装
+│       ├── router/index.js     # Hash 路由（登录守卫）
+│       ├── components/AppLayout.vue
+│       └── views/
+│           ├── Login.vue / Dashboard.vue / ContactsList.vue
+│           ├── ContactEdit.vue / Calendar.vue / Schedule.vue
+│           ├── CalendarEventEdit.vue / Files.vue / Settings.vue
 ├── data/                      # 运行产物（启动时自动创建）
 │   ├── dav_data.db            # SQLite 数据库
 │   ├── dav_data.db.bak        # 自动备份
 │   ├── remote_connections.key # Fernet 加密密钥
 │   └── log/
-│       └── dav_server.log     # 日志文件（启用时）
-├── mcp_tools/                 # MCP 工具模块（v2.6 拆分）
-│   ├── _state.py              # 共享状态（服务实例惰性 getter，首次调用时创建）
-│   ├── helpers.py             # JSON 序列化 / 摘要辅助函数
-│   ├── server_tools.py        # DAV 服务器启停（start/stop/status）
-│   ├── contact_tools.py       # 联系人 CRUD + create_contact_v2
-│   ├── event_tools.py         # 日历事件 CRUD
-│   ├── config_tools.py        # 系统配置 / 健康检查
-│   ├── webdav_tools.py        # WebDAV 文件操作
-│   ├── ftp_tools.py           # FTP/SFTP 服务器管理 + 远程文件操作
-│   └── smb_tools.py           # SMB 共享浏览
+│       ├── dav_server.log     # 日志文件（轮转）
+│       └── personaldavd.log   # 守护进程日志（v3.2 轮转）
+├── mcp_tools/                 # MCP 工具模块（41 个工具）
+│   ├── _state.py              # 共享状态（服务实例惰性 getter）
+│   ├── helpers.py             # JSON 序列化 / check_safety
+│   ├── server_tools.py        # DAV 服务器启停（3 个）
+│   ├── contact_tools.py       # 联系人 CRUD（7 个）
+│   ├── event_tools.py         # 日历事件 CRUD（6 个）
+│   ├── config_tools.py        # 系统配置 / 健康检查（2 个）
+│   ├── analysis_tools.py      # 查重 / 冲突检测（3 个，v3.1）
+│   ├── webdav_tools.py        # WebDAV 文件操作（5 个）
+│   ├── ftp_tools.py           # FTP/SFTP 服务 + 文件操作（10 个）
+│   └── smb_tools.py           # SMB 服务 + 浏览（5 个）
 ├── models/                    # 数据模型层
 │   ├── setting_defs.py        # SettingDef 声明式设置定义
-│   ├── constants.py           # 共享映射常量（状态/透明度/提醒/频率/预设等）
+│   ├── constants.py           # 共享映射常量
 │   ├── contact.py             # ContactModel dataclass
 │   └── event.py               # EventModel dataclass
 ├── database/                  # 数据访问层
@@ -242,61 +279,63 @@ PersonalDAV/
 │       ├── event_repository.py
 │       └── settings_repository.py
 ├── services/                  # 业务逻辑层
-│   ├── base_service.py        # BaseService 泛型服务基类（含 get_etag / get_all_items）
-│   ├── backend.py             # v3.0 Backend 抽象层（LocalBackend / RemoteBackend）
+│   ├── base_service.py        # BaseService 泛型基类
+│   ├── backend.py             # Backend 抽象层（LocalBackend / RemoteBackend）
 │   ├── contact_service.py     # ContactService 单例
 │   ├── event_service.py       # EventService 单例
 │   ├── settings_service.py    # SettingsService 单例
-│   ├── auth_service.py        # AuthService 统一鉴权（密码/IP控制/日志）
-│   ├── ftp_service.py         # FTPService 单例（FTP/FTPS/SFTP/TFTP 服务器）
-│   ├── ftp_client_service.py  # FTP/FTPS/SFTP 客户端（stateless 方法）
-│   ├── smb_service.py         # SMBService 单例（SMB 客户端）
-│   └── mcp_server.py          # MCPServer（MCP SSE 协议服务器）
+│   ├── auth_service.py        # AuthService（密码/IP/Referer/UA/Fingerprint）
+│   ├── file_mount_service.py  # 多挂载点管理（v3.2）
+│   ├── dav_client_service.py  # WebDAV 客户端（远程挂载，v3.2）
+│   ├── ftp_service.py         # FTPService（FTP/FTPS/SFTP/TFTP）
+│   ├── ftp_client_service.py  # FTP/FTPS/SFTP 客户端
+│   ├── smb_service.py         # SMBService（SMB 客户端）
+│   └── mcp_server.py          # MCPServer（MCP SSE）
 ├── network/                   # 网络层
-│   ├── dav_server.py          # DAVHandler（HTTP 服务器，CardDAV/CalDAV/WebDAV 端点）
+│   ├── dav_server.py          # DAVHandler（已废弃，v3.2 移除）
 │   ├── dav_client.py          # WebDAV 客户端导入
-│   └── webdav_helper.py       # WebDAV XML 响应构建（multistatus/propfind/error）
+│   └── webdav_helper.py       # WebDAV XML 响应构建
 ├── utils/                     # 工具层
 │   ├── event_bus.py           # EventBus 观察者模式
-│   ├── timezone_helper.py     # TimezoneHelper 可定制时区格式化
+│   ├── timezone_helper.py     # TimezoneHelper
 │   ├── encoding_helper.py     # QP/Base64 编解码
-│   ├── vcard_parser.py        # RobustVCardParser 回退解析（策略模式）
-│   ├── window_utils.py        # center_window() 窗口居中工具
-│   ├── validators.py          # 端口/IP/密码强度验证（v2.8）
-│   ├── attachment_store.py    # 附件文件存储管理（v2.8）
-│   └── logger.py              # 日志系统（RotatingFile + GUI 输出）
+│   ├── vcard_parser.py        # RobustVCardParser
+│   ├── window_utils.py        # center_window()
+│   ├── validators.py          # 端口/IP/密码强度验证
+│   ├── attachment_store.py    # 附件文件存储管理
+│   └── logger.py              # 日志系统（RotatingFile + GUI）
 ├── tests/                     # 单元测试
 │   ├── test_config.py         # 配置常量验证
 │   ├── test_base_service.py   # BaseService 核心方法测试
 │   ├── test_fuzzing.py        # 325 个模糊变异子测试
-│   ├── test_memory_leak.py    # 内存泄漏检测（tracemalloc + gc）
-│   ├── test_ui_snapshot.py    # UI 快照截图对比测试
+│   ├── test_memory_leak.py    # 内存泄漏检测
+│   ├── test_ui_snapshot.py    # UI 快照截图对比
 │   ├── test_mcp_auth_http.py  # MCP 鉴权 HTTP 测试
 │   ├── _run_mcp_tools_check.py    # MCP 内部工具端到端测试
 │   └── _run_mcp_http_check.py     # MCP HTTP/SSE 端到端测试
 └── ui/                        # 视图层
-    ├── app.py                 # DAVServerApp 主应用类
+    ├── app.py                 # DAVServerApp 主应用类（v3.2 FastAPI）
     ├── tabs/
-    │   ├── base_tab.py        # BaseTreeTab 泛型 Treeview 基类（搜索/排序/多选/批量插入/加速滚动）
+    │   ├── base_tab.py        # BaseTreeTab 泛型基类
     │   ├── contacts_tab.py    # ContactsTab
-    │   ├── calendar_tab.py    # CalendarTab（含月视图）
+    │   ├── calendar_tab.py    # CalendarTab（月视图 + 日程）
+    │   ├── files_tab.py       # FilesTab 本地文件管理（v3.2）
     │   ├── server_tab.py      # ServerTab（FTP/SFTP/TFTP/WebDAV 控制）
     │   └── remote_tab.py      # RemoteTab（多协议远程文件浏览器）
     ├── dialogs/
-    │   ├── settings_dialog.py    # 声明式设置对话框
+    │   ├── settings_dialog.py    # 声明式设置对话框（含文件挂载标签页）
     │   ├── event_dialog.py       # 事件编辑对话框
     │   ├── contact_dialog.py     # 联系人编辑对话框
-    │   ├── import_preview_dialog.py # 导入预览 + 对比对话框
-    │   ├── text_import_dialog.py
+    │   ├── import_preview_dialog.py / text_import_dialog.py
     │   ├── webdav_import_dialog.py
-    │   ├── confirm_dialog.py     # 标准化确认对话框（v2.8）
-    │   └── setup_wizard.py       # 首次启动向导（v2.8）
+    │   ├── confirm_dialog.py     # 标准化确认对话框
+    │   └── setup_wizard.py       # 首次启动向导
     └── widgets/
         ├── enhanced_tooltip.py   # 悬浮提示框
-        ├── right_click_menu.py   # 右键菜单（上下文感知）
+        ├── right_click_menu.py   # 右键菜单
         ├── progress_window.py    # 通用进度窗口
-        ├── toast.py              # 非模态 Toast 通知（v2.8 类型化）
-        └── treeview_scroller.py  # 拖拽自动加速滚动（compute_scroll_units）
+        ├── toast.py              # 非模态 Toast 通知
+        └── treeview_scroller.py  # 拖拽自动加速滚动
 ```
 
 > v2.6 数据目录重组：数据库、密钥、日志统一归入 `data/`，`main.py` 启动时自动从旧路径迁移文件。所有路径通过 `config.py` 的 `DEFAULT_DB_PATH` / `DEFAULT_LOG_FILE` 集中管理。
@@ -907,6 +946,11 @@ def get_column_width(self, col): ... # 自定义列宽
 | Calendar 月视图通过 monkey-patch `_prev_month` 等 4 个方法同步下拉框 | 无需轮询，Calendar 内置导航点击后立即同步 |
 | 多选下载单文件走 save 对话框、多文件走 save 目录 | 单文件给出默认文件名，多文件批量下载到文件夹 |
 | WebDAV `/dav/` 使用 `xml.etree.ElementTree` 手动构建 XML | 零外部依赖，避免引入重量级 `wsgidav` |
+| `webui/dist/` 纳入版本控制 | 用户免安装构建工具即可运行，`pip install` 后直接可用 |
+| SPA 使用 hash 路由 `#/path` | 避免与后端 REST 路由冲突，无需服务端路由配合 |
+| FileMountService 单挂载模式自动展平路径 | 兼容旧版单 `dav_root` 用户行为，升级无感 |
+| `check_safety` 同时拦截 MCP 和 REST API | 单点防御，确保 AI 和 HTTP 客户端一视同仁 |
+| gui 模式改为 FastAPI 统一运行时 | 消除两套服务器的维护成本，GUI 模式也能使用 Web 和 REST API |
 
 ---
 
@@ -1277,7 +1321,7 @@ class MCPServer:
 
 `start()` 在 daemon 线程中依次执行：工具注册 → `sse_app()` 构建 → `uvicorn.Server.run()`，调用后立即返回，不阻塞主线程。`stop()` 设置 `should_exit = True`。
 
-### 暴露的工具（共 33 个）
+### 暴露的工具（共 41 个）
 
 #### DAV 核心工具（16 个）
 
@@ -1320,6 +1364,14 @@ class MCPServer:
 | `ftp_mkdir(host, ..., path)` | 创建远程目录 |
 | `ftp_rmdir(host, ..., path)` | 删除远程空目录 |
 
+#### SMB 服务管理（3 个）
+
+| 工具 | 说明 |
+|------|------|
+| `smb_servers_start()` | 启动 SMB/CIFS 文件共享服务 |
+| `smb_servers_stop()` | 停止 SMB/CIFS 文件共享服务 |
+| `smb_servers_status()` | 查询 SMB/CIFS 服务运行状态 |
+
 #### SMB 浏览（2 个）
 
 | 工具 | 说明 |
@@ -1354,7 +1406,7 @@ mcp_tools/
 ├── config_tools.py   # 2 个工具
 ├── webdav_tools.py   # 5 个工具
 ├── ftp_tools.py      # 10 个工具
-└── smb_tools.py      # 2 个工具
+└── smb_tools.py      # 5 个工具
 ```
 
 优势：职责清晰、可单独测试、无需启动完整 GUI。
@@ -1412,7 +1464,7 @@ from .mcp import create_mcp_app
 app.mount("/mcp", create_mcp_app(), name="mcp")
 ```
 
-`create_mcp_app()` 创建 FastMCP 实例，注册全部 33 个工具，调用 `sse_app()` 返回 Starlette ASGI 子应用。该子应用通过 `app.mount()` 挂载到 `/mcp` 前缀下，与 DAV 路由、REST API 共享同一端口和鉴权中间件。
+`create_mcp_app()` 创建 FastMCP 实例，注册全部 41 个工具，调用 `sse_app()` 返回 Starlette ASGI 子应用。该子应用通过 `app.mount()` 挂载到 `/mcp` 前缀下，与 DAV 路由、REST API 共享同一端口和鉴权中间件。
 
 路径变化：`/sse` → `/mcp/sse`，`/messages/` → `/mcp/messages/`。
 
@@ -1448,16 +1500,16 @@ pytest tests/ -v -q
 
 ### 测试结构（共 23 项，325 个子测试）
 
-| 文件 | 测试内容 |
-|------|----------|
-| `test_config.py` | 验证配置常量（名称、版本、默认路径等）(v2.1) |
-| `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询）(v2.1) |
+| 文件 | 测试内容                                                                       |
+|------|----------------------------------------------------------------------------|
+| `test_config.py` | 验证配置常量（名称、版本、默认路径等）(v2.1)                                                  |
+| `test_base_service.py` | 测试 `BaseService` 全部公有方法（CRUD、ETag、列表查询）(v2.1)                              |
 | `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 (v2.5) |
-| `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪）(v2.5) |
-| `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 (v2.5) |
-| `_run_mcp_tools_check.py` | MCP 全部 33 个工具的内部端到端测试 (v2.2) |
-| `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2) |
-| `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3) |
+| `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪）(v2.5)                |
+| `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 (v2.5)                       |
+| `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.2增加到31个，v3.2增加到41个)                              |
+| `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
+| `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
 
 ### 运行全部测试
 

@@ -2,15 +2,18 @@
 
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.routing import APIRoute
 
 from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION
 from .config import DaemonConfig
 from .dav import dav_router
 from .api import api_router
+from .files import files_router
 from .auth import AuthMiddleware
 from .logging import StructuredLogger
 from .mcp import create_mcp_app
@@ -28,8 +31,8 @@ logger: StructuredLogger | None = None
 def _init_environment(cfg: "DaemonConfig"):
     import sqlite3
     os.makedirs(os.path.dirname(cfg.db_path) or ".", exist_ok=True)
-    os.makedirs(cfg.dav_root, exist_ok=True)
-    # Touch DB so tables are created on first service access
+    if cfg.dav_root:
+        os.makedirs(cfg.dav_root, exist_ok=True)
     conn = sqlite3.connect(cfg.db_path)
     conn.close()
 
@@ -42,7 +45,7 @@ async def lifespan(app: FastAPI):
     _init_environment(cfg)
     logger.info(f"{SOFTWARE_NAME} daemon starting", extra={"version": SOFTWARE_VERSION, "host": cfg.host, "port": cfg.port})
     yield
-    logger.info("PersonalDAV daemon stopped")
+    logger.info(f"{SOFTWARE_NAME} daemon stopped")
 
 
 def create_app(config: DaemonConfig | None = None) -> FastAPI:
@@ -59,14 +62,59 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     )
     app.state.config = cfg
     app.add_middleware(AuthMiddleware)
-    app.include_router(api_router, prefix="/api")
+
+    if cfg.webui_enabled:
+        app.include_router(api_router, prefix="/api")
+        app.include_router(files_router, prefix="/api")
+        app.mount("/mcp", create_mcp_app(), name="mcp")
+
+        webui_dist = os.path.join(os.path.dirname(__file__), "..", "webui", "dist")
+        if os.path.isdir(webui_dist):
+            from fastapi.responses import FileResponse
+            app.mount("/assets", StaticFiles(directory=os.path.join(webui_dist, "assets")), name="spa_assets")
+            @app.get("/", include_in_schema=False)
+            async def serve_spa():
+                return FileResponse(os.path.join(webui_dist, "index.html"))
+
     app.include_router(dav_router)
-    app.mount("/mcp", create_mcp_app(), name="mcp")
     return app
 
 
+class DaemonServer:
+    """统一 FastAPI 服务器封装，接口与旧 DAVServer 兼容。
+
+    start() / stop() 生命周期管理，内部使用 uvicorn.Server 程序化启停，
+    同时提供 REST API、MCP、Web UI SPA 以及传统 DAV 协议。
+    """
+
+    def __init__(self, config: DaemonConfig):
+        self.config = config
+        self._uvicorn_server = None
+        self.start_time = 0.0
+
+    def start(self):
+        import time as _time
+        import uvicorn
+        self.start_time = _time.time()
+        app = create_app(self.config)
+        uv_config = uvicorn.Config(
+            app,
+            host=self.config.host,
+            port=self.config.port,
+            log_level=self.config.log_level.lower(),
+            ssl_keyfile=self.config.ssl_keyfile if self.config.ssl_enabled and self.config.ssl_keyfile else None,
+            ssl_certfile=self.config.ssl_certfile if self.config.ssl_enabled and self.config.ssl_certfile else None,
+        )
+        self._uvicorn_server = uvicorn.Server(uv_config)
+        self._uvicorn_server.run()
+
+    def stop(self):
+        if self._uvicorn_server:
+            self._uvicorn_server.should_exit = True
+            self._uvicorn_server = None
+
+
 def run_daemon(config: DaemonConfig | None = None):
-    import uvicorn
     cfg = config or DaemonConfig()
-    app = create_app(cfg)
-    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level=cfg.log_level.lower())
+    server = DaemonServer(cfg)
+    server.start()

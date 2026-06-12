@@ -4,6 +4,7 @@ import ipaddress
 import time
 import json
 import urllib.request
+import fnmatch
 from datetime import datetime
 from services.settings_service import SettingsService
 from utils.logger import logger
@@ -90,10 +91,15 @@ class AuthService:
     # ── MCP 令牌（可轮换） ──────────────────────────────────────
 
     def _mcp_token_seed(self) -> str:
-        stored = SettingsService().get_setting("access_password_hash", "")
+        s = SettingsService()
+        stored = s.get_setting("access_password_hash", "")
         if not stored:
-            return ""
-        salt = SettingsService().get_setting("mcp_token_salt", "")
+            salt = s.get_setting("mcp_token_salt", "")
+            if not salt:
+                salt = secrets.token_hex(16)
+                s.set_setting("mcp_token_salt", salt)
+            return f"mcp:nopass:{salt}"
+        salt = s.get_setting("mcp_token_salt", "")
         return f"mcp:{stored}:{salt}" if salt else f"mcp:{stored}"
 
     def get_mcp_token(self) -> str:
@@ -155,11 +161,61 @@ class AuthService:
             if '/' in pattern:
                 return ip in ipaddress.ip_network(pattern, strict=False)
             if '*' in pattern:
-                import fnmatch
                 return fnmatch.fnmatch(ip_str, pattern)
             return ip_str == pattern
         except ValueError:
             return False
+
+    # ── Referer / User-Agent / Fingerprint 访问控制 ────────────
+
+    @staticmethod
+    def _wildcard_match(value: str, pattern: str) -> bool:
+        """通配符匹配（? 单字符，* 多字符），支持 fnmatch 语法。"""
+        return fnmatch.fnmatch(value.lower(), pattern.lower())
+
+    @staticmethod
+    def _load_list(setting_key: str) -> list[str]:
+        """从设置读取多行/逗号分隔的规则列表。"""
+        raw = SettingsService().get_setting(setting_key, "").strip()
+        if not raw:
+            return []
+        import re
+        return [line.strip() for line in re.split(r'[\n,，]+', raw) if line.strip()]
+
+    def _match_any(self, value: str, patterns: list[str]) -> bool:
+        return any(self._wildcard_match(value, p) for p in patterns)
+
+    def check_referer_advanced(self, referer: str) -> bool:
+        """Referer 黑白名单检测（含通配符）。"""
+        wl = self._load_list("referer_whitelist")
+        bl = self._load_list("referer_blacklist")
+        if bl and self._match_any(referer, bl):
+            return False
+        if wl:
+            return self._match_any(referer, wl)
+        return True
+
+    def check_user_agent(self, ua: str) -> bool:
+        """User-Agent 黑白名单检测。"""
+        wl = self._load_list("ua_whitelist")
+        bl = self._load_list("ua_blacklist")
+        if bl and self._match_any(ua, bl):
+            return False
+        if wl:
+            return self._match_any(ua, wl)
+        return True
+
+    def check_fingerprint(self, fp: str) -> bool:
+        """浏览器指纹黑白名单检测。"""
+        if not fp:
+            return True
+        wl = self._load_list("fingerprint_whitelist")
+        bl = self._load_list("fingerprint_blacklist")
+        if bl and self._match_any(fp, bl):
+            return False
+        if wl:
+            return self._match_any(fp, wl)
+        return True
 
     def check_ip(self, client_ip: str) -> bool:
         whitelist = self.get_whitelist()
@@ -306,7 +362,7 @@ class AuthService:
         data = f"{prev_hash}|{timestamp}|{ip}|{success}|{method}|{detail}"
         return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
-    def log_auth(self, success: bool, client_ip: str, method: str = "", extra: str = ""):
+    def log_auth(self, success: bool, client_ip: str, method: str = "", extra: str = "", user_agent: str = "", fingerprint: str = ""):
         status = "登录成功" if success else "登录失败"
         parts = f"[{client_ip}] {status}"
         if method:
@@ -323,8 +379,8 @@ class AuthService:
             prev_hash = self._get_last_hash()
             h = self._compute_hash(prev_hash, ts, client_ip, succ, method, extra)
             Database().execute(
-                "INSERT INTO auth_logs (timestamp, ip, success, method, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (ts, client_ip, succ, method, extra, prev_hash, h)
+                "INSERT INTO auth_logs (timestamp, ip, success, method, detail, user_agent, fingerprint, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, client_ip, succ, method, extra, user_agent, fingerprint, prev_hash, h)
             )
         except Exception as e:
             logger.warning(f"写入鉴权日志失败: {e}")
@@ -347,16 +403,16 @@ class AuthService:
         try:
             if protocol:
                 rows = Database().query(
-                    "SELECT id, timestamp, ip, success, method, detail FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
+                    "SELECT id, timestamp, ip, success, method, detail, user_agent, fingerprint FROM auth_logs WHERE method LIKE ? ORDER BY id DESC LIMIT ?",
                     (f"%{protocol}%", limit)
                 )
             else:
                 rows = Database().query(
-                    "SELECT id, timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                    "SELECT id, timestamp, ip, success, method, detail, user_agent, fingerprint FROM auth_logs ORDER BY id DESC LIMIT ?",
                     (limit,)
                 )
             return [
-                {"id": r[0], "time": r[1], "ip": r[2], "success": bool(r[3]), "method": r[4] or "", "detail": r[5] or ""}
+                {"id": r[0], "time": r[1], "ip": r[2], "success": bool(r[3]), "method": r[4] or "", "detail": r[5] or "", "user_agent": r[6] or "", "fingerprint": r[7] or ""}
                 for r in rows
             ]
         except Exception:
@@ -365,11 +421,11 @@ class AuthService:
     def get_auth_logs(self, limit: int = 200) -> list[dict]:
         try:
             rows = Database().query(
-                "SELECT timestamp, ip, success, method, detail FROM auth_logs ORDER BY id DESC LIMIT ?",
+                "SELECT timestamp, ip, success, method, detail, user_agent, fingerprint FROM auth_logs ORDER BY id DESC LIMIT ?",
                 (limit,)
             )
             return [
-                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or ""}
+                {"time": r[0], "ip": r[1], "success": bool(r[2]), "method": r[3] or "", "detail": r[4] or "", "user_agent": r[5] or "", "fingerprint": r[6] or ""}
                 for r in rows
             ]
         except Exception:

@@ -5,6 +5,7 @@ import os
 from typing import Any
 from services.smb_service import SMBService
 from services.ftp_client_service import FTPClientService
+from services.dav_client_service import DAVClientService
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
 from utils.logger import logger
@@ -32,7 +33,7 @@ class RemoteTab(ttk.Frame):
     tree: ttk.Treeview
     mounts_tree: ttk.Treeview
 
-    PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 21, "SFTP": 22}
+    PROTOCOLS = {"SMB": 445, "FTP": 21, "FTPS": 21, "SFTP": 22, "WebDAV": 80}
     ENCODINGS = [
         "utf-8", "utf-16be", "utf-16le", "utf-32be", "utf-32le",
         "gb2312", "gb18030", "gbk", "big5", "big5-hkscs",
@@ -53,6 +54,7 @@ class RemoteTab(ttk.Frame):
         self.settings_service = settings_service
         self.smb_service = SMBService()
         self.ftp_client = FTPClientService()
+        self.dav_client = DAVClientService()
         self._current_protocol = "SMB"
         self._current_server = ""
         self._current_share = ""
@@ -67,6 +69,10 @@ class RemoteTab(ttk.Frame):
         self.username_var = tk.StringVar()
         self.password_var = tk.StringVar()
         self.encoding_var = tk.StringVar(value="utf-8")
+
+        self._all_entries: list[dict[str, Any]] = []
+        self._search_var = tk.StringVar()
+        self._search_var.trace("w", self._on_search_change)
 
         self.mount_mgr = RemoteMountManager(self)
         self.file_ops = RemoteFileOps(self)
@@ -129,6 +135,13 @@ class RemoteTab(ttk.Frame):
         self.path_label = ttk.Label(toolbar, text="/")
         self.path_label.pack(side=tk.LEFT, padx=10)
 
+        search_f = ttk.Frame(browse_frame)
+        search_f.pack(fill=tk.X, padx=5, pady=(0, 5))
+        ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
+        self._search_entry = ttk.Entry(search_f, textvariable=self._search_var)
+        self._search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Button(search_f, text="清空", width=5, command=lambda: self._search_var.set("")).pack(side=tk.LEFT, padx=2)
+
         tree_frame = ttk.Frame(browse_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
@@ -178,7 +191,12 @@ class RemoteTab(ttk.Frame):
 
     def _on_protocol_change(self, event=None) -> None:
         proto = self.protocol_var.get()
-        self.port_var.set(str(self.PROTOCOLS.get(proto, "21")))
+        if proto == "WebDAV":
+            from services.settings_service import SettingsService
+            server_port = SettingsService().get_setting("default_port", "8000")
+            self.port_var.set(server_port)
+        else:
+            self.port_var.set(str(self.PROTOCOLS.get(proto, 21)))
         if proto == "SMB":
             self.mount_btn.config(text="挂载 / 保存连接")
         else:
@@ -207,6 +225,8 @@ class RemoteTab(ttk.Frame):
     def _connect_thread(self, protocol: str, server: str, port: str, username: str, password: str) -> None:
         if protocol == "SMB":
             result = self.smb_service.list_shares(server, username, password)
+        elif protocol == "WebDAV":
+            result = self.dav_client.list_dir("webdav", server, int(port), username, password, "/", encoding=self.encoding_var.get())
         else:
             result = self.ftp_client.list_dir(protocol.lower(), server, int(port), username, password, "/", encoding=self.encoding_var.get())
         self.after(0, lambda: self._connect_done(protocol, server, port, username, password, result))
@@ -220,7 +240,10 @@ class RemoteTab(ttk.Frame):
             return
 
         account = f"{username}@" if username and username != "anonymous" else ""
-        self._current_server = f"{protocol}://{account}{server}:{port}"
+        if protocol == "WebDAV" and port in ("80", "443"):
+            self._current_server = f"{protocol}://{account}{server}"
+        else:
+            self._current_server = f"{protocol}://{account}{server}:{port}"
         self._current_share = ""
         self._current_path = "/"
         self._is_connected = True
@@ -231,9 +254,14 @@ class RemoteTab(ttk.Frame):
             self._display_files(result["data"])
 
     def list_shares(self, shares: list[dict[str, Any]]) -> None:
+        self._all_entries = [{"name": s["name"], "is_directory": True} for s in shares]
         self.tree.delete(*self.tree.get_children())
-        for share in shares:
-            self.tree.insert("", tk.END, values=(share["name"], "共享", "", ""))
+        query = self._search_var.get().lower().strip()
+        filtered = self._all_entries
+        if query:
+            filtered = [f for f in filtered if query in f.get("name", "").lower()]
+        for s in filtered:
+            self.tree.insert("", tk.END, values=(s["name"], "共享", "", ""))
         self.path_label.config(text="/")
         self.up_btn.config(state=tk.DISABLED)
         self.mount_btn.config(state=tk.DISABLED)
@@ -261,10 +289,21 @@ class RemoteTab(ttk.Frame):
                     pass
         return raw
 
+    def _on_search_change(self, *args) -> None:
+        self._display_files_from_cache()
+
+    def _display_files_from_cache(self) -> None:
+        self._display_files(self._all_entries)
+
     def _display_files(self, files: list[dict[str, Any]]) -> None:
+        self._all_entries = [f for f in files if f.get("name", "") not in (".", "..")]
         self.tree.delete(*self.tree.get_children())
+        query = self._search_var.get().lower().strip()
+        filtered = self._all_entries
+        if query:
+            filtered = [f for f in filtered if query in f.get("name", "").lower()]
         sorted_files = sorted(
-            (f for f in files if f.get("name", "") not in (".", "..")),
+            filtered,
             key=lambda f: (0 if f.get("is_directory") else 1, (f.get("name") or "").lower())
         )
         for f in sorted_files:
@@ -324,10 +363,16 @@ class RemoteTab(ttk.Frame):
         return host, port
 
     def _browse_ftp_thread(self, path: str, username: str, password: str) -> None:
-        server, port = self._parse_server(self._current_server)
-        result = self.ftp_client.list_dir(
-            self._current_protocol.lower(), server, port, username, password, path, encoding=self.encoding_var.get()
-        )
+        default_port = 80 if self._current_protocol == "WebDAV" else 21
+        server, port = self._parse_server(self._current_server, default_port)
+        if self._current_protocol == "WebDAV":
+            result = self.dav_client.list_dir(
+                "webdav", server, port, username, password, path, encoding=self.encoding_var.get()
+            )
+        else:
+            result = self.ftp_client.list_dir(
+                self._current_protocol.lower(), server, port, username, password, path, encoding=self.encoding_var.get()
+            )
         self.after(0, lambda: self._display_files(result["data"] if result["success"] else []))
 
     def on_double_click(self, event: tk.Event) -> None:
@@ -338,14 +383,70 @@ class RemoteTab(ttk.Frame):
         name = values[0]
         ftype = values[1]
 
-        if ftype != "文件夹" and ftype != "共享":
-            return
-
         if ftype == "共享":
             self.browse_share(name, "/")
-        elif self._current_share or self._current_server:
-            path = self._current_path.rstrip("/") + "/" + name
-            self.browse_share(self._current_share, path)
+        elif ftype == "文件夹":
+            if self._current_share or self._current_server:
+                path = self._current_path.rstrip("/") + "/" + name
+                self.browse_share(self._current_share, path)
+        else:
+            self._open_remote_file(name)
+
+    @staticmethod
+    def _tmp_dir() -> str:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "tmp")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _open_remote_file(self, name: str) -> None:
+        proto = self._current_protocol
+        remote = self._current_path.rstrip("/") + "/" + name
+        import random
+        stem, ext = os.path.splitext(name)
+        suffix = f"_{random.randint(1000,9999)}{ext}"
+        local = os.path.join(self._tmp_dir(), f"{stem}{suffix}")
+
+        server, port = self._parse_server(self._current_server, 80 if proto == "WebDAV" else 21)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        client = self.dav_client if proto == "WebDAV" else self.ftp_client
+        encoding = self.encoding_var.get()
+        threading.Thread(
+            target=self._open_remote_thread,
+            args=(proto, server, port, username, password, remote, local, encoding),
+            daemon=True
+        ).start()
+
+    def _open_remote_thread(self, proto: str, server: str, port: int,
+                            username: str, password: str, remote: str, local: str,
+                            encoding: str) -> None:
+        if proto == "SMB":
+            result = self.smb_service.download_file(server, self._current_share, remote, local, username, password)
+        else:
+            client = self.dav_client if proto == "WebDAV" else self.ftp_client
+            result = client.download(proto.lower(), server, port, username, password, remote, local, encoding)
+        if result["success"]:
+            try:
+                os.startfile(local)
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("打开失败", str(e), parent=self))
+                try: os.remove(local)
+                except OSError: pass
+                return
+            threading.Thread(target=self._cleanup_tmp_file, args=(local,), daemon=True).start()
+        else:
+            self.after(0, lambda: messagebox.showerror("下载失败", result.get("error", "未知错误"), parent=self))
+
+    @staticmethod
+    def _cleanup_tmp_file(tmp: str) -> None:
+        import time
+        for _ in range(10):
+            time.sleep(10)
+            try:
+                os.remove(tmp)
+                return
+            except OSError:
+                continue
 
     def go_up(self) -> None:
         if (not self._current_share and not self._current_server) or self._current_path == "/":

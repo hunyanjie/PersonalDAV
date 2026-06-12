@@ -1,17 +1,21 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time
-from fastapi import APIRouter, Depends, HTTPException, Query
-from config import SOFTWARE_VERSION
+import time, os
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from config import SOFTWARE_VERSION, SOFTWARE_NAME
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
+from services.embeddings import EmbeddingService
 from .models import (
     ContactOut, ContactCreate, ContactStructuredCreate, ContactUpdate,
     EventOut, EventCreate, EventUpdate, HealthOut, AuthTokenOut, AuthTokenRequest,
+    ServerConfigOut, AuthLogOut, StatsOut, ErrorOut, SystemLogOut,
 )
 from .auth import get_current_token
+from .logging import LOG_QUEUE
 
 api_router = APIRouter(tags=["API 接口"])
 _start_time = time.time()
@@ -73,25 +77,82 @@ async def health():
 # ── Auth / Token ────────────────────────────────────────────────
 
 @api_router.post("/auth/token", response_model=AuthTokenOut, summary="获取访问令牌")
-async def get_token(req: AuthTokenRequest):
+async def get_token(body: AuthTokenRequest, request: Request):
     """用管理员密码换取 Bearer Token，后续请求携带此令牌即可通过鉴权。"""
     svc = AuthService()
-    if not svc.verify_password(req.password):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    ua = request.headers.get("user-agent", "")
+    fp = body.fingerprint
+
+    # 浏览器指纹检查
+    if fp and not svc.check_fingerprint(fp):
+        svc.log_auth(False, client_ip, "WebUI", "浏览器指纹被拒绝", user_agent=ua, fingerprint=fp)
+        raise HTTPException(403, "浏览器指纹被拒绝")
+
+    # IP 本机免密或未设密码时直接放行
+    if svc.ip_bypasses_auth(client_ip) or not svc.is_password_required():
+        token = svc.get_mcp_token()
+        svc.log_auth(True, client_ip, "WebUI", "IP 免密放行", user_agent=ua, fingerprint=fp)
+        return AuthTokenOut(token=token, scopes=body.scopes)
+
+    if not svc.verify_password(body.password):
+        svc.log_auth(False, client_ip, "WebUI", "密码错误", user_agent=ua, fingerprint=fp)
         raise HTTPException(401, "密码错误")
     token = svc.get_mcp_token()
     if not token:
+        svc.log_auth(False, client_ip, "WebUI", "未设置密码无法生成令牌", user_agent=ua, fingerprint=fp)
         raise HTTPException(403, "未设置密码，无法生成令牌")
-    return AuthTokenOut(token=token, scopes=req.scopes)
+    svc.log_auth(True, client_ip, "WebUI", "密码登录成功", user_agent=ua, fingerprint=fp)
+    return AuthTokenOut(token=token, scopes=body.scopes)
 
 
 # ── Contacts ────────────────────────────────────────────────────
 
-@api_router.get("/contacts", response_model=list[ContactOut], summary="列出所有联系人")
-async def list_contacts(token: str = Depends(get_current_token)):
-    """返回所有联系人的摘要列表（姓名、邮箱、电话、分组）。"""
+@api_router.get("/contacts", summary="列出所有联系人")
+async def list_contacts(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    token: str = Depends(get_current_token),
+):
+    """返回联系人的摘要列表（姓名、邮箱、电话、分组），支持分页。"""
     svc = ContactService()
-    raw_list = svc.get_all_raw()
-    return [o for r in raw_list if (o := _contact_to_out(r))]
+    raw_list, total = svc.get_all_raw_paginated(offset, limit)
+    items = [o for r in raw_list if (o := _contact_to_out(r))]
+    return {"items": items, "total": total}
+
+
+# ── Contacts Search (MUST be before {uid} routes) ───────────
+
+@api_router.get("/contacts/search", summary="搜索联系人")
+async def search_contacts(
+    q: str = Query("", description="关键词"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    token: str = Depends(get_current_token),
+):
+    svc = EmbeddingService()
+    all_results = svc.search_contacts(q, top_k=100000)
+    total = len(all_results)
+    items = all_results[offset:offset + limit]
+    return {"items": items, "total": total}
+
+
+# ── Events Search (MUST be before {uid} routes) ─────────────
+
+@api_router.get("/events/search", summary="搜索事件")
+async def search_events(
+    q: str = Query("", description="关键词"),
+    date_from: str = Query("", description="起始时间"),
+    date_to: str = Query("", description="结束时间"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    token: str = Depends(get_current_token),
+):
+    svc = EmbeddingService()
+    all_results = svc.search_events(q, date_from=date_from, date_to=date_to, top_k=100000)
+    total = len(all_results)
+    items = all_results[offset:offset + limit]
+    return {"items": items, "total": total}
 
 
 @api_router.get("/contacts/{uid}", response_model=ContactOut, summary="获取单个联系人")
@@ -129,6 +190,14 @@ async def create_contact_structured(body: ContactStructuredCreate, token: str = 
         vcard += f"EMAIL:{body.email}\r\n"
     if body.phone:
         vcard += f"TEL:{body.phone}\r\n"
+    if body.groups:
+        vcard += f"CATEGORIES:{body.groups}\r\n"
+    if body.address:
+        vcard += f"ADR:{body.address}\r\n"
+    if body.org:
+        vcard += f"ORG:{body.org}\r\n"
+    if body.note:
+        vcard += f"NOTE:{body.note}\r\n"
     vcard += "END:VCARD\r\n"
     svc = ContactService()
     uid, op = svc.add_contact(vcard)
@@ -160,12 +229,23 @@ async def delete_contact(uid: str, token: str = Depends(get_current_token)):
 
 # ── Events ──────────────────────────────────────────────────────
 
-@api_router.get("/events", response_model=list[EventOut], summary="列出所有事件")
-async def list_events(token: str = Depends(get_current_token)):
-    """返回所有日历事件的摘要列表（标题、起止时间）。"""
+@api_router.get("/events", summary="列出所有事件")
+async def list_events(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    date_from: str = Query("", description="起始日期 YYYYMMDD"),
+    date_to: str = Query("", description="结束日期 YYYYMMDD（不含）"),
+    token: str = Depends(get_current_token),
+):
+    """返回日历事件的摘要列表（标题、起止时间），支持分页和日期范围筛选。"""
     svc = EventService()
-    raw_list = svc.get_all_raw()
-    return [o for r in raw_list if (o := _event_to_out(r))]
+    if date_from and date_to:
+        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
+        items = [o for r in raw_list if (o := _event_to_out(r))]
+        return {"items": items, "total": len(items)}
+    raw_list, total = svc.get_all_raw_paginated(offset, limit)
+    items = [o for r in raw_list if (o := _event_to_out(r))]
+    return {"items": items, "total": total}
 
 
 @api_router.get("/events/{uid}", response_model=EventOut, summary="获取单个事件")
@@ -210,3 +290,92 @@ async def delete_event(uid: str, token: str = Depends(get_current_token)):
         raise HTTPException(404, "事件不存在")
     ok = svc.delete(uid)
     return {"deleted": ok}
+
+
+# ── Settings ───────────────────────────────────────────────────
+
+@api_router.get("/settings", summary="获取所有设置")
+async def list_settings(token: str = Depends(get_current_token)):
+    s = SettingsService()
+    return s.get_all_settings()
+
+
+@api_router.get("/settings/{key}", summary="获取单个设置")
+async def get_setting(key: str, token: str = Depends(get_current_token)):
+    s = SettingsService()
+    val = s.get_setting(key, None)
+    if val is None:
+        raise HTTPException(404, "设置不存在")
+    return {"key": key, "value": val}
+
+
+@api_router.put("/settings/{key}", summary="更新设置")
+async def update_setting(key: str, body: dict, token: str = Depends(get_current_token)):
+    s = SettingsService()
+    s.set_setting(key, body.get("value", ""))
+    return {"key": key, "updated": True}
+
+
+# ── Server Config ─────────────────────────────────────────────
+
+@api_router.get("/server/config", response_model=ServerConfigOut, summary="服务器配置信息")
+async def server_config(token: str = Depends(get_current_token)):
+    s = SettingsService()
+    return ServerConfigOut(
+        host=s.get_setting("default_host", "127.0.0.1"),
+        port=int(s.get_setting("default_port", "8000")),
+        db_path=s.get_setting("db_path", "data/dav_data.db"),
+        dav_root=s.get_setting("dav_root", "./dav_root"),
+        log_level=s.get_setting("log_level", "INFO"),
+        mcp_enabled=s.get_setting("mcp_enabled", "False") == "True",
+        mcp_port=int(s.get_setting("mcp_port", "8100")),
+        mcp_safety_mode=s.get_setting("mcp_safety_mode", "confirm"),
+        mcp_readonly=s.get_setting("mcp_readonly", "False") == "True",
+    )
+
+
+# ── Auth Logs ──────────────────────────────────────────────────
+
+@api_router.get("/auth/logs", response_model=list[AuthLogOut], summary="获取鉴权日志")
+async def auth_logs(
+    limit: int = Query(100, description="返回条数"),
+    protocol: str = Query("", description="协议筛选"),
+    token: str = Depends(get_current_token),
+):
+    svc = AuthService()
+    return svc.get_auth_logs_filtered(protocol=protocol, limit=limit)
+
+
+@api_router.get("/logs", response_model=list[SystemLogOut], summary="获取系统运行日志")
+async def system_logs(token: str = Depends(get_current_token)):
+    """获取内存中最近的系统日志。"""
+    return list(LOG_QUEUE.queue)
+
+
+# ── Stats ──────────────────────────────────────────────────────
+
+@api_router.get("/stats", response_model=StatsOut, summary="服务器统计信息")
+async def stats(token: str = Depends(get_current_token)):
+    cs = ContactService()
+    es = EventService()
+    s = SettingsService()
+    dav_root = s.get_setting("dav_root", "./dav_root")
+    total_size = 0
+    file_count = 0
+    if os.path.isdir(dav_root):
+        for dirpath, _, filenames in os.walk(dav_root):
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                try:
+                    total_size += os.path.getsize(fp)
+                    file_count += 1
+                except Exception:
+                    pass
+    return StatsOut(
+        contacts_count=cs.count(),
+        events_count=es.count(),
+        files_count=file_count,
+        disk_used_mb=round(total_size / (1024 * 1024), 2),
+        uptime=time.time() - _start_time,
+        version=SOFTWARE_VERSION,
+    )

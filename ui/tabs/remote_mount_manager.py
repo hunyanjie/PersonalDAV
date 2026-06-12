@@ -19,7 +19,8 @@ class RemoteMountManager:
         if not self.tab._current_server:
             return
         server_raw = self.tab.server_var.get().strip()
-        port_raw = int(self.tab.port_var.get().strip() or "21")
+        default_port = "80" if self.tab._current_protocol == "WebDAV" else "21"
+        port_raw = int(self.tab.port_var.get().strip() or default_port)
         username = self.tab.username_var.get().strip() or "anonymous"
         password = self.tab.password_var.get()
         encoding = self.tab.encoding_var.get()

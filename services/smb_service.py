@@ -76,6 +76,20 @@ class SMBService:
             logger.error(f"SMB list_files error: {e}")
             return {"success": False, "error": str(e)}
 
+    def download_file(self, server: str, share: str, path: str, local_path: str,
+                      username: str = "guest", password: str = "") -> dict[str, Any]:
+        try:
+            conn = self._create_connection(server, username, password)
+            if not self._connect(conn, server):
+                return {"success": False, "error": "Failed to connect to SMB server"}
+            with open(local_path, "wb") as f:
+                conn.retrieveFile(share, path, f, timeout=30)
+            conn.close()
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"SMB download error: {e}")
+            return {"success": False, "error": str(e)}
+
     def mount(self, server: str, share: str, mount_point: str,
               username: str = "guest", password: str = "") -> dict[str, Any]:
         with self._mounts_lock:

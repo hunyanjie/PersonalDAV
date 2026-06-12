@@ -276,30 +276,53 @@ async def attachment_asgi(request: Request, filename: str):
 @dav_router.api_route("/dav", methods=["GET", "HEAD", "PUT", "DELETE", "PROPFIND", "MKCOL", "COPY", "MOVE", "OPTIONS"],
                        include_in_schema=False)
 async def webdav_handler(request: Request, rest: str = ""):
-    """WebDAV 文件服务 — 支持 GET/PUT/DELETE/PROPFIND/MKCOL/COPY/MOVE。"""
+    """WebDAV 文件服务 — 支持多挂载点 (mount-aware)。"""
     method = request.method
-    dav_root = SettingsService().get_setting("dav_root", "./dav_root")
 
-    def _safe(p: str) -> str:
-        full = os.path.normpath(os.path.join(dav_root, p.lstrip("/")))
-        if not full.startswith(os.path.normpath(dav_root)):
-            raise ValueError("Forbidden")
-        return full
+    from services.file_mount_service import FileMountService
+    svc = FileMountService()
+
+    def _resolve(p: str) -> str:
+        if not p:
+            raise ValueError("Empty path")
+        try:
+            _, abs_path = svc.resolve("/" + p)
+            return abs_path
+        except ValueError as e:
+            raise ValueError(str(e))
+
+    def _mount_list_html() -> str:
+        entries = svc.get_root_entries()
+        items = []
+        for e in entries:
+            if e.get("is_mount"):
+                items.append(f'<li><a href="/dav/{e["name"]}">📁 {e["name"]}</a></li>')
+            else:
+                items.append(f'<li><a href="/dav/{e["name"]}">{e["name"]}</a></li>')
+        return f"<html><body><h2>挂载点</h2><ul>{''.join(items)}</ul></body></html>"
 
     if method == "OPTIONS":
         return Response(headers={"Allow": "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, COPY, MOVE", "DAV": "1, 2"})
 
     if method in ("GET", "HEAD"):
-        try:
-            fs_path = _safe(rest)
-        except ValueError:
-            return Response("Forbidden", status_code=403)
+        if not rest:
+            if svc.is_single_mount:
+                m = svc.get_mounts()[0]
+                fs_path = m["path"]
+            else:
+                return Response(content=_mount_list_html(), media_type="text/html")
+        else:
+            try:
+                fs_path = _resolve(rest)
+            except ValueError:
+                return Response("Forbidden", status_code=403)
         if not os.path.exists(fs_path):
             return Response("Not found", status_code=404)
         if os.path.isdir(fs_path):
+            href_base = f"/dav/{rest}" if rest else "/dav"
             items = []
             for name in sorted(os.listdir(fs_path)):
-                items.append(f'<li><a href="/dav/{rest}/{name}">{name}</a></li>' if rest else f'<li><a href="/dav/{name}">{name}</a></li>')
+                items.append(f'<li><a href="{href_base}/{name}">{name}</a></li>')
             body = f"<html><body><ul>{''.join(items)}</ul></body></html>"
             return Response(content=body, media_type="text/html")
         with open(fs_path, "rb") as f:
@@ -311,8 +334,10 @@ async def webdav_handler(request: Request, rest: str = ""):
         return Response(content=data, headers=headers)
 
     if method == "PUT":
+        if not rest:
+            return Response("Bad request", status_code=400)
         try:
-            fs_path = _safe(rest)
+            fs_path = _resolve(rest)
         except ValueError:
             return Response("Forbidden", status_code=403)
         os.makedirs(os.path.dirname(fs_path), exist_ok=True)
@@ -322,8 +347,10 @@ async def webdav_handler(request: Request, rest: str = ""):
         return Response(status_code=201)
 
     if method == "DELETE":
+        if not rest:
+            return Response("Bad request", status_code=400)
         try:
-            fs_path = _safe(rest)
+            fs_path = _resolve(rest)
         except ValueError:
             return Response("Forbidden", status_code=403)
         if os.path.isdir(fs_path):
@@ -335,26 +362,38 @@ async def webdav_handler(request: Request, rest: str = ""):
         return Response(status_code=204)
 
     if method == "PROPFIND":
-        try:
-            fs_path = _safe(rest)
-        except ValueError:
-            return Response("Forbidden", status_code=403)
+        if not rest:
+            if svc.is_single_mount:
+                m = svc.get_mounts()[0]
+                fs_path = m["path"]
+                href_base = "/dav"
+            else:
+                xml = _multistatus_xml([
+                    ("/dav/" + m["name"], "", "", "httpd/unix-directory", 0)
+                    for m in svc.get_mounts()
+                ])
+                return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
+        else:
+            try:
+                fs_path = _resolve(rest)
+            except ValueError:
+                return Response("Forbidden", status_code=403)
+            href_base = f"/dav/{rest}".rstrip("/")
         if not os.path.exists(fs_path):
             return Response("Not found", status_code=404)
         depth = request.headers.get("Depth", "0")
-        base_href = f"/dav/{rest}".rstrip("/") or "/dav"
         responses = []
         if os.path.isfile(fs_path):
             with open(fs_path, "rb") as f:
                 etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
             s = os.stat(fs_path)
-            responses.append((base_href, "", etag_v, "application/octet-stream", s.st_size))
+            responses.append((href_base, "", etag_v, "application/octet-stream", s.st_size))
         else:
-            responses.append((base_href, "", "", "httpd/unix-directory", 0))
+            responses.append((href_base, "", "", "httpd/unix-directory", 0))
             if depth != "0":
                 for name in sorted(os.listdir(fs_path)):
                     child = os.path.join(fs_path, name)
-                    href = f"{base_href}/{name}"
+                    href = f"{href_base}/{name}"
                     s = os.stat(child)
                     if os.path.isdir(child):
                         responses.append((href, "", "", "httpd/unix-directory", 0))
@@ -366,8 +405,10 @@ async def webdav_handler(request: Request, rest: str = ""):
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)
 
     if method == "MKCOL":
+        if not rest:
+            return Response("Bad request", status_code=400)
         try:
-            fs_path = _safe(rest)
+            fs_path = _resolve(rest)
         except ValueError:
             return Response("Forbidden", status_code=403)
         if os.path.exists(fs_path):
@@ -382,10 +423,12 @@ async def webdav_handler(request: Request, rest: str = ""):
         dst_path = urllib.parse.urlparse(dst_header).path
         dst_rel = dst_path.replace("/dav/", "", 1) if "/dav/" in dst_path else dst_path.lstrip("/")
         try:
-            src_fs = _safe(rest)
-            dst_fs = _safe(dst_rel)
+            src_fs = _resolve(rest)
+            dst_fs = _resolve(dst_rel) if dst_rel else None
         except ValueError:
             return Response("Forbidden", status_code=403)
+        if dst_fs is None:
+            return Response("Bad request", status_code=400)
         if os.path.isdir(src_fs):
             (shutil.copytree if method == "COPY" else shutil.move)(src_fs, dst_fs, dirs_exist_ok=True)
         elif os.path.isfile(src_fs):
@@ -398,17 +441,4 @@ async def webdav_handler(request: Request, rest: str = ""):
     return Response(status_code=405)
 
 
-# ── Home ─────────────────────────────────────────────────────────
 
-@dav_router.get("/")
-async def home():
-    from config import SOFTWARE_NAME, SOFTWARE_VERSION, SOFTWARE_DESCRIPTION
-    content = (
-        f"<h1>{SOFTWARE_NAME} v{SOFTWARE_VERSION}</h1>"
-        f"<p>{SOFTWARE_DESCRIPTION}</p>"
-        "<p>CardDAV: <a href='/contacts/'>/contacts/</a></p>"
-        "<p>CalDAV: <a href='/events/'>/events/</a></p>"
-        "<p>WebDAV: <a href='/dav/'>/dav/</a></p>"
-        "<p>REST API: <a href='/api/docs'>/api/docs</a></p>"
-    )
-    return Response(content=content, media_type="text/html; charset=utf-8")

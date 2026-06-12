@@ -38,9 +38,11 @@ def _required_scope(method: str, path: str) -> str | None:
 async def get_current_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
+    svc = AuthService()
+    if not svc.is_password_required():
+        return "bypass"
     if credentials is None:
         raise HTTPException(401, "Authorization header required")
-    svc = AuthService()
     if not svc.verify_mcp_token(credentials.credentials):
         raise HTTPException(403, "Invalid token")
     scope = getattr(credentials, "_scope", None)
@@ -61,10 +63,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         svc = AuthService()
         client_ip = request.client.host if request.client else "127.0.0.1"
+        ua = request.headers.get("user-agent", "")
+        referer = request.headers.get("referer", "")
 
         # IP check
         if not svc.check_ip(client_ip):
             return Response("IP denied", status_code=403)
+
+        # Referer check (FastAPI 中间件中补充)
+        if svc.is_referer_enabled():
+            if not referer:
+                return Response("Referer required", status_code=403)
+            if not svc.check_referer_advanced(referer):
+                return Response("Referer denied", status_code=403)
+
+        # User-Agent check
+        if ua and not svc.check_user_agent(ua):
+            return Response("User-Agent denied", status_code=403)
 
         # Rate limit
         if not svc.check_rate_limit(client_ip):
@@ -80,11 +95,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Try Bearer token (for REST API / MCP)
         auth_header = request.headers.get("Authorization", "")
+        token = ""
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if svc.verify_mcp_token(token):
-                svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
-                return await call_next(request)
+        elif request.method == "GET" and request.url.path.startswith("/api/files/"):
+            token = request.query_params.get("token", "")
+        if token and svc.verify_mcp_token(token):
+            svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
+            return await call_next(request)
 
         # Try Basic Auth (for DAV clients)
         if auth_header.startswith("Basic "):

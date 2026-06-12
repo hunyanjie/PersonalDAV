@@ -9,6 +9,7 @@ from ui.tabs.server_tab import ServerTab
 from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
 from ui.tabs.remote_tab import RemoteTab
+from ui.tabs.files_tab import FilesTab
 from utils.logger import logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
@@ -93,12 +94,18 @@ class DAVServerApp:
             current_tab.select_all(event)
 
     def on_tab_changed(self, event):
+        # 取消所有标签页的进行中任务
+        for tab in (self.contacts_tab, self.calendar_tab):
+            if hasattr(tab, 'cancel_pending'):
+                tab.cancel_pending()
         current_tab = self.notebook.select()
         tab_text = self.notebook.tab(current_tab, "text")
         if tab_text == "联系人":
             self.contacts_tab.refresh_contacts()
         elif tab_text == "日历":
             self.calendar_tab.refresh_events()
+        elif tab_text == "文件管理":
+            self.files_tab.refresh()
 
     def on_settings_changed(self, *args):
         self.logging_manager.reconfigure()
@@ -128,10 +135,12 @@ class DAVServerApp:
         self.contacts_tab = ContactsTab(self.notebook, self.contact_service, self.root)
         self.calendar_tab = CalendarTab(self.notebook, self.event_service, self.settings_service, self.root)
         self.smb_tab = RemoteTab(self.notebook, self.settings_service)
+        self.files_tab = FilesTab(self.notebook, self.settings_service)
 
         self.notebook.add(self.server_tab, text="服务器")
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
+        self.notebook.add(self.files_tab, text="文件管理")
         self.notebook.add(self.smb_tab, text="远程文件")
 
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)

@@ -4,7 +4,8 @@ import threading
 import logging
 import os
 import socket
-from network.dav_server import DAVServer
+from personaldavd.config import DaemonConfig
+from personaldavd.daemon import DaemonServer
 from ui.widgets.right_click_menu import RightClickMenu
 from services.ftp_service import FTPService
 from utils.logger import logger, GUIHandler
@@ -37,6 +38,7 @@ class ServerTab(ttk.Frame):
         self.ssl_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var = tk.StringVar(value=self.settings_service.get_setting("ssl_certfile", ""))
         self.ssl_key_var = tk.StringVar(value=self.settings_service.get_setting("ssl_keyfile", ""))
+        self.webui_enabled = tk.BooleanVar(value=self.settings_service.get_setting("webui_enabled", "True") == "True")
 
         # FTP/SFTP/TFTP 服务器相关变量
         self.ftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ftp_enabled", "True") == "True")
@@ -46,7 +48,6 @@ class ServerTab(ttk.Frame):
         self.ftp_password_var = tk.StringVar(value=self.settings_service.get_setting("ftp_password", ""))
         self.ftp_encoding_var = tk.StringVar(value=self.settings_service.get_setting("ftp_encoding", "utf-8"))
         self.ftps_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ftps_enabled", "False") == "True")
-        self.dav_root_var = tk.StringVar(value=self.settings_service.get_setting("dav_root", "./dav_root"))
         self.sftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var = tk.StringVar(value=self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var = tk.StringVar(value=self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -66,13 +67,13 @@ class ServerTab(ttk.Frame):
         self.ssl_enabled.set(self.settings_service.get_setting("ssl_enabled", "False") == "True")
         self.ssl_cert_var.set(self.settings_service.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(self.settings_service.get_setting("ssl_keyfile", ""))
+        self.webui_enabled.set(self.settings_service.get_setting("webui_enabled", "True") == "True")
         self.ftp_enabled.set(self.settings_service.get_setting("ftp_enabled", "True") == "True")
         self.ftp_port_var.set(self.settings_service.get_setting("ftp_port", "21"))
         self.ftp_root_var.set(self.settings_service.get_setting("ftp_root", "./ftp_root"))
         self.ftp_password_var.set(self.settings_service.get_setting("ftp_password", ""))
         self.ftp_encoding_var.set(self.settings_service.get_setting("ftp_encoding", "utf-8"))
         self.ftps_enabled.set(self.settings_service.get_setting("ftps_enabled", "False") == "True")
-        self.dav_root_var.set(self.settings_service.get_setting("dav_root", "./dav_root"))
         self.sftp_enabled.set(self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var.set(self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var.set(self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -115,11 +116,8 @@ class ServerTab(ttk.Frame):
         self.stop_btn = ttk.Button(port_frame, text="停止服务器", command=self.stop_server, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
 
-        ttk.Label(port_frame, text="DAV 目录:").pack(side=tk.LEFT, padx=5)
-        self.dav_root_entry = ttk.Entry(port_frame, textvariable=self.dav_root_var, width=25)
-        self.dav_root_entry.pack(side=tk.LEFT, padx=2)
-        self.dav_root_browse_btn = ttk.Button(port_frame, text="浏览...", width=6, command=lambda: self._browse_dir(self.dav_root_var))
-        self.dav_root_browse_btn.pack(side=tk.LEFT, padx=2)
+        self._webui_cb = ttk.Checkbutton(port_frame, text="Web面板", variable=self.webui_enabled)
+        self._webui_cb.pack(side=tk.LEFT, padx=2)
 
         # FTP / SFTP / TFTP 服务控制
         ftp_frame = ttk.LabelFrame(inner, text="FTP / SFTP / TFTP 文件服务")
@@ -199,9 +197,9 @@ class ServerTab(ttk.Frame):
         self.auto_save_check = ttk.Checkbutton(ctrl_row, text="自动保存设置", variable=self.ftp_auto_save)
         self.auto_save_check.pack(side=tk.LEFT, padx=5)
 
-        self.ftp_start_btn = ttk.Button(ctrl_row, text="启动所有服务", command=self.start_ftp_services)
+        self.ftp_start_btn = ttk.Button(ctrl_row, text="启动选中服务", command=self.start_ftp_services)
         self.ftp_start_btn.pack(side=tk.LEFT, padx=5)
-        self.ftp_stop_btn = ttk.Button(ctrl_row, text="停止所有服务", command=self.stop_ftp_services, state=tk.DISABLED)
+        self.ftp_stop_btn = ttk.Button(ctrl_row, text="停止选中服务", command=self.stop_ftp_services, state=tk.DISABLED)
         self.ftp_stop_btn.pack(side=tk.LEFT, padx=5)
 
         self.ftp_status_label = ttk.Label(ctrl_row, text="状态: 已停止")
@@ -405,24 +403,26 @@ class ServerTab(ttk.Frame):
         if tftp_enabled:
             ftp_lines += f"\n  TFTP:     tftp://{ip_lines}:{tftp_port}"
 
-        self.info_label.config(text=f"""CardDAV 配置:
-  服务器地址: {scheme}://localhost:{port}/contacts/
-  用户名: (任意)  密码: (任意)
+        webui_lines = ""
+        if self.webui_enabled.get():
+            webui_lines = f"""
+Web 管理面板:
+  {scheme}://localhost:{port}/ - 浏览器管理联系人/日历/文件
 
-CalDAV 配置:
-  服务器地址: {scheme}://localhost:{port}/events/
-  用户名: (任意)  密码: (任意)
-
-WebDAV 文件服务:
-  服务器地址: {scheme}://localhost:{port}/dav/
-  用户名: (任意)  密码: (任意)
-
-文件服务:{ftp_lines}
+REST API 文档:
+  {scheme}://localhost:{port}/api/docs - 在线接口文档
 
 在浏览器中测试:
-  {scheme}://localhost:{port}/ - 查看服务信息
+  {scheme}://localhost:{port}/ - 管理面板
   {scheme}://localhost:{port}/contacts/ - 所有联系人
-  {scheme}://localhost:{port}/events/ - 所有日历事件""")
+  {scheme}://localhost:{port}/events/ - 所有日历事件"""
+
+        self.info_label.config(text=f"""DAV 服务:
+  CardDAV: {scheme}://localhost:{port}/contacts/
+  CalDAV:  {scheme}://localhost:{port}/events/
+  WebDAV:  {scheme}://localhost:{port}/dav/{webui_lines}
+
+文件服务:{ftp_lines}""")
 
     LEVEL_TAGS = {50: "CRITICAL", 40: "ERROR", 30: "WARNING", 20: "INFO", 10: "DEBUG"}
 
@@ -445,13 +445,20 @@ WebDAV 文件服务:
         self.settings_service.set_setting("ssl_enabled", str(ssl_enabled))
         self.settings_service.set_setting("ssl_certfile", ssl_cert)
         self.settings_service.set_setting("ssl_keyfile", ssl_key)
+        self.settings_service.set_setting("webui_enabled", str(self.webui_enabled.get()))
 
-        dav_root = self.dav_root_var.get().strip() or "./dav_root"
-        self.settings_service.set_setting("dav_root", dav_root)
-        os.makedirs(os.path.expanduser(os.path.expandvars(dav_root)), exist_ok=True)
-
+        cfg = DaemonConfig(
+            host="0.0.0.0",
+            port=port,
+            log_level=self.settings_service.get_setting("log_level", "INFO"),
+            dav_root="",
+            ssl_enabled=ssl_enabled,
+            ssl_certfile=ssl_cert,
+            ssl_keyfile=ssl_key,
+            webui_enabled=self.webui_enabled.get(),
+        )
         try:
-            self.server_instance = DAVServer(port, ssl_enabled, ssl_cert, ssl_key)
+            self.server_instance = DaemonServer(cfg)
             self.server_thread = threading.Thread(target=self.server_instance.start, daemon=True)
             self.server_thread.start()
         except Exception as e:
@@ -463,8 +470,7 @@ WebDAV 文件服务:
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.DISABLED)
-        self.dav_root_entry.config(state=tk.DISABLED)
-        self.dav_root_browse_btn.config(state=tk.DISABLED)
+        self._webui_cb.config(state=tk.DISABLED)
         scheme = "HTTPS" if ssl_enabled else "HTTP"
         msg = f"服务器已启动 ({scheme}) 在端口 {port}"
         logger.info(msg)
@@ -478,8 +484,7 @@ WebDAV 文件服务:
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.port_entry.config(state=tk.NORMAL)
-            self.dav_root_entry.config(state=tk.NORMAL)
-            self.dav_root_browse_btn.config(state=tk.NORMAL)
+            self._webui_cb.config(state=tk.NORMAL)
             msg = "服务器已停止"
             logger.info(msg)
             self.log_message(msg, logging.INFO)

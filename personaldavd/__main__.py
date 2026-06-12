@@ -19,8 +19,16 @@ def main():
                         help="Log level (default: INFO)")
     parser.add_argument("--log-json", action="store_true", help="JSON structured logging")
     parser.add_argument("--db-path", default="data/dav_data.db", help="Database path")
-    parser.add_argument("--dav-root", default="./dav_root", help="WebDAV root directory")
+    parser.add_argument("--dav-root", default="", help="Create a mount point for this directory (default: none)")
     args = parser.parse_args()
+
+    if args.dav_root:
+        from services.file_mount_service import FileMountService
+        name = os.path.basename(os.path.abspath(args.dav_root)) or "DAVStorage"
+        try:
+            FileMountService().add_mount(name, args.dav_root)
+        except ValueError:
+            pass  # mount already exists
 
     config = DaemonConfig(
         host=args.host,

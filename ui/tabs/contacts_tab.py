@@ -11,6 +11,7 @@ import re
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
 from utils.logger import logger
 import os
+import threading
 
 
 class ContactsTab(BaseTreeTab):
@@ -113,25 +114,35 @@ class ContactsTab(BaseTreeTab):
             messagebox.showerror("同步失败", str(e), parent=self)
 
     def refresh_contacts(self):
-        """刷新联系人列表（虚拟滚动版）。"""
-        raw = self.db.get_list_data()
-        self._all_raw = raw
-        self._update_group_filter()
-        self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
-        self._after_refresh()
-
-    def _update_group_filter(self):
-        groups = set()
-        for c in self._all_raw:
-            uid, name, emails, phones, gs, created_at, updated_at = c
-            if gs:
-                for g in gs.split(';'):
-                    if g.strip():
-                        groups.add(g.strip())
-        all_vals = ["全部"] + sorted(groups)
-        self._group_filter_combo['values'] = all_vals
-        if self._group_filter_var.get() not in all_vals:
-            self._group_filter_var.set("全部")
+        """刷新联系人列表（异步版本）。"""
+        self.cancel_pending()
+        token = self._cancel_token
+        
+        def _scan():
+            raw = self.db.get_list_data()
+            if self._cancel_token != token: return
+            self._all_raw = raw
+            
+            groups = set()
+            for c in raw:
+                if self._cancel_token != token: return
+                gs = c[4] # groups
+                if gs:
+                    for g in gs.split(';'):
+                        if g.strip(): groups.add(g.strip())
+            
+            def _done():
+                if self._cancel_token != token: return
+                all_vals = ["全部"] + sorted(groups)
+                self._group_filter_combo['values'] = all_vals
+                if self._group_filter_var.get() not in all_vals:
+                    self._group_filter_var.set("全部")
+                self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
+                self._after_refresh()
+            
+            self.after(0, _done)
+        
+        threading.Thread(target=_scan, daemon=True).start()
 
     def _apply_group_filter(self):
         query = getattr(self, 'search_var', None) and self.search_var.get().lower() or ""

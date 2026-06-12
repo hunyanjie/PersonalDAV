@@ -113,6 +113,7 @@ class SettingsDialog(tk.Toplevel):
         audit_frame = ttk.Frame(notebook); notebook.add(audit_frame, text="审计日志")
         mcp_frame = ttk.Frame(notebook); notebook.add(mcp_frame, text="MCP 服务")
         search_frame = ttk.Frame(notebook); notebook.add(search_frame, text="搜索")
+        mount_frame = ttk.Frame(notebook); notebook.add(mount_frame, text="文件挂载")
 
         self.create_server_settings(server_frame)
         self.create_calendar_settings(calendar_frame)
@@ -122,6 +123,7 @@ class SettingsDialog(tk.Toplevel):
         self.create_audit_log_viewer(audit_frame)
         self.create_mcp_settings(mcp_frame)
         self.create_search_settings(search_frame)
+        self.create_mount_settings(mount_frame)
 
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=10)
@@ -295,10 +297,8 @@ class SettingsDialog(tk.Toplevel):
         # FTP / WebDAV 设置
         extra_f = ttk.LabelFrame(parent, text="FTP / WebDAV 设置")
         extra_f.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(extra_f, text="WebDAV 根目录:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        self.dav_root_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.dav_root_var).grid(row=0, column=1, sticky="we", padx=2)
-        ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_dir(self.dav_root_var)).grid(row=0, column=2, padx=2)
+        ttk.Label(extra_f, text="WebDAV 根目录:（已迁移至「文件挂载」标签页管理）",
+                  foreground="gray").grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
         ttk.Label(extra_f, text="FTP 独立密码:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.ftp_password_var = tk.StringVar()
         ttk.Entry(extra_f, textvariable=self.ftp_password_var, show="*").grid(row=1, column=1, sticky="we", padx=2)
@@ -902,6 +902,140 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self._refresh_model_list()
 
+    # ── 文件挂载设置 ──────────────────────────────────────────
+
+    def create_mount_settings(self, parent):
+        from services.file_mount_service import FileMountService
+        self._mount_svc = FileMountService()
+
+        f = ttk.LabelFrame(parent, text="挂载点列表")
+        f.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        tree_frame = ttk.Frame(f)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        columns = ("name", "path")
+        self.mount_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=8)
+        self.mount_tree.heading("name", text="挂载名称")
+        self.mount_tree.heading("path", text="文件系统路径")
+        self.mount_tree.column("name", width=160)
+        self.mount_tree.column("path", width=400)
+        self.mount_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.mount_tree.yview)
+        self.mount_tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        btn_frame = ttk.Frame(f)
+        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(btn_frame, text="添加挂载点", command=self._mount_add).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="编辑", command=self._mount_edit).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="删除", command=self._mount_delete).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="刷新列表", command=self._mount_refresh).pack(side=tk.LEFT, padx=2)
+
+        h = ttk.Label(parent, text="提示: 挂载点变更后，重启 DAV 服务器使 WebDAV/REST API 生效。",
+                      foreground="gray", wraplength=600)
+        h.pack(anchor="w", padx=10, pady=5)
+
+        self._mount_refresh()
+
+    def _mount_refresh(self):
+        for item in self.mount_tree.get_children():
+            self.mount_tree.delete(item)
+        for m in self._mount_svc.get_mounts():
+            self.mount_tree.insert("", tk.END, values=(m["name"], m["path"]))
+
+    def _mount_add(self):
+        dialog = tk.Toplevel(self)
+        dialog.title("添加挂载点")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        ttk.Label(dialog, text="挂载名称（显示在根目录的名称）:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 2))
+        name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=name_var, width=40).grid(row=0, column=1, padx=10, pady=(10, 2))
+
+        ttk.Label(dialog, text="文件系统路径:").grid(row=1, column=0, sticky="w", padx=10, pady=2)
+        path_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=path_var, width=40).grid(row=1, column=1, padx=10, pady=2)
+        ttk.Button(dialog, text="浏览...", command=lambda: path_var.set(filedialog.askdirectory(parent=dialog))).grid(row=1, column=2, padx=5, pady=2)
+
+        def confirm():
+            name = name_var.get().strip()
+            path = path_var.get().strip()
+            if not name or not path:
+                messagebox.showwarning("提示", "请填写完整信息", parent=dialog)
+                return
+            try:
+                self._mount_svc.add_mount(name, path)
+                dialog.destroy()
+                self._mount_refresh()
+            except ValueError as e:
+                messagebox.showerror("错误", str(e), parent=dialog)
+
+        btn_f = ttk.Frame(dialog)
+        btn_f.grid(row=2, column=0, columnspan=3, pady=10)
+        ttk.Button(btn_f, text="确定", command=confirm).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        from utils.window_utils import center_window
+        center_window(dialog, self)
+
+    def _mount_edit(self):
+        sel = self.mount_tree.selection()
+        if not sel:
+            messagebox.showwarning("提示", "请先选择挂载点", parent=self)
+            return
+        values = self.mount_tree.item(sel[0], "values")
+        old_name = values[0]
+        old_path = values[1]
+
+        dialog = tk.Toplevel(self)
+        dialog.title("编辑挂载点")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        ttk.Label(dialog, text="挂载名称:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 2))
+        name_var = tk.StringVar(value=old_name)
+        ttk.Entry(dialog, textvariable=name_var, width=40).grid(row=0, column=1, padx=10, pady=(10, 2))
+
+        ttk.Label(dialog, text="文件系统路径:").grid(row=1, column=0, sticky="w", padx=10, pady=2)
+        path_var = tk.StringVar(value=old_path)
+        ttk.Entry(dialog, textvariable=path_var, width=40).grid(row=1, column=1, padx=10, pady=2)
+        ttk.Button(dialog, text="浏览...", command=lambda: path_var.set(filedialog.askdirectory(parent=dialog))).grid(row=1, column=2, padx=5, pady=2)
+
+        def confirm():
+            new_name = name_var.get().strip()
+            new_path = path_var.get().strip()
+            if not new_name or not new_path:
+                messagebox.showwarning("提示", "请填写完整信息", parent=dialog)
+                return
+            try:
+                self._mount_svc.update_mount(old_name, new_name, new_path)
+                dialog.destroy()
+                self._mount_refresh()
+            except ValueError as e:
+                messagebox.showerror("错误", str(e), parent=dialog)
+
+        btn_f = ttk.Frame(dialog)
+        btn_f.grid(row=2, column=0, columnspan=3, pady=10)
+        ttk.Button(btn_f, text="确定", command=confirm).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        from utils.window_utils import center_window
+        center_window(dialog, self)
+
+    def _mount_delete(self):
+        sel = self.mount_tree.selection()
+        if not sel:
+            messagebox.showwarning("提示", "请先选择挂载点", parent=self)
+            return
+        name = self.mount_tree.item(sel[0], "values")[0]
+        if not messagebox.askyesno("确认删除", f"确定要删除挂载点「{name}」吗？", parent=self):
+            return
+        self._mount_svc.remove_mount(name)
+        self._mount_refresh()
+
     def _on_search_provider_change(self):
         mode = self.search_provider_var.get()
         self._onnx_frame.pack_forget()
@@ -1046,7 +1180,6 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self.close_action_var.set(s.get_setting("close_action", "ask"))
 
-        self.dav_root_var.set(s.get_setting("dav_root", "./dav_root"))
         self.ftp_password_var.set(s.get_setting("ftp_password", ""))
 
         self.sync_url_var.set(s.get_setting("sync_url", ""))
@@ -1275,7 +1408,6 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                     messagebox.showerror("端口错误", f"{name}: {msg}", parent=self)
                     return
 
-        s.set_setting("dav_root", self.dav_root_var.get())
         s.set_setting("ftp_password", self.ftp_password_var.get())
 
         s.set_setting("sync_url", self.sync_url_var.get())

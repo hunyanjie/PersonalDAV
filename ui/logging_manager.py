@@ -22,7 +22,7 @@ class LoggingManager:
             logger.removeHandler(self.file_handler)
             self.file_handler = None
         if enable_file:
-            log_file = self.settings_service.get_setting("log_file_path", "data/log/dav_server.log")
+            log_file = self.settings_service.get_setting("log_file_path", "log/dav_server.log")
             from utils.path_helper import resolve_data_path
             log_file = resolve_data_path(log_file)
             log_level = self.settings_service.get_setting("log_level", "INFO")
