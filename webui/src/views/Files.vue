@@ -289,7 +289,7 @@ export default {
 .error-alert { background: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
 .btn-close { margin-left: auto; border: none; background: transparent; cursor: pointer; font-size: 18px; color: #999; }
 
-.files-list-wrapper { flex: 1; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow: hidden; display: flex; flex-direction: column; }
+.files-list-wrapper { flex: 1; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow-y: auto; display: flex; flex-direction: column; }
 .files-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .files-table th { background: #fafafa; padding: 14px 20px; text-align: left; font-size: 14px; font-weight: 600; color: #666; border-bottom: 1px solid #f0f0f0; user-select: none; }
 .files-table th.sortable { cursor: pointer; }
