@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router/index.js'
+import { startReminderCheck } from './services/reminder.js'
 
 createApp(App).use(router).mount('#app')
 
@@ -9,3 +10,5 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
   })
 }
+
+startReminderCheck()
