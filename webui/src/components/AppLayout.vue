@@ -49,5 +49,5 @@ export default {
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #f0f0f0; }
 .header h2 { margin: 0; font-size: 20px; }
-.content { flex: 1; padding: 24px; overflow-y: auto; background: #f5f5f5; }
+.content { flex: 1; padding: 24px; overflow-y: auto; background: #f5f5f5; position: relative; }
 </style>
