@@ -173,7 +173,9 @@ class FileMountService:
         if not self._mounts:
             return []
         if self.is_single_mount:
-            return self._list_fs(self._mounts[0]["path"], self._mounts[0]["name"])
+            m = self._mounts[0]
+            # Use absolute virtual path
+            return self._list_fs(m["path"], "/" + m["name"])
         return self._list_mounts()
 
     def list_directory(self, mount_name: str, rel_path: str) -> list[dict[str, Any]]:
@@ -185,7 +187,9 @@ class FileMountService:
         dir_path = os.path.normpath(os.path.join(m["path"], rel_path))
         if not dir_path.startswith(os.path.normpath(m["path"])):
             raise ValueError("Path traversal")
-        return self._list_fs(dir_path, mount_name)
+        
+        virtual_base = "/" + mount_name + "/" + rel_path.strip("/")
+        return self._list_fs(dir_path, virtual_base.rstrip("/"))
 
     # ── helpers ──
 
@@ -205,26 +209,27 @@ class FileMountService:
             "modified_at": "",
         } for m in self._mounts]
 
-    def _list_fs(self, dir_path: str, mount_name: str) -> list[dict[str, Any]]:
+    def _list_fs(self, dir_path: str, virtual_base: str) -> list[dict[str, Any]]:
         items = []
         try:
             for name in sorted(os.listdir(dir_path)):
                 full = os.path.join(dir_path, name)
                 try:
                     st = os.stat(full)
-                    rel = mount_name + "/" + name
+                    item_path = (virtual_base.rstrip("/") + "/" + name).replace("//", "/")
                     items.append({
                         "name": name,
-                        "path": "/" + rel,
+                        "path": item_path,
                         "is_dir": os.path.isdir(full),
                         "is_mount": False,
                         "size": st.st_size if os.path.isfile(full) else 0,
                         "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
                     })
                 except OSError:
+                    item_path = (virtual_base.rstrip("/") + "/" + name).replace("//", "/")
                     items.append({
                         "name": name,
-                        "path": "/" + mount_name + "/" + name,
+                        "path": item_path,
                         "is_dir": False,
                         "is_mount": False,
                         "size": 0,

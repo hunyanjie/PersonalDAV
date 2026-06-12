@@ -92,10 +92,11 @@ async def list_files(
             full = os.path.join(abs_path, name)
             try:
                 st = os.stat(full)
-                rel = mount_name + "/" + name
+                # Ensure path is properly joined and uses forward slashes
+                item_path = (path.rstrip("/") + "/" + name).replace("//", "/")
                 items.append({
                     "name": name,
-                    "path": "/" + rel,
+                    "path": item_path,
                     "is_dir": os.path.isdir(full),
                     "size": st.st_size if os.path.isfile(full) else 0,
                     "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
