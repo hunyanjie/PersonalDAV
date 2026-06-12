@@ -436,9 +436,9 @@ class BaseTreeTab(ttk.Frame):
         self._update_sort_arrows()
 
     def _col_index(self, col):
-        """返回列名在 COLUMNS 中的索引。"""
+        """返回列名在 _all_data 中的索引（+1 因前置的 selected 列）。"""
         try:
-            return self.COLUMNS.index(col)
+            return self.COLUMNS.index(col) + 1
         except ValueError:
             return 1  # 回退到 UID 列
 

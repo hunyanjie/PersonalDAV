@@ -583,8 +583,8 @@ export default {
       ].join('\r\n')
       try {
         if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(this.editModal.uid, ical)
-        this.editModal = null
-        this.loadInitial()
+    this.editModal = null
+    await this.loadInitial()
       } catch (e) { alert('保存失败') }
       this.saving = false
     },
