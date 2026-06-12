@@ -182,14 +182,15 @@ class CalendarTab(BaseTreeTab):
         self._month_var.set(self._month_names[self._month_cal._date.month - 1])
 
     def _refresh_month_view(self):
-        # Use currently visible date in the calendar to determine boundary
         cal_date = self._month_cal._date
         self._sync_month_combos()
-        # Load only this month's events (plus 1-day buffer)
         s = date(cal_date.year, cal_date.month, 1)
         e = (s + timedelta(days=32)).replace(day=1)
         
         raw = self.db.get_list_data_range(s.isoformat(), e.isoformat())
+        query = getattr(self, 'search_var', None) and self.search_var.get().lower().strip()
+        if query:
+            raw = [ev for ev in raw if any(query in str(v).lower() for v in ev)]
         self._month_data = raw
         self._month_cal.calevent_remove('all')
         
@@ -282,7 +283,7 @@ class CalendarTab(BaseTreeTab):
         token = self._cancel_token
         if self._view_var.get() == "月视图":
             self._refresh_month_view()
-            self._all_raw = getattr(self, '_month_data', [])
+            self._all_raw = self.db.get_list_data()
             self._after_refresh()
             return
         
