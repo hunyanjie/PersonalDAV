@@ -70,6 +70,10 @@ class RemoteTab(ttk.Frame):
         self.password_var = tk.StringVar()
         self.encoding_var = tk.StringVar(value="utf-8")
 
+        self._all_entries: list[dict[str, Any]] = []
+        self._search_var = tk.StringVar()
+        self._search_var.trace("w", self._on_search_change)
+
         self.mount_mgr = RemoteMountManager(self)
         self.file_ops = RemoteFileOps(self)
 
@@ -130,6 +134,13 @@ class RemoteTab(ttk.Frame):
 
         self.path_label = ttk.Label(toolbar, text="/")
         self.path_label.pack(side=tk.LEFT, padx=10)
+
+        search_f = ttk.Frame(browse_frame)
+        search_f.pack(fill=tk.X, padx=5, pady=(0, 5))
+        ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
+        self._search_entry = ttk.Entry(search_f, textvariable=self._search_var)
+        self._search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        ttk.Button(search_f, text="清空", width=5, command=lambda: self._search_var.set("")).pack(side=tk.LEFT, padx=2)
 
         tree_frame = ttk.Frame(browse_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
@@ -243,9 +254,14 @@ class RemoteTab(ttk.Frame):
             self._display_files(result["data"])
 
     def list_shares(self, shares: list[dict[str, Any]]) -> None:
+        self._all_entries = [{"name": s["name"], "is_directory": True} for s in shares]
         self.tree.delete(*self.tree.get_children())
-        for share in shares:
-            self.tree.insert("", tk.END, values=(share["name"], "共享", "", ""))
+        query = self._search_var.get().lower().strip()
+        filtered = self._all_entries
+        if query:
+            filtered = [f for f in filtered if query in f.get("name", "").lower()]
+        for s in filtered:
+            self.tree.insert("", tk.END, values=(s["name"], "共享", "", ""))
         self.path_label.config(text="/")
         self.up_btn.config(state=tk.DISABLED)
         self.mount_btn.config(state=tk.DISABLED)
@@ -273,10 +289,21 @@ class RemoteTab(ttk.Frame):
                     pass
         return raw
 
+    def _on_search_change(self, *args) -> None:
+        self._display_files_from_cache()
+
+    def _display_files_from_cache(self) -> None:
+        self._display_files(self._all_entries)
+
     def _display_files(self, files: list[dict[str, Any]]) -> None:
+        self._all_entries = [f for f in files if f.get("name", "") not in (".", "..")]
         self.tree.delete(*self.tree.get_children())
+        query = self._search_var.get().lower().strip()
+        filtered = self._all_entries
+        if query:
+            filtered = [f for f in filtered if query in f.get("name", "").lower()]
         sorted_files = sorted(
-            (f for f in files if f.get("name", "") not in (".", "..")),
+            filtered,
             key=lambda f: (0 if f.get("is_directory") else 1, (f.get("name") or "").lower())
         )
         for f in sorted_files:
