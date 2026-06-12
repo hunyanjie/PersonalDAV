@@ -457,13 +457,18 @@ export default {
   border-radius: var(--radius-md); 
   cursor: pointer; 
   font-size: 14px; 
-  transition: all 0.2s; 
+  transition: all 0.2s !important; 
   color: var(--text-secondary);
   font-weight: 500;
 }
 .btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
 .btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
 .btn-tool.btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
+
+.btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: white; cursor: pointer; transition: all .2s !important; }
+.btn-sm:hover { border-color: var(--brand); color: var(--brand); }
+.btn-sm.btn-primary { background: var(--brand); color: var(--text-inverse); border: none; }
+.btn-sm.btn-primary:hover { background: var(--brand-hover); transform: translateY(-1px); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -484,7 +489,7 @@ export default {
 .table-container { flex: 1; overflow: auto; }
 .files-table { width: 100%; border-collapse: collapse; min-width: 600px; }
 .files-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); user-select: none; position: sticky; top: 0; z-index: 10; }
-.files-table th.sortable { cursor: pointer; }
+.files-table th.sortable { cursor: pointer; transition: color .2s; }
 .files-table th.sortable:hover { color: var(--brand); }
 .sort-indicator { margin-left: 4px; vertical-align: middle; color: var(--brand); }
 .files-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
@@ -532,7 +537,7 @@ export default {
 .preview-img { max-width: 95%; max-height: 95%; cursor: grab; user-select: none; transition: transform 0.1s ease-out; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.1)); }
 .preview-img.dragging { cursor: grabbing; transition: none; }
 .img-zoom-bar { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); border-radius: 30px; display: flex; align-items: center; gap: 4px; padding: 6px 12px; backdrop-filter: blur(8px); }
-.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background-color .2s !important; }
 .zoom-btn:hover { background: rgba(255,255,255,0.2); }
 .zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
 

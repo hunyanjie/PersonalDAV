@@ -175,6 +175,7 @@ export default {
 
 .toolbar { 
   display: flex; 
+  flex-wrap: wrap;
   gap: 16px; 
   background: var(--bg-card); 
   padding: 12px 20px; 
@@ -183,7 +184,7 @@ export default {
   border: 1px solid var(--border-base);
   align-items: center;
 }
-.search-box { flex: 1; position: relative; }
+.search-box { flex: 1; position: relative; min-width: 240px; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { 
   width: 100%; 
@@ -197,7 +198,7 @@ export default {
 }
 .search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
 
-.toolbar-actions { display: flex; gap: 10px; }
+.toolbar-actions { display: flex; gap: 10px; flex-shrink: 0; }
 .btn-tool { 
   display: flex; 
   align-items: center; 
@@ -281,15 +282,24 @@ export default {
 .page-input:focus { border-color: var(--brand); }
 .page-size-select { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; background: white; font-weight: 600; cursor: pointer; }
 
+@media (max-width: 900px) {
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .search-box { min-width: 100%; }
+  .toolbar-actions { width: 100%; justify-content: flex-end; }
+}
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
   .mobile-only-info { display: block; }
   .toolbar { padding: 12px; flex-direction: column; align-items: stretch; gap: 12px; }
-  .toolbar-actions { justify-content: space-between; }
-  .btn-tool { flex: 1; justify-content: center; }
+  .search-box { width: 100%; min-width: 100%; order: 1; }
+  .toolbar-actions { width: 100%; justify-content: space-between; order: 2; gap: 8px; }
+  .btn-tool { flex: 1; justify-content: center; padding: 10px 12px; font-size: 13px; }
   .data-table { min-width: 0; }
-  .col-actions { width: 120px; }
-  .pagination-bar { padding: 12px; }
+  .col-actions { width: 110px; }
+  .pagination-bar { padding: 16px 12px; flex-direction: column; gap: 16px; align-items: center; }
+  .page-info { order: 3; }
+  .page-controls { order: 1; width: 100%; justify-content: center; }
+  .page-size-select { order: 2; width: 100%; }
 }
 @media (max-width: 1024px) {
   .hide-tablet { display: none; }

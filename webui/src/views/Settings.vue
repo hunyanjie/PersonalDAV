@@ -611,13 +611,31 @@ export default {
 
 @media (max-width: 768px) {
   .settings-container { flex-direction: column; gap: 16px; }
-  .settings-nav { width: 100%; padding: 8px; border-radius: var(--radius-md); }
-  .nav-scroll-wrapper { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
-  .nav-scroll-wrapper::-webkit-scrollbar { display: none; }
-  .nav-btn { padding: 8px 16px; font-size: 13px; }
+  .settings-nav { width: 100%; padding: 12px; border-radius: var(--radius-md); }
+  .nav-scroll-wrapper { 
+    flex-direction: row; 
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  .nav-btn { 
+    padding: 8px 10px; 
+    font-size: 12px; 
+    background: #fafafa;
+    border: 1px solid var(--border-base);
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .nav-btn.active { background: var(--brand); border-color: var(--brand); }
   .settings-content { padding: 20px; }
   .form-grid { grid-template-columns: 1fr; gap: 16px; }
   .hide-mobile { display: none; }
   .mh-actions { width: 80px; }
+}
+@media (max-width: 400px) {
+  .nav-btn { font-size: 11px; padding: 6px 8px; gap: 6px; }
+  .nav-btn svg { width: 14px; height: 14px; }
 }
 </style>

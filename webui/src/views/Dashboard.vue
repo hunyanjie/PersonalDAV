@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard">
     <div class="stats-grid">
-      <div class="stat-card glass no-transition">
+      <div class="stat-card glass">
         <div class="stat-icon-box bg-blue">
           <Users :size="24" />
         </div>
@@ -10,7 +10,7 @@
           <div class="stat-label">联系人</div>
         </div>
       </div>
-      <div class="stat-card glass no-transition">
+      <div class="stat-card glass">
         <div class="stat-icon-box bg-green">
           <CalendarDays :size="24" />
         </div>
@@ -19,7 +19,7 @@
           <div class="stat-label">日程事件</div>
         </div>
       </div>
-      <div class="stat-card glass no-transition">
+      <div class="stat-card glass">
         <div class="stat-icon-box bg-orange">
           <FileText :size="24" />
         </div>
@@ -28,7 +28,7 @@
           <div class="stat-label">存储文件</div>
         </div>
       </div>
-      <div class="stat-card glass no-transition">
+      <div class="stat-card glass">
         <div class="stat-icon-box bg-purple">
           <HardDrive :size="24" />
         </div>
@@ -40,7 +40,7 @@
     </div>
 
     <div class="system-grid">
-      <div class="info-section glass no-transition">
+      <div class="info-section glass">
         <h3><Server :size="18" /> 系统概览</h3>
         <div class="info-list">
           <div class="info-item">
@@ -60,7 +60,7 @@
         </div>
       </div>
 
-      <div class="info-section welcome-card no-transition">
+      <div class="info-section welcome-card">
         <div class="welcome-content">
           <h3>欢迎回来！</h3>
           <p>PersonalDAV 为您的数字生活保驾护航。您的数据已通过加密连接安全同步。</p>
@@ -165,6 +165,12 @@ export default {
   border: 1px solid var(--border-base);
   position: relative;
   overflow: hidden;
+  transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.info-section:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--brand);
 }
 .info-section h3 { 
   margin: 0 0 24px; 
@@ -198,6 +204,11 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.welcome-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-xl);
 }
 .welcome-content { position: relative; z-index: 2; }
 .welcome-card h3 { color: white; font-size: 24px; margin-bottom: 12px; font-weight: 800; }

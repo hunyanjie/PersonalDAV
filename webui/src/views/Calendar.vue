@@ -4,9 +4,9 @@
       <div class="toolbar-left">
         <div class="nav-controls">
           <button class="btn-icon" @click="monthOffset-=12" title="上一年"><ChevronsLeft :size="18" /></button>
-          <button class="btn-nav" @click="monthOffset--"><ChevronLeft :size="18" /> 上月</button>
+          <button class="btn-nav" @click="monthOffset--"><ChevronLeft :size="18" /> <span class="hide-mobile">上月</span></button>
           <span class="month-label">{{ year }} 年 {{ month }} 月</span>
-          <button class="btn-nav" @click="monthOffset++">下月 <ChevronRight :size="18" /></button>
+          <button class="btn-nav" @click="monthOffset++"><span class="hide-mobile">下月</span> <ChevronRight :size="18" /></button>
           <button class="btn-icon" @click="monthOffset+=12" title="下一年"><ChevronsRight :size="18" /></button>
         </div>
       </div>
@@ -50,8 +50,7 @@
                 <div class="day-cell-content">
                   <div class="day-num">{{ day.day }}</div>
                   <div class="event-dots">
-                    <span v-for="e in day.events.slice(0, 4)" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
-                    <span v-if="day.events.length > 4" class="dot-more">+{{ day.events.length - 4 }}</span>
+                    <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
                   </div>
                 </div>
               </td>
@@ -69,7 +68,7 @@
             <CalendarDays :size="20" class="title-icon" />
             <span class="panel-date">{{ selectedDay.year }}年{{ pad(selectedDay.month) }}月{{ pad(selectedDay.day) }}日</span>
           </div>
-          <button class="btn-sm btn-tool" @click="exportDay"><Share2 :size="14" /> 导出今日</button>
+          <button class="btn-sm btn-tool" @click="exportDay"><Share2 :size="14" /> <span class="hide-mobile">导出今日</span></button>
         </div>
 
         <div class="timeline-container">
@@ -314,6 +313,7 @@ export default {
     },
     isEventPast(e) {
       const et = icalDateToObj(e.dtend)
+      // Multi-day compatibility: only grey if end time is actually in the past
       return et && et < this.currentTime
     },
     selectToday() {
@@ -463,6 +463,7 @@ export default {
 
 .toolbar { 
   display: flex; 
+  flex-wrap: wrap;
   align-items: center; 
   justify-content: space-between; 
   background: var(--bg-card); 
@@ -471,7 +472,6 @@ export default {
   box-shadow: var(--shadow-sm); 
   border: 1px solid var(--border-base);
   gap: 16px;
-  flex-wrap: wrap;
 }
 
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -490,7 +490,7 @@ export default {
   justify-content: center;
   gap: 8px;
   font-weight: 600;
-  transition: all .2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
   color: var(--text-secondary);
   text-decoration: none;
 }
@@ -524,17 +524,16 @@ export default {
 .cal-table td:last-child { border-right: none; }
 .cal-table td:hover:not(.other-month) { background: var(--bg-hover); z-index: 2; box-shadow: inset 0 0 0 2px var(--brand-ring); }
 
-.day-cell-content { height: 100%; display: flex; flex-direction: column; padding: 12px; }
-.day-num { font-size: 16px; font-weight: 600; color: var(--text-secondary); transition: all .2s; }
+.day-cell-content { display: flex; flex-direction: column; padding: 8px 6px; gap: 4px; }
+.day-num { font-size: 16px; font-weight: 600; color: var(--text-secondary); transition: all .2s; flex-shrink: 0; }
 .cal-table td.other-month { opacity: 0.2; background: #fafafa; pointer-events: none; }
 .cal-table td.today .day-num { background: var(--brand); color: white; width: 30px; height: 30px; line-height: 30px; border-radius: 50%; margin: 0 auto; box-shadow: 0 4px 8px var(--brand-ring); }
 .cal-table td.selected { background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.08); }
 .cal-table td.selected::after { content: ''; position: absolute; inset: 0; border: 2px solid var(--brand); pointer-events: none; border-radius: 2px; }
 
-.event-dots { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: auto; padding-bottom: 4px; }
-.dot { width: 7px; height: 7px; background: var(--brand); border-radius: 50%; transition: transform .2s; }
+.event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+.dot { width: 6px; height: 6px; background: var(--brand); border-radius: 50%; transition: all .2s; flex-shrink: 0; box-shadow: 0 0 0 1px white; }
 .dot-past { background: #d9d9d9; }
-.dot-more { font-size: 11px; color: var(--brand); font-weight: 800; }
 
 .day-panel { margin-top: 16px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-md); border: 1px solid var(--border-base); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
@@ -569,14 +568,14 @@ export default {
 .ctx-menu { position: fixed; z-index: 3000; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border: 1px solid var(--border-base); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; padding: 8px; border: 1px solid rgba(0,0,0,0.05); }
 .ctx-item { padding: 12px 16px; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 12px; border-radius: var(--radius-sm); color: var(--text-secondary); font-weight: 500; transition: .2s; }
 .ctx-item:hover { background: var(--brand); color: white; transform: translateX(4px); }
-.ctx-divider { height: 1px; background: var(--border-base); margin: 6px 0; }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
 .ctx-item.danger:hover { background: var(--danger); }
 
 .modal-overlay { position: fixed; inset: 0; z-index: 4000; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
 .modal-card { background: white; border-radius: var(--radius-xl); min-width: 440px; max-width: 560px; box-shadow: var(--shadow-xl); overflow: hidden; border: 1px solid var(--glass-border); }
 .modal-header { padding: 24px 32px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
 .modal-header h3 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
-.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); display: flex; transition: .3s cubic-bezier(0.4, 0, 0.2, 1); padding: 4px; }
+.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); display: flex; transition: .3s cubic-bezier(0.4, 0, 0.2, 1) !important; padding: 4px; }
 .btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg) scale(1.2); }
 
 .modal-body { padding: 32px; display: flex; flex-direction: column; gap: 28px; }
@@ -587,33 +586,41 @@ export default {
 .desc-text { white-space: pre-wrap; font-weight: 500; font-size: 15px; color: var(--text-secondary); line-height: 1.6; }
 
 .modal-footer { padding: 20px 32px; background: #fafafa; border-top: 1px solid var(--border-base); display: flex; gap: 14px; justify-content: flex-end; }
-.btn-action { padding: 10px 24px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; transition: .2s; text-decoration: none; color: var(--text-primary); }
+.btn-action { padding: 10px 24px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; transition: .2s !important; text-decoration: none; color: var(--text-primary); }
 .btn-action:hover { border-color: var(--brand); color: var(--brand); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .btn-danger { color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: var(--bg-danger); border-color: var(--danger); }
 
 .empty-hint { text-align: center; padding: 120px 0; color: var(--text-quaternary); }
-.empty-icon { margin-bottom: 20px; opacity: 0.15; }
+.empty-icon { margin-bottom: 16px; opacity: 0.15; }
 
-/* Mobile Adaptations */
+@media (max-width: 900px) {
+  .toolbar-right { width: 100%; }
+  .input-group { flex: 1; }
+  .action-group { flex-shrink: 0; }
+  .search-box { width: auto; flex: 1; min-width: 100px; }
+}
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
-  .toolbar { padding: 16px; gap: 14px; }
-  .month-label { font-size: 16px; min-width: 90px; }
-  .btn-nav, .btn-icon { padding: 8px; }
-  .btn-icon { width: 34px; height: 34px; }
-  .nav-controls { gap: 4px; }
+  .toolbar { padding: 12px; gap: 12px; flex-direction: column; align-items: stretch; }
+  .toolbar-left, .toolbar-right { width: 100%; justify-content: space-between; gap: 12px; }
+  .nav-controls { width: 100%; justify-content: space-between; }
+  .month-label { font-size: 16px; min-width: 80px; }
+  .btn-nav, .btn-icon { padding: 8px; height: 34px; min-width: 34px; }
+  .btn-nav { flex: 1; }
   
-  .cal-table td { height: 70px; min-height: 70px; }
+  .input-group, .action-group { width: 100%; justify-content: space-between; }
+  .search-box { flex: 1; }
+  .btn-tool { flex: 1; justify-content: center; }
+
+  .calendar-grid-wrapper { min-height: 320px; }
+  .cal-table td { height: 60px; min-height: 60px; }
   .day-num { font-size: 14px; }
-  .event-dots { gap: 3px; }
+  .day-cell-content { padding: 6px; }
+  .event-dots { gap: 2px; padding-bottom: 4px; }
   .dot { width: 5px; height: 5px; }
   
   .modal-card { min-width: 100vw; height: 100vh; border-radius: 0; margin: 0; }
-  .toolbar-right { flex-direction: column; align-items: stretch; width: 100%; gap: 12px; }
-  .input-group, .action-group { justify-content: space-between; width: 100%; }
-  .search-box { flex: 1; }
   .event-cards { grid-template-columns: 1fr; }
-  .calendar-grid-wrapper { min-height: 350px; }
 }
 </style>
