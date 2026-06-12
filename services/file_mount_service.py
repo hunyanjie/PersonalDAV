@@ -44,6 +44,10 @@ class FileMountService:
         self._migrated = True
         if self._mounts:
             return
+        loaded = self._load()
+        if loaded:
+            self._mounts = loaded
+            return
         from services.settings_service import SettingsService
         dav_root = SettingsService().get_setting("dav_root", "")
         if not dav_root:
