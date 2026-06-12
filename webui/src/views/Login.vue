@@ -65,10 +65,6 @@ export default {
       return h.toString(16)
     },
     async doLogin() {
-      if (!this.password) {
-        this.error = '请输入密码'
-        return
-      }
       this.loading = true; this.error = ''
       try {
         const res = await api.login(this.password, this.browserFingerprint())
