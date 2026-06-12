@@ -31,7 +31,8 @@ logger: StructuredLogger | None = None
 def _init_environment(cfg: "DaemonConfig"):
     import sqlite3
     os.makedirs(os.path.dirname(cfg.db_path) or ".", exist_ok=True)
-    os.makedirs(cfg.dav_root, exist_ok=True)
+    if cfg.dav_root:
+        os.makedirs(cfg.dav_root, exist_ok=True)
     conn = sqlite3.connect(cfg.db_path)
     conn.close()
 
