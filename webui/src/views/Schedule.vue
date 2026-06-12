@@ -622,7 +622,10 @@ export default {
 
 .btn-action { padding: 10px 20px; border-radius: 8px; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; font-size: 14px; transition: all 0.2s; }
 .btn-action:hover { border-color: #1677ff; color: #1677ff; }
+.btn-danger { border-color: #ff4d4f; color: #ff4d4f; }
 .btn-danger:hover { border-color: #ff4d4f; color: #ff4d4f; }
+.btn-close { border: none; background: transparent; cursor: pointer; font-size: 22px; color: #999; padding: 4px 8px; line-height: 1; }
+.btn-close:hover { color: #333; }
 
 .detail-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #aaa; text-align: center; }
 .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }

@@ -365,6 +365,14 @@ export default {
 .val-text { color: #1677ff; font-weight: 500; }
 .edit-input { width: 120px; padding: 6px 10px; border: 1px solid #1677ff; border-radius: 4px; }
 
+.btn-tool { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1px solid #d9d9d9; background: #fff; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+.btn-tool:hover { border-color: #1677ff; color: #1677ff; }
+.btn-tool.btn-primary { background: #1677ff; color: #fff; border-color: #1677ff; }
+.btn-tool.btn-primary:hover { opacity: 0.9; }
+
+.btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
+.btn-sm.btn-primary { background: #1677ff; color: #fff; border-color: #1677ff; }
+
 .btn-edit-sm, .btn-save-sm, .btn-cancel-sm { padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; }
 .btn-save-sm { background: #1677ff; color: #fff; border-color: #1677ff; }
 .btn-edit-sm:hover { border-color: #1677ff; color: #1677ff; }

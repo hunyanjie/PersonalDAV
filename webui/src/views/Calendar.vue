@@ -511,6 +511,7 @@ export default {
 .modal-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: 14px; }
 .modal-row label { color: #888; min-width: 48px; flex-shrink: 0; }
 .modal-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #f0f0f0; }
+.btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
 .modal-actions .btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; text-decoration: none; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
 .btn-danger { color: #cf1322; border-color: #ffa39e; }
 </style>

@@ -324,6 +324,8 @@ export default {
 .inline-dialog input { width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 6px; margin-bottom: 20px; box-sizing: border-box; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .btn-sm { padding: 6px 16px; border-radius: 6px; font-size: 13px; border: 1px solid #d9d9d9; background: #fff; cursor: pointer; }
+.btn-sm.btn-primary { background: #1677ff; color: #fff; border-color: #1677ff; }
+.btn-danger { color: #cf1322; border-color: #ffa39e; }
 
 .preview-dialog { background: #fff; width: 80vw; height: 80vh; max-width: 960px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
 .preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; }
