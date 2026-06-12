@@ -48,7 +48,6 @@ class ServerTab(ttk.Frame):
         self.ftp_password_var = tk.StringVar(value=self.settings_service.get_setting("ftp_password", ""))
         self.ftp_encoding_var = tk.StringVar(value=self.settings_service.get_setting("ftp_encoding", "utf-8"))
         self.ftps_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ftps_enabled", "False") == "True")
-        self.dav_root_var = tk.StringVar(value=self.settings_service.get_setting("dav_root", "./dav_root"))
         self.sftp_enabled = tk.BooleanVar(value=self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var = tk.StringVar(value=self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var = tk.StringVar(value=self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -75,7 +74,6 @@ class ServerTab(ttk.Frame):
         self.ftp_password_var.set(self.settings_service.get_setting("ftp_password", ""))
         self.ftp_encoding_var.set(self.settings_service.get_setting("ftp_encoding", "utf-8"))
         self.ftps_enabled.set(self.settings_service.get_setting("ftps_enabled", "False") == "True")
-        self.dav_root_var.set(self.settings_service.get_setting("dav_root", "./dav_root"))
         self.sftp_enabled.set(self.settings_service.get_setting("sftp_enabled", "False") == "True")
         self.sftp_port_var.set(self.settings_service.get_setting("sftp_port", "22"))
         self.sftp_root_var.set(self.settings_service.get_setting("sftp_root", "./sftp_root"))
@@ -120,12 +118,6 @@ class ServerTab(ttk.Frame):
 
         self._webui_cb = ttk.Checkbutton(port_frame, text="Web面板", variable=self.webui_enabled)
         self._webui_cb.pack(side=tk.LEFT, padx=2)
-
-        ttk.Label(port_frame, text="DAV 目录:").pack(side=tk.LEFT, padx=5)
-        self.dav_root_entry = ttk.Entry(port_frame, textvariable=self.dav_root_var, width=25)
-        self.dav_root_entry.pack(side=tk.LEFT, padx=2)
-        self.dav_root_browse_btn = ttk.Button(port_frame, text="浏览...", width=6, command=lambda: self._browse_dir(self.dav_root_var))
-        self.dav_root_browse_btn.pack(side=tk.LEFT, padx=2)
 
         # FTP / SFTP / TFTP 服务控制
         ftp_frame = ttk.LabelFrame(inner, text="FTP / SFTP / TFTP 文件服务")
@@ -455,15 +447,11 @@ REST API 文档:
         self.settings_service.set_setting("ssl_keyfile", ssl_key)
         self.settings_service.set_setting("webui_enabled", str(self.webui_enabled.get()))
 
-        dav_root = self.dav_root_var.get().strip() or "./dav_root"
-        self.settings_service.set_setting("dav_root", dav_root)
-        os.makedirs(os.path.expanduser(os.path.expandvars(dav_root)), exist_ok=True)
-
         cfg = DaemonConfig(
             host="0.0.0.0",
             port=port,
             log_level=self.settings_service.get_setting("log_level", "INFO"),
-            dav_root=dav_root,
+            dav_root="",
             ssl_enabled=ssl_enabled,
             ssl_certfile=ssl_cert,
             ssl_keyfile=ssl_key,
@@ -482,8 +470,7 @@ REST API 文档:
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.DISABLED)
-        self.dav_root_entry.config(state=tk.DISABLED)
-        self.dav_root_browse_btn.config(state=tk.DISABLED)
+        self._webui_cb.config(state=tk.DISABLED)
         scheme = "HTTPS" if ssl_enabled else "HTTP"
         msg = f"服务器已启动 ({scheme}) 在端口 {port}"
         logger.info(msg)
@@ -497,8 +484,7 @@ REST API 文档:
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.port_entry.config(state=tk.NORMAL)
-            self.dav_root_entry.config(state=tk.NORMAL)
-            self.dav_root_browse_btn.config(state=tk.NORMAL)
+            self._webui_cb.config(state=tk.NORMAL)
             msg = "服务器已停止"
             logger.info(msg)
             self.log_message(msg, logging.INFO)
