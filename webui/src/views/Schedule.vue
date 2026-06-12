@@ -2,8 +2,10 @@
   <div class="agenda-container">
     <div class="agenda-list-side">
       <div class="agenda-header">
-        <div class="ah-title">{{ currentYearMonth }}</div>
-        <div class="ah-week">第 {{ currentWeek }} 周</div>
+        <div class="ah-left">
+          <span class="ah-title">{{ currentYearMonth }}</span>
+          <span class="ah-week">第 {{ currentWeek }} 周</span>
+        </div>
         <button class="btn-create" @click="createForFloatingDate">+ 新建日程</button>
       </div>
 
@@ -237,7 +239,8 @@ export default {
     ctxMenu: { show: false, x: 0, y: 0, uids: [] },
     currentTime: new Date(),
     _nowTimer: null,
-    _initialScrolled: false,
+    _mounted: false,
+    _loadingInitial: false,
     _loadStart: '2000-01-01',
     _loadEnd: '2099-12-31',
   }),
@@ -359,20 +362,13 @@ export default {
         this.loadInitial()
       }
     })
-    // force initial scroll when virtualItems change after load
-    this._unwatchItems = this.$watch('virtualItems', () => {
-      if (!this._initialScrolled && this.virtualItems.length && this.$refs.listRef) {
-        this._initialScrolled = true
-        this.$nextTick(() => this.scrollToToday())
-      }
-    })
     window.addEventListener('resize', this.onResize)
     document.addEventListener('click', () => { this.ctxMenu.show = false })
+    this._mounted = true
   },
   beforeUnmount() {
     window.removeEventListener('resize', this.onResize)
     clearInterval(this._nowTimer)
-    if (this._unwatchItems) this._unwatchItems()
   },
   methods: {
     fmtTime,
@@ -382,6 +378,7 @@ export default {
     },
     async loadInitial() {
       this.loading = true
+      this._loadingInitial = true
       const now = this.currentTime
       const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const end = new Date(now.getFullYear(), now.getMonth() + 2, 0)
@@ -390,12 +387,13 @@ export default {
       try {
         const res = await api.listEvents(0, 500, this._loadStart, this._loadEnd)
         this.events = Array.isArray(res) ? res : (res.items || [])
-        this.$nextTick(() => this.scrollToToday())
       } catch (e) {}
+      this._loadingInitial = false
       this.loading = false
+      setTimeout(() => this.scrollToToday(), 150)
     },
     async loadMore(dir) {
-      if (this.loading) return
+      if (this.loading || this._loadingInitial) return
       this.loading = true
       let from, to
       if (dir === 'prev') {
@@ -439,7 +437,7 @@ export default {
       this.$refs.listRef.scrollTop = Math.max(0, scrollPos)
     },
     onScroll() {
-      if (!this.$refs.listRef) return
+      if (!this.$refs.listRef || !this._mounted) return
       this.scrollTop = this.$refs.listRef.scrollTop
       const threshold = 500
       if (this.scrollTop < threshold) this.loadMore('prev')
@@ -572,10 +570,11 @@ export default {
 .agenda-container { display: flex; height: 100%; background: #f8f9fa; gap: 20px; padding: 20px; box-sizing: border-box; }
 
 .agenda-list-side { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); overflow: hidden; }
-.agenda-header { padding: 20px 24px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+.agenda-header { padding: 20px 24px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+.ah-left { display: flex; flex-direction: column; }
 .ah-title { font-size: 22px; font-weight: 700; color: #1a1a1a; }
 .ah-week { font-size: 14px; color: #888; margin-top: 4px; }
-.btn-create { margin-top: 12px; padding: 8px 16px; background: var(--theme, #1677ff); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
+.btn-create { padding: 8px 16px; background: var(--theme, #1677ff); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
 
 .scroll-viewport { flex: 1; overflow-y: auto; position: relative; scroll-behavior: smooth; }
 .virtual-list { position: relative; width: 100%; }

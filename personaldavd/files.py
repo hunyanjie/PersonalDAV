@@ -78,7 +78,6 @@ async def download_file(
 @files_router.get("/files/preview", summary="预览文件内容")
 async def preview_file(
     path: str = Query(..., description="文件路径"),
-    token: str = Depends(get_current_token),
 ):
     root = _get_dav_root()
     abs_path = os.path.normpath(os.path.join(root, path.lstrip("/")))
