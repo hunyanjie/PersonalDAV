@@ -3,48 +3,58 @@
     <div class="toolbar glass">
       <div class="search-box">
         <Search :size="18" class="search-icon" />
-        <input v-model="query" placeholder="搜索联系人姓名、邮箱或电话..." @input="debounceSearch" class="search-input" />
+        <input v-model="query" placeholder="搜索姓名、邮箱或电话..." @input="debounceSearch" class="search-input" />
       </div>
       <div class="toolbar-actions">
         <label class="btn-tool btn-import">
-          <Upload :size="18" /> 导入 .vcf
+          <Upload :size="18" /> <span class="hide-mobile">导入 .vcf</span>
           <input type="file" accept=".vcf,.vcard" @change="doImport" hidden />
         </label>
         <router-link to="/contacts/new" class="btn-tool btn-primary">
-          <Plus :size="18" /> 新建联系人
+          <Plus :size="18" /> <span class="hide-mobile">新建联系人</span>
         </router-link>
       </div>
     </div>
 
     <div class="list-wrapper glass">
-      <table v-if="items.length" class="data-table">
-        <thead>
-          <tr>
-            <th><div class="th-inner"><User :size="14" /> 姓名</div></th>
-            <th><div class="th-inner"><Mail :size="14" /> 邮箱</div></th>
-            <th><div class="th-inner"><Phone :size="14" /> 电话</div></th>
-            <th><div class="th-inner"><Tag :size="14" /> 分组</div></th>
-            <th class="col-actions">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in items" :key="c.uid" class="contact-row">
-            <td class="col-name">{{ c.full_name }}</td>
-            <td class="col-email">{{ c.email || '-' }}</td>
-            <td class="col-phone">{{ c.phone || '-' }}</td>
-            <td>
-              <div class="groups-list">
-                <span v-for="g in splitGroups(c.groups)" :key="g" class="group-tag">{{ g }}</span>
-              </div>
-            </td>
-            <td class="actions">
-              <button class="btn-icon" @click="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
-              <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑"><Pencil :size="16" /></router-link>
-              <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="items.length" class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><div class="th-inner"><User :size="14" /> 姓名</div></th>
+              <th class="hide-mobile"><div class="th-inner"><Mail :size="14" /> 邮箱</div></th>
+              <th class="hide-tablet"><div class="th-inner"><Phone :size="14" /> 电话</div></th>
+              <th class="hide-tablet"><div class="th-inner"><Tag :size="14" /> 分组</div></th>
+              <th class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in items" :key="c.uid" class="contact-row">
+              <td class="col-name">
+                <div class="name-info">
+                  <span class="avatar">{{ (c.full_name || '?')[0].toUpperCase() }}</span>
+                  <div class="name-text">
+                    <span class="full-name">{{ c.full_name }}</span>
+                    <span class="mobile-only-info">{{ c.phone || c.email }}</span>
+                  </div>
+                </div>
+              </td>
+              <td class="col-email hide-mobile">{{ c.email || '-' }}</td>
+              <td class="col-phone hide-tablet">{{ c.phone || '-' }}</td>
+              <td class="hide-tablet">
+                <div class="groups-list">
+                  <span v-for="g in splitGroups(c.groups)" :key="g" class="group-tag">{{ g }}</span>
+                </div>
+              </td>
+              <td class="actions">
+                <button class="btn-icon" @click="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
+                <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑"><Pencil :size="16" /></router-link>
+                <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div v-else class="empty-state">
         <div class="empty-icon"><Users :size="48" /></div>
         <p>{{ loading ? '正在加载...' : '暂无联系人' }}</p>
@@ -52,7 +62,7 @@
     </div>
 
     <div v-if="total > pageSize" class="pagination-bar glass">
-      <div class="page-info">
+      <div class="page-info hide-mobile">
         共 <strong>{{ total }}</strong> 条记录
       </div>
       <div class="page-controls">
@@ -134,14 +144,11 @@ export default {
       try {
         const text = await file.text()
         const blocks = text.split(/(?=BEGIN:VCARD)/).filter(Boolean)
-        let ok = 0, fail = 0
         for (const block of blocks) {
-          try { await api.createContact(block.trim()); ok++ }
-          catch { fail++ }
+          try { await api.createContact(block.trim()) } catch(e) {}
         }
-        alert(`导入完成：成功 ${ok} 条${fail ? `，失败 ${fail} 条` : ''}`)
         this.load()
-      } catch(e) { alert('导入失败: ' + (e.message || e)) }
+      } catch(e) { alert('导入失败') }
       e.target.value = ''
     },
     async doDelete(uid) {
@@ -157,7 +164,7 @@ export default {
         const a = document.createElement('a')
         a.href = url; a.download = `${c.full_name || '联系人'}.vcf`
         a.click(); URL.revokeObjectURL(url)
-      } catch(e) { alert('导出失败: ' + (e.message || e)) }
+      } catch(e) { alert('导出失败') }
     },
   },
 }
@@ -180,21 +187,22 @@ export default {
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { 
   width: 100%; 
-  padding: 10px 12px 10px 40px; 
+  padding: 12px 12px 12px 42px; 
   border: 1px solid var(--border-input); 
   border-radius: var(--radius-md); 
   font-size: 14px; 
   transition: all .2s;
   background: #fafafa;
+  outline: none;
 }
-.search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); outline: none; }
+.search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
 
 .toolbar-actions { display: flex; gap: 10px; }
 .btn-tool { 
   display: flex; 
   align-items: center; 
   gap: 8px; 
-  padding: 8px 16px; 
+  padding: 10px 18px; 
   border: 1px solid var(--border-strong); 
   background: var(--bg-card); 
   border-radius: var(--radius-md); 
@@ -203,47 +211,54 @@ export default {
   transition: all 0.2s; 
   text-decoration: none;
   color: var(--text-secondary);
+  font-weight: 600;
 }
-.btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
+.btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); transform: translateY(-1px); }
 .btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
-.btn-tool.btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
 .list-wrapper { 
   flex: 1; 
   background: var(--bg-card); 
   border-radius: var(--radius-lg); 
   box-shadow: var(--shadow-sm); 
-  overflow-y: auto; 
+  overflow: hidden; 
   border: 1px solid var(--border-base);
+  display: flex;
+  flex-direction: column;
 }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; border-bottom: 1px solid var(--border-base); font-size: 13px; color: var(--text-secondary); }
-.th-inner { display: flex; align-items: center; gap: 6px; }
-.data-table td { padding: 16px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
+.table-scroll { flex: 1; overflow: auto; }
+.data-table { width: 100%; border-collapse: collapse; min-width: 500px; }
+.data-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; border-bottom: 1px solid var(--border-base); font-size: 13px; color: var(--text-secondary); font-weight: 700; position: sticky; top: 0; z-index: 10; }
+.th-inner { display: flex; align-items: center; gap: 8px; }
+.data-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
 
 .contact-row { transition: background .15s; }
 .contact-row:hover { background: var(--bg-table-header); }
-.col-name { font-weight: 600; }
-.col-email, .col-phone { color: var(--text-secondary); }
+
+.name-info { display: flex; align-items: center; gap: 12px; }
+.avatar { width: 36px; height: 36px; background: var(--brand); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; box-shadow: 0 4px 8px var(--brand-ring); }
+.name-text { display: flex; flex-direction: column; }
+.full-name { font-weight: 700; color: var(--text-primary); }
+.mobile-only-info { display: none; font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
 
 .groups-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .group-tag { 
   background: var(--bg-info); 
   color: var(--brand); 
-  padding: 2px 8px; 
-  border-radius: 4px; 
-  font-size: 12px; 
-  font-weight: 500;
+  padding: 3px 10px; 
+  border-radius: 20px; 
+  font-size: 11px; 
+  font-weight: 700;
+  border: 1px solid hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1);
 }
 
-.actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0.4; transition: opacity .2s; }
-.contact-row:hover .actions { opacity: 1; }
-.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
-.btn-icon:hover { border-color: var(--border-base); background: white; color: var(--brand); box-shadow: var(--shadow-sm); }
+.actions { display: flex; gap: 6px; justify-content: flex-end; }
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
+.btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
 .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 100px 0; color: var(--text-tertiary); }
-.empty-icon { opacity: 0.3; margin-bottom: 16px; }
+.empty-icon { opacity: 0.2; margin-bottom: 20px; }
 
 .pagination-bar { 
   display: flex; 
@@ -257,11 +272,26 @@ export default {
 }
 .page-info { font-size: 13px; color: var(--text-secondary); }
 .page-controls { display: flex; align-items: center; gap: 12px; }
-.btn-page { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: 50%; background: white; cursor: pointer; transition: .2s; }
-.btn-page:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.btn-page { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: 50%; background: white; cursor: pointer; transition: .2s; }
+.btn-page:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); transform: scale(1.1); }
 .btn-page:disabled { opacity: 0.3; cursor: not-allowed; }
 
-.page-jump-box { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
-.page-input { width: 44px; padding: 4px; border: 1px solid var(--border-input); border-radius: 4px; text-align: center; }
-.page-size-select { padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; }
+.page-jump-box { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.page-input { width: 50px; padding: 6px; border: 1px solid var(--border-input); border-radius: 6px; text-align: center; font-weight: 700; outline: none; }
+.page-input:focus { border-color: var(--brand); }
+.page-size-select { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; background: white; font-weight: 600; cursor: pointer; }
+
+@media (max-width: 768px) {
+  .hide-mobile { display: none; }
+  .mobile-only-info { display: block; }
+  .toolbar { padding: 12px; flex-direction: column; align-items: stretch; gap: 12px; }
+  .toolbar-actions { justify-content: space-between; }
+  .btn-tool { flex: 1; justify-content: center; }
+  .data-table { min-width: 0; }
+  .col-actions { width: 120px; }
+  .pagination-bar { padding: 12px; }
+}
+@media (max-width: 1024px) {
+  .hide-tablet { display: none; }
+}
 </style>

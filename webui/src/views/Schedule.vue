@@ -67,38 +67,48 @@
       </div>
     </div>
 
-    <div class="agenda-detail-side glass">
-      <div v-if="selectedEvent" class="detail-box">
-        <div class="detail-header">
-          <h2>{{ selectedEvent.summary || '(无标题)' }}</h2>
-          <div class="detail-meta">
-            <span class="meta-tag"><Tag :size="12" /> {{ selectedEvent.categories || '默认' }}</span>
-          </div>
-        </div>
-        <div class="detail-body">
-          <div class="detail-row">
-            <Clock :size="20" class="detail-icon" />
-            <div class="row-val">
-              <div class="time-range">{{ fmtTime(selectedEvent.dtstart) }} - {{ fmtTime(selectedEvent.dtend) }}</div>
-              <div class="date-val">{{ fmtFullDate(selectedEvent.dtstart) }}</div>
+    <!-- Detail Side (Hidden on mobile if not selected, or use Modal) -->
+    <transition name="modal">
+      <div v-if="selectedEvent" class="agenda-detail-side glass mobile-overlay-detail" @click.self="selectedUids = []">
+        <div class="detail-box no-transition">
+          <div class="detail-header">
+            <div class="dh-top">
+              <h2>{{ selectedEvent.summary || '(无标题)' }}</h2>
+              <button class="mobile-close" @click="selectedUids = []"><X :size="20" /></button>
+            </div>
+            <div class="detail-meta">
+              <span class="meta-tag"><Tag :size="12" /> {{ selectedEvent.categories || '默认' }}</span>
             </div>
           </div>
-          <div v-if="selectedEvent.location" class="detail-row">
-            <MapPin :size="20" class="detail-icon" />
-            <div class="row-val">{{ selectedEvent.location }}</div>
+          <div class="detail-body">
+            <div class="detail-row">
+              <Clock :size="20" class="detail-icon" />
+              <div class="row-content">
+                <div class="time-range">{{ fmtTime(selectedEvent.dtstart) }} - {{ fmtTime(selectedEvent.dtend) }}</div>
+                <div class="date-val">{{ fmtFullDate(selectedEvent.dtstart) }}</div>
+              </div>
+            </div>
+            <div v-if="selectedEvent.location" class="detail-row">
+              <MapPin :size="20" class="detail-icon" />
+              <div class="row-val">{{ selectedEvent.location }}</div>
+            </div>
+            <div v-if="selectedEvent.description" class="detail-row">
+              <FileText :size="20" class="detail-icon" />
+              <div class="row-val desc-text">{{ selectedEvent.description }}</div>
+            </div>
           </div>
-          <div v-if="selectedEvent.description" class="detail-row">
-            <FileText :size="20" class="detail-icon" />
-            <div class="row-val desc-text">{{ selectedEvent.description }}</div>
+          <div class="detail-footer">
+            <button class="btn-action" @click="exportSingle(selectedEvent)"><Share2 :size="14" /> 导出</button>
+            <button class="btn-action" @click="startEdit(selectedEvent)"><Pencil :size="14" /> 编辑</button>
+            <button class="btn-action btn-danger" @click="deleteSingle(selectedEvent)"><Trash2 :size="14" /> 删除</button>
           </div>
-        </div>
-        <div class="detail-footer">
-          <button class="btn-action" @click="exportSingle(selectedEvent)"><Share2 :size="14" /> 导出</button>
-          <button class="btn-action" @click="startEdit(selectedEvent)"><Pencil :size="14" /> 编辑</button>
-          <button class="btn-action btn-danger" @click="deleteSingle(selectedEvent)"><Trash2 :size="14" /> 删除</button>
         </div>
       </div>
-      <div v-else-if="selectedUids.length > 1" class="detail-empty">
+    </transition>
+
+    <!-- Empty Detail Side (Desktop only) -->
+    <div v-if="!selectedEvent && !isMobile" class="agenda-detail-side empty-side glass">
+      <div v-if="selectedUids.length > 1" class="detail-empty">
         <div class="empty-icon"><Users :size="48" /></div>
         <p>已选中 <strong>{{ selectedUids.length }}</strong> 个日程</p>
         <div class="batch-actions">
@@ -113,48 +123,50 @@
     </div>
 
     <!-- Edit Modal -->
-    <div v-if="editModal" class="modal-overlay" @click.self="editModal = null">
-      <div class="modal-card glass">
-        <div class="modal-header">
-          <h3>{{ editModal.isNew ? '新建日程' : '编辑日程' }}</h3>
-          <button class="btn-close-circle" @click="editModal = null"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>日程标题</label>
-            <input v-model="editForm.summary" placeholder="给日程起个标题..." />
+    <transition name="modal">
+      <div v-if="editModal" class="modal-overlay" @click.self="editModal = null">
+        <div class="modal-card glass no-transition">
+          <div class="modal-header">
+            <h3>{{ editModal.isNew ? '新建日程' : '编辑日程' }}</h3>
+            <button class="btn-close-circle" @click="editModal = null"><X :size="20" /></button>
           </div>
-          <div class="form-row">
+          <div class="modal-body">
             <div class="form-group">
-              <label>开始时间</label>
-              <input v-model="editForm.dtstart" type="datetime-local" />
+              <label>日程标题</label>
+              <input v-model="editForm.summary" placeholder="给日程起个标题..." />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>开始时间</label>
+                <input v-model="editForm.dtstart" type="datetime-local" />
+              </div>
+              <div class="form-group">
+                <label>结束时间</label>
+                <input v-model="editForm.dtend" type="datetime-local" />
+              </div>
             </div>
             <div class="form-group">
-              <label>结束时间</label>
-              <input v-model="editForm.dtend" type="datetime-local" />
+              <label>地点</label>
+              <input v-model="editForm.location" placeholder="添加地点 (可选)" />
+            </div>
+            <div class="form-group">
+              <label>描述</label>
+              <textarea v-model="editForm.description" rows="4" placeholder="添加更多细节说明..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>分类</label>
+              <input v-model="editForm.categories" placeholder="分类标签，用逗号分隔" />
             </div>
           </div>
-          <div class="form-group">
-            <label>地点</label>
-            <input v-model="editForm.location" placeholder="添加地点 (可选)" />
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="editModal = null">取消</button>
+            <button class="btn-save" @click="saveEdit" :disabled="saving">
+              {{ saving ? '正在保存...' : '确认保存' }}
+            </button>
           </div>
-          <div class="form-group">
-            <label>描述</label>
-            <textarea v-model="editForm.description" rows="4" placeholder="添加更多细节说明..."></textarea>
-          </div>
-          <div class="form-group">
-            <label>分类</label>
-            <input v-model="editForm.categories" placeholder="分类标签，用逗号分隔" />
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="editModal = null">取消</button>
-          <button class="btn-save" @click="saveEdit" :disabled="saving">
-            {{ saving ? '正在保存...' : '确认保存' }}
-          </button>
         </div>
       </div>
-    </div>
+    </transition>
 
     <!-- Context Menu -->
     <div v-if="ctxMenu.show" class="ctx-menu glass" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
@@ -311,6 +323,7 @@ export default {
     _initialScrollGuard: false,
     _loadStart: '2000-01-01',
     _loadEnd: '2099-12-31',
+    isMobile: window.innerWidth <= 768,
   }),
   computed: {
     grouped() {
@@ -535,7 +548,10 @@ export default {
       if (this.scrollTop < threshold) this.loadMore('prev')
       else if (this.scrollTop + this.containerHeight > this.totalHeight - threshold) this.loadMore('next')
     },
-    onResize() { if (this.$refs.listRef) this.containerHeight = this.$refs.listRef.clientHeight },
+    onResize() { 
+      if (this.$refs.listRef) this.containerHeight = this.$refs.listRef.clientHeight
+      this.isMobile = window.innerWidth <= 768
+    },
     isSelected(item) { return item.type === 'event' && this.selectedUids.includes(item.uid) },
     onItemClick(item, ev) {
       if (item.type !== 'event') return
@@ -706,15 +722,19 @@ export default {
 
 .agenda-detail-side { width: 380px; flex-shrink: 0; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; border: 1px solid var(--border-base); }
 .detail-header h2 { margin: 0; font-size: 22px; color: var(--text-primary); line-height: 1.3; }
+.dh-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.mobile-close { display: none; background: transparent; border: none; padding: 4px; color: var(--text-tertiary); cursor: pointer; }
+
 .detail-meta { margin-top: 12px; }
 .meta-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: var(--bg-hover); border-radius: 20px; font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 
 .detail-body { margin-top: 32px; display: flex; flex-direction: column; gap: 28px; }
 .detail-row { display: flex; gap: 20px; }
 .detail-icon { color: var(--brand); flex-shrink: 0; margin-top: 2px; opacity: 0.8; }
-.row-val { font-size: 15px; color: var(--text-primary); line-height: 1.5; }
+.row-content { flex: 1; }
 .time-range { font-weight: 700; font-size: 18px; color: var(--text-primary); }
 .date-val { color: var(--text-secondary); font-size: 14px; margin-top: 2px; font-weight: 500; }
+.row-val { font-size: 15px; color: var(--text-primary); line-height: 1.5; }
 .desc-text { white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
 
 .detail-footer { margin-top: 48px; border-top: 1px solid var(--border-base); padding-top: 24px; display: flex; flex-wrap: wrap; gap: 10px; }
@@ -754,4 +774,15 @@ export default {
 .list-loading { padding: 32px; text-align: center; color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .agenda-container { flex-direction: column; padding: 0; gap: 0; }
+  .agenda-list-side { border-radius: 0; border: none; }
+  .mobile-overlay-detail { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); width: 100%; padding: 20px; box-sizing: border-box; }
+  .detail-box { background: white; border-radius: var(--radius-xl); width: 100%; max-height: 80vh; overflow-y: auto; padding: 24px; }
+  .mobile-close { display: block; }
+  .empty-side { display: none; }
+  .modal-card { width: 100%; margin: 0; border-radius: var(--radius-lg); }
+  .form-row { grid-template-columns: 1fr; }
+}
 </style>

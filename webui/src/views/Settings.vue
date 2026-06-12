@@ -1,252 +1,261 @@
 <template>
   <div class="settings-container">
     <div class="settings-nav glass">
-      <button v-for="s in sections" :key="s.id" 
-        class="nav-btn" :class="{ active: activeSection === s.id }"
-        @click="activeSection = s.id">
-        <component :is="s.iconComp" :size="18" /> {{ s.label }}
-      </button>
+      <div class="nav-scroll-wrapper">
+        <button v-for="s in sections" :key="s.id" 
+          class="nav-btn" :class="{ active: activeSection === s.id }"
+          @click="activeSection = s.id">
+          <component :is="s.iconComp" :size="18" /> {{ s.label }}
+        </button>
+      </div>
     </div>
 
     <div class="settings-content glass">
-      <!-- Server Settings -->
-      <section v-if="activeSection === 'server'" class="config-section">
-        <h3><Server :size="20" /> 服务器核心配置</h3>
-        <div class="info-banner">
-          <Info :size="16" />
-          <span>只读信息，如需修改请编辑配置文件或在 GUI 中调整。</span>
-        </div>
-        <div class="form-grid">
-          <div class="form-item">
-            <label>运行主机</label>
-            <input :value="serverConfig.host" disabled />
-          </div>
-          <div class="form-item">
-            <label>监听端口</label>
-            <input :value="serverConfig.port" disabled />
-          </div>
-          <div class="form-item">
-            <label>数据库路径</label>
-            <input :value="serverConfig.db_path" disabled />
-          </div>
-          <div class="form-item">
-            <label>文件根目录</label>
-            <input :value="serverConfig.dav_root" disabled />
-          </div>
-          <div class="form-item">
-            <label>日志级别</label>
-            <select :value="serverConfig.log_level" disabled>
-              <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <!-- Mount Settings -->
-      <section v-if="activeSection === 'mounts'" class="config-section">
-        <h3><FolderTree :size="20" /> 文件挂载点管理</h3>
-        <div class="info-banner">
-          <Info :size="16" />
-          <span>每个挂载点将作为根目录下的一个虚拟目录显示。单挂载点时 / 直接显示文件内容。</span>
-        </div>
-        <div class="mount-list" v-if="mounts.length">
-          <div class="mount-header">
-            <span class="mh-name">挂载名称</span>
-            <span class="mh-path">文件系统路径</span>
-            <span class="mh-actions">操作</span>
-          </div>
-          <div v-for="m in mounts" :key="m.name" class="mount-row" :class="{ editing: editingMount === m.name }">
-            <span class="mh-name">{{ m.name }}</span>
-            <span class="mh-path">{{ m.path }}</span>
-            <span class="mh-actions">
-              <button class="btn-edit-sm" @click="startEditMount(m)"><Pencil :size="12" /> 编辑</button>
-              <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)"><Trash2 :size="12" /> 删除</button>
-            </span>
-          </div>
-        </div>
-        <div v-else class="empty-logs">暂无挂载点</div>
-
-        <!-- Add Mount Form -->
-        <div class="mount-form glass" v-if="showMountForm">
-          <h4>{{ editingMount ? '编辑挂载点' : '添加挂载点' }}</h4>
-          <div class="form-grid">
-            <div class="form-item">
-              <label>挂载名称</label>
-              <input v-model="mountForm.name" placeholder="例如: Documents" />
+      <!-- Transition wrapper for content -->
+      <transition name="fade" mode="out-in">
+        <div :key="activeSection">
+          <!-- Server Settings -->
+          <section v-if="activeSection === 'server'" class="config-section">
+            <h3><Server :size="20" /> 服务器核心配置</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>只读信息，如需修改请编辑配置文件或在 GUI 中调整。</span>
             </div>
-            <div class="form-item full">
-              <label>文件系统路径</label>
-              <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
-            </div>
-          </div>
-          <div class="dialog-actions" style="margin-top:16px">
-            <button class="btn-sm" @click="showMountForm = false; editingMount = null">取消</button>
-            <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存挂载点</button>
-          </div>
-        </div>
-        <button class="btn-tool btn-primary" @click="showAddMountForm" style="margin-top:12px">
-          <Plus :size="18" /> 添加挂载点
-        </button>
-      </section>
-
-      <!-- MCP Settings -->
-      <section v-if="activeSection === 'mcp'" class="config-section">
-        <h3><Bot :size="20" /> MCP (Model Context Protocol)</h3>
-        <div class="form-grid">
-          <div class="form-item full">
-            <label class="checkbox-label">
-              <input type="checkbox" :checked="serverConfig.mcp_enabled" disabled />
-              启用 MCP 服务 (允许 AI 访问您的数据)
-            </label>
-          </div>
-          <div class="form-item">
-            <label>MCP 端口</label>
-            <input :value="serverConfig.mcp_port" disabled />
-          </div>
-          <div class="form-item">
-            <label>安全模式</label>
-            <input :value="mcpSafetyLabel" disabled />
-          </div>
-          <div class="form-item full">
-            <label class="checkbox-label">
-              <input type="checkbox" :checked="serverConfig.mcp_readonly" disabled />
-              只读模式 (禁止 AI 修改数据)
-            </label>
-          </div>
-        </div>
-      </section>
-
-      <!-- App Settings -->
-      <section v-if="activeSection === 'app'" class="config-section">
-        <h3><Sliders :size="20" /> 可配置选项</h3>
-        <div class="settings-list">
-          <div v-for="def in editableDefs" :key="def.key" class="setting-row">
-            <div class="setting-info">
-              <div class="setting-label">{{ def.label }}</div>
-              <div class="setting-key">{{ def.key }}</div>
-            </div>
-            <div class="setting-control">
-              <template v-if="def.type === 'check'">
-                <input type="checkbox" v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])" />
-              </template>
-              <template v-else-if="def.type === 'combo'">
-                <select v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])">
-                  <option v-for="opt in def.options" :key="opt.val" :value="opt.val">{{ opt.text }}</option>
+            <div class="form-grid">
+              <div class="form-item">
+                <label>运行主机</label>
+                <input :value="serverConfig.host" disabled />
+              </div>
+              <div class="form-item">
+                <label>监听端口</label>
+                <input :value="serverConfig.port" disabled />
+              </div>
+              <div class="form-item">
+                <label>数据库路径</label>
+                <input :value="serverConfig.db_path" disabled />
+              </div>
+              <div class="form-item">
+                <label>文件根目录</label>
+                <input :value="serverConfig.dav_root" disabled />
+              </div>
+              <div class="form-item">
+                <label>日志级别</label>
+                <select :value="serverConfig.log_level" disabled>
+                  <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
                 </select>
-              </template>
-              <template v-else>
-                <div class="input-group">
-                  <input v-if="editingKey === def.key" v-model="editValue" :type="def.inputType || 'text'" class="edit-input" />
-                  <span v-else class="val-text">{{ settings[def.key] }}</span>
-                  <button v-if="editingKey === def.key" class="btn-save-sm" @click="confirmUpdate(def)">保存</button>
-                  <button v-if="editingKey === def.key" class="btn-cancel-sm" @click="editingKey = null">取消</button>
-                  <button v-else class="btn-edit-sm" @click="startEdit(def.key, settings[def.key])">修改</button>
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Auth Logs -->
-      <section v-if="activeSection === 'logs'" class="config-section">
-        <div class="section-header">
-          <h3><ShieldCheck :size="20" /> 鉴权审计日志</h3>
-          <button class="btn-refresh" @click="loadLogs"><RotateCw :size="14" :class="{spinning: loading}" /> 刷新</button>
-        </div>
-        <div class="logs-wrapper">
-          <table v-if="authLogs.length" class="logs-table">
-            <thead><tr><th>时间</th><th>协议</th><th>详情</th><th>结果</th></tr></thead>
-            <tbody>
-              <tr v-for="log in authLogs" :key="log.id" :class="{ 'log-fail': !log.success }">
-                <td class="nowrap">{{ log.time.replace('T', ' ').split(' ')[1].split('.')[0] }}</td>
-                <td><span class="proto-tag">{{ log.method }}</span></td>
-                <td :title="log.user_agent">{{ log.detail }}</td>
-                <td>
-                  <span class="status-dot" :class="log.success ? 'ok' : 'fail'"></span>
-                  {{ log.success ? '通过' : '拒绝' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-else class="empty-logs">暂无最近鉴权记录</div>
-        </div>
-      </section>
-
-      <!-- System Logs -->
-      <section v-if="activeSection === 'syslogs'" class="config-section">
-        <div class="section-header">
-          <h3><Terminal :size="20" /> 系统运行日志</h3>
-          <button class="btn-refresh" @click="loadSystemLogs"><RotateCw :size="14" :class="{spinning: loading}" /> 刷新</button>
-        </div>
-        <div class="syslogs-wrapper" ref="syslogContainer">
-          <div v-for="(l, i) in systemLogs" :key="i" class="syslog-line" :class="'lv-' + l.level.toLowerCase()">
-            <span class="sl-time">[{{ l.time.split('T')[1].split('.')[0] }}]</span>
-            <span class="sl-lv">[{{ l.level }}]</span>
-            <span class="sl-name">[{{ l.name }}]</span>
-            <span class="sl-msg">{{ l.message }}</span>
-          </div>
-          <div v-if="!systemLogs.length" class="empty-logs">暂无系统日志</div>
-        </div>
-      </section>
-
-      <!-- Theme -->
-      <section v-if="activeSection === 'theme'" class="config-section">
-        <h3><Palette :size="20" /> 主题自定义</h3>
-        <div class="info-banner">
-          <Info :size="16" />
-          <span>选择预设主题或自定义 HSL 调色板。修改后即时生效。</span>
-        </div>
-
-        <div class="theme-presets">
-          <div class="preset-label">预设色板</div>
-          <div class="preset-grid">
-            <button v-for="p in presets" :key="p.name"
-              class="preset-btn"
-              :class="{ active: isPresetActive(p) }"
-              :style="{ background: `hsl(${p.h}deg ${p.s}% ${p.l}%)` }"
-              @click="applyPreset(p)"
-              :title="p.name" />
-          </div>
-        </div>
-
-        <div class="theme-custom">
-          <h4>自定义调色</h4>
-          <div class="hsl-row">
-            <label>色相 <span class="hsl-val">{{ themeH }}°</span></label>
-            <div class="slider-track hue-track" :style="{ background: hueTrackBg }">
-              <input type="range" min="0" max="360" v-model.number="themeH" class="hsl-range" @input="applyCustom" />
-            </div>
-          </div>
-          <div class="hsl-row">
-            <label>饱和度 <span class="hsl-val">{{ themeS }}%</span></label>
-            <div class="slider-track" :style="{ background: `linear-gradient(to right, hsl(${themeH}deg 0% ${themeL}%), hsl(${themeH}deg 100% ${themeL}%))` }">
-              <input type="range" min="0" max="100" v-model.number="themeS" class="hsl-range" @input="applyCustom" />
-            </div>
-          </div>
-          <div class="hsl-row">
-            <label>明度 <span class="hsl-val">{{ themeL }}%</span></label>
-            <div class="slider-track" :style="{ background: `linear-gradient(to right, hsl(${themeH}deg ${themeS}% 0%), hsl(${themeH}deg ${themeS}% 100%))` }">
-              <input type="range" min="0" max="100" v-model.number="themeL" class="hsl-range" @input="applyCustom" />
-            </div>
-          </div>
-
-          <div class="theme-preview glass">
-            <div class="preview-label">品牌色预览</div>
-            <div class="preview-block">
-              <div class="preview-swatch" :style="{ background: currentBrandColor }"></div>
-              <div class="preview-samples">
-                <div class="sample" :style="{ background: currentBrandColor }"></div>
-                <div class="sample sample-hover" :style="{ background: `hsl(${themeH}deg ${themeS}% ${Math.max(themeL-8,0)}%)` }"></div>
-                <div class="sample sample-soft" :style="{ background: `hsl(${themeH}deg ${Math.max(themeS-34,0)}% ${Math.min(themeL+43,100)}%)` }"></div>
               </div>
             </div>
-            <div class="preview-code">hsl({{ themeH }}deg {{ themeS }}% {{ themeL }}%)</div>
-          </div>
+          </section>
 
-          <button class="btn-sm" @click="resetTheme" style="margin-top:20px"><RotateCcw :size="14" /> 恢复默认蓝色</button>
+          <!-- Mount Settings -->
+          <section v-if="activeSection === 'mounts'" class="config-section">
+            <h3><FolderTree :size="20" /> 文件挂载点管理</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>每个挂载点将作为根目录下的一个虚拟目录显示。单挂载点时 / 直接显示文件内容。</span>
+            </div>
+            <div class="mount-list" v-if="mounts.length">
+              <div class="mount-header">
+                <span class="mh-name">挂载名称</span>
+                <span class="mh-path hide-mobile">文件系统路径</span>
+                <span class="mh-actions">操作</span>
+              </div>
+              <div v-for="m in mounts" :key="m.name" class="mount-row" :class="{ editing: editingMount === m.name }">
+                <span class="mh-name">{{ m.name }}</span>
+                <span class="mh-path hide-mobile">{{ m.path }}</span>
+                <span class="mh-actions">
+                  <button class="btn-edit-sm" @click="startEditMount(m)"><Pencil :size="12" /> <span class="hide-mobile">编辑</span></button>
+                  <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)"><Trash2 :size="12" /> <span class="hide-mobile">删除</span></button>
+                </span>
+              </div>
+            </div>
+            <div v-else class="empty-logs">暂无挂载点</div>
+
+            <!-- Add Mount Form -->
+            <transition name="modal">
+              <div class="mount-form glass no-transition" v-if="showMountForm">
+                <h4>{{ editingMount ? '编辑挂载点' : '添加挂载点' }}</h4>
+                <div class="form-grid">
+                  <div class="form-item">
+                    <label>挂载名称</label>
+                    <input v-model="mountForm.name" placeholder="例如: Documents" />
+                  </div>
+                  <div class="form-item full">
+                    <label>文件系统路径</label>
+                    <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
+                  </div>
+                </div>
+                <div class="dialog-actions" style="margin-top:16px">
+                  <button class="btn-sm" @click="showMountForm = false; editingMount = null">取消</button>
+                  <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存挂载点</button>
+                </div>
+              </div>
+            </transition>
+            <button class="btn-tool btn-primary" @click="showAddMountForm" style="margin-top:12px">
+              <Plus :size="18" /> 添加挂载点
+            </button>
+          </section>
+
+          <!-- MCP Settings -->
+          <section v-if="activeSection === 'mcp'" class="config-section">
+            <h3><Bot :size="20" /> MCP (Model Context Protocol)</h3>
+            <div class="form-grid">
+              <div class="form-item full">
+                <label class="checkbox-label">
+                  <input type="checkbox" :checked="serverConfig.mcp_enabled" disabled />
+                  启用 MCP 服务 (允许 AI 访问您的数据)
+                </label>
+              </div>
+              <div class="form-item">
+                <label>MCP 端口</label>
+                <input :value="serverConfig.mcp_port" disabled />
+              </div>
+              <div class="form-item">
+                <label>安全模式</label>
+                <input :value="mcpSafetyLabel" disabled />
+              </div>
+              <div class="form-item full">
+                <label class="checkbox-label">
+                  <input type="checkbox" :checked="serverConfig.mcp_readonly" disabled />
+                  只读模式 (禁止 AI 修改数据)
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- App Settings -->
+          <section v-if="activeSection === 'app'" class="config-section">
+            <h3><Sliders :size="20" /> 可配置选项</h3>
+            <div class="settings-list">
+              <div v-for="def in editableDefs" :key="def.key" class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-label">{{ def.label }}</div>
+                  <div class="setting-key">{{ def.key }}</div>
+                </div>
+                <div class="setting-control">
+                  <template v-if="def.type === 'check'">
+                    <input type="checkbox" v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])" />
+                  </template>
+                  <template v-else-if="def.type === 'combo'">
+                    <select v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])">
+                      <option v-for="opt in def.options" :key="opt.val" :value="opt.val">{{ opt.text }}</option>
+                    </select>
+                  </template>
+                  <template v-else>
+                    <div class="input-group">
+                      <input v-if="editingKey === def.key" v-model="editValue" :type="def.inputType || 'text'" class="edit-input" />
+                      <span v-else class="val-text">{{ settings[def.key] }}</span>
+                      <button v-if="editingKey === def.key" class="btn-save-sm" @click="confirmUpdate(def)">保存</button>
+                      <button v-if="editingKey === def.key" class="btn-cancel-sm" @click="editingKey = null">取消</button>
+                      <button v-else class="btn-edit-sm" @click="startEdit(def.key, settings[def.key])">修改</button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Auth Logs -->
+          <section v-if="activeSection === 'logs'" class="config-section">
+            <div class="section-header">
+              <h3><ShieldCheck :size="20" /> 鉴权审计日志</h3>
+              <button class="btn-refresh" @click="loadLogs"><RotateCw :size="14" :class="{spinning: loading}" /> 刷新</button>
+            </div>
+            <div class="logs-wrapper">
+              <table v-if="authLogs.length" class="logs-table">
+                <thead><tr><th>时间</th><th>协议</th><th class="hide-mobile">详情</th><th>结果</th></tr></thead>
+                <tbody>
+                  <tr v-for="log in authLogs" :key="log.id" :class="{ 'log-fail': !log.success }">
+                    <td class="nowrap">{{ log.time.replace('T', ' ').split(' ')[1].split('.')[0] }}</td>
+                    <td><span class="proto-tag">{{ log.method }}</span></td>
+                    <td :title="log.user_agent" class="hide-mobile">{{ log.detail }}</td>
+                    <td>
+                      <span class="status-dot" :class="log.success ? 'ok' : 'fail'"></span>
+                      {{ log.success ? '通过' : '拒绝' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else class="empty-logs">暂无最近鉴权记录</div>
+            </div>
+          </section>
+
+          <!-- System Logs -->
+          <section v-if="activeSection === 'syslogs'" class="config-section">
+            <div class="section-header">
+              <h3><Terminal :size="20" /> 系统运行日志</h3>
+              <button class="btn-refresh" @click="loadSystemLogs"><RotateCw :size="14" :class="{spinning: loading}" /> 刷新</button>
+            </div>
+            <div class="syslogs-wrapper" ref="syslogContainer">
+              <div v-for="(l, i) in systemLogs" :key="i" class="syslog-line" :class="'lv-' + l.level.toLowerCase()">
+                <span class="sl-time">[{{ l.time.split('T')[1].split('.')[0] }}]</span>
+                <span class="sl-lv">[{{ l.level }}]</span>
+                <span class="sl-name">[{{ l.name }}]</span>
+                <span class="sl-msg">{{ l.message }}</span>
+              </div>
+              <div v-if="!systemLogs.length" class="empty-logs">暂无系统日志</div>
+            </div>
+          </section>
+
+          <!-- Theme -->
+          <section v-if="activeSection === 'theme'" class="config-section">
+            <h3><Palette :size="20" /> 主题自定义</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>选择预设主题或自定义 HSL 调色板。修改后即时生效。</span>
+            </div>
+
+            <div class="theme-presets">
+              <div class="preset-label">预设色板</div>
+              <div class="preset-grid">
+                <button v-for="p in presets" :key="p.name"
+                  class="preset-btn no-transition"
+                  :class="{ active: isPresetActive(p) }"
+                  :style="{ background: `hsl(${p.h}deg ${p.s}% ${p.l}%)` }"
+                  @click="applyPreset(p)"
+                  :title="p.name" />
+              </div>
+            </div>
+
+            <div class="theme-custom">
+              <h4>自定义调色</h4>
+              <div class="hsl-row">
+                <label>色相 <span class="hsl-val">{{ themeH }}°</span></label>
+                <div class="slider-track hue-track" :style="{ background: hueTrackBg }">
+                  <input type="range" min="0" max="360" v-model.number="themeH" class="hsl-range" @input="applyCustom" />
+                </div>
+              </div>
+              <div class="hsl-row">
+                <label>饱和度 <span class="hsl-val">{{ themeS }}%</span></label>
+                <div class="slider-track" :style="{ background: `linear-gradient(to right, hsl(${themeH}deg 0% ${themeL}%), hsl(${themeH}deg 100% ${themeL}%))` }">
+                  <input type="range" min="0" max="100" v-model.number="themeS" class="hsl-range" @input="applyCustom" />
+                </div>
+              </div>
+              <div class="hsl-row">
+                <label>明度 <span class="hsl-val">{{ themeL }}%</span></label>
+                <div class="slider-track" :style="{ background: `linear-gradient(to right, hsl(${themeH}deg ${themeS}% 0%), hsl(${themeH}deg ${themeS}% 100%))` }">
+                  <input type="range" min="0" max="100" v-model.number="themeL" class="hsl-range" @input="applyCustom" />
+                </div>
+              </div>
+
+              <div class="theme-preview glass">
+                <div class="preview-label">品牌色预览</div>
+                <div class="preview-block">
+                  <div class="preview-swatch no-transition" :style="{ background: currentBrandColor }"></div>
+                  <div class="preview-samples">
+                    <div class="sample no-transition" :style="{ background: currentBrandColor }"></div>
+                    <div class="sample sample-hover no-transition" :style="{ background: `hsl(${themeH}deg ${themeS}% ${Math.max(themeL-8,0)}%)` }"></div>
+                    <div class="sample sample-soft no-transition" :style="{ background: `hsl(${themeH}deg ${Math.max(themeS-34,0)}% ${Math.min(themeL+43,100)}%)` }"></div>
+                  </div>
+                </div>
+                <div class="preview-code">hsl({{ themeH }}deg {{ themeS }}% {{ themeL }}%)</div>
+              </div>
+
+              <button class="btn-sm" @click="resetTheme" style="margin-top:20px"><RotateCcw :size="14" /> 恢复默认蓝色</button>
+            </div>
+          </section>
         </div>
-      </section>
+      </transition>
     </div>
   </div>
 </template>
@@ -500,12 +509,14 @@ export default {
 <style scoped>
 .settings-container { display: flex; height: 100%; gap: 24px; }
 
-.settings-nav { width: 220px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; background: var(--bg-card); padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-base); box-shadow: var(--shadow-sm); height: fit-content; }
-.nav-btn { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: none; background: transparent; border-radius: var(--radius-md); cursor: pointer; text-align: left; font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: .2s; }
+.settings-nav { width: 220px; display: flex; flex-direction: column; flex-shrink: 0; background: var(--bg-card); padding: 16px; border-radius: var(--radius-lg); border: 1px solid var(--border-base); box-shadow: var(--shadow-sm); height: fit-content; overflow: hidden; }
+.nav-scroll-wrapper { display: flex; flex-direction: column; gap: 8px; }
+
+.nav-btn { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: none; background: transparent; border-radius: var(--radius-md); cursor: pointer; text-align: left; font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: .2s; white-space: nowrap; }
 .nav-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .nav-btn.active { background: var(--brand); color: var(--text-inverse); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
-.settings-content { flex: 1; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; border: 1px solid var(--border-base); }
+.settings-content { flex: 1; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; border: 1px solid var(--border-base); position: relative; }
 
 .config-section h3 { margin: 0 0 24px; font-size: 20px; color: var(--text-primary); display: flex; align-items: center; gap: 10px; }
 .info-banner { background: var(--bg-info); border: 1px solid hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); color: var(--brand-hover); padding: 12px 16px; border-radius: var(--radius-md); font-size: 14px; margin-bottom: 32px; display: flex; align-items: center; gap: 10px; }
@@ -531,8 +542,8 @@ export default {
 .val-text { color: var(--brand); font-weight: 700; font-size: 15px; }
 .edit-input { width: 140px; padding: 8px 12px; border: 1px solid var(--brand); border-radius: var(--radius-sm); outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
 
-.btn-tool { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: var(--radius-md); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
-.btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border: none; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
+.btn-tool { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: var(--radius-md); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; border: none; }
+.btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 .btn-tool.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.3); }
 
 .btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: white; cursor: pointer; transition: .2s; }
@@ -597,4 +608,16 @@ export default {
 .preview-label { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
 .preview-block { display: flex; align-items: center; gap: 24px; }
 .preview-swatch { width: 64px; height: 64px; border-radius: var(--radius-md); border: 2px solid white; box-shadow: var(--shadow-md); flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  .settings-container { flex-direction: column; gap: 16px; }
+  .settings-nav { width: 100%; padding: 8px; border-radius: var(--radius-md); }
+  .nav-scroll-wrapper { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .nav-scroll-wrapper::-webkit-scrollbar { display: none; }
+  .nav-btn { padding: 8px 16px; font-size: 13px; }
+  .settings-content { padding: 20px; }
+  .form-grid { grid-template-columns: 1fr; gap: 16px; }
+  .hide-mobile { display: none; }
+  .mh-actions { width: 80px; }
+}
 </style>

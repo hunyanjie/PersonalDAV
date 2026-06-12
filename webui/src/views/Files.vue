@@ -1,24 +1,26 @@
 <template>
   <div class="files-container">
     <div class="toolbar glass">
-      <div class="breadcrumb-bar">
-        <button class="btn-crumb" @click="cd('')"><Home :size="16" /> 根目录</button>
-        <div v-for="(seg, i) in breadcrumbs" :key="i" class="crumb-item">
-          <ChevronRight :size="14" class="sep" />
-          <button class="btn-crumb" :class="{ 'is-last': i === breadcrumbs.length - 1 }" @click="cd(seg.path)">
-            {{ seg.name }}
-          </button>
+      <div class="breadcrumb-wrapper">
+        <div class="breadcrumb-bar">
+          <button class="btn-crumb" @click="cd('')"><Home :size="18" /> <span class="hide-mobile">根目录</span></button>
+          <template v-for="(seg, i) in breadcrumbs" :key="i">
+            <ChevronRight :size="14" class="sep" />
+            <button class="btn-crumb" :class="{ 'is-last': i === breadcrumbs.length - 1 }" @click="cd(seg.path)">
+              {{ seg.name }}
+            </button>
+          </template>
         </div>
       </div>
       <div class="toolbar-actions">
-        <button class="btn-tool" @click="showNewFolder = true">
-          <FolderPlus :size="18" /> 目录
+        <button class="btn-tool" @click="showNewFolder = true" title="新建目录">
+          <FolderPlus :size="18" /> <span class="hide-mobile">目录</span>
         </button>
-        <label class="btn-tool btn-primary">
-          <Upload :size="18" /> 上传
+        <label class="btn-tool btn-primary" title="上传文件">
+          <Upload :size="18" /> <span class="hide-mobile">上传</span>
           <input type="file" multiple @change="doUpload" hidden />
         </label>
-        <button class="btn-tool" @click="load">
+        <button class="btn-tool" @click="load" title="刷新">
           <RotateCw :size="18" :class="{ 'spinning': loading }" />
         </button>
       </div>
@@ -29,17 +31,19 @@
       <button class="btn-close" @click="errorMsg = ''">&times;</button>
     </div>
 
-    <!-- Modals (rest of logic same, just styling updates) -->
-    <div v-if="showNewFolder" class="inline-modal-overlay" @click.self="showNewFolder = false">
-      <div class="inline-dialog glass">
-        <h3>创建新目录</h3>
-        <input v-model="newFolderName" placeholder="请输入目录名称" @keyup.enter="doMkdir" autofocus />
-        <div class="dialog-actions">
-          <button class="btn-sm" @click="showNewFolder = false">取消</button>
-          <button class="btn-sm btn-primary" @click="doMkdir">创建</button>
+    <!-- Modals (animations added) -->
+    <transition name="modal">
+      <div v-if="showNewFolder" class="inline-modal-overlay" @click.self="showNewFolder = false">
+        <div class="inline-dialog glass no-transition">
+          <h3>创建新目录</h3>
+          <input v-model="newFolderName" placeholder="请输入目录名称" @keyup.enter="doMkdir" autofocus />
+          <div class="dialog-actions">
+            <button class="btn-sm" @click="showNewFolder = false">取消</button>
+            <button class="btn-sm btn-primary" @click="doMkdir">创建</button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
 
     <div v-if="dragOver" class="dropzone-overlay"
       @dragenter.prevent @dragover.prevent @dragleave.prevent="dragOver = false"
@@ -50,97 +54,103 @@
       </div>
     </div>
 
-    <div v-if="renaming" class="inline-modal-overlay" @click.self="renaming = null">
-      <div class="inline-dialog glass">
-        <h3>重命名</h3>
-        <input v-model="renameName" placeholder="请输入新名称" @keyup.enter="doRename" autofocus />
-        <div class="dialog-actions">
-          <button class="btn-sm" @click="renaming = null">取消</button>
-          <button class="btn-sm btn-primary" @click="doRename">重命名</button>
+    <transition name="modal">
+      <div v-if="renaming" class="inline-modal-overlay" @click.self="renaming = null">
+        <div class="inline-dialog glass no-transition">
+          <h3>重命名</h3>
+          <input v-model="renameName" placeholder="请输入新名称" @keyup.enter="doRename" autofocus />
+          <div class="dialog-actions">
+            <button class="btn-sm" @click="renaming = null">取消</button>
+            <button class="btn-sm btn-primary" @click="doRename">重命名</button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
 
     <!-- Preview Modal -->
-    <div v-if="previewItem" class="inline-modal-overlay" @click.self="previewItem = null">
-      <div class="preview-dialog glass">
-        <div class="preview-header">
-          <h3>{{ previewItem.name }}</h3>
-          <button class="btn-close-preview" @click="previewItem = null"><X :size="20" /></button>
-        </div>
-        <div class="preview-body">
-          <template v-if="previewSrc">
-            <div v-if="_isImage" class="img-viewport" ref="imgViewport"
-              @wheel.prevent="onImgWheel"
-              @mousedown="onImgDown" @mousemove="onImgMove" @mouseup="onImgUp" @mouseleave="onImgUp">
-              <img :src="previewSrc" :style="imgStyle" class="preview-img" :class="{ dragging: _isPanning }" draggable="false" />
-              <div class="img-zoom-bar">
-                <button @click="zoomOut" class="zoom-btn" title="缩小">−</button>
-                <span class="zoom-label">{{ Math.round(_zoom * 100) }}%</span>
-                <button @click="zoomIn" class="zoom-btn" title="放大">+</button>
-                <button @click="zoomReset" class="zoom-btn" title="适应窗口"><RefreshCw :size="14" /></button>
+    <transition name="modal">
+      <div v-if="previewItem" class="inline-modal-overlay" @click.self="previewItem = null">
+        <div class="preview-dialog glass no-transition">
+          <div class="preview-header">
+            <h3>{{ previewItem.name }}</h3>
+            <button class="btn-close-preview" @click="previewItem = null"><X :size="20" /></button>
+          </div>
+          <div class="preview-body">
+            <template v-if="previewSrc">
+              <div v-if="_isImage" class="img-viewport" ref="imgViewport"
+                @wheel.prevent="onImgWheel"
+                @mousedown="onImgDown" @mousemove="onImgMove" @mouseup="onImgUp" @mouseleave="onImgUp">
+                <img :src="previewSrc" :style="imgStyle" class="preview-img" :class="{ dragging: _isPanning }" draggable="false" />
+                <div class="img-zoom-bar">
+                  <button @click="zoomOut" class="zoom-btn" title="缩小">−</button>
+                  <span class="zoom-label">{{ Math.round(_zoom * 100) }}%</span>
+                  <button @click="zoomIn" class="zoom-btn" title="放大">+</button>
+                  <button @click="zoomReset" class="zoom-btn" title="适应窗口"><RefreshCw :size="14" /></button>
+                </div>
               </div>
-            </div>
-            <iframe v-else :src="previewSrc" class="preview-iframe" />
-          </template>
-          <div v-else class="preview-error">{{ previewError || '不支持预览该文件类型' }}</div>
-        </div>
-        <div class="preview-footer">
-          <a :href="api().downloadUrl(previewItem.path)" class="btn-sm btn-primary">下载</a>
-          <button class="btn-sm" @click="previewItem = null">关闭</button>
+              <iframe v-else :src="previewSrc" class="preview-iframe" />
+            </template>
+            <div v-else class="preview-error">{{ previewError || '不支持预览该文件类型' }}</div>
+          </div>
+          <div class="preview-footer">
+            <a :href="api().downloadUrl(previewItem.path)" class="btn-sm btn-primary">下载</a>
+            <button class="btn-sm" @click="previewItem = null">关闭</button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
 
     <div class="files-list-wrapper glass">
-      <table v-if="sortedItems.length" class="files-table">
-        <thead>
-          <tr>
-            <th class="col-name sortable" @click="toggleSort('name')">
-              名称
-              <span v-if="sortField === 'name'" class="sort-indicator">
-                <ChevronUp v-if="sortDir === 'asc'" :size="12" />
-                <ChevronDown v-else :size="12" />
-              </span>
-            </th>
-            <th class="col-size sortable" @click="toggleSort('size')">
-              大小
-              <span v-if="sortField === 'size'" class="sort-indicator">
-                <ChevronUp v-if="sortDir === 'asc'" :size="12" />
-                <ChevronDown v-else :size="12" />
-              </span>
-            </th>
-            <th class="col-time sortable" @click="toggleSort('modified_at')">
-              修改时间
-              <span v-if="sortField === 'modified_at'" class="sort-indicator">
-                <ChevronUp v-if="sortDir === 'asc'" :size="12" />
-                <ChevronDown v-else :size="12" />
-              </span>
-            </th>
-            <th class="col-actions">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in sortedItems" :key="item.path" class="file-row">
-            <td class="col-name">
-              <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
-                <component :is="getFileIconComponent(item)" class="file-icon-comp" :class="{ 'dir-icon': item.is_dir }" :size="20" />
-                <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>
-              </div>
-            </td>
-            <td class="col-size">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
-            <td class="col-time">{{ formatDate(item.modified_at) }}</td>
-            <td class="col-actions">
-              <div class="row-actions">
-                <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
-                <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
-                <button class="btn-icon" @click="startRename(item)" title="重命名"><Pencil :size="16" /></button>
-                <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="sortedItems.length" class="table-container">
+        <table class="files-table">
+          <thead>
+            <tr>
+              <th class="col-name sortable" @click="toggleSort('name')">
+                名称
+                <span v-if="sortField === 'name'" class="sort-indicator">
+                  <ChevronUp v-if="sortDir === 'asc'" :size="12" />
+                  <ChevronDown v-else :size="12" />
+                </span>
+              </th>
+              <th class="col-size sortable hide-mobile" @click="toggleSort('size')">
+                大小
+                <span v-if="sortField === 'size'" class="sort-indicator">
+                  <ChevronUp v-if="sortDir === 'asc'" :size="12" />
+                  <ChevronDown v-else :size="12" />
+                </span>
+              </th>
+              <th class="col-time sortable hide-tablet" @click="toggleSort('modified_at')">
+                修改时间
+                <span v-if="sortField === 'modified_at'" class="sort-indicator">
+                  <ChevronUp v-if="sortDir === 'asc'" :size="12" />
+                  <ChevronDown v-else :size="12" />
+                </span>
+              </th>
+              <th class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in sortedItems" :key="item.path" class="file-row">
+              <td class="col-name">
+                <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
+                  <component :is="getFileIconComponent(item)" class="file-icon-comp" :class="{ 'dir-icon': item.is_dir }" :size="20" />
+                  <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>
+                </div>
+              </td>
+              <td class="col-size hide-mobile">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
+              <td class="col-time hide-tablet">{{ formatDate(item.modified_at) }}</td>
+              <td class="col-actions">
+                <div class="row-actions">
+                  <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
+                  <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
+                  <button class="btn-icon" @click="startRename(item)" title="重命名"><Pencil :size="16" /></button>
+                  <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div v-else-if="!loading" class="empty-state">
         <div class="empty-icon"><FolderOpen :size="48" /></div>
         <p>此目录空空如也</p>
@@ -412,12 +422,16 @@ export default {
   border-radius: var(--radius-lg); 
   box-shadow: var(--shadow-sm); 
   border: 1px solid var(--border-base);
+  gap: 16px;
 }
-.breadcrumb-bar { flex: 1; display: flex; align-items: center; min-width: 0; font-size: 14px; }
+.breadcrumb-wrapper { flex: 1; overflow-x: auto; scrollbar-width: none; }
+.breadcrumb-wrapper::-webkit-scrollbar { display: none; }
+
+.breadcrumb-bar { display: flex; align-items: center; min-width: max-content; font-size: 14px; }
 .btn-crumb { 
   border: none; 
   background: transparent; 
-  padding: 6px 10px; 
+  padding: 8px 12px; 
   color: var(--brand); 
   cursor: pointer; 
   border-radius: var(--radius-sm); 
@@ -425,19 +439,19 @@ export default {
   white-space: nowrap; 
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-weight: 500;
 }
 .btn-crumb:hover { background: var(--bg-info); }
-.btn-crumb.is-last { color: var(--text-primary); font-weight: 600; cursor: default; pointer-events: none; }
-.sep { color: var(--text-quaternary); margin: 0 4px; opacity: 0.5; }
+.btn-crumb.is-last { color: var(--text-primary); font-weight: 700; cursor: default; pointer-events: none; }
+.sep { color: var(--text-quaternary); margin: 0 2px; opacity: 0.5; flex-shrink: 0; }
 
-.toolbar-actions { display: flex; gap: 10px; }
+.toolbar-actions { display: flex; gap: 10px; flex-shrink: 0; }
 .btn-tool { 
   display: flex; 
   align-items: center; 
   gap: 8px; 
-  padding: 8px 16px; 
+  padding: 10px 16px; 
   border: 1px solid var(--border-strong); 
   background: var(--bg-card); 
   border-radius: var(--radius-md); 
@@ -445,6 +459,7 @@ export default {
   font-size: 14px; 
   transition: all 0.2s; 
   color: var(--text-secondary);
+  font-weight: 500;
 }
 .btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
 .btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
@@ -453,7 +468,7 @@ export default {
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.error-alert { background: var(--bg-danger); border: 1px solid var(--danger-border); color: var(--danger-text); padding: 10px 16px; border-radius: var(--radius-md); display: flex; align-items: center; gap: 12px; }
+.error-alert { background: var(--bg-danger); border: 1px solid var(--danger-border); color: var(--danger-text); padding: 12px 16px; border-radius: var(--radius-md); display: flex; align-items: center; gap: 12px; }
 .btn-close { margin-left: auto; border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--text-tertiary); }
 
 .files-list-wrapper { 
@@ -461,20 +476,23 @@ export default {
   background: var(--bg-card); 
   border-radius: var(--radius-lg); 
   box-shadow: var(--shadow-sm); 
-  overflow-y: auto; 
+  overflow: hidden;
   border: 1px solid var(--border-base);
+  display: flex;
+  flex-direction: column;
 }
-.files-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.files-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); user-select: none; }
+.table-container { flex: 1; overflow: auto; }
+.files-table { width: 100%; border-collapse: collapse; min-width: 600px; }
+.files-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); user-select: none; position: sticky; top: 0; z-index: 10; }
 .files-table th.sortable { cursor: pointer; }
 .files-table th.sortable:hover { color: var(--brand); }
 .sort-indicator { margin-left: 4px; vertical-align: middle; color: var(--brand); }
 .files-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
 
-.col-name { width: 45%; }
-.col-size { width: 15%; }
-.col-time { width: 20%; }
-.col-actions { width: 20%; text-align: right !important; }
+.col-name { width: auto; min-width: 250px; }
+.col-size { width: 120px; }
+.col-time { width: 180px; }
+.col-actions { width: 160px; text-align: right !important; }
 
 .file-row { transition: background .15s; }
 .file-row:hover { background: var(--bg-table-header); }
@@ -486,28 +504,28 @@ export default {
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .file-name.is-dir { color: var(--text-primary); }
 
-.row-actions { display: flex; justify-content: flex-end; gap: 4px; opacity: 0.3; transition: opacity .2s; }
-.file-row:hover .row-actions { opacity: 1; }
-.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
-.btn-icon:hover { border-color: var(--border-base); background: white; color: var(--brand); box-shadow: var(--shadow-sm); }
+.row-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
+.btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
 .empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px; color: var(--text-tertiary); }
 .empty-icon { color: var(--border-strong); margin-bottom: 16px; opacity: 0.5; }
 
-.inline-modal-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.inline-modal-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
 .inline-dialog { background: var(--bg-card); width: 400px; padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); }
 .inline-dialog h3 { margin: 0 0 20px; font-size: 18px; }
-.inline-dialog input { width: 100%; padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); margin-bottom: 24px; box-sizing: border-box; font-size: 15px; }
+.inline-dialog input { width: 100%; padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); margin-bottom: 24px; box-sizing: border-box; font-size: 15px; outline: none; }
+.inline-dialog input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
 
 .preview-dialog { background: var(--bg-card); width: 90vw; height: 85vh; max-width: 1100px; border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); }
-.preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-base); }
-.preview-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-base); background: #fafafa; }
+.preview-header h3 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-close-preview { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 50%; display: flex; transition: .2s; }
-.btn-close-preview:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-close-preview:hover { background: var(--bg-hover); color: var(--text-primary); transform: rotate(90deg); }
 
-.preview-body { flex: 1; overflow: hidden; background: #fafafa; }
+.preview-body { flex: 1; overflow: hidden; background: #f0f0f0; }
 .preview-iframe { width: 100%; height: 100%; border: none; background: white; }
 
 .img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
@@ -518,8 +536,21 @@ export default {
 .zoom-btn:hover { background: rgba(255,255,255,0.2); }
 .zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
 
-.dropzone-overlay { position: fixed; inset: 0; z-index: 2000; background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+.dropzone-overlay { position: fixed; inset: 0; z-index: 3000; background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
 .dropzone-content { background: white; border: 2px dashed var(--brand); border-radius: 32px; padding: 60px 100px; text-align: center; box-shadow: var(--shadow-xl); }
 .drop-icon { color: var(--brand); margin-bottom: 20px; }
 .dropzone-content p { font-size: 20px; color: var(--text-primary); font-weight: 600; margin: 0; }
+
+@media (max-width: 768px) {
+  .hide-mobile { display: none; }
+  .toolbar { padding: 10px 16px; gap: 12px; }
+  .files-table { min-width: 400px; }
+  .col-actions { width: 120px; }
+  .row-actions { opacity: 1; }
+  .preview-dialog { height: 95vh; width: 100vw; border-radius: 0; }
+}
+
+@media (max-width: 1024px) {
+  .hide-tablet { display: none; }
+}
 </style>
