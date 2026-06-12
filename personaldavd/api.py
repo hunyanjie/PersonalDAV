@@ -279,6 +279,8 @@ async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_cur
     if not existing:
         raise HTTPException(404, "事件不存在")
     new_uid, op = svc.add_event(body.ical_data, force=True)
+    if new_uid is None:
+        raise HTTPException(400, f"更新事件失败: {op}")
     return {"uid": new_uid, "operation": op}
 
 
