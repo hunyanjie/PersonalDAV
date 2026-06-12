@@ -205,9 +205,9 @@ class ServerTab(ttk.Frame):
         self.auto_save_check = ttk.Checkbutton(ctrl_row, text="自动保存设置", variable=self.ftp_auto_save)
         self.auto_save_check.pack(side=tk.LEFT, padx=5)
 
-        self.ftp_start_btn = ttk.Button(ctrl_row, text="启动所有服务", command=self.start_ftp_services)
+        self.ftp_start_btn = ttk.Button(ctrl_row, text="启动选中服务", command=self.start_ftp_services)
         self.ftp_start_btn.pack(side=tk.LEFT, padx=5)
-        self.ftp_stop_btn = ttk.Button(ctrl_row, text="停止所有服务", command=self.stop_ftp_services, state=tk.DISABLED)
+        self.ftp_stop_btn = ttk.Button(ctrl_row, text="停止选中服务", command=self.stop_ftp_services, state=tk.DISABLED)
         self.ftp_stop_btn.pack(side=tk.LEFT, padx=5)
 
         self.ftp_status_label = ttk.Label(ctrl_row, text="状态: 已停止")
