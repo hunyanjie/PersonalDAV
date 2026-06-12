@@ -448,7 +448,9 @@ export default {
       try {
         const res = await api.listEvents(0, 500, this._loadStart, this._loadEnd)
         this.events = Array.isArray(res) ? res : (res.items || [])
-      } catch (e) {}
+      } catch (e) {
+        console.error('loadInitial 事件加载失败', e)
+      }
       this._loadingInitial = false
       this.loading = false
       await this.$nextTick()
@@ -582,10 +584,19 @@ export default {
         'END:VEVENT'
       ].join('\r\n')
       try {
-        if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(this.editModal.uid, ical)
-    this.editModal = null
-    await this.loadInitial()
-      } catch (e) { alert('保存失败') }
+        const uid = this.editModal.uid
+        if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(uid, ical)
+        this.editModal = null
+        const idx = this.events.findIndex(e => e.uid === uid)
+        if (idx >= 0) this.events[idx] = {
+          ...this.events[idx],
+          summary: this.editForm.summary,
+          description: this.editForm.description,
+          location: this.editForm.location,
+          categories: this.editForm.categories,
+        }
+        await this.loadInitial()
+      } catch (e) { alert('保存失败: ' + (e.message || e)) }
       this.saving = false
     },
     async deleteSingle(e) {
