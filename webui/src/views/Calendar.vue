@@ -29,7 +29,7 @@
       <AlertCircle :size="16" /> {{ errorMsg }}
     </div>
 
-    <div class="calendar-grid-wrapper glass">
+    <div class="calendar-grid-wrapper glass" v-if="!searchQuery">
       <table class="cal-table">
         <thead>
           <tr><th v-for="d in ['一','二','三','四','五','六','日']" :key="d">{{ d }}</th></tr>
@@ -99,6 +99,21 @@
       </div>
     </div>
 
+    <!-- Search Results View -->
+    <div v-if="searchQuery" class="search-results-panel glass">
+      <div v-for="e in events" :key="e.uid" class="event-card" @click="openDetail(e)">
+          <div class="card-side" :style="cardSideStyle(e)" />
+          <div class="card-body">
+            <div class="card-main">
+              <div class="card-title">{{ e.summary || '(无标题)' }}</div>
+              <div class="card-time"><Clock :size="12" /> {{ formatTime(e.dtstart) }} - {{ formatTime(e.dtend) }}</div>
+            </div>
+            <div class="card-date">{{ formatDateFull(e.dtstart) }}</div>
+          </div>
+      </div>
+      <div v-if="!events.length" class="empty-hint">未找到匹配的日程</div>
+    </div>
+
     <!-- Context Menu -->
     <div v-if="ctxMenu.show" class="ctx-menu glass" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
       <div class="ctx-item" @click="exportSelected"><Share2 :size="14" /> 分享/导出</div>
@@ -149,7 +164,7 @@
       </div>
     </div>
 
-    <div v-if="!events.length && !errorMsg && !selectedDay" class="empty-hint">
+    <div v-if="!events.length && !errorMsg && !selectedDay && !searchQuery" class="empty-hint">
       <CalendarIcon :size="48" class="empty-icon" />
       <p>当前月份无日程</p>
     </div>
@@ -160,7 +175,7 @@
 import { 
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
   Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
-  MapPin, Layers, FileText, X, Calendar as CalendarIcon
+  MapPin, Layers, FileText, X, Calendar as CalendarIcon, ChevronUp, ChevronDown
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -204,7 +219,7 @@ export default {
   components: { 
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
     Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
-    MapPin, Layers, FileText, X, CalendarIcon
+    MapPin, Layers, FileText, X, CalendarIcon, ChevronUp, ChevronDown
   },
   data: () => ({
     events: [],
@@ -247,7 +262,6 @@ export default {
         && this.selectedDay.day === this.todayDate.day
     },
     weeks() {
-      if (this.searchQuery) return []
       const y = this.calNow.getFullYear(), m = this.calNow.getMonth()
       const first = new Date(y, m, 1).getDay() || 7
       const daysInMonth = new Date(y, m + 1, 0).getDate()
@@ -586,6 +600,7 @@ export default {
 .tl-hour-label { flex: 1; text-align: center; font-size: 10px; color: var(--text-tertiary); border-left: 1px solid rgba(0,0,0,0.03); padding-top: 4px; font-family: monospace; }
 .tl-dot { position: absolute; top: 20px; width: 12px; height: 12px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 1; box-shadow: 0 0 0 3px white; border: 1px solid var(--brand); }
 .tl-dot:hover { transform: translateX(-50%) scale(1.3); z-index: 5; }
+.tl-dot.tl-dot-past { background: #d9d9d9; border-color: #ccc; }
 .tl-now-bar { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); z-index: 2; pointer-events: none; }
 
 .event-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
@@ -600,13 +615,17 @@ export default {
 
 .empty-day-hint { grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-tertiary); font-style: italic; }
 
+.search-results-panel { padding: 20px; background: var(--bg-card); border-radius: var(--radius-lg); display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; border: 1px solid var(--border-base); }
+.card-date { font-size: 12px; color: var(--brand); margin-top: 6px; font-weight: 600; }
+
 .ctx-menu { position: fixed; z-index: 1000; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border: 1px solid var(--border-base); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 160px; padding: 6px; }
 .ctx-item { padding: 10px 14px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px; border-radius: var(--radius-sm); color: var(--text-secondary); }
 .ctx-item:hover { background: var(--brand); color: white; }
 .ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
 .ctx-item.danger:hover { background: var(--danger); }
 
-.modal-card { background: white; border-radius: var(--radius-lg); min-width: 400px; max-width: 520px; box-shadow: var(--shadow-xl); overflow: hidden; }
+.modal-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.modal-card { background: white; border-radius: var(--radius-lg); min-width: 400px; max-width: 520px; box-shadow: var(--shadow-xl); overflow: hidden; border: 1px solid var(--glass-border); }
 .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
 .btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); display: flex; transition: .2s; }
 .btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg); }
@@ -619,7 +638,7 @@ export default {
 .desc-text { white-space: pre-wrap; font-weight: normal; font-size: 14px; color: var(--text-secondary); }
 
 .modal-footer { padding: 16px 24px; background: #fafafa; border-top: 1px solid var(--border-base); display: flex; gap: 12px; justify-content: flex-end; }
-.btn-action { padding: 8px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px; transition: .2s; }
+.btn-action { padding: 8px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px; transition: .2s; text-decoration: none; color: var(--text-primary); }
 .btn-action:hover { border-color: var(--brand); color: var(--brand); }
 .btn-danger { color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: var(--bg-danger); }
