@@ -68,7 +68,20 @@
           <button class="btn-close" @click="previewItem = null">&times;</button>
         </div>
         <div class="preview-body">
-          <iframe v-if="previewSrc" :src="previewSrc" class="preview-iframe" />
+          <template v-if="previewSrc">
+            <div v-if="_isImage" class="img-viewport" ref="imgViewport"
+              @wheel.prevent="onImgWheel"
+              @mousedown="onImgDown" @mousemove="onImgMove" @mouseup="onImgUp" @mouseleave="onImgUp">
+              <img :src="previewSrc" :style="imgStyle" class="preview-img" :class="{ dragging: _isPanning }" draggable="false" />
+              <div class="img-zoom-bar">
+                <button @click="zoomOut" class="zoom-btn" title="缩小">−</button>
+                <span class="zoom-label">{{ Math.round(_zoom * 100) }}%</span>
+                <button @click="zoomIn" class="zoom-btn" title="放大">+</button>
+                <button @click="zoomReset" class="zoom-btn" title="适应窗口">⟲</button>
+              </div>
+            </div>
+            <iframe v-else :src="previewSrc" class="preview-iframe" />
+          </template>
           <div v-else class="preview-error">{{ previewError || '不支持预览该文件类型' }}</div>
         </div>
         <div class="preview-footer">
@@ -147,6 +160,15 @@ export default {
     _previewSrc: null,
     _previewError: '',
     _previewBlobUrl: '',
+    _isImage: false,
+    _zoom: 1,
+    _panX: 0,
+    _panY: 0,
+    _isPanning: false,
+    _panStartX: 0,
+    _panStartY: 0,
+    _panStartPx: 0,
+    _panStartPy: 0,
     dragOver: false,
   }),
   mounted() { 
@@ -174,6 +196,10 @@ export default {
     },
     previewSrc() { return this._previewSrc },
     previewError() { return this._previewError },
+    imgStyle() {
+      if (!this._isImage) return {}
+      return { transform: `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})` }
+    },
   },
   methods: {
     api() { return api },
@@ -188,6 +214,12 @@ export default {
     async doPreview(item) {
       this._previewSrc = null
       this._previewError = ''
+      const ext = item.name.split('.').pop().toLowerCase()
+      this._isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)
+      this._zoom = 1
+      this._panX = 0
+      this._panY = 0
+      this._isPanning = false
       try {
         this._previewSrc = await api.previewFile(item.path)
       } catch (e) {
@@ -195,6 +227,26 @@ export default {
       }
       this.previewItem = item
     },
+    zoomIn() { this._zoom = Math.min(4, +(this._zoom * 1.5).toFixed(2)) },
+    zoomOut() { this._zoom = Math.max(0.25, +(this._zoom / 1.5).toFixed(2)) },
+    zoomReset() { this._zoom = 1; this._panX = 0; this._panY = 0 },
+    onImgWheel(e) {
+      if (e.deltaY < 0) this.zoomIn(); else this.zoomOut()
+    },
+    onImgDown(e) {
+      if (this._zoom <= 1) return
+      this._isPanning = true
+      this._panStartX = e.clientX
+      this._panStartY = e.clientY
+      this._panStartPx = this._panX
+      this._panStartPy = this._panY
+    },
+    onImgMove(e) {
+      if (!this._isPanning) return
+      this._panX = this._panStartPx + (e.clientX - this._panStartX)
+      this._panY = this._panStartPy + (e.clientY - this._panStartY)
+    },
+    onImgUp() { this._isPanning = false },
     async load() {
       this.loading = true
       this.errorMsg = ''
@@ -375,6 +427,14 @@ export default {
 .preview-iframe { width: 100%; height: 100%; border: none; }
 .preview-error { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 16px; }
 .preview-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #f0f0f0; }
+
+.img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #f5f5f5; position: relative; }
+.preview-img { max-width: 100%; max-height: 100%; cursor: grab; user-select: none; transition: transform 0.12s; }
+.preview-img.dragging { cursor: grabbing; transition: none; }
+.img-zoom-bar { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); border-radius: 8px; display: flex; align-items: center; gap: 2px; padding: 4px; backdrop-filter: blur(4px); }
+.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+.zoom-btn:hover { background: rgba(255,255,255,.15); }
+.zoom-label { color: #fff; font-size: 12px; min-width: 40px; text-align: center; }
 
 .dropzone-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(22,119,255,0.08); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
 .dropzone-content { background: #fff; border: 3px dashed #1677ff; border-radius: 20px; padding: 60px 80px; text-align: center; box-shadow: 0 8px 32px rgba(22,119,255,0.2); }
