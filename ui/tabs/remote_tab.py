@@ -373,9 +373,6 @@ class RemoteTab(ttk.Frame):
 
     def _open_remote_file(self, name: str) -> None:
         proto = self._current_protocol
-        if proto == "SMB":
-            messagebox.showinfo("提示", "SMB 暂不支持双击打开文件", parent=self)
-            return
         remote = self._current_path.rstrip("/") + "/" + name
         import random
         stem, ext = os.path.splitext(name)
@@ -396,8 +393,11 @@ class RemoteTab(ttk.Frame):
     def _open_remote_thread(self, proto: str, server: str, port: int,
                             username: str, password: str, remote: str, local: str,
                             encoding: str) -> None:
-        client = self.dav_client if proto == "WebDAV" else self.ftp_client
-        result = client.download(proto.lower(), server, port, username, password, remote, local, encoding)
+        if proto == "SMB":
+            result = self.smb_service.download_file(server, self._current_share, remote, local, username, password)
+        else:
+            client = self.dav_client if proto == "WebDAV" else self.ftp_client
+            result = client.download(proto.lower(), server, port, username, password, remote, local, encoding)
         if result["success"]:
             try:
                 os.startfile(local)
