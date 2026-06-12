@@ -188,15 +188,10 @@ export default {
     async doPreview(item) {
       this._previewSrc = null
       this._previewError = ''
-      const ext = item.name.split('.').pop().toLowerCase()
-      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)) {
-        this._previewSrc = api().previewUrl(item.path)
-      } else {
-        try {
-          this._previewSrc = await api.previewFile(item.path)
-        } catch (e) {
-          this._previewError = '预览失败: ' + (e.message || e)
-        }
+      try {
+        this._previewSrc = await api.previewFile(item.path)
+      } catch (e) {
+        this._previewError = '预览失败: ' + (e.message || e)
       }
       this.previewItem = item
     },

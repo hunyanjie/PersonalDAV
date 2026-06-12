@@ -487,8 +487,9 @@ export default {
       } catch (e) {}
       this.loading = false
     },
-    scrollToToday() {
+    async scrollToToday() {
       this._initialScrollGuard = true
+      await this.$nextTick()
       const now = this.currentTime
       const todayStr = fmtDate(now)
       const items = this.virtualItems
@@ -512,7 +513,9 @@ export default {
       } else {
         targetY = header.top + HEADER_HEIGHT / 2 - viewH / 2
       }
-      this.$refs.listRef.scrollTop = Math.max(0, Math.round(targetY))
+      const pos = Math.max(0, Math.round(targetY))
+      this.$refs.listRef.scrollTop = pos
+      this.scrollTop = pos
       requestAnimationFrame(() => { this._initialScrollGuard = false })
     },
     onScroll() {
@@ -663,7 +666,7 @@ export default {
 .ah-week { font-size: 14px; color: #888; margin-top: 4px; }
 .btn-create { padding: 8px 16px; background: var(--theme, #1677ff); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; }
 
-.scroll-viewport { flex: 1; overflow-y: auto; position: relative; scroll-behavior: smooth; }
+.scroll-viewport { flex: 1; overflow-y: auto; position: relative; }
 .virtual-list { position: relative; width: 100%; }
 .list-item { position: absolute; left: 0; right: 0; padding: 0 16px; box-sizing: border-box; }
 
