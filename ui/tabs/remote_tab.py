@@ -356,14 +356,70 @@ class RemoteTab(ttk.Frame):
         name = values[0]
         ftype = values[1]
 
-        if ftype != "文件夹" and ftype != "共享":
-            return
-
         if ftype == "共享":
             self.browse_share(name, "/")
-        elif self._current_share or self._current_server:
-            path = self._current_path.rstrip("/") + "/" + name
-            self.browse_share(self._current_share, path)
+        elif ftype == "文件夹":
+            if self._current_share or self._current_server:
+                path = self._current_path.rstrip("/") + "/" + name
+                self.browse_share(self._current_share, path)
+        else:
+            self._open_remote_file(name)
+
+    @staticmethod
+    def _tmp_dir() -> str:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "tmp")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _open_remote_file(self, name: str) -> None:
+        proto = self._current_protocol
+        if proto == "SMB":
+            messagebox.showinfo("提示", "SMB 暂不支持双击打开文件", parent=self)
+            return
+        remote = self._current_path.rstrip("/") + "/" + name
+        import random
+        stem, ext = os.path.splitext(name)
+        suffix = f"_{random.randint(1000,9999)}{ext}"
+        local = os.path.join(self._tmp_dir(), f"{stem}{suffix}")
+
+        server, port = self._parse_server(self._current_server, 80 if proto == "WebDAV" else 21)
+        username = self.username_var.get().strip() or "anonymous"
+        password = self.password_var.get()
+        client = self.dav_client if proto == "WebDAV" else self.ftp_client
+        encoding = self.encoding_var.get()
+        threading.Thread(
+            target=self._open_remote_thread,
+            args=(proto, server, port, username, password, remote, local, encoding),
+            daemon=True
+        ).start()
+
+    def _open_remote_thread(self, proto: str, server: str, port: int,
+                            username: str, password: str, remote: str, local: str,
+                            encoding: str) -> None:
+        client = self.dav_client if proto == "WebDAV" else self.ftp_client
+        result = client.download(proto.lower(), server, port, username, password, remote, local, encoding)
+        if result["success"]:
+            try:
+                os.startfile(local)
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("打开失败", str(e), parent=self))
+                try: os.remove(local)
+                except OSError: pass
+                return
+            threading.Thread(target=self._cleanup_tmp_file, args=(local,), daemon=True).start()
+        else:
+            self.after(0, lambda: messagebox.showerror("下载失败", result.get("error", "未知错误"), parent=self))
+
+    @staticmethod
+    def _cleanup_tmp_file(tmp: str) -> None:
+        import time
+        for _ in range(10):
+            time.sleep(10)
+            try:
+                os.remove(tmp)
+                return
+            except OSError:
+                continue
 
     def go_up(self) -> None:
         if (not self._current_share and not self._current_server) or self._current_path == "/":

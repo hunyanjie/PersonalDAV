@@ -147,11 +147,51 @@ class FilesTab(ttk.Frame):
         values = self.tree.item(item[0], "values")
         name = values[0]
         ftype = values[1]
-        if ftype != "文件夹":
+        if ftype == "文件夹":
+            full = os.path.join(self._current_path, name)
+            if os.path.isdir(full):
+                self._list_dir(full)
+        else:
+            full = os.path.join(self._current_path, name)
+            self._open_local_file(full, name)
+
+    @staticmethod
+    def _tmp_dir() -> str:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "tmp")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _open_local_file(self, full_path: str, name: str) -> None:
+        import random
+        stem, ext = os.path.splitext(name)
+        suffix = f"_{random.randint(1000,9999)}{ext}"
+        tmp = os.path.join(self._tmp_dir(), f"{stem}{suffix}")
+        try:
+            shutil.copy2(full_path, tmp)
+        except Exception as e:
+            messagebox.showerror("错误", f"复制文件失败: {e}", parent=self)
             return
-        full = os.path.join(self._current_path, name)
-        if os.path.isdir(full):
-            self._list_dir(full)
+        try:
+            os.startfile(tmp)
+        except Exception as e:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            messagebox.showerror("错误", f"打开文件失败: {e}", parent=self)
+            return
+        threading.Thread(target=self._cleanup_tmp_file, args=(tmp,), daemon=True).start()
+
+    @staticmethod
+    def _cleanup_tmp_file(tmp: str) -> None:
+        import time
+        for _ in range(10):
+            time.sleep(10)
+            try:
+                os.remove(tmp)
+                return
+            except OSError:
+                continue
 
     def go_up(self) -> None:
         parent = os.path.dirname(self._current_path)
