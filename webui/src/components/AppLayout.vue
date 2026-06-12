@@ -1,52 +1,60 @@
 <template>
   <div class="layout">
-    <aside class="sidebar glass" :class="{ collapsed: sidebarCollapsed }">
+    <!-- Sidebar / Drawer -->
+    <aside class="sidebar glass" :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileMenuOpen }">
       <div class="sidebar-header">
-        <div class="logo" v-show="!sidebarCollapsed">
+        <div class="logo" v-show="!sidebarCollapsed || mobileMenuOpen">
           <div class="logo-icon">P</div>
           <span>PersonalDAV</span>
         </div>
         <button class="toggle-btn" @click="toggleSidebar" :title="sidebarCollapsed ? '展开侧栏' : '收缩侧栏'">
-          <Menu v-if="sidebarCollapsed" :size="20" />
+          <Menu v-if="sidebarCollapsed && !mobileMenuOpen" :size="20" />
           <ChevronLeft v-else :size="20" />
         </button>
       </div>
-      <nav>
+      <nav @click="onNavClick">
         <router-link to="/" exact-active-class="active" :title="sidebarCollapsed ? '概览' : ''">
           <LayoutDashboard :size="20" />
-          <span v-show="!sidebarCollapsed">概览</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">概览</span>
         </router-link>
         <router-link to="/contacts" active-class="active" :title="sidebarCollapsed ? '联系人' : ''">
           <Users :size="20" />
-          <span v-show="!sidebarCollapsed">联系人</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">联系人</span>
         </router-link>
         <router-link to="/calendar" active-class="active" :title="sidebarCollapsed ? '月视图' : ''">
           <Calendar :size="20" />
-          <span v-show="!sidebarCollapsed">月视图</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">月视图</span>
         </router-link>
         <router-link to="/calendar/schedule" active-class="active" :title="sidebarCollapsed ? '日程视图' : ''">
           <ListTodo :size="20" />
-          <span v-show="!sidebarCollapsed">日程视图</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">日程视图</span>
         </router-link>
         <router-link to="/files" active-class="active" :title="sidebarCollapsed ? '文件' : ''">
           <Folder :size="20" />
-          <span v-show="!sidebarCollapsed">文件</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">文件</span>
         </router-link>
         <router-link to="/settings" active-class="active" :title="sidebarCollapsed ? '设置' : ''">
           <Settings :size="20" />
-          <span v-show="!sidebarCollapsed">设置</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">设置</span>
         </router-link>
       </nav>
       <div class="sidebar-footer">
         <a href="#" @click.prevent="logout" :title="sidebarCollapsed ? '退出登录' : ''">
           <LogOut :size="18" />
-          <span v-show="!sidebarCollapsed">退出登录</span>
+          <span v-show="!sidebarCollapsed || mobileMenuOpen">退出登录</span>
         </a>
       </div>
     </aside>
+
+    <!-- Mobile Overlay -->
+    <div v-if="mobileMenuOpen" class="mobile-overlay" @click="mobileMenuOpen = false"></div>
+
     <main class="main">
       <header class="header">
         <div class="header-inner glass">
+          <button class="mobile-menu-btn" @click="mobileMenuOpen = true">
+            <Menu :size="24" />
+          </button>
           <h2>{{ $route.meta.title || '' }}</h2>
         </div>
       </header>
@@ -75,6 +83,7 @@ export default {
   },
   data: () => ({
     sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === 'true',
+    mobileMenuOpen: false,
   }),
   async mounted() {
     await this.syncServerTheme()
@@ -94,8 +103,17 @@ export default {
       } catch (e) { /* 服务器无主题色设置时保持本地值 */ }
     },
     toggleSidebar() {
-      this.sidebarCollapsed = !this.sidebarCollapsed
-      localStorage.setItem('sidebar_collapsed', this.sidebarCollapsed)
+      if (window.innerWidth <= 768) {
+        this.mobileMenuOpen = !this.mobileMenuOpen
+      } else {
+        this.sidebarCollapsed = !this.sidebarCollapsed
+        localStorage.setItem('sidebar_collapsed', this.sidebarCollapsed)
+      }
+    },
+    onNavClick() {
+      if (window.innerWidth <= 768) {
+        this.mobileMenuOpen = false
+      }
     },
     logout() {
       localStorage.removeItem('token')
@@ -106,7 +124,7 @@ export default {
 </script>
 
 <style scoped>
-.layout { display: flex; height: 100vh; background-color: var(--bg-page); }
+.layout { display: flex; height: 100vh; background-color: var(--bg-page); position: relative; }
 
 .sidebar { 
   width: 240px; 
@@ -121,7 +139,7 @@ export default {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   border: none;
-  z-index: 100;
+  z-index: 1000;
 }
 .sidebar.collapsed { width: 72px; }
 
@@ -220,8 +238,19 @@ export default {
   display: flex;
   align-items: center;
   min-height: 64px;
+  gap: 16px;
 }
 .header h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+
+.mobile-menu-btn {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border-base);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
 
 .content { 
   flex: 1; 
@@ -231,13 +260,35 @@ export default {
   position: relative; 
 }
 
+/* Mobile Overlay */
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  z-index: 990;
+}
+
 /* Transitions */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-enter-from { opacity: 0; transform: translateY(8px); }
 .fade-leave-to { opacity: 0; transform: translateY(-8px); }
 
 @media (max-width: 768px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; margin: 0; border-radius: 0; transform: translateX(-100%); }
-  .sidebar.active { transform: translateX(0); }
+  .sidebar { 
+    position: fixed; 
+    left: 0; 
+    top: 0; 
+    bottom: 0; 
+    margin: 0; 
+    border-radius: 0; 
+    transform: translateX(-100%); 
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar.mobile-open { transform: translateX(0); width: 240px; }
+  .mobile-menu-btn { display: block; }
+  .header-inner { padding: 12px 20px; }
+  .main { padding: 0; }
+  .sidebar.collapsed { width: 0; } /* Force close on mobile if collapsed toggle is used */
 }
 </style>
