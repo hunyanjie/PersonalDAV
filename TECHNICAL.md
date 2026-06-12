@@ -107,6 +107,73 @@ main.py --headless
 
 ---
 
+## v3.3 — Web UI 离线 + 通知 + 导入 + 预览增强
+
+### PWA 离线支持
+
+`webui/public/sw.js` 是 Service Worker，注册于根路径，缓存策略：
+- **静态资源**（JS/CSS/字体）：Cache First，请求命中缓存直接返回，网络更新仅用于下次访问
+- **API 请求**（`/api/`）：Network First，超时或离线时返回缓存（用于已加载的数据）
+- **SPA 导航**：未匹配到缓存的路径直接返回 `caches.match('/')`（SPA 入口），确保刷新任意子路径不白屏
+
+`webui/public/manifest.json` 定义 PWA 清单（名称、图标、display: standalone、theme_color）。
+
+`webui/src/main.js` 在 `onMounted` 中注册 SW（`registerSW()`），skip-waiting 确保新版本立即激活。
+
+### 桌面通知轮询
+
+`webui/src/services/reminder.js`：
+- 每 60 秒通过 `setInterval` 调用 `api.listEvents(0, 50, today, today)` 获取今日事件
+- 对每事件计算 `dtstart - now`，若在 0~15 分钟内且尚未通知过（`_notifiedUids` Set），弹 `new Notification(summary, {body: timeRange})`
+- 组件卸载时 `clearInterval` + 清空 Set
+
+### 拖拽上传
+
+`webui/src/views/Files.vue`：
+- 全局 `dragenter` 检测 → 显示 dropzone overlay（模糊背景 + 虚线边框）
+- overlay 上监听 `drop.prevent` → 遍历 `e.dataTransfer.files`，逐文件调用 `api.uploadFile()`
+- 上传完成后刷新文件列表
+- 复用已有 `doUpload` 逻辑，仅入口不同
+
+### 联系人/日历导入
+
+`webui/src/views/ContactsList.vue` & `Calendar.vue`：
+- 工具栏新增 `<label class="btn-import">` 包裹 `<input type="file" accept=".vcf" hidden />`
+- `doImport` 方法：`file.text()` 读取内容，按 `/(?=BEGIN:VCARD)/` 或 `/(?=BEGIN:VEVENT)/` 分割为独立记录
+- 逐条调 `api.createContact(vcardBlock)` / `api.createEvent(icalBlock)`，汇总成功/失败数弹窗提示
+
+### 图片预览缩放
+
+`webui/src/views/Files.vue`：
+- `isImage` 检测扩展名 → 使用 `<img>` 替代 `<iframe>`，`max-width/height: 100%` 自适应容器
+- 缩放：`_zoom` 状态（0.25~4），步进 ×1.5 / ÷1.5，鼠标滚轮 `deltaY` 正/负控制
+- 平移：`_zoom > 1` 时 `mousedown` 启动拖拽，`mousemove` 更新 `_panX/_panY`，`transform: translate(pan) scale(zoom)`
+- `overflow: hidden` 容器裁剪溢出部分，半透明悬浮缩放条在底部居中
+
+### 农历日期
+
+`webui/src/views/Schedule.vue`：
+- 预编码 `LUNAR_DATA[]` 数组（1900~2100 年，传统 4+12+4 bit 编码：闰月号 + 各月天数 + 闰月天数）
+- `getLunar(dateStr)` 计算太阳日偏移 → 逐年减到定位年份 → 逐月减到定位月份 → 查表得农历月日
+- 配合现有日期头部渲染，`{{ item.lunar }}` 显示在右侧
+
+### 日程视图滚动修复
+
+`webui/src/views/Schedule.vue`：
+- 移除 `scroll-behavior: smooth` CSS，改为 `scrollTop` 直接赋值 + 同步 `this.scrollTop`
+- `scrollToToday` 中增加 `await this.$nextTick()` 确保虚拟列表 DOM 已更新
+- 有进行中事件 → 居中该事件；无进行中但有今日事件 → 按时段比例定位；无事件 → 居中"今日无日程"
+
+### 文件预览后端修复
+
+`personaldavd/files.py`：
+- `_MIME_OVERRIDES` 字典补充 Windows 缺失扩展名（`.md` → `text/markdown`、`.yaml` → `text/yaml` 等）
+- `mimetypes.guess_type` 返回 None 时回退到 `_MIME_OVERRIDES.get(ext)`，不再误判 415
+
+`webui/src/views/Files.vue` 预览请求改为 `fetch()` + `Authorization: Bearer` 头获取 blob URL，不再将 token 放在 URL 查询参数中。
+
+---
+
 ## v3.2 — Web UI + 多挂载点架构
 
 ### Web 管理界面（Vue 3 + Vite SPA）
