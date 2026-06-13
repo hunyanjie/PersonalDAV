@@ -231,7 +231,7 @@ export default {
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px; }
 .header { padding: 0 12px 12px; }
 .header-inner { 
-  padding: 16px 24px; 
+  padding: 16px 24px;
   background: var(--bg-card); 
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
@@ -240,7 +240,7 @@ export default {
   min-height: 64px;
   gap: 16px;
 }
-.header h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.header h2 { margin: 0; font-size: 24px; font-weight: 600; color: var(--text-primary); }
 
 .mobile-menu-btn {
   display: none;
@@ -285,10 +285,9 @@ export default {
     transform: translateX(-100%); 
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .sidebar.mobile-open { transform: translateX(0); width: 240px; }
+  .sidebar.mobile-open { transform: translateX(0); width: 240px !important; }
   .mobile-menu-btn { display: block; }
   .header-inner { padding: 12px 20px; }
   .main { padding: 0; }
-  .sidebar.collapsed { width: 0; } /* Force close on mobile if collapsed toggle is used */
 }
 </style>

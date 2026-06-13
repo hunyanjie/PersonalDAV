@@ -282,7 +282,7 @@ export default {
 .page-input:focus { border-color: var(--brand); }
 .page-size-select { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; background: white; font-weight: 600; cursor: pointer; }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .toolbar { flex-direction: column; align-items: stretch; }
   .search-box { min-width: 100%; }
   .toolbar-actions { width: 100%; justify-content: flex-end; }

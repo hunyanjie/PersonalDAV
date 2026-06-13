@@ -424,7 +424,7 @@ export default {
   border: 1px solid var(--border-base);
   gap: 16px;
 }
-.breadcrumb-wrapper { flex: 1; overflow-x: auto; scrollbar-width: none; }
+.breadcrumb-wrapper { flex: 1; overflow-x: auto; scrollbar-width: none; min-width: 0; }
 .breadcrumb-wrapper::-webkit-scrollbar { display: none; }
 
 .breadcrumb-bar { display: flex; align-items: center; min-width: max-content; font-size: 14px; }
