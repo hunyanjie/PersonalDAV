@@ -136,8 +136,12 @@
             </tr>
           </thead>
           <transition-group tag="tbody" name="list">
-            <tr v-for="item in sortedItems" :key="item.path" class="file-row">
-              <td class="col-name">
+            <tr v-for="item in sortedItems" :key="item.path" class="file-row"
+              :class="{ 'swipe-open': _swipePath === item.path }"
+              @touchstart="swipeStart(item.path, $event)"
+              @touchmove.prevent="swipeMove($event)"
+              @touchend="swipeEnd(item.path)">
+              <td class="col-name" @click="closeSwipe">
                 <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
                   <component :is="getFileIconComponent(item)" class="file-icon-comp" :class="{ 'dir-icon': item.is_dir }" :size="20" />
                   <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>
@@ -145,7 +149,7 @@
               </td>
               <td class="col-size hide-mobile">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.modified_at) }}</td>
-              <td class="col-actions">
+              <td class="col-actions" :style="swipeStyle(item.path)">
                 <div class="row-actions">
                   <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
                   <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
@@ -194,6 +198,7 @@ export default {
     renameName: '',
     loading: false,
     uploadProgress: null,
+    _swipePath: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
     errorMsg: '',
     sortField: 'name',
     sortDir: 'asc',
@@ -353,6 +358,32 @@ export default {
     },
     startRename(item) {
       this.renaming = item; this.renameName = item.name
+    },
+    swipeStart(path, e) {
+      if (window.innerWidth > 768) return
+      this.closeSwipe()
+      this._swipePath = path
+      this._swipeStartX = e.touches[0].clientX
+      this._swipeStartY = e.touches[0].clientY
+      this._swipeOffset = 0
+    },
+    swipeMove(e) {
+      if (!this._swipePath) return
+      const dx = this._swipeStartX - e.touches[0].clientX
+      const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
+      if (dy > 20) { this.closeSwipe(); return }
+      this._swipeOffset = Math.max(0, Math.min(160, dx))
+    },
+    swipeEnd(path) {
+      if (this._swipePath !== path) return
+      if (this._swipeOffset > 80) this._swipeOffset = 160
+      else this.closeSwipe()
+    },
+    closeSwipe() { this._swipePath = null; this._swipeOffset = 0 },
+    swipeStyle(path) {
+      if (this._swipePath !== path || this._swipeOffset <= 0) return ''
+      const offset = 160 - this._swipeOffset
+      return `transform:translateX(${offset}px);transition:none`
     },
     async doRename() {
       const newName = this.renameName.trim()
@@ -579,8 +610,14 @@ export default {
   .breadcrumb-bar { min-width: max-content; }
   .toolbar-actions { flex-shrink: 0; justify-content: flex-end; }
   .files-table { min-width: 400px; }
-  .col-actions { width: 140px; }
-  .row-actions { opacity: 1; }
+  .file-row { position: relative; overflow: hidden; display: flex; background: var(--bg-card); border: 1px solid var(--border-base); border-radius: var(--radius-md); margin-bottom: 8px; }
+  .file-row td { display: block; border: none; padding: 14px 12px; vertical-align: middle; }
+  .col-name { flex: 1; min-width: 0; }
+  .col-size, .col-time { display: none; }
+  .col-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; box-shadow: -4px 0 12px rgba(0,0,0,0.08); z-index: 2; }
+  .file-row:not(.swipe-open) .col-actions { transform: translateX(calc(100% + 8px)); transition: transform 0.25s ease; }
+  .file-row.swipe-open .col-actions { transition: transform 0.25s ease; }
+  .row-actions { opacity: 1; display: flex; gap: 4px; }
   .btn-icon { width: 40px; height: 40px; }
   .preview-dialog { height: 95vh; width: 100vw; border-radius: 0; }
 }

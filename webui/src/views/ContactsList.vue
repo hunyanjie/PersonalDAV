@@ -29,9 +29,13 @@
             </tr>
           </thead>
           <transition-group tag="tbody" name="list">
-            <tr v-for="c in items" :key="c.uid" class="contact-row">
+            <tr v-for="c in items" :key="c.uid" class="contact-row"
+              :class="{ 'swipe-open': _swipeUid === c.uid }"
+              @touchstart="swipeStart(c.uid, $event)"
+              @touchmove.prevent="swipeMove($event)"
+              @touchend="swipeEnd(c.uid)">
               <td class="col-name">
-                <div class="name-info">
+                <div class="name-info" @click="closeSwipe">
                   <span class="avatar">{{ (c.full_name || '?')[0].toUpperCase() }}</span>
                   <div class="name-text">
                     <span class="full-name">{{ c.full_name }}</span>
@@ -46,7 +50,7 @@
                   <span v-for="g in splitGroups(c.groups)" :key="g" class="group-tag">{{ g }}</span>
                 </div>
               </td>
-              <td class="actions">
+              <td class="actions" :style="swipeStyle(c.uid)">
                 <button class="btn-icon" @click="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
                 <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑"><Pencil :size="16" /></router-link>
                 <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
@@ -99,7 +103,8 @@ export default {
   },
   data: () => ({ 
     items: [], query: '', page: 0, pageSize: 50, total: 0, 
-    loading: false, _timer: null, pageInput: 1, localPageSize: 50 
+    loading: false, _timer: null, pageInput: 1, localPageSize: 50,
+    _swipeUid: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
   }),
   computed: {
     maxPage() { return Math.max(1, Math.ceil(this.total / this.pageSize)) },
@@ -137,6 +142,32 @@ export default {
     jumpPage() {
       const p = Math.max(1, Math.min(this.maxPage, this.pageInput || 1)) - 1
       if (p !== this.page) this.page = p
+    },
+    swipeStart(uid, e) {
+      if (window.innerWidth > 768) return
+      this.closeSwipe()
+      this._swipeUid = uid
+      this._swipeStartX = e.touches[0].clientX
+      this._swipeStartY = e.touches[0].clientY
+      this._swipeOffset = 0
+    },
+    swipeMove(e) {
+      if (!this._swipeUid) return
+      const dx = this._swipeStartX - e.touches[0].clientX
+      const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
+      if (dy > 20) { this.closeSwipe(); return }
+      this._swipeOffset = Math.max(0, Math.min(140, dx))
+    },
+    swipeEnd(uid) {
+      if (this._swipeUid !== uid) return
+      if (this._swipeOffset > 70) this._swipeOffset = 140
+      else this.closeSwipe()
+    },
+    closeSwipe() { this._swipeUid = null; this._swipeOffset = 0 },
+    swipeStyle(uid) {
+      if (this._swipeUid !== uid || this._swipeOffset <= 0) return ''
+      const offset = 140 - this._swipeOffset
+      return `transform:translateX(${offset}px);transition:none`
     },
     async doImport(e) {
       const file = e.target.files[0]
@@ -299,7 +330,13 @@ export default {
   .toolbar-actions { width: 100%; justify-content: space-between; order: 2; gap: 8px; }
   .btn-tool { flex: 1; justify-content: center; padding: 10px 12px; font-size: 13px; }
   .data-table { min-width: 0; }
-  .col-actions { width: 120px; }
+  .contact-row { position: relative; overflow: hidden; display: flex; background: var(--bg-card); border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border-base); }
+  .contact-row td { display: block; border: none; padding: 14px 12px; }
+  .col-name { flex: 1; min-width: 0; }
+  .col-email, .col-phone, .hide-tablet { display: none; }
+  .actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; box-shadow: -4px 0 12px rgba(0,0,0,0.08); z-index: 2; }
+  .contact-row:not(.swipe-open) .actions { transform: translateX(calc(100% + 8px)); transition: transform 0.25s ease; }
+  .contact-row.swipe-open .actions { transition: transform 0.25s ease; }
   .btn-icon { width: 40px; height: 40px; }
   .btn-page { width: 44px; height: 44px; }
   .pagination-bar { padding: 16px 12px; flex-direction: column; gap: 16px; align-items: center; }
