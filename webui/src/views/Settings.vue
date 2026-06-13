@@ -3,7 +3,7 @@
     <div class="settings-nav glass">
       <div class="nav-scroll-wrapper">
         <button v-for="s in sections" :key="s.id" 
-          class="nav-btn" :class="{ active: activeSection === s.id }"
+          class="nav-btn no-transition" :class="{ active: activeSection === s.id }"
           @click="activeSection = s.id">
           <component :is="s.iconComp" :size="18" /> {{ s.label }}
         </button>
@@ -209,7 +209,7 @@
               <div class="preset-label">预设色板</div>
               <div class="preset-grid">
                 <button v-for="p in presets" :key="p.name"
-                  class="preset-btn"
+                  class="preset-btn no-transition"
                   :class="{ active: isPresetActive(p) }"
                   :style="{ background: `hsl(${p.h}deg ${p.s}% ${p.l}%)` }"
                   @click="applyPreset(p)"
@@ -241,11 +241,11 @@
               <div class="theme-preview glass">
                 <div class="preview-label">品牌色预览</div>
                 <div class="preview-block">
-                  <div class="preview-swatch" :style="{ background: currentBrandColor }"></div>
+                  <div class="preview-swatch no-transition" :style="{ background: currentBrandColor }"></div>
                   <div class="preview-samples">
-                    <div class="sample" :style="{ background: currentBrandColor }"></div>
-                    <div class="sample sample-hover" :style="{ background: `hsl(${themeH}deg ${themeS}% ${Math.max(themeL-8,0)}%)` }"></div>
-                    <div class="sample sample-soft" :style="{ background: `hsl(${themeH}deg ${Math.max(themeS-34,0)}% ${Math.min(themeL+43,100)}%)` }"></div>
+                    <div class="sample no-transition" :style="{ background: currentBrandColor }"></div>
+                    <div class="sample sample-hover no-transition" :style="{ background: `hsl(${themeH}deg ${themeS}% ${Math.max(themeL-8,0)}%)` }"></div>
+                    <div class="sample sample-soft no-transition" :style="{ background: `hsl(${themeH}deg ${Math.max(themeS-34,0)}% ${Math.min(themeL+43,100)}%)` }"></div>
                   </div>
                 </div>
                 <div class="preview-code">hsl({{ themeH }}deg {{ themeS }}% {{ themeL }}%)</div>

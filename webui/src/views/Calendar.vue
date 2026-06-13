@@ -10,43 +10,26 @@
           <button class="btn-icon" @click="monthOffset+=12" title="下一年"><ChevronsRight :size="18" /></button>
         </div>
       </div>
+      
       <div class="toolbar-center">
-        <!-- 搜索区 -->
-        <div class="search-shell" :class="{ focused: searchFocused }">
+        <div class="search-shell">
           <Search :size="16" class="search-icon" />
-          <input
-              v-model="searchQuery"
-              class="search-input"
-              placeholder="搜索日程... (Ctrl + K)"
-              @focus="searchFocused = true"
-              @blur="searchFocused = false"
-              @input="doSearch"
-          />
+          <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
         </div>
       </div>
+      
       <div class="toolbar-right">
-        <!-- 日期 -->
-        <input
-            v-model="jumpDate"
-            type="date"
-            class="date-input"
-            @change="jumpToDate"
-        />
-        <!-- 操作区 -->
+        <div class="input-group">
+          <input v-model="jumpDate" type="date" class="date-input" @change="jumpToDate" />
+        </div>
         <div class="action-group">
           <label class="btn-tool btn-import">
-            <Download :size="18" />
-            <span class="hide-mobile">导入</span>
-            <input type="file" accept=".ics" hidden @change="doImportICS" />
+            <Download :size="18" /> <span class="hide-mobile">导入</span>
+            <input type="file" accept=".ics" @change="doImportICS" hidden />
           </label>
           <router-link to="/calendar/new" class="btn-tool btn-primary">
-            <Plus :size="18" />
-            <span class="hide-mobile">新建</span>
+            <Plus :size="18" /> <span class="hide-mobile">新建</span>
           </router-link>
-          <!-- 更多（企业级必备） -->
-          <button class="btn-tool" @click="toggleMore">
-            <span class="">更多</span>
-          </button>
         </div>
       </div>
     </div>
@@ -70,7 +53,8 @@
                 <div class="day-cell-content">
                   <div class="day-num">{{ day.day }}</div>
                   <div class="event-dots">
-                    <span v-for="e in day.events" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
+                    <span v-for="e in day.events.slice(0, 12)" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
+                    <span v-if="day.events.length > 12" class="dot-more">+{{ day.events.length - 12 }}</span>
                   </div>
                 </div>
               </td>
@@ -227,41 +211,6 @@ function eventStatus(e, now) {
   return 'upcoming'
 }
 
-import { ref, onMounted, onUnmounted } from "vue";
-
-/* ===== 状态 ===== */
-const searchQuery = ref("");
-const searchInputRef = ref(null);
-const searchFocused = ref(false);
-
-/* ===== 搜索逻辑 ===== */
-function doSearch() {
-  console.log("搜索：", searchQuery.value);
-}
-
-/* ===== 防抖 ===== */
-let timer = null;
-const doSearchDebounced = () => {
-  clearTimeout(timer);
-  timer = setTimeout(doSearch, 200);
-};
-
-/* ===== Ctrl + K ===== */
-const handleKeydown = (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-    e.preventDefault();
-    searchInputRef.value?.focus();
-  }
-};
-
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
-});
-
 export default {
   components: { 
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
@@ -368,7 +317,6 @@ export default {
     },
     isEventPast(e) {
       const et = icalDateToObj(e.dtend)
-      // Multi-day compatibility: only grey if end time is actually in the past
       return et && et < this.currentTime
     },
     selectToday() {
@@ -506,7 +454,7 @@ export default {
           await api.createEvent(ical)
         }
         this.load()
-      } catch(e) { showToast('导入失败', 'error') }
+      } catch(e) { window.showToast('导入失败', 'error') }
       e.target.value = ''
     },
   },
@@ -516,55 +464,34 @@ export default {
 <style scoped>
 .calendar-page { display: flex; flex-direction: column; gap: 16px; height: 100%; }
 
-/* ===== 主容器 ===== */
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  gap: 16px;
-
-  padding: 12px 20px;
-  background: var(--bg-card);
+.toolbar { 
+  display: flex; 
+  flex-wrap: wrap;
+  align-items: center; 
+  justify-content: space-between; 
+  background: var(--bg-card); 
+  padding: 12px 20px; 
+  border-radius: var(--radius-lg); 
+  box-shadow: var(--shadow-sm); 
   border: 1px solid var(--border-base);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-
+  gap: 16px;
   position: sticky;
   top: 0;
   z-index: 100;
   backdrop-filter: blur(12px);
 }
 
-/* ===== 三段式布局 ===== */
-.toolbar-left {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-}
-
-.toolbar-center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  min-width: 0;
-}
-
-.toolbar-right {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 12px; }
+.toolbar-center { flex: 1; display: flex; justify-content: center; min-width: 240px; }
 
 .nav-controls { display: flex; align-items: center; gap: 8px; }
-.btn-nav, .btn-icon, .btn-tool {
-  padding: 8px 16px;
-  border: 1px solid var(--border-strong);
-  background: white;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 14px;
+.btn-nav, .btn-icon, .btn-tool { 
+  padding: 8px 16px; 
+  border: 1px solid var(--border-strong); 
+  background: white; 
+  border-radius: var(--radius-sm); 
+  cursor: pointer; 
+  font-size: 14px; 
   display: flex;
   align-items: center;
   justify-content: center;
@@ -574,14 +501,6 @@ export default {
   color: var(--text-secondary);
   text-decoration: none;
 }
-
-/* ===== 按钮保持原样 ===== */
-.btn-tool {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .btn-icon { padding: 8px; width: 38px; height: 38px; }
 .btn-nav:hover, .btn-icon:hover, .btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); transform: translateY(-1px); }
 .btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
@@ -589,69 +508,18 @@ export default {
 
 .month-label { font-size: 18px; font-weight: 800; min-width: 120px; text-align: center; color: var(--text-primary); letter-spacing: -0.5px; }
 
-/* ===== 搜索（核心修复点） ===== */
 .search-shell {
   display: flex;
   align-items: center;
-
   width: 100%;
-  max-width: 360px;
-  min-width: 160px;
-
+  max-width: 400px;
   position: relative;
-
   transition: all .25s ease;
 }
-
-.search-shell.focused {
-  max-width: 460px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  padding: 10px 12px 10px 36px;
-
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
-
-  font-size: 14px;
-  outline: none;
-  background: #fafafa;
-
-  transition: all .2s;
-}
-
-.search-input:focus {
-  border-color: var(--brand);
-  background: white;
-  box-shadow: 0 0 0 3px var(--brand-ring);
-}
-
-/* ===== 日期 ===== */
-.date-input {
-  padding: 9px 10px;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  background: #fafafa;
-}
-
-/* ===== 操作区（永不压缩） ===== */
-.action-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-
-  flex-shrink: 0;
-  white-space: nowrap;
-}
+.search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
+.search-input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 14px; outline: none; background: #fafafa; transition: all .2s; }
+.search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
+.date-input { padding: 9px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 13px; outline: none; background: #fafafa; }
 
 .calendar-grid-wrapper { 
   background: var(--bg-card); 
@@ -665,22 +533,23 @@ export default {
   min-height: 300px;
 }
 
-.cal-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.cal-table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; }
 .cal-table th { background: var(--bg-table-header); padding: 12px; font-size: 13px; font-weight: 700; color: var(--text-secondary); text-align: center; border-bottom: 1px solid var(--border-base); }
 .cal-table td { padding: 0; text-align: center; vertical-align: top; cursor: pointer; border-bottom: 1px solid var(--border-base); border-right: 1px solid var(--border-base); transition: all .2s; position: relative; min-height: 80px; }
 .cal-table td:last-child { border-right: none; }
 .cal-table td:hover:not(.other-month) { background: var(--bg-hover); z-index: 2; box-shadow: inset 0 0 0 2px var(--brand-ring); }
 
-.day-cell-content { display: flex; flex-direction: column; padding: 8px 6px; gap: 4px; }
-.day-num { font-size: 16px; font-weight: 600; color: var(--text-secondary); transition: all .2s; flex-shrink: 0; }
+.day-cell-content { display: flex; flex-direction: column; padding: 6px; gap: 2px; height: 100%; justify-content: flex-start; }
+.day-num { font-size: 14px; font-weight: 600; color: var(--text-secondary); transition: all .2s; flex-shrink: 0; margin-bottom: 2px; }
 .cal-table td.other-month { opacity: 0.2; background: #fafafa; pointer-events: none; }
 .cal-table td.today .day-num { background: var(--brand); color: white; width: 30px; height: 30px; line-height: 30px; border-radius: 50%; margin: 0 auto; box-shadow: 0 4px 8px var(--brand-ring); }
 .cal-table td.selected { background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.08); }
 .cal-table td.selected::after { content: ''; position: absolute; inset: 0; border: 2px solid var(--brand); pointer-events: none; border-radius: 2px; }
 
-.event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+.event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; padding: 0 2px; align-content: flex-start; flex: 1; overflow: hidden; }
 .dot { width: 6px; height: 6px; background: var(--brand); border-radius: 50%; transition: all .2s; flex-shrink: 0; box-shadow: 0 0 0 1px white; }
 .dot-past { background: #d9d9d9; }
+.dot-more { font-size: 11px; color: var(--brand); font-weight: 800; margin-top: -2px; }
 
 .day-panel { margin-top: 16px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-md); border: 1px solid var(--border-base); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
@@ -741,51 +610,32 @@ export default {
 .empty-hint { text-align: center; padding: 120px 0; color: var(--text-quaternary); }
 .empty-icon { margin-bottom: 16px; opacity: 0.15; }
 
+/* Interactive feedback */
+button:active, .btn-icon:active, .btn-nav:active, .btn-tool:active { transform: scale(0.95); opacity: 0.8; }
+
 @media (max-width: 1100px) {
-  .toolbar {
-    flex-wrap: wrap;
-  }
-
-  .toolbar-center {
-    order: 3;
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .search-shell {
-    max-width: 100%;
-  }
-
-  .action-group { flex-shrink: 0; }
+  .toolbar { flex-direction: column; align-items: stretch; padding: 16px; }
+  .toolbar-left, .toolbar-right, .toolbar-center { width: 100%; justify-content: center; }
+  .toolbar-center { order: 2; margin: 8px 0; }
+  .toolbar-right { order: 3; justify-content: space-between; }
+  .search-shell { max-width: none; }
 }
+
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .toolbar-left,
-  .toolbar-center,
-  .toolbar-right {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .search-shell {
-    max-width: none;
-  }
+  .toolbar { gap: 10px; }
   .nav-controls { width: 100%; justify-content: space-between; }
   .month-label { font-size: 16px; min-width: 80px; }
   .btn-nav, .btn-icon { padding: 8px; height: 34px; min-width: 34px; }
   .btn-nav { flex: 1; }
   
-  .action-group { width: 100%; justify-content: space-between; }
-  .btn-tool { justify-content: center; width: auto; }
+  .toolbar-right { flex-direction: row; align-items: center; }
+  .action-group { flex: 1; justify-content: flex-end; }
+  .date-input { flex: 1; min-width: 0; }
 
   .calendar-grid-wrapper { min-height: 320px; }
   .cal-table td { height: 60px; min-height: 60px; }
-  .day-num { font-size: 14px; }
+  .day-num { font-size: 13px; }
   .day-cell-content { padding: 6px; }
   .event-dots { gap: 2px; padding-bottom: 4px; }
   .dot { width: 5px; height: 5px; }
