@@ -579,7 +579,14 @@ export default {
 .card-body { flex: 1; padding: 16px 20px; min-width: 0; }
 .card-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .card-title { font-weight: 700; font-size: 15px; color: var(--text-primary); }
+.card-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-time { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 600; background: var(--bg-hover); padding: 4px 8px; border-radius: 4px; }
+
+.card-ended { opacity: 0.6; background: #f9f9f9; }
+.card-ended .card-side { background: #d9d9d9 !important; }
+.card-ended .card-title { color: var(--text-tertiary); }
+.card-ongoing { border-left: 3px solid var(--brand); }
+.card-selected { background: var(--bg-info); border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-ring); }
 
 .empty-day-hint { grid-column: 1 / -1; text-align: center; padding: 48px; color: var(--text-tertiary); font-style: italic; background: #fafafa; border-radius: var(--radius-md); border: 2px dashed var(--border-base); }
 

@@ -584,6 +584,10 @@ export default {
 .error-alert { background: var(--bg-danger); border: 1px solid var(--danger-border); color: var(--danger-text); padding: 12px 16px; border-radius: var(--radius-md); display: flex; align-items: center; gap: 12px; }
 .btn-close { margin-left: auto; border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--text-tertiary); }
 
+.dropzone-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.dropzone-content { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 60px 80px; background: white; border-radius: var(--radius-xl); box-shadow: var(--shadow-xl); border: 3px dashed var(--brand); }
+.drop-icon { color: var(--brand); opacity: 0.3; }
+
 .files-list-wrapper { 
   flex: 1; 
   background: var(--bg-card); 

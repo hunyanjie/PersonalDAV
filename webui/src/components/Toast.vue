@@ -57,6 +57,8 @@ export default {
   border: 1px solid rgba(255,255,255,0.3);
   max-width: 380px;
 }
+.toast-icon { flex-shrink: 0; }
+.toast-msg { flex: 1; min-width: 0; }
 .toast-success { background: rgba(240, 255, 240, 0.9); color: #1a7a1a; border-color: #b7eb8f; }
 .toast-error { background: rgba(255, 240, 240, 0.9); color: #cf1322; border-color: #ffa39e; }
 .toast-warning { background: rgba(255, 250, 230, 0.9); color: #ad6800; border-color: #ffe58f; }

@@ -85,7 +85,7 @@
                     <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
                   </div>
                 </div>
-                <div class="dialog-actions" style="margin-top:16px; gap: 12px;">
+                <div class="dialog-actions" style="display:flex; margin-top:16px; gap: 12px;">
                   <button class="btn-sm" @click="showMountForm = false; editingMount = null">取消</button>
                   <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存挂载点</button>
                 </div>
@@ -580,6 +580,8 @@ export default {
 
 .mount-form { margin-top: 24px; padding: 28px; background: #fafafa; border-radius: var(--radius-lg); border: 1px solid var(--border-base); }
 .mount-form h4 { margin: 0 0 20px; font-size: 16px; }
+
+.empty-logs { padding: 40px; text-align: center; color: var(--text-tertiary); font-size: 14px; background: #fafafa; border-radius: var(--radius-md); border: 2px dashed var(--border-base); }
 
 .syslogs-wrapper { margin-top: 16px; background: #1a1a1a; color: #e0e0e0; padding: 20px; border-radius: var(--radius-lg); font-family: 'Fira Code', 'Courier New', monospace; font-size: 12px; height: 500px; overflow-y: auto; line-height: 1.6; border: 4px solid #2a2a2a; }
 .syslog-line { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); }
