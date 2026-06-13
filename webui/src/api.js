@@ -73,6 +73,25 @@ export default {
       body: form,
     }).then(r => r.json())
   },
+  uploadFileWithProgress(file, path = '/', onProgress) {
+    return new Promise((resolve, reject) => {
+      const t = token()
+      const form = new FormData()
+      form.append('file', file); form.append('path', path)
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${BASE}/files/upload`)
+      if (t) xhr.setRequestHeader('Authorization', `Bearer ${t}`)
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+        else reject(new Error(`上传失败 (${xhr.status})`))
+      }
+      xhr.onerror = () => reject(new Error('网络错误'))
+      xhr.send(form)
+    })
+  },
   downloadUrl(path) {
     const t = token()
     return `${BASE}/files/download?path=${encodeURIComponent(path)}${t ? `&token=${t}` : ''}`

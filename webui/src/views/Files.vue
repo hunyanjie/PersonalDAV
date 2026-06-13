@@ -20,6 +20,12 @@
           <Upload :size="18" /> <span class="hide-mobile">上传</span>
           <input type="file" multiple @change="doUpload" hidden />
         </label>
+        <div v-if="uploadProgress !== null" class="upload-progress">
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
+          </div>
+          <span class="progress-text">{{ uploadProgress }}%</span>
+        </div>
         <button class="btn-tool" @click="load" title="刷新">
           <RotateCw :size="18" :class="{ 'spinning': loading }" />
         </button>
@@ -187,6 +193,7 @@ export default {
     renaming: null, 
     renameName: '',
     loading: false,
+    uploadProgress: null,
     errorMsg: '',
     sortField: 'name',
     sortDir: 'asc',
@@ -302,7 +309,12 @@ export default {
     cd(path) {
       this.currentPath = path || '/'
       this.updateBreadcrumbs()
+      this.$nextTick(() => this.scrollBreadcrumbEnd())
       this.load()
+    },
+    scrollBreadcrumbEnd() {
+      const el = this.$el?.querySelector('.breadcrumb-wrapper')
+      if (el) el.scrollLeft = el.scrollWidth
     },
     updateBreadcrumbs() {
       const parts = this.currentPath.replace(/^\/|\/$/g, '').split('/').filter(Boolean)
@@ -317,12 +329,15 @@ export default {
     async doUpload(e) {
       const files = e.target.files
       if (!files.length) return
-      this.loading = true
+      this.uploadProgress = 0
       for (const file of files) {
-        try { await api.uploadFile(file, this.currentPath) } catch(e) {
+        try {
+          await api.uploadFileWithProgress(file, this.currentPath, pct => { this.uploadProgress = pct })
+        } catch(e) {
           showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
+      this.uploadProgress = null
       e.target.value = ''
       this.load()
     },
@@ -349,7 +364,7 @@ export default {
       } catch(e) { showToast('重命名失败：' + (e.message || e), 'error') }
     },
     async doDelete(item) {
-      if (!confirm(`确认删除 ${item.name}？\n此操作无法撤销。`)) return
+      if (!await window.showConfirm({ message: `确认删除 ${item.name}？此操作无法撤销。`, type: 'danger' })) return
       try { 
         await api.deleteFile(item.path)
         this.load() 
@@ -398,12 +413,15 @@ export default {
       this.dragOver = false
       const files = e.dataTransfer.files
       if (!files.length) return
-      this.loading = true
+      this.uploadProgress = 0
       for (const file of files) {
-        try { await api.uploadFile(file, this.currentPath) } catch(e) {
+        try {
+          await api.uploadFileWithProgress(file, this.currentPath, pct => { this.uploadProgress = pct })
+        } catch(e) {
           showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
+      this.uploadProgress = null
       this.load()
     },
   },
@@ -447,6 +465,10 @@ export default {
 .sep { color: var(--text-quaternary); margin: 0 2px; opacity: 0.5; flex-shrink: 0; }
 
 .toolbar-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.upload-progress { display: flex; align-items: center; gap: 8px; }
+.progress-bar { width: 80px; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--brand); border-radius: 3px; transition: width 0.3s ease; }
+.progress-text { font-size: 12px; font-weight: 700; color: var(--brand); min-width: 36px; }
 .btn-tool { 
   display: flex; 
   align-items: center; 

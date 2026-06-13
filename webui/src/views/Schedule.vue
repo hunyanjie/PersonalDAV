@@ -616,11 +616,11 @@ export default {
       this.saving = false
     },
     async deleteSingle(e) {
-      if (!confirm('确认删除此日程？')) return
+      if (!await window.showConfirm({ message: '确认删除此日程？', type: 'danger' })) return
       try { await api.deleteEvent(e.uid); this.events = this.events.filter(x => x.uid !== e.uid); this.selectedUids = [] } catch (e) { showToast('删除失败', 'error') }
     },
     async deleteSelected() {
-      if (!confirm(`确认删除选中的 ${this.selectedUids.length} 个日程？`)) return
+      if (!await window.showConfirm({ message: `确认删除选中的 ${this.selectedUids.length} 个日程？`, type: 'danger' })) return
       try {
         await Promise.all(this.selectedUids.map(uid => api.deleteEvent(uid)))
         this.events = this.events.filter(e => !this.selectedUids.includes(e.uid))

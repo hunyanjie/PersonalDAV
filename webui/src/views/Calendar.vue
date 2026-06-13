@@ -489,12 +489,12 @@ export default {
       this._downloadIcs(this._toICS(items), `日程_${Date.now()}.ics`); this.ctxMenu.show = false
     },
     editSelected() { if (this.ctxMenu.uids.length === 1) this.$router.push(`/calendar/${this.ctxMenu.uids[0]}/edit`) },
-    deleteSelected() {
-      if (!confirm(`确认删除选中的 ${this.ctxMenu.uids.length} 个日程？`)) return
+    async deleteSelected() {
+      if (!await window.showConfirm({ message: `确认删除选中的 ${this.ctxMenu.uids.length} 个日程？`, type: 'danger' })) return
       Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid))).then(() => { this.ctxMenu.show = false; this.load() })
     },
-    deleteSingle(e) {
-      if (!confirm('确认删除此日程？')) return
+    async deleteSingle(e) {
+      if (!await window.showConfirm({ message: '确认删除此日程？', type: 'danger' })) return
       api.deleteEvent(e.uid).then(() => { this.detailEvent = null; this.load() })
     },
     async doImportICS(e) {

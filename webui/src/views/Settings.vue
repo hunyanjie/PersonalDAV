@@ -437,7 +437,7 @@ export default {
       } catch(e) { showToast('保存失败：' + (e.message || e), 'error') }
     },
     async doDeleteMount(name) {
-      if (!confirm(`确认删除挂载点「${name}」？`)) return
+      if (!await window.showConfirm({ message: `确认删除挂载点「${name}」？`, type: 'danger' })) return
       try {
         await api.deleteMount(name)
         await this.loadMounts()

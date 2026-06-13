@@ -3,9 +3,11 @@ import App from './App.vue'
 import router from './router/index.js'
 import { startReminderCheck } from './services/reminder.js'
 import { showToast } from './utils/toast.js'
+import { showConfirm } from './utils/confirm.js'
 import './theme.css'
 
 window.showToast = showToast
+window.showConfirm = showConfirm
 
 function applySavedTheme() {
   try {

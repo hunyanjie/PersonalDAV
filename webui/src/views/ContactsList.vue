@@ -152,7 +152,7 @@ export default {
       e.target.value = ''
     },
     async doDelete(uid) {
-      if (!confirm('确认删除该联系人？')) return
+      if (!await window.showConfirm({ message: '确认删除该联系人？', type: 'danger' })) return
       try { await api.deleteContact(uid); this.load() } catch(e) {}
     },
     async doExport(c) {
