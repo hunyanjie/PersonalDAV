@@ -490,7 +490,7 @@ export default {
   justify-content: center;
   gap: 8px;
   font-weight: 600;
-  transition: all .2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition: all .2s cubic-bezier(0.34, 1.56, 0.64, 1);
   color: var(--text-secondary);
   text-decoration: none;
 }
@@ -545,13 +545,13 @@ export default {
 .timeline { height: 56px; background: #f9f9f9; border-radius: var(--radius-md); position: relative; border: 1px solid var(--border-base); box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
 .tl-hours { display: flex; height: 100%; width: 100%; }
 .tl-hour-label { flex: 1; text-align: center; font-size: 10px; color: var(--text-tertiary); border-left: 1px solid rgba(0,0,0,0.04); padding-top: 6px; font-family: 'Fira Code', monospace; }
-.tl-dot { position: absolute; top: 22px; width: 14px; height: 14px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 5; box-shadow: 0 0 0 4px white, 0 2px 8px rgba(0,0,0,0.1); border: 1px solid var(--brand); transition: all .2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important; }
+.tl-dot { position: absolute; top: 22px; width: 14px; height: 14px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 5; box-shadow: 0 0 0 4px white, 0 2px 8px rgba(0,0,0,0.1); border: 1px solid var(--brand); transition: all .2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 .tl-dot:hover { transform: translateX(-50%) scale(1.4); z-index: 10; box-shadow: 0 0 0 6px white, 0 4px 12px rgba(0,0,0,0.2); }
 .tl-dot.tl-dot-past { background: #d9d9d9; border-color: #ccc; }
 .tl-now-bar { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--danger); z-index: 6; pointer-events: none; box-shadow: 0 0 8px rgba(255,77,79,0.5); }
 
 .event-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.event-card { display: flex; background: white; border-radius: var(--radius-md); border: 1px solid var(--border-base); overflow: hidden; cursor: pointer; transition: all .2s ease !important; box-shadow: var(--shadow-sm); }
+.event-card { display: flex; background: white; border-radius: var(--radius-md); border: 1px solid var(--border-base); overflow: hidden; cursor: pointer; transition: all .2s ease; box-shadow: var(--shadow-sm); }
 .event-card:hover { transform: translateY(-3px) scale(1.01); box-shadow: var(--shadow-md); border-color: var(--brand); }
 
 .card-side { width: 5px; flex-shrink: 0; }
@@ -575,7 +575,7 @@ export default {
 .modal-card { background: white; border-radius: var(--radius-xl); min-width: 440px; max-width: 560px; box-shadow: var(--shadow-xl); overflow: hidden; border: 1px solid var(--glass-border); }
 .modal-header { padding: 24px 32px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
 .modal-header h3 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
-.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); display: flex; transition: .3s cubic-bezier(0.4, 0, 0.2, 1) !important; padding: 4px; }
+.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); display: flex; transition: .3s cubic-bezier(0.4, 0, 0.2, 1); padding: 4px; }
 .btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg) scale(1.2); }
 
 .modal-body { padding: 32px; display: flex; flex-direction: column; gap: 28px; }
@@ -586,7 +586,7 @@ export default {
 .desc-text { white-space: pre-wrap; font-weight: 500; font-size: 15px; color: var(--text-secondary); line-height: 1.6; }
 
 .modal-footer { padding: 20px 32px; background: #fafafa; border-top: 1px solid var(--border-base); display: flex; gap: 14px; justify-content: flex-end; }
-.btn-action { padding: 10px 24px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; transition: .2s !important; text-decoration: none; color: var(--text-primary); }
+.btn-action { padding: 10px 24px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: white; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; transition: .2s; text-decoration: none; color: var(--text-primary); }
 .btn-action:hover { border-color: var(--brand); color: var(--brand); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .btn-danger { color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: var(--bg-danger); border-color: var(--danger); }

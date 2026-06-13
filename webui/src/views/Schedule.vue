@@ -738,7 +738,7 @@ export default {
 .desc-text { white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); }
 
 .detail-footer { margin-top: 48px; border-top: 1px solid var(--border-base); padding-top: 24px; display: flex; flex-wrap: wrap; gap: 10px; }
-.btn-action { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s !important; color: var(--text-secondary); }
+.btn-action { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: white; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s; color: var(--text-secondary); }
 .btn-action:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
 .btn-danger { color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: var(--bg-danger); border-color: var(--danger); }
@@ -750,7 +750,7 @@ export default {
 
 .modal-card { background: white; border-radius: var(--radius-xl); width: 500px; box-shadow: var(--shadow-xl); overflow: hidden; border: 1px solid var(--glass-border); }
 .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
-.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); transition: .2s cubic-bezier(0.4, 0, 0.2, 1) !important; padding: 4px; display: flex; }
+.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); transition: .2s cubic-bezier(0.4, 0, 0.2, 1); padding: 4px; display: flex; }
 .btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg); }
 
 .modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
@@ -761,7 +761,7 @@ export default {
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 .modal-footer { padding: 20px 24px; background: #fafafa; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--border-base); }
-.btn-save { background: var(--brand); color: var(--text-inverse); border: none; padding: 10px 28px; border-radius: var(--radius-md); cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); transition: all .2s !important; }
+.btn-save { background: var(--brand); color: var(--text-inverse); border: none; padding: 10px 28px; border-radius: var(--radius-md); cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); transition: all .2s; }
 .btn-save:hover { background: var(--brand-hover); transform: translateY(-1px); box-shadow: 0 6px 16px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.3); }
 .btn-cancel { background: white; border: 1px solid var(--border-strong); padding: 10px 24px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500; color: var(--text-secondary); }
 

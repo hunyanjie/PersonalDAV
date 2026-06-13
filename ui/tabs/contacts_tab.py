@@ -131,18 +131,23 @@ class ContactsTab(BaseTreeTab):
                     for g in gs.split(';'):
                         if g.strip(): groups.add(g.strip())
             
-            def _done():
-                if self._cancel_token != token: return
-                all_vals = ["全部"] + sorted(groups)
-                self._group_filter_combo['values'] = all_vals
-                if self._group_filter_var.get() not in all_vals:
-                    self._group_filter_var.set("全部")
-                self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
-                self._after_refresh()
-            
-            self.after(0, _done)
+            self._scan_groups_token = token
+            self._scan_groups_result = groups
+            self.event_generate('<<GroupsScanned>>', when='tail')
         
+        self.bind('<<GroupsScanned>>', self._on_groups_scanned, add='+')
         threading.Thread(target=_scan, daemon=True).start()
+
+    def _on_groups_scanned(self, event):
+        token = getattr(self, '_scan_groups_token', None)
+        groups = getattr(self, '_scan_groups_result', set())
+        if self._cancel_token != token: return
+        all_vals = ["全部"] + sorted(groups)
+        self._group_filter_combo['values'] = all_vals
+        if self._group_filter_var.get() not in all_vals:
+            self._group_filter_var.set("全部")
+        self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
+        self._after_refresh()
 
     def _apply_group_filter(self):
         query = getattr(self, 'search_var', None) and self.search_var.get().lower() or ""

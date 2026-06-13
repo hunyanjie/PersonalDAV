@@ -457,7 +457,7 @@ export default {
   border-radius: var(--radius-md); 
   cursor: pointer; 
   font-size: 14px; 
-  transition: all 0.2s !important; 
+  transition: all 0.2s; 
   color: var(--text-secondary);
   font-weight: 500;
 }
@@ -465,7 +465,7 @@ export default {
 .btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
 .btn-tool.btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
-.btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: white; cursor: pointer; transition: all .2s !important; }
+.btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: white; cursor: pointer; transition: all .2s; }
 .btn-sm:hover { border-color: var(--brand); color: var(--brand); }
 .btn-sm.btn-primary { background: var(--brand); color: var(--text-inverse); border: none; }
 .btn-sm.btn-primary:hover { background: var(--brand-hover); transform: translateY(-1px); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
@@ -537,7 +537,7 @@ export default {
 .preview-img { max-width: 95%; max-height: 95%; cursor: grab; user-select: none; transition: transform 0.1s ease-out; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.1)); }
 .preview-img.dragging { cursor: grabbing; transition: none; }
 .img-zoom-bar { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); border-radius: 30px; display: flex; align-items: center; gap: 4px; padding: 6px 12px; backdrop-filter: blur(8px); }
-.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background-color .2s !important; }
+.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background-color .2s; }
 .zoom-btn:hover { background: rgba(255,255,255,0.2); }
 .zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
 

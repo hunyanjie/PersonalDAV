@@ -65,7 +65,7 @@ body {
 }
 
 /* Skip transition for elements that need to be snappy or have their own animations */
-.no-transition, .no-transition *, .spinning, .spinning * {
+.no-transition, .spinning, .spinning * {
   transition: none !important;
 }
 
