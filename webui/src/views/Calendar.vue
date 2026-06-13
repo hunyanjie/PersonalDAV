@@ -545,13 +545,13 @@ export default {
 .timeline { height: 56px; background: #f9f9f9; border-radius: var(--radius-md); position: relative; border: 1px solid var(--border-base); box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
 .tl-hours { display: flex; height: 100%; width: 100%; }
 .tl-hour-label { flex: 1; text-align: center; font-size: 10px; color: var(--text-tertiary); border-left: 1px solid rgba(0,0,0,0.04); padding-top: 6px; font-family: 'Fira Code', monospace; }
-.tl-dot { position: absolute; top: 22px; width: 14px; height: 14px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 5; box-shadow: 0 0 0 4px white, 0 2px 8px rgba(0,0,0,0.1); border: 1px solid var(--brand); transition: all .2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.tl-dot { position: absolute; top: 22px; width: 14px; height: 14px; background: var(--brand); border-radius: 50%; transform: translateX(-50%); cursor: pointer; z-index: 5; box-shadow: 0 0 0 4px white, 0 2px 8px rgba(0,0,0,0.1); border: 1px solid var(--brand); transition: all .2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important; }
 .tl-dot:hover { transform: translateX(-50%) scale(1.4); z-index: 10; box-shadow: 0 0 0 6px white, 0 4px 12px rgba(0,0,0,0.2); }
 .tl-dot.tl-dot-past { background: #d9d9d9; border-color: #ccc; }
 .tl-now-bar { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--danger); z-index: 6; pointer-events: none; box-shadow: 0 0 8px rgba(255,77,79,0.5); }
 
 .event-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.event-card { display: flex; background: white; border-radius: var(--radius-md); border: 1px solid var(--border-base); overflow: hidden; cursor: pointer; transition: all .2s ease; box-shadow: var(--shadow-sm); }
+.event-card { display: flex; background: white; border-radius: var(--radius-md); border: 1px solid var(--border-base); overflow: hidden; cursor: pointer; transition: all .2s ease !important; box-shadow: var(--shadow-sm); }
 .event-card:hover { transform: translateY(-3px) scale(1.01); box-shadow: var(--shadow-md); border-color: var(--brand); }
 
 .card-side { width: 5px; flex-shrink: 0; }
