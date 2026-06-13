@@ -69,6 +69,14 @@ body {
   transition: none !important;
 }
 
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+button:active, .btn:active, [role="button"]:active, a:active, label:active {
+  transform: scale(0.97);
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
