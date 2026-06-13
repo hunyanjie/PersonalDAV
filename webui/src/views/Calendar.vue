@@ -10,23 +10,43 @@
           <button class="btn-icon" @click="monthOffset+=12" title="下一年"><ChevronsRight :size="18" /></button>
         </div>
       </div>
-      
-      <div class="toolbar-right">
-        <div class="input-group">
-          <input v-model="jumpDate" type="date" class="date-input" @change="jumpToDate" />
-          <div class="search-box">
-            <Search :size="16" class="search-icon" />
-            <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
-          </div>
+      <div class="toolbar-center">
+        <!-- 搜索区 -->
+        <div class="search-shell" :class="{ focused: searchFocused }">
+          <Search :size="16" class="search-icon" />
+          <input
+              v-model="searchQuery"
+              class="search-input"
+              placeholder="搜索日程... (Ctrl + K)"
+              @focus="searchFocused = true"
+              @blur="searchFocused = false"
+              @input="doSearch"
+          />
         </div>
+      </div>
+      <div class="toolbar-right">
+        <!-- 日期 -->
+        <input
+            v-model="jumpDate"
+            type="date"
+            class="date-input"
+            @change="jumpToDate"
+        />
+        <!-- 操作区 -->
         <div class="action-group">
           <label class="btn-tool btn-import">
-            <Download :size="18" /> <span class="hide-mobile">导入</span>
-            <input type="file" accept=".ics" @change="doImportICS" hidden />
+            <Download :size="18" />
+            <span class="hide-mobile">导入</span>
+            <input type="file" accept=".ics" hidden @change="doImportICS" />
           </label>
           <router-link to="/calendar/new" class="btn-tool btn-primary">
-            <Plus :size="18" /> <span class="hide-mobile">新建</span>
+            <Plus :size="18" />
+            <span class="hide-mobile">新建</span>
           </router-link>
+          <!-- 更多（企业级必备） -->
+          <button class="btn-tool" @click="toggleMore">
+            <span class="">更多</span>
+          </button>
         </div>
       </div>
     </div>
@@ -206,6 +226,41 @@ function eventStatus(e, now) {
   if (now >= st && now <= et) return 'ongoing'
   return 'upcoming'
 }
+
+import { ref, onMounted, onUnmounted } from "vue";
+
+/* ===== 状态 ===== */
+const searchQuery = ref("");
+const searchInputRef = ref(null);
+const searchFocused = ref(false);
+
+/* ===== 搜索逻辑 ===== */
+function doSearch() {
+  console.log("搜索：", searchQuery.value);
+}
+
+/* ===== 防抖 ===== */
+let timer = null;
+const doSearchDebounced = () => {
+  clearTimeout(timer);
+  timer = setTimeout(doSearch, 200);
+};
+
+/* ===== Ctrl + K ===== */
+const handleKeydown = (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+    e.preventDefault();
+    searchInputRef.value?.focus();
+  }
+};
+
+onMounted(() => {
+  window.addEventListener("keydown", handleKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleKeydown);
+});
 
 export default {
   components: { 
@@ -461,30 +516,55 @@ export default {
 <style scoped>
 .calendar-page { display: flex; flex-direction: column; gap: 16px; height: 100%; }
 
-.toolbar { 
-  display: flex; 
-  flex-wrap: wrap;
-  align-items: center; 
-  justify-content: space-between; 
-  background: var(--bg-card); 
-  padding: 12px 20px; 
-  border-radius: var(--radius-lg); 
-  box-shadow: var(--shadow-sm); 
-  border: 1px solid var(--border-base);
+/* ===== 主容器 ===== */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
   gap: 16px;
+
+  padding: 12px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
 }
 
-.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.input-group, .action-group { display: flex; align-items: center; gap: 10px; }
+/* ===== 三段式布局 ===== */
+.toolbar-left {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.toolbar-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
 .nav-controls { display: flex; align-items: center; gap: 8px; }
-.btn-nav, .btn-icon, .btn-tool { 
-  padding: 8px 16px; 
-  border: 1px solid var(--border-strong); 
-  background: white; 
-  border-radius: var(--radius-sm); 
-  cursor: pointer; 
-  font-size: 14px; 
+.btn-nav, .btn-icon, .btn-tool {
+  padding: 8px 16px;
+  border: 1px solid var(--border-strong);
+  background: white;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -494,6 +574,14 @@ export default {
   color: var(--text-secondary);
   text-decoration: none;
 }
+
+/* ===== 按钮保持原样 ===== */
+.btn-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-icon { padding: 8px; width: 38px; height: 38px; }
 .btn-nav:hover, .btn-icon:hover, .btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); transform: translateY(-1px); }
 .btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
@@ -501,11 +589,69 @@ export default {
 
 .month-label { font-size: 18px; font-weight: 800; min-width: 120px; text-align: center; color: var(--text-primary); letter-spacing: -0.5px; }
 
-.search-box { position: relative; width: 220px; }
-.search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
-.search-input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 14px; outline: none; background: #fafafa; }
-.search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
-.date-input { padding: 9px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 13px; outline: none; background: #fafafa; }
+/* ===== 搜索（核心修复点） ===== */
+.search-shell {
+  display: flex;
+  align-items: center;
+
+  width: 100%;
+  max-width: 360px;
+  min-width: 160px;
+
+  position: relative;
+
+  transition: all .25s ease;
+}
+
+.search-shell.focused {
+  max-width: 460px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+
+  font-size: 14px;
+  outline: none;
+  background: #fafafa;
+
+  transition: all .2s;
+}
+
+.search-input:focus {
+  border-color: var(--brand);
+  background: white;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* ===== 日期 ===== */
+.date-input {
+  padding: 9px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  background: #fafafa;
+}
+
+/* ===== 操作区（永不压缩） ===== */
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 
 .calendar-grid-wrapper { 
   background: var(--bg-card); 
@@ -596,26 +742,46 @@ export default {
 .empty-icon { margin-bottom: 16px; opacity: 0.15; }
 
 @media (max-width: 1100px) {
-  .toolbar { flex-direction: column; align-items: stretch; }
-  .toolbar-left, .toolbar-right { width: 100%; }
-  .toolbar-left { justify-content: center; }
-  .toolbar-right { justify-content: space-between; }
-  .search-box { flex: 1; min-width: 100px; }
-  .input-group { flex: 1; }
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-center {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .search-shell {
+    max-width: 100%;
+  }
+
   .action-group { flex-shrink: 0; }
 }
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
-  .toolbar { padding: 12px; gap: 12px; flex-direction: column; align-items: stretch; }
-  .toolbar-left, .toolbar-right { width: 100%; justify-content: space-between; gap: 12px; }
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-left,
+  .toolbar-center,
+  .toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .search-shell {
+    max-width: none;
+  }
   .nav-controls { width: 100%; justify-content: space-between; }
   .month-label { font-size: 16px; min-width: 80px; }
   .btn-nav, .btn-icon { padding: 8px; height: 34px; min-width: 34px; }
   .btn-nav { flex: 1; }
   
-  .input-group, .action-group { width: 100%; justify-content: space-between; }
-  .search-box { flex: 1; }
-  .btn-tool { flex: 1; justify-content: center; }
+  .action-group { width: 100%; justify-content: space-between; }
+  .btn-tool { justify-content: center; width: auto; }
 
   .calendar-grid-wrapper { min-height: 320px; }
   .cal-table td { height: 60px; min-height: 60px; }

@@ -237,7 +237,7 @@ export default {
   box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
-  min-height: 64px;
+  min-height: 32px;
   gap: 16px;
 }
 .header h2 { margin: 0; font-size: 24px; font-weight: 600; color: var(--text-primary); }
@@ -285,7 +285,7 @@ export default {
     transform: translateX(-100%); 
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .sidebar.mobile-open { transform: translateX(0); width: 240px !important; }
+  .sidebar.mobile-open { transform: translateX(0); width: 200px !important; }
   .mobile-menu-btn { display: block; }
   .header-inner { padding: 12px 20px; }
   .main { padding: 0; }
