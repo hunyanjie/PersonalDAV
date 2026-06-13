@@ -593,7 +593,7 @@ export default {
 .theme-presets { margin-bottom: 32px; }
 .preset-label { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
 .preset-grid { display: flex; gap: 14px; flex-wrap: wrap; }
-.preset-btn { width: 40px; height: 40px; border-radius: 12px; border: 3px solid transparent; cursor: pointer; transition: .2s; outline: none; }
+.preset-btn { width: 40px; height: 40px; border-radius: 12px; border: 3px solid transparent; cursor: pointer; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) !important; outline: none; }
 .preset-btn:hover { transform: scale(1.15) rotate(5deg); }
 .preset-btn.active { border-color: var(--text-primary); box-shadow: 0 0 0 4px var(--bg-info); }
 
