@@ -261,6 +261,7 @@ export default {
   flex: 1; 
   padding: 12px; 
   overflow-y: auto; 
+  scroll-behavior: smooth;
   background: transparent; 
   position: relative; 
 }

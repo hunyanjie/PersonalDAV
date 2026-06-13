@@ -148,7 +148,7 @@ export default {
           try { await api.createContact(block.trim()) } catch(e) {}
         }
         this.load()
-      } catch(e) { alert('导入失败') }
+      } catch(e) { showToast('导入失败', 'error') }
       e.target.value = ''
     },
     async doDelete(uid) {
@@ -164,7 +164,7 @@ export default {
         const a = document.createElement('a')
         a.href = url; a.download = `${c.full_name || '联系人'}.vcf`
         a.click(); URL.revokeObjectURL(url)
-      } catch(e) { alert('导出失败') }
+      } catch(e) { showToast('导出失败', 'error') }
     },
   },
 }
@@ -299,7 +299,9 @@ export default {
   .toolbar-actions { width: 100%; justify-content: space-between; order: 2; gap: 8px; }
   .btn-tool { flex: 1; justify-content: center; padding: 10px 12px; font-size: 13px; }
   .data-table { min-width: 0; }
-  .col-actions { width: 110px; }
+  .col-actions { width: 120px; }
+  .btn-icon { width: 40px; height: 40px; }
+  .btn-page { width: 44px; height: 44px; }
   .pagination-bar { padding: 16px 12px; flex-direction: column; gap: 16px; align-items: center; }
   .page-info { order: 3; }
   .page-controls { order: 1; width: 100%; justify-content: center; }

@@ -320,7 +320,7 @@ export default {
       this.loading = true
       for (const file of files) {
         try { await api.uploadFile(file, this.currentPath) } catch(e) {
-          alert(`上传失败(${file.name}): ${e.message || e}`)
+          showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
       e.target.value = ''
@@ -334,7 +334,7 @@ export default {
         this.newFolderName = ''
         this.showNewFolder = false
         this.load()
-      } catch(e) { alert('创建失败：' + (e.message || e)) }
+      } catch(e) { showToast('创建失败：' + (e.message || e), 'error') }
     },
     startRename(item) {
       this.renaming = item; this.renameName = item.name
@@ -346,14 +346,14 @@ export default {
         await api.renameFile(this.renaming.path, newName)
         this.renaming = null; this.renameName = ''
         this.load()
-      } catch(e) { alert('重命名失败：' + (e.message || e)) }
+      } catch(e) { showToast('重命名失败：' + (e.message || e), 'error') }
     },
     async doDelete(item) {
       if (!confirm(`确认删除 ${item.name}？\n此操作无法撤销。`)) return
       try { 
         await api.deleteFile(item.path)
         this.load() 
-      } catch(e) { alert('删除失败：' + (e.message || e)) }
+      } catch(e) { showToast('删除失败：' + (e.message || e), 'error') }
     },
     formatSize(s) {
       if (!s) return '0 B'
@@ -401,7 +401,7 @@ export default {
       this.loading = true
       for (const file of files) {
         try { await api.uploadFile(file, this.currentPath) } catch(e) {
-          alert(`上传失败(${file.name}): ${e.message || e}`)
+          showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
       this.load()
@@ -557,8 +557,9 @@ export default {
   .breadcrumb-bar { min-width: max-content; }
   .toolbar-actions { flex-shrink: 0; justify-content: flex-end; }
   .files-table { min-width: 400px; }
-  .col-actions { width: 120px; }
+  .col-actions { width: 140px; }
   .row-actions { opacity: 1; }
+  .btn-icon { width: 40px; height: 40px; }
   .preview-dialog { height: 95vh; width: 100vw; border-radius: 0; }
 }
 

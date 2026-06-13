@@ -594,7 +594,7 @@ export default {
       this.editModal = { ...e, isNew: false }
     },
     async saveEdit() {
-      if (!this.editForm.summary || !this.editForm.dtstart || !this.editForm.dtend) return alert('请填写完整信息')
+      if (!this.editForm.summary || !this.editForm.dtstart || !this.editForm.dtend) return showToast('请填写完整信息', 'warning')
       this.saving = true
       const ical = [
         'BEGIN:VEVENT',
@@ -612,12 +612,12 @@ export default {
         if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(uid, ical)
         this.editModal = null
         await this.loadInitial()
-      } catch (e) { alert('保存失败: ' + (e.message || e)) }
+      } catch (e) { showToast('保存失败: ' + (e.message || e), 'error') }
       this.saving = false
     },
     async deleteSingle(e) {
       if (!confirm('确认删除此日程？')) return
-      try { await api.deleteEvent(e.uid); this.events = this.events.filter(x => x.uid !== e.uid); this.selectedUids = [] } catch (e) { alert('删除失败') }
+      try { await api.deleteEvent(e.uid); this.events = this.events.filter(x => x.uid !== e.uid); this.selectedUids = [] } catch (e) { showToast('删除失败', 'error') }
     },
     async deleteSelected() {
       if (!confirm(`确认删除选中的 ${this.selectedUids.length} 个日程？`)) return
@@ -625,7 +625,7 @@ export default {
         await Promise.all(this.selectedUids.map(uid => api.deleteEvent(uid)))
         this.events = this.events.filter(e => !this.selectedUids.includes(e.uid))
         this.selectedUids = []
-      } catch (e) { alert('部分删除失败') }
+      } catch (e) { showToast('部分删除失败', 'error') }
     },
     _toICS(events) {
       const vevents = events.map(e => [

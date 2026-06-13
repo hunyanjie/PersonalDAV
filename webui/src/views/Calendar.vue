@@ -506,7 +506,7 @@ export default {
           await api.createEvent(ical)
         }
         this.load()
-      } catch(e) { alert('导入失败') }
+      } catch(e) { showToast('导入失败', 'error') }
       e.target.value = ''
     },
   },

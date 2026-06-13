@@ -143,7 +143,7 @@ export default {
   },
   methods: {
     async save() {
-      if (!this.form.summary || !this.form.dtstart || !this.form.dtend) return alert('请填写完整必填信息')
+      if (!this.form.summary || !this.form.dtstart || !this.form.dtend) return showToast('请填写完整必填信息', 'warning')
       this.saving = true
       try {
         let ds, de
@@ -172,7 +172,7 @@ export default {
           await api.updateEvent(this.loadedUid, ical)
         }
         this.$router.push('/calendar')
-      } catch(e) { alert('保存失败: ' + (e.message || e)) } finally { this.saving = false }
+      } catch(e) { showToast('保存失败: ' + (e.message || e), 'error') } finally { this.saving = false }
     },
   },
 }

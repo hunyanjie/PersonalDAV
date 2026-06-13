@@ -392,9 +392,9 @@ export default {
       let val = this.editValue
       if (def.inputType === 'number') {
         const n = parseInt(val)
-        if (isNaN(n)) return alert('请输入数字')
-        if (def.min !== undefined && n < def.min) return alert(`最小值: ${def.min}`)
-        if (def.max !== undefined && n > def.max) return alert(`最大值: ${def.max}`)
+        if (isNaN(n)) return showToast('请输入数字', 'warning')
+        if (def.min !== undefined && n < def.min) return showToast(`最小值: ${def.min}`, 'warning')
+        if (def.max !== undefined && n > def.max) return showToast(`最大值: ${def.max}`, 'warning')
         val = String(n)
       }
       await this.doUpdate(def.key, val)
@@ -405,7 +405,7 @@ export default {
         const dbVal = typeof value === 'boolean' ? (value ? 'True' : 'False') : String(value)
         await api.updateSetting(key, dbVal)
         this.settings[key] = value
-      } catch(e) { alert('保存失败') }
+      } catch(e) { showToast('保存失败', 'error') }
     },
 
     // Mounts
@@ -434,14 +434,14 @@ export default {
         this.showMountForm = false
         this.editingMount = null
         await this.loadMounts()
-      } catch(e) { alert('保存失败：' + (e.message || e)) }
+      } catch(e) { showToast('保存失败：' + (e.message || e), 'error') }
     },
     async doDeleteMount(name) {
       if (!confirm(`确认删除挂载点「${name}」？`)) return
       try {
         await api.deleteMount(name)
         await this.loadMounts()
-      } catch(e) { alert('删除失败：' + (e.message || e)) }
+      } catch(e) { showToast('删除失败：' + (e.message || e), 'error') }
     },
 
     // Theme

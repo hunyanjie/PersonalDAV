@@ -2,7 +2,10 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router/index.js'
 import { startReminderCheck } from './services/reminder.js'
+import { showToast } from './utils/toast.js'
 import './theme.css'
+
+window.showToast = showToast
 
 function applySavedTheme() {
   try {
