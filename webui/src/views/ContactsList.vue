@@ -383,9 +383,10 @@ export default {
 .pop-enter-active, .pop-leave-active { transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(-50%) scale(0.9) translateX(10px); }
 
-.list-move, .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
-.list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
-.list-leave-active { position: absolute; }
+.list-move, .list-enter-active { transition: all 0.3s ease; }
+.list-enter-from { opacity: 0; transform: translateX(-10px); }
+.list-leave-active { position: absolute; transition: opacity 0.2s ease, transform 0.2s ease; }
+.list-leave-to { opacity: 0; transform: scale(0.8); }
 
 @media (max-width: 1100px) {
   .toolbar { flex-direction: column; align-items: stretch; }
