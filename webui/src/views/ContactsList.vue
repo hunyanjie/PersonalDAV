@@ -309,8 +309,7 @@ export default {
 .th-inner { display: flex; align-items: center; gap: 8px; }
 .data-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
 
-.contact-row { transition: background .15s, z-index 0s; position: relative; overflow: hidden; }
-.contact-row.menu-active { overflow: visible; }
+.contact-row { transition: background .15s, z-index 0s; position: relative; }
 .contact-row:hover { background: var(--bg-table-header); }
 .contact-row.menu-active { z-index: 100 !important; }
 
@@ -414,8 +413,9 @@ export default {
   .actions { 
     display: flex; align-items: center; justify-content: center; width: 48px; height: 100%; padding: 0;
     border-left: 1px solid var(--border-base); background: #fafafa; flex: 0 0 48px !important;
-    position: relative; overflow: visible;
+    position: relative; overflow: hidden;
   }
+  .contact-row.menu-active .actions { overflow: visible !important; }
   .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
   
   /* 移动端专属侧滑层 */

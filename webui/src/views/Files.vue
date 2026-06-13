@@ -590,9 +590,9 @@ export default {
 .col-time { width: 180px; }
 .col-actions { width: 160px; text-align: right !important; position: relative; }
 
-.file-row { transition: background .15s, z-index 0s; position: relative; overflow: hidden; }
+.file-row { transition: background .15s, z-index 0s; position: relative; }
 .file-row:hover { background: var(--bg-table-header); }
-.file-row.menu-active { overflow: visible; }
+.file-row.menu-active .col-actions { overflow: visible !important; }
 .file-row.menu-active { z-index: 100 !important; }
 
 .file-main-info { display: flex; align-items: center; gap: 12px; transition: color .2s; cursor: pointer; }
@@ -679,11 +679,12 @@ export default {
   .col-size, .col-time { display: none !important; }
   .file-name { font-weight: 700; font-size: 15px; }
   
-  .actions { 
+  .col-actions { 
     display: flex; align-items: center; justify-content: center; width: 48px; height: 100%; padding: 0;
     border-left: 1px solid var(--border-base); background: #fafafa; flex: 0 0 48px !important;
-    position: relative; overflow: visible;
+    position: relative; overflow: hidden;
   }
+  .file-row.menu-active .col-actions { overflow: visible !important; }
   .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
   
   /* 移动端专属侧滑层 */
