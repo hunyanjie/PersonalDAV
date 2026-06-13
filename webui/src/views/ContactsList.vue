@@ -184,7 +184,7 @@ export default {
   border: 1px solid var(--border-base);
   align-items: center;
 }
-.search-box { flex: 1; position: relative; min-width: 240px; }
+.search-box { flex: 1 1 160px; position: relative; min-width: 140px; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { 
   width: 100%; 

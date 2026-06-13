@@ -611,19 +611,23 @@ export default {
 
 @media (max-width: 768px) {
   .settings-container { flex-direction: column; gap: 16px; }
-  .settings-nav { width: 100%; padding: 12px; border-radius: var(--radius-md); }
+  .settings-nav { width: 100%; padding: 10px; border-radius: var(--radius-md); box-sizing: border-box; }
   .nav-scroll-wrapper { 
+    display: flex;
     flex-direction: row; 
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     justify-content: center;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .nav-scroll-wrapper::-webkit-scrollbar { display: none; }
   .nav-btn { 
     padding: 8px 10px; 
     font-size: 12px; 
     background: #fafafa;
     border: 1px solid var(--border-base);
-    flex: 1 1 calc(50% - 8px);
+    flex: 0 0 auto;
     justify-content: center;
     min-width: 0;
     white-space: nowrap;

@@ -520,7 +520,7 @@ export default {
 
 .cal-table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; }
 .cal-table th { background: var(--bg-table-header); padding: 12px; font-size: 13px; font-weight: 700; color: var(--text-secondary); text-align: center; border-bottom: 1px solid var(--border-base); }
-.cal-table td { padding: 0; text-align: center; vertical-align: top; cursor: pointer; border-bottom: 1px solid var(--border-base); border-right: 1px solid var(--border-base); transition: all .2s; position: relative; height: calc((100% - 40px) / 6); min-height: 80px; }
+.cal-table td { padding: 0; text-align: center; vertical-align: top; cursor: pointer; border-bottom: 1px solid var(--border-base); border-right: 1px solid var(--border-base); transition: all .2s; position: relative; min-height: 80px; }
 .cal-table td:last-child { border-right: none; }
 .cal-table td:hover:not(.other-month) { background: var(--bg-hover); z-index: 2; box-shadow: inset 0 0 0 2px var(--brand-ring); }
 
@@ -594,11 +594,10 @@ export default {
 .empty-hint { text-align: center; padding: 120px 0; color: var(--text-quaternary); }
 .empty-icon { margin-bottom: 16px; opacity: 0.15; }
 
-@media (max-width: 900px) {
-  .toolbar-right { width: 100%; }
-  .input-group { flex: 1; }
-  .action-group { flex-shrink: 0; }
-  .search-box { width: auto; flex: 1; min-width: 100px; }
+@media (max-width: 1000px) {
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar-left, .toolbar-right { width: 100%; justify-content: space-between; }
+  .search-box { flex: 1; min-width: 100px; }
 }
 @media (max-width: 768px) {
   .hide-mobile { display: none; }

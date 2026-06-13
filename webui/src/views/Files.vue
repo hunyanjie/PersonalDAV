@@ -548,7 +548,10 @@ export default {
 
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
-  .toolbar { padding: 10px 16px; gap: 12px; }
+  .toolbar { padding: 10px 16px; gap: 8px; flex-direction: column; align-items: stretch; }
+  .breadcrumb-wrapper { width: 100%; overflow-x: auto; }
+  .breadcrumb-bar { min-width: max-content; }
+  .toolbar-actions { flex-shrink: 0; justify-content: flex-end; }
   .files-table { min-width: 400px; }
   .col-actions { width: 120px; }
   .row-actions { opacity: 1; }
