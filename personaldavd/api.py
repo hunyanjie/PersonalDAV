@@ -1,6 +1,6 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time, os
+import time, os, shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -380,11 +380,14 @@ async def stats(token: str = Depends(get_current_token)):
                     file_count += 1
                 except Exception:
                     pass
+    try: disk_total = shutil.disk_usage(dav_root).total / (1024 * 1024)
+    except: disk_total = 0
     return StatsOut(
         contacts_count=cs.count(),
         events_count=es.count(),
         files_count=file_count,
         disk_used_mb=round(total_size / (1024 * 1024), 2),
+        disk_total_mb=round(disk_total, 2),
         uptime=time.time() - _start_time,
         version=SOFTWARE_VERSION,
     )

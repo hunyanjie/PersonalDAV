@@ -7,12 +7,31 @@
           <div class="stat-info" style="flex:1;"><Skeleton width="60%" /><Skeleton width="40%" /></div>
         </template>
         <template v-else>
-          <div class="stat-icon-box" :class="s.bg"><component :is="s.icon" :size="24" /></div>
-          <div class="stat-info">
-            <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
-            <div class="stat-label">{{ s.label }}</div>
-            <div v-if="s.trend" class="stat-trend" :class="s.trend[0] === '+' ? 'trend-up' : 'trend-down'">{{ s.trend }}</div>
-          </div>
+          <template v-if="s.key === 'disk_used_mb'">
+            <div class="disk-ring-wrap">
+              <svg class="disk-ring" viewBox="0 0 44 44">
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#f0f0f0" stroke-width="4" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="var(--brand)" stroke-width="4"
+                  stroke-dasharray="113.1" :stroke-dashoffset="113.1 * (1 - diskPercent)" transform="rotate(-90 22 22)"
+                  class="ring-fill" />
+              </svg>
+              <span class="disk-ring-text">{{ Math.round(diskPercent * 100) }}%</span>
+            </div>
+            <div class="stat-info">
+              <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
+              <div class="stat-label">{{ s.label }}</div>
+              <div class="stat-detail">{{ diskDetail }}</div>
+              <div v-if="s.trend" class="stat-trend" :class="s.trend[0] === '+' ? 'trend-up' : 'trend-down'">{{ s.trend }}</div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="stat-icon-box" :class="s.bg"><component :is="s.icon" :size="24" /></div>
+            <div class="stat-info">
+              <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
+              <div class="stat-label">{{ s.label }}</div>
+              <div v-if="s.trend" class="stat-trend" :class="s.trend[0] === '+' ? 'trend-up' : 'trend-down'">{{ s.trend }}</div>
+            </div>
+          </template>
         </template>
       </div>
     </div>
@@ -69,7 +88,7 @@ export default {
     Users, CalendarDays, FileText, HardDrive, 
     Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: {}, loading: true }),
+  data: () => ({ stats: { disk_total_mb: 0 }, loading: true }),
   async mounted() {
     try {
       this.stats = await api.stats()
@@ -77,6 +96,16 @@ export default {
     this.loading = false
   },
   computed: {
+    diskPercent() {
+      const total = this.stats.disk_total_mb || 500
+      return Math.min(1, (this.stats.disk_used_mb || 0) / total)
+    },
+    diskDetail() {
+      const used = this.stats.disk_used_mb || 0
+      const total = this.stats.disk_total_mb || 0
+      if (!total) return used.toFixed(1) + ' MB'
+      return used.toFixed(1) + ' / ' + total.toFixed(1) + ' MB'
+    },
     uptime() {
       const s = Math.floor(this.stats.uptime || 0)
       const h = Math.floor(s / 3600)
@@ -135,6 +164,12 @@ export default {
 .bg-green { background: linear-gradient(135deg, #52c41a, #237804); }
 .bg-orange { background: linear-gradient(135deg, #faad14, #ad6800); }
 .bg-purple { background: linear-gradient(135deg, #722ed1, #391085); }
+
+.disk-ring-wrap { position: relative; width: 72px; height: 72px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.disk-ring { width: 72px; height: 72px; }
+.ring-fill { transition: stroke-dashoffset 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.disk-ring-text { position: absolute; font-size: 12px; font-weight: 800; color: var(--text-primary); }
+.stat-detail { font-size: 11px; color: var(--text-quaternary); margin-top: 2px; }
 
 .stat-num { font-size: 32px; font-weight: 800; color: var(--text-primary); line-height: 1.1; letter-spacing: -1px; }
 .stat-label { color: var(--text-secondary); font-size: 14px; margin-top: 4px; font-weight: 600; }
