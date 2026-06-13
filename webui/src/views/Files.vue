@@ -684,6 +684,7 @@ export default {
     border-left: 1px solid var(--border-base); background: #fafafa; flex: 0 0 48px !important;
     position: relative; overflow: hidden;
   }
+  .file-row.swipe-open .col-actions,
   .file-row.menu-active .col-actions { overflow: visible !important; }
   .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
   

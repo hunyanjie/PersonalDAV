@@ -415,6 +415,7 @@ export default {
     border-left: 1px solid var(--border-base); background: #fafafa; flex: 0 0 48px !important;
     position: relative; overflow: hidden;
   }
+  .contact-row.swipe-open .actions,
   .contact-row.menu-active .actions { overflow: visible !important; }
   .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
   
