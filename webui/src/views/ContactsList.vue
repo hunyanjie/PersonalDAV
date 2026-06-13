@@ -30,7 +30,7 @@
           </thead>
           <transition-group tag="tbody" name="list">
             <tr v-for="c in items" :key="c.uid" class="contact-row"
-              :class="{ 'swipe-open': _swipeUid === c.uid }"
+              :class="{ 'swipe-open': _swipeUid === c.uid, 'menu-active': _menuUid === c.uid }"
               @touchstart="swipeStart(c.uid, $event)"
               @touchmove="swipeMove($event)"
               @touchend="swipeEnd(c.uid)">
@@ -51,20 +51,24 @@
                 </div>
               </td>
               <td class="actions" :style="swipeStyle(c.uid)">
-                <button class="btn-icon btn-more" @click.stop="toggleMenu(c.uid)" title="更多">
-                  <MoreVertical :size="16" />
+                <!-- 移动端专属：三点菜单按钮 -->
+                <button class="btn-icon btn-more-trigger" @click.stop="toggleMenu(c.uid)" title="更多">
+                  <MoreHorizontal :size="20" />
                 </button>
+                
                 <div class="row-actions-main">
-                  <button class="btn-icon" @click="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
-                  <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑"><Pencil :size="16" /></router-link>
-                  <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
+                  <button class="btn-icon" @click.stop="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
+                  <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑" @click.stop><Pencil :size="16" /></router-link>
+                  <button class="btn-icon btn-danger" @click.stop="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
                 </div>
-                <transition name="fade">
-                  <div v-if="_menuUid === c.uid" class="ctx-menu-mobile" @click.stop>
-                    <div class="ctx-item" @click="doExport(c); _menuUid = null"><ArrowDownToLine :size="15" /> 导出</div>
-                    <router-link :to="`/contacts/${c.uid}/edit`" class="ctx-item" @click="_menuUid = null"><Pencil :size="15" /> 编辑</router-link>
+
+                <!-- 弹出式菜单 -->
+                <transition name="pop">
+                  <div v-if="_menuUid === c.uid" class="ctx-menu-popover glass" @click.stop>
+                    <div class="ctx-item" @click="doExport(c); _menuUid = null"><ArrowDownToLine :size="16" /> 导出 VCF</div>
+                    <router-link :to="`/contacts/${c.uid}/edit`" class="ctx-item" @click="_menuUid = null"><Pencil :size="16" /> 编辑信息</router-link>
                     <div class="ctx-divider" />
-                    <div class="ctx-item danger" @click="doDelete(c.uid); _menuUid = null"><Trash2 :size="15" /> 删除</div>
+                    <div class="ctx-item danger" @click="doDelete(c.uid); _menuUid = null"><Trash2 :size="16" /> 删除联系人</div>
                   </div>
                 </transition>
               </td>
@@ -104,7 +108,7 @@
 import { 
   Search, Upload, Plus, User, Mail, Phone, Tag, 
   ArrowDownToLine, Pencil, Trash2, Users,
-  ChevronLeft, ChevronRight, MoreVertical
+  ChevronLeft, ChevronRight, MoreHorizontal
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -112,13 +116,13 @@ export default {
   components: { 
     Search, Upload, Plus, User, Mail, Phone, Tag, 
     ArrowDownToLine, Pencil, Trash2, Users,
-    ChevronLeft, ChevronRight, MoreVertical
+    ChevronLeft, ChevronRight, MoreHorizontal
   },
   data: () => ({ 
     items: [], query: '', page: 0, pageSize: 50, total: 0, 
     loading: false, _timer: null, pageInput: 1, localPageSize: 50,
     _swipeUid: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
-    _menuUid: null,
+    _menuUid: null, _isDragging: false,
   }),
   computed: {
     maxPage() { return Math.max(1, Math.ceil(this.total / this.pageSize)) },
@@ -126,8 +130,13 @@ export default {
   watch: { 
     page() { this.pageInput = this.page + 1; this.load() } 
   },
-  async   mounted() { this.load(); document.addEventListener('click', this._closeMenu) },
-  beforeUnmount() { document.removeEventListener('click', this._closeMenu) },
+  async mounted() { 
+    this.load()
+    document.addEventListener('click', this._closeMenu)
+  },
+  beforeUnmount() { 
+    document.removeEventListener('click', this._closeMenu) 
+  },
   methods: {
     splitGroups(g) {
       if (!g) return []
@@ -160,32 +169,43 @@ export default {
     },
     swipeStart(uid, e) {
       if (window.innerWidth > 768) return
-      this.closeSwipe()
+      // Don't restart if already open and not dragging
+      if (this._swipeUid === uid && this._swipeOffset === 140) return
       this._swipeUid = uid
       this._swipeStartX = e.touches[0].clientX
       this._swipeStartY = e.touches[0].clientY
       this._swipeOffset = 0
+      this._isDragging = true
     },
     swipeMove(e) {
       if (!this._swipeUid) return
       const dx = this._swipeStartX - e.touches[0].clientX
       const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
-      if (dy > 20) { this.closeSwipe(); return }
-      if (dx > 5) e.preventDefault()
-      this._swipeOffset = Math.max(0, Math.min(140, dx))
+      if (dy > 30) { this.closeSwipe(); return }
+      if (Math.abs(dx) > 15) {
+        this._isDragging = true
+        e.stopPropagation()
+        this._swipeOffset = Math.max(0, Math.min(140, dx))
+      }
     },
     swipeEnd(uid) {
+      this._isDragging = false
       if (this._swipeUid !== uid) return
-      if (this._swipeOffset > 70) this._swipeOffset = 140
-      else this.closeSwipe()
+      if (this._swipeOffset > 40) { // Reduced threshold for better UX
+        this._swipeOffset = 140
+      } else {
+        this.closeSwipe()
+      }
     },
-    closeSwipe() { this._swipeUid = null; this._swipeOffset = 0 },
+    closeSwipe() { this._swipeUid = null; this._swipeOffset = 0; this._isDragging = false },
     toggleMenu(uid) { this._menuUid = this._menuUid === uid ? null : uid },
     _closeMenu() { this._menuUid = null },
     swipeStyle(uid) {
-      if (this._swipeUid !== uid || this._swipeOffset <= 0) return ''
+      if (this._swipeUid !== uid) return ''
       const offset = 140 - this._swipeOffset
-      return `transform:translateX(${offset}px);transition:none`
+      const style = { transform: `translateX(${offset}px)` }
+      if (this._isDragging) style.transition = 'none'
+      return style
     },
     async doImport(e) {
       const file = e.target.files[0]
@@ -213,7 +233,7 @@ export default {
         const a = document.createElement('a')
         a.href = url; a.download = `${c.full_name || '联系人'}.vcf`
         a.click(); URL.revokeObjectURL(url)
-      } catch(e) { window.showToast('导出失败', 'error') }
+      } catch(e) { alert('导出失败') }
     },
   },
 }
@@ -233,7 +253,7 @@ export default {
   border: 1px solid var(--border-base);
   align-items: center;
 }
-.search-box { flex: 1 1; position: relative; min-width: 140px; }
+.search-box { flex: 1 1 0; position: relative; min-width: 0; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { 
   width: 100%; 
@@ -244,6 +264,7 @@ export default {
   transition: all .2s;
   background: #fafafa;
   outline: none;
+  box-sizing: border-box;
 }
 .search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
 
@@ -271,25 +292,26 @@ export default {
   background: var(--bg-card); 
   border-radius: var(--radius-lg); 
   box-shadow: var(--shadow-sm); 
-  overflow: hidden; 
+  overflow: visible; 
   border: 1px solid var(--border-base);
   display: flex;
   flex-direction: column;
 }
 .table-scroll { flex: 1; overflow: auto; }
-.data-table { width: 100%; border-collapse: collapse; min-width: 500px; }
+.data-table { width: 100%; border-collapse: collapse; min-width: 500px; table-layout: fixed; }
 .data-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; border-bottom: 1px solid var(--border-base); font-size: 13px; color: var(--text-secondary); font-weight: 700; position: sticky; top: 0; z-index: 10; }
 .th-inner { display: flex; align-items: center; gap: 8px; }
 .data-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
 
-.contact-row { transition: background .15s; }
+.contact-row { transition: background .15s, z-index 0s; position: relative; }
 .contact-row:hover { background: var(--bg-table-header); }
+.contact-row.menu-active { z-index: 100 !important; }
 
 .name-info { display: flex; align-items: center; gap: 12px; }
 .avatar { width: 36px; height: 36px; background: var(--brand); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; box-shadow: 0 4px 8px var(--brand-ring); }
-.name-text { display: flex; flex-direction: column; }
-.full-name { font-weight: 700; color: var(--text-primary); }
-.mobile-only-info { display: none; font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
+.name-text { display: flex; flex-direction: column; min-width: 0; }
+.full-name { font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-only-info { display: none; font-size: 12px; color: var(--text-tertiary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .groups-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .group-tag { 
@@ -302,10 +324,10 @@ export default {
   border: 1px solid hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1);
 }
 
-.actions { display: flex; gap: 6px; justify-content: flex-end; position: relative; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; position: relative; align-items: center; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 .row-actions-main { display: flex; gap: 6px; }
-.btn-more { display: none; }
-.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
+.btn-more-trigger { display: none; }
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all .2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
@@ -321,6 +343,7 @@ export default {
   border-radius: var(--radius-lg); 
   box-shadow: var(--shadow-sm); 
   border: 1px solid var(--border-base);
+  margin-top: 8px;
 }
 .page-info { font-size: 13px; color: var(--text-secondary); }
 .page-controls { display: flex; align-items: center; gap: 12px; }
@@ -333,20 +356,26 @@ export default {
 .page-input:focus { border-color: var(--brand); }
 .page-size-select { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; background: white; font-weight: 600; cursor: pointer; }
 
-.ctx-menu-mobile {
-  position: absolute; right: 0; top: 100%; z-index: 100;
-  background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
-  border: 1px solid var(--border-base); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg); min-width: 140px; padding: 8px;
+/* 弹出式菜单样式 */
+.ctx-menu-popover {
+  position: absolute; right: 54px; top: 50%; z-index: 2000;
+  background: white; border: 1px solid var(--border-base); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg); min-width: 160px; padding: 6px;
+  transform: translateY(-50%);
+  transform-origin: right center;
 }
-.ctx-menu-mobile .ctx-item {
+.ctx-menu-popover .ctx-item {
   display: flex; align-items: center; gap: 10px; padding: 10px 14px;
   font-size: 14px; cursor: pointer; border-radius: var(--radius-sm);
   color: var(--text-secondary); text-decoration: none; transition: .2s;
 }
-.ctx-menu-mobile .ctx-item:hover { background: var(--brand); color: white; }
-.ctx-menu-mobile .ctx-item.danger:hover { background: var(--danger); }
-.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
+.ctx-menu-popover .ctx-item:hover { background: var(--bg-info); color: var(--brand); }
+.ctx-menu-popover .ctx-item.danger:hover { background: var(--bg-danger); color: var(--danger); }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 6px; }
+
+/* 动画 */
+.pop-enter-active, .pop-leave-active { transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(-50%) scale(0.9) translateX(10px); }
 
 .list-move, .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
@@ -358,31 +387,47 @@ export default {
   .toolbar-actions { width: 100%; justify-content: flex-end; }
 }
 @media (max-width: 768px) {
-  .hide-mobile { display: none; }
+  .hide-mobile { display: none !important; }
   .mobile-only-info { display: block; }
   .toolbar { padding: 12px; flex-direction: column; align-items: stretch; gap: 12px; }
   .search-box { width: 100%; min-width: 100%; order: 1; }
   .toolbar-actions { width: 100%; justify-content: space-between; order: 2; gap: 8px; }
   .btn-tool { flex: 1; justify-content: center; padding: 10px 12px; font-size: 13px; }
-  .data-table { min-width: 0; }
-  .contact-row { position: relative; overflow: hidden; display: flex; background: var(--bg-card); border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border-base); }
-  .contact-row td { display: block; border: none; padding: 14px 12px; }
+  
+  .data-table { min-width: 0; display: block; width: 100%; }
+  .data-table thead { display: none; }
+  .data-table tbody { display: block; width: 100%; }
+  .data-table th.col-actions { display: none; }
+
+  .contact-row { position: relative; overflow: visible; display: flex; background: var(--bg-card); border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border-base); align-items: center; width: 100%; box-sizing: border-box; }
+  .contact-row td { display: block; border: none; padding: 12px; flex: 1; min-width: 0; }
   .col-name { flex: 1; min-width: 0; }
-  .col-email, .col-phone, .hide-tablet { display: none; }
-  .btn-more { display: inline-flex; width: 38px; height: 38px; }
+  .col-email, .col-phone, .hide-tablet { display: none !important; }
+  
+  .actions { 
+    display: flex; align-items: center; justify-content: center; width: 48px; height: 100%; padding: 0;
+    border-left: 1px solid var(--border-base); background: #fafafa; flex: 0 0 48px !important;
+    position: relative; overflow: visible;
+  }
+  .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
   .row-actions-main { display: none; }
-  .actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; z-index: 2; }
-  .contact-row:not(.swipe-open) .actions { transform: translateX(calc(100% + 8px)); transition: transform 0.25s ease; }
-  .contact-row.swipe-open .actions { transition: transform 0.25s ease; }
-  .contact-row.swipe-open .row-actions-main { display: flex; gap: 4px; }
-  .btn-icon { width: 40px; height: 40px; }
-  .btn-page { width: 44px; height: 44px; }
+
+  /* 移动端侧滑层 */
+  .contact-row.swipe-open .actions { 
+    position: absolute; right: 0; top: 0; bottom: 0; width: 140px; 
+    background: var(--bg-card); transform: translateX(0) !important;
+    display: flex; gap: 8px; padding: 0 12px; border-left: 1px solid var(--brand);
+    box-shadow: -4px 0 12px rgba(0,0,0,0.05); z-index: 10;
+  }
+  .contact-row.swipe-open .row-actions-main { display: flex; align-items: center; gap: 8px; }
+  .contact-row.swipe-open .btn-more-trigger { display: none; }
+
+  .btn-icon { width: 42px; height: 42px; }
+  .ctx-menu-popover { right: 54px; top: 12px; }
+  
   .pagination-bar { padding: 16px 12px; flex-direction: column; gap: 16px; align-items: center; }
   .page-info { order: 3; }
   .page-controls { order: 1; width: 100%; justify-content: center; }
   .page-size-select { order: 2; width: 100%; }
-}
-@media (max-width: 1024px) {
-  .hide-tablet { display: none; }
 }
 </style>

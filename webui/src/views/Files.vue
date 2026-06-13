@@ -37,7 +37,7 @@
       <button class="btn-close" @click="errorMsg = ''">&times;</button>
     </div>
 
-    <!-- Modals (animations added) -->
+    <!-- Modals -->
     <transition name="modal">
       <div v-if="showNewFolder" class="inline-modal-overlay" @click.self="showNewFolder = false">
         <div class="inline-dialog glass no-transition">
@@ -137,35 +137,46 @@
           </thead>
           <transition-group tag="tbody" name="list">
             <tr v-for="item in sortedItems" :key="item.path" class="file-row"
-              :class="{ 'swipe-open': _swipePath === item.path }"
+              :class="{ 'swipe-open': _swipePath === item.path, 'menu-active': _menuPath === item.path }"
               @touchstart="swipeStart(item.path, $event)"
               @touchmove="swipeMove($event)"
               @touchend="swipeEnd(item.path)">
-              <td class="col-name" @click="closeSwipe">
-                <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
+              <td class="col-name">
+                <div class="file-main-info" @click="item.is_dir ? cd(item.path) : null">
                   <component :is="getFileIconComponent(item)" class="file-icon-comp" :class="{ 'dir-icon': item.is_dir }" :size="20" />
-                  <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>
+                  <div class="file-text-wrapper">
+                    <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>
+                    <div class="mobile-meta">
+                      <span class="meta-time">{{ formatDate(item.modified_at) }}</span>
+                      <span class="meta-sep">·</span>
+                      <span class="meta-size">{{ item.is_dir ? '目录' : formatSize(item.size) }}</span>
+                    </div>
+                  </div>
                 </div>
               </td>
               <td class="col-size hide-mobile">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.modified_at) }}</td>
               <td class="col-actions" :style="swipeStyle(item.path)">
-                <button class="btn-icon btn-more" @click.stop="toggleMenu(item.path)" title="更多">
-                  <MoreVertical :size="16" />
+                <!-- 移动端三点菜单 -->
+                <button class="btn-icon btn-more-trigger" @click.stop="toggleMenu(item.path)" title="更多">
+                  <MoreHorizontal :size="20" />
                 </button>
-                <div class="row-actions">
+
+                <div class="row-actions-main">
                   <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
                   <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
                   <button class="btn-icon" @click="startRename(item)" title="重命名"><Pencil :size="16" /></button>
                   <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
                 </div>
-                <transition name="fade">
-                  <div v-if="_menuPath === item.path" class="ctx-menu-mobile" @click.stop>
-                    <div v-if="!item.is_dir && canPreview(item.name)" class="ctx-item" @click="doPreview(item); _menuPath = null"><Eye :size="15" /> 预览</div>
-                    <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="ctx-item"><Download :size="15" /> 下载</a>
-                    <div class="ctx-item" @click="startRename(item); _menuPath = null"><Pencil :size="15" /> 重命名</div>
+
+                <!-- 弹出式菜单 -->
+                <transition name="pop">
+                  <div v-if="_menuPath === item.path" class="ctx-menu-popover glass" @click.stop>
+                    <div v-if="!item.is_dir && canPreview(item.name)" class="ctx-item" @click="doPreview(item); _menuPath = null"><Eye :size="16" /> 预览文件</div>
+                    <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="ctx-item" @click="_menuPath = null"><Download :size="16" /> 下载文件</a>
+                    <div class="ctx-item" @click="startRename(item); _menuPath = null"><Pencil :size="16" /> 重命名</div>
                     <div class="ctx-divider" />
-                    <div class="ctx-item danger" @click="doDelete(item); _menuPath = null"><Trash2 :size="15" /> 删除</div>
+                    <div class="ctx-item danger" @click="doDelete(item); _menuPath = null"><Trash2 :size="16" /> 删除项</div>
                   </div>
                 </transition>
               </td>
@@ -187,7 +198,7 @@ import {
   Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
   RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
   File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
-  FileQuestion, Folder, FolderOpen, RefreshCw, MoreVertical
+  FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -198,7 +209,7 @@ export default {
     Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
     RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
     File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
-    FileQuestion, Folder, FolderOpen, RefreshCw
+    FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal
   },
   data: () => ({
     items: [], 
@@ -376,7 +387,6 @@ export default {
     },
     swipeStart(path, e) {
       if (window.innerWidth > 768) return
-      this.closeSwipe()
       this._swipePath = path
       this._swipeStartX = e.touches[0].clientX
       this._swipeStartY = e.touches[0].clientY
@@ -386,9 +396,12 @@ export default {
       if (!this._swipePath) return
       const dx = this._swipeStartX - e.touches[0].clientX
       const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
-      if (dy > 20) { this.closeSwipe(); return }
-      if (dx > 5) e.preventDefault()
-      this._swipeOffset = Math.max(0, Math.min(160, dx))
+      if (dy > 30) { this.closeSwipe(); return }
+      // Use a threshold of 15px to avoid sensitivity
+      if (Math.abs(dx) > 15) {
+        e.stopPropagation()
+        this._swipeOffset = Math.max(0, Math.min(160, dx))
+      }
     },
     swipeEnd(path) {
       if (this._swipePath !== path) return
@@ -399,7 +412,7 @@ export default {
     toggleMenu(path) { this._menuPath = this._menuPath === path ? null : path },
     _closeMenu() { this._menuPath = null },
     swipeStyle(path) {
-      if (this._swipePath !== path || this._swipeOffset <= 0) return ''
+      if (this._swipePath !== path) return ''
       const offset = 160 - this._swipeOffset
       return `transform:translateX(${offset}px);transition:none`
     },
@@ -534,12 +547,7 @@ export default {
 }
 .btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); }
 .btn-tool.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
-.btn-tool.btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
-
-.btn-sm { padding: 8px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; border: 1px solid var(--border-strong); background: white; cursor: pointer; transition: all .2s; }
-.btn-sm:hover { border-color: var(--brand); color: var(--brand); }
-.btn-sm.btn-primary { background: var(--brand); color: var(--text-inverse); border: none; }
-.btn-sm.btn-primary:hover { background: var(--brand-hover); transform: translateY(-1px); box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
+.btn-tool.btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12 hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -552,13 +560,13 @@ export default {
   background: var(--bg-card); 
   border-radius: var(--radius-lg); 
   box-shadow: var(--shadow-sm); 
-  overflow: hidden;
+  overflow: visible; 
   border: 1px solid var(--border-base);
   display: flex;
   flex-direction: column;
 }
 .table-container { flex: 1; overflow: auto; }
-.files-table { width: 100%; border-collapse: collapse; min-width: 600px; }
+.files-table { width: 100%; border-collapse: collapse; min-width: 600px; table-layout: fixed; }
 .files-table th { background: var(--bg-table-header); padding: 16px 20px; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-base); user-select: none; position: sticky; top: 0; z-index: 10; }
 .files-table th.sortable { cursor: pointer; transition: color .2s; }
 .files-table th.sortable:hover { color: var(--brand); }
@@ -569,96 +577,96 @@ export default {
 .col-size { width: 120px; }
 .col-time { width: 180px; }
 .col-actions { width: 160px; text-align: right !important; position: relative; }
-.btn-more { display: none; }
 
-.file-row { transition: background .15s; }
+.file-row { transition: background .15s, z-index 0s; position: relative; }
 .file-row:hover { background: var(--bg-table-header); }
-.name-box { display: flex; align-items: center; gap: 12px; transition: color .2s; }
-.name-box.is-clickable { cursor: pointer; }
-.name-box.is-clickable:hover .file-name { color: var(--brand); }
+.file-row.menu-active { z-index: 100 !important; }
+
+.file-main-info { display: flex; align-items: center; gap: 12px; transition: color .2s; cursor: pointer; }
+.file-main-info:hover .file-name { color: var(--brand); }
 .file-icon-comp { color: var(--text-tertiary); flex-shrink: 0; }
 .dir-icon { color: var(--brand); opacity: 0.8; }
+.file-text-wrapper { display: flex; flex-direction: column; min-width: 0; }
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .file-name.is-dir { color: var(--text-primary); }
 
-.row-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
+.mobile-meta { display: none; gap: 6px; font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.meta-sep { opacity: 0.5; }
+
+.actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.row-actions-main { display: flex; justify-content: flex-end; gap: 6px; }
+.btn-more-trigger { display: none; }
+
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all .2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
 .empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px; color: var(--text-tertiary); }
 .empty-icon { color: var(--border-strong); margin-bottom: 16px; opacity: 0.5; }
 
-.inline-modal-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-.inline-dialog { background: var(--bg-card); width: 400px; padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); }
-.inline-dialog h3 { margin: 0 0 20px; font-size: 18px; }
-.inline-dialog input { width: 100%; padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); margin-bottom: 24px; box-sizing: border-box; font-size: 15px; outline: none; }
-.inline-dialog input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
+/* 弹出菜单样式 */
+.ctx-menu-popover {
+  position: absolute; right: 54px; top: 50%; z-index: 2000;
+  background: white; border: 1px solid var(--border-base); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg); min-width: 160px; padding: 6px;
+  transform: translateY(-50%);
+  transform-origin: right center;
+}
+.ctx-menu-popover .ctx-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  font-size: 14px; cursor: pointer; border-radius: var(--radius-sm);
+  color: var(--text-secondary); text-decoration: none; transition: .2s;
+}
+.ctx-menu-popover .ctx-item:hover { background: var(--bg-info); color: var(--brand); }
+.ctx-menu-popover .ctx-item.danger:hover { background: var(--bg-danger); color: var(--danger); }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 6px; }
 
-.preview-dialog { background: var(--bg-card); width: 90vw; height: 85vh; max-width: 1100px; border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); }
-.preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-base); background: #fafafa; }
-.preview-header h3 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btn-close-preview { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 50%; display: flex; transition: .2s; }
-.btn-close-preview:hover { background: var(--bg-hover); color: var(--text-primary); transform: rotate(90deg); }
-
-.preview-body { flex: 1; overflow: hidden; background: #f0f0f0; }
-.preview-iframe { width: 100%; height: 100%; border: none; background: white; }
-
-.img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
-.preview-img { max-width: 95%; max-height: 95%; cursor: grab; user-select: none; transition: transform 0.1s ease-out; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.1)); }
-.preview-img.dragging { cursor: grabbing; transition: none; }
-
-.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background-color .2s; }
-.zoom-btn:hover { background: rgba(255,255,255,0.15); }
+.pop-enter-active, .pop-leave-active { transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(-50%) scale(0.9) translateX(10px); }
 
 .list-move, .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
 .list-leave-active { position: absolute; }
 
-.ctx-menu-mobile {
-  position: absolute; right: 0; top: 100%; z-index: 100;
-  background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
-  border: 1px solid var(--border-base); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg); min-width: 140px; padding: 8px;
-}
-.ctx-menu-mobile .ctx-item {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  font-size: 14px; cursor: pointer; border-radius: var(--radius-sm);
-  color: var(--text-secondary); text-decoration: none; transition: .2s;
-}
-.ctx-menu-mobile .ctx-item:hover { background: var(--brand); color: white; }
-.ctx-menu-mobile .ctx-item.danger:hover { background: var(--danger); }
-.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
-
-.dropzone-overlay { position: fixed; inset: 0; z-index: 3000; background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
-.dropzone-content { background: white; border: 2px dashed var(--brand); border-radius: 32px; padding: 60px 100px; text-align: center; box-shadow: var(--shadow-xl); }
-.drop-icon { color: var(--brand); margin-bottom: 20px; }
-.dropzone-content p { font-size: 20px; color: var(--text-primary); font-weight: 600; margin: 0; }
-
 @media (max-width: 768px) {
-  .hide-mobile { display: none; }
+  .hide-mobile { display: none !important; }
+  .mobile-meta { display: flex; }
   .toolbar { padding: 10px 16px; gap: 8px; flex-direction: column; align-items: stretch; }
   .breadcrumb-wrapper { width: 100%; overflow-x: auto; }
-  .breadcrumb-bar { min-width: max-content; }
-  .toolbar-actions { flex-shrink: 0; justify-content: flex-end; }
-  .files-table { min-width: 400px; }
-  .file-row { position: relative; overflow: hidden; display: flex; background: var(--bg-card); border: 1px solid var(--border-base); border-radius: var(--radius-md); margin-bottom: 8px; }
-  .file-row td { display: block; border: none; padding: 14px 12px; vertical-align: middle; }
-  .col-name { flex: 1; min-width: 0; }
-  .col-size, .col-time { display: none; }
-  .btn-more { display: inline-flex; width: 38px; height: 38px; }
-  .file-row:not(.swipe-open) .row-actions { display: none; }
-  .col-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; z-index: 2; }
-  .file-row:not(.swipe-open) .col-actions { transform: translateX(calc(100% + 8px)); transition: transform 0.25s ease; }
-  .file-row.swipe-open .col-actions { transition: transform 0.25s ease; }
-  .file-row.swipe-open .row-actions { display: flex; gap: 4px; }
-  .row-actions { display: flex; gap: 4px; }
-  .btn-icon { width: 40px; height: 40px; }
+  
+  .files-table { min-width: 0 !important; width: 100% !important; display: block; }
+  .files-table thead { display: none !important; }
+  .files-table tbody { display: block; width: 100%; }
+
+  .file-row { position: relative; overflow: visible; display: flex; background: var(--bg-card); border-radius: var(--radius-md); margin-bottom: 8px; border: 1px solid var(--border-base); align-items: center; width: 100%; box-sizing: border-box; }
+  .file-row td { display: block; border: none; padding: 12px; vertical-align: middle; }
+  .col-name { flex: 1; min-width: 0; overflow: hidden; }
+  .col-size, .col-time { display: none !important; }
+  .file-name { font-weight: 700; font-size: 15px; }
+  
+  .actions { 
+    display: flex; align-items: center; justify-content: center; width: 48px; height: 100%; padding: 0;
+    border-left: 1px solid var(--border-base); background: #fafafa; flex: 0 0 48px !important;
+    position: relative; overflow: visible;
+  }
+  .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
+  .row-actions-main { display: none; }
+
+  /* 移动端侧滑层 */
+  .file-row.swipe-open .actions { 
+    position: absolute; right: 0; top: 0; bottom: 0; width: 160px; 
+    background: var(--bg-card); transform: translateX(0) !important;
+    display: flex; gap: 8px; padding: 0 12px; border-left: 1px solid var(--brand);
+    box-shadow: -4px 0 12px rgba(0,0,0,0.05); z-index: 10;
+  }
+  .file-row.swipe-open .row-actions-main { display: flex; align-items: center; gap: 8px; }
+  .file-row.swipe-open .btn-more-trigger { display: none; }
+
+  .btn-icon { width: 42px; height: 42px; }
   .preview-dialog { height: 95vh; width: 100vw; border-radius: 0; }
 }
 
 @media (max-width: 1024px) {
-  .hide-tablet { display: none; }
+  .hide-tablet { display: none !important; }
 }
 </style>
