@@ -8,21 +8,22 @@
 
       <form @submit.prevent="save">
         <div class="form-grid">
-          <div class="form-item full">
+          <div class="form-item full" :class="{ focused: focusedField === 'summary' }">
             <label>日程标题</label>
-            <input v-model="form.summary" required placeholder="例如：团队周会" />
+            <input v-model="form.summary" required placeholder="例如：团队周会" @focus="focusedField='summary'" @blur="focusedField=null" />
+            <span v-if="form.summary && form.summary.length < 2" class="field-error">标题至少 2 个字符</span>
           </div>
 
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'categories' }">
             <label>分类</label>
-            <input v-model="form.categories" placeholder="MEETING, WORK (逗号分隔)" />
+            <input v-model="form.categories" placeholder="MEETING, WORK (逗号分隔)" @focus="focusedField='categories'" @blur="focusedField=null" />
           </div>
 
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'location' }">
             <label>地点</label>
             <div class="input-with-icon">
               <MapPin :size="16" class="inner-icon" />
-              <input v-model="form.location" placeholder="会议室或地理位置" />
+              <input v-model="form.location" placeholder="会议室或地理位置" @focus="focusedField='location'" @blur="focusedField=null" />
             </div>
           </div>
 
@@ -33,19 +34,19 @@
             </label>
           </div>
 
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'dtstart' }">
             <label>开始时间</label>
-            <input v-model="form.dtstart" :type="form.allDay ? 'date' : 'datetime-local'" required />
+            <input v-model="form.dtstart" :type="form.allDay ? 'date' : 'datetime-local'" required @focus="focusedField='dtstart'" @blur="focusedField=null" />
           </div>
 
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'dtend' }">
             <label>结束时间</label>
-            <input v-model="form.dtend" :type="form.allDay ? 'date' : 'datetime-local'" required />
+            <input v-model="form.dtend" :type="form.allDay ? 'date' : 'datetime-local'" required @focus="focusedField='dtend'" @blur="focusedField=null" />
           </div>
 
-          <div class="form-item full">
+          <div class="form-item full" :class="{ focused: focusedField === 'description' }">
             <label>日程描述</label>
-            <textarea v-model="form.description" rows="4" placeholder="添加更多关于此日程的详细备注..."></textarea>
+            <textarea v-model="form.description" rows="4" placeholder="添加更多关于此日程的详细备注..." @focus="focusedField='description'" @blur="focusedField=null"></textarea>
           </div>
         </div>
 
@@ -99,8 +100,9 @@ function setVeventField(lines, key, value) {
 export default {
   components: { Save, MapPin },
   data: () => ({
-    form: { summary: '', dtstart: '', dtend: '', description: '', categories: '', location: '', allDay: false },
-    saving: false, isNew: true, loadedUid: null, _rawIcal: '',
+    form: { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false },
+    saving: false, isNew: true, _rawIcal: '', loadedUid: '',
+    focusedField: null,
   }),
   async mounted() {
     const uid = this.$route.params.uid
@@ -196,7 +198,9 @@ export default {
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .form-item.full { grid-column: span 2; }
 
-label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--text-secondary); transition: color .2s; }
+.form-item.focused label { color: var(--brand); }
+.field-error { display: block; font-size: 12px; color: var(--danger); margin-top: 4px; }
 input, textarea { 
   width: 100%; 
   padding: 12px 16px; 

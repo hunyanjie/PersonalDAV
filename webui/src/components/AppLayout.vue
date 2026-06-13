@@ -168,6 +168,11 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 18px;
+  animation: logoFadeIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes logoFadeIn {
+  0% { opacity: 0; transform: scale(0.6) rotate(-10deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
 }
 
 .toggle-btn { 

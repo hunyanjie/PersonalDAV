@@ -8,33 +8,35 @@
       
       <form @submit.prevent="save">
         <div class="form-grid">
-          <div class="form-item full">
+          <div class="form-item full" :class="{ focused: focusedField === 'name' }">
             <label>姓名</label>
-            <input v-model="form.full_name" required placeholder="例如：张三" />
+            <input v-model="form.full_name" required placeholder="例如：张三" @focus="focusedField='name'" @blur="focusedField=null" />
+            <span v-if="form.full_name && form.full_name.length < 2" class="field-error">姓名至少 2 个字符</span>
           </div>
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'email' }">
             <label>邮箱</label>
-            <input v-model="form.email" type="email" placeholder="example@mail.com" />
+            <input v-model="form.email" type="email" placeholder="example@mail.com" @focus="focusedField='email'" @blur="focusedField=null" />
+            <span v-if="form.email && !isValidEmail" class="field-error">邮箱格式不正确</span>
           </div>
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'phone' }">
             <label>电话</label>
-            <input v-model="form.phone" placeholder="手机或座机号码" />
+            <input v-model="form.phone" placeholder="手机或座机号码" @focus="focusedField='phone'" @blur="focusedField=null" />
           </div>
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'groups' }">
             <label>分组</label>
-            <input v-model="form.groups" placeholder="朋友;同事;家人 (分号分隔)" />
+            <input v-model="form.groups" placeholder="朋友;同事;家人 (分号分隔)" @focus="focusedField='groups'" @blur="focusedField=null" />
           </div>
-          <div class="form-item">
+          <div class="form-item" :class="{ focused: focusedField === 'org' }">
             <label>组织</label>
-            <input v-model="form.org" placeholder="公司或学校名称" />
+            <input v-model="form.org" placeholder="公司或学校名称" @focus="focusedField='org'" @blur="focusedField=null" />
           </div>
-          <div class="form-item full">
+          <div class="form-item full" :class="{ focused: focusedField === 'address' }">
             <label>地址</label>
-            <input v-model="form.address" placeholder="详细居住或办公地址" />
+            <input v-model="form.address" placeholder="详细居住或办公地址" @focus="focusedField='address'" @blur="focusedField=null" />
           </div>
-          <div class="form-item full">
+          <div class="form-item full" :class="{ focused: focusedField === 'note' }">
             <label>备注</label>
-            <textarea v-model="form.note" rows="3" placeholder="添加一些额外的信息..."></textarea>
+            <textarea v-model="form.note" rows="3" placeholder="添加一些额外的信息..." @focus="focusedField='note'" @blur="focusedField=null"></textarea>
           </div>
         </div>
 
@@ -89,7 +91,13 @@ export default {
   data: () => ({
     form: { full_name: '', email: '', phone: '', groups: '', address: '', org: '', note: '' },
     saving: false, isNew: true, _rawVcard: '',
+    focusedField: null,
   }),
+  computed: {
+    isValidEmail() {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.form.email)
+    },
+  },
   async mounted() {
     const uid = this.$route.params.uid
     if (uid) {
@@ -166,7 +174,9 @@ export default {
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .form-item.full { grid-column: span 2; }
 
-label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: var(--text-secondary); transition: color .2s; }
+.form-item.focused label { color: var(--brand); }
+.field-error { display: block; font-size: 12px; color: var(--danger); margin-top: 4px; }
 input, textarea { 
   width: 100%; 
   padding: 12px 16px; 
