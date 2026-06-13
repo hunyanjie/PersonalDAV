@@ -28,7 +28,7 @@
               <th class="col-actions">操作</th>
             </tr>
           </thead>
-          <tbody>
+          <transition-group tag="tbody" name="list">
             <tr v-for="c in items" :key="c.uid" class="contact-row">
               <td class="col-name">
                 <div class="name-info">
@@ -52,7 +52,7 @@
                 <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
               </td>
             </tr>
-          </tbody>
+          </transition-group>
         </table>
       </div>
       <div v-else class="empty-state">
@@ -281,6 +281,10 @@ export default {
 .page-input { width: 50px; padding: 6px; border: 1px solid var(--border-input); border-radius: 6px; text-align: center; font-weight: 700; outline: none; }
 .page-input:focus { border-color: var(--brand); }
 .page-size-select { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; background: white; font-weight: 600; cursor: pointer; }
+
+.list-move, .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
+.list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
+.list-leave-active { position: absolute; }
 
 @media (max-width: 1100px) {
   .toolbar { flex-direction: column; align-items: stretch; }

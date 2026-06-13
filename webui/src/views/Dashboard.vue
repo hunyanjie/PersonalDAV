@@ -1,41 +1,19 @@
 <template>
   <div class="dashboard">
     <div class="stats-grid">
-      <div class="stat-card glass">
-        <div class="stat-icon-box bg-blue">
-          <Users :size="24" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.contacts_count }}</div>
-          <div class="stat-label">联系人</div>
-        </div>
-      </div>
-      <div class="stat-card glass">
-        <div class="stat-icon-box bg-green">
-          <CalendarDays :size="24" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.events_count }}</div>
-          <div class="stat-label">日程事件</div>
-        </div>
-      </div>
-      <div class="stat-card glass">
-        <div class="stat-icon-box bg-orange">
-          <FileText :size="24" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.files_count }}</div>
-          <div class="stat-label">存储文件</div>
-        </div>
-      </div>
-      <div class="stat-card glass">
-        <div class="stat-icon-box bg-purple">
-          <HardDrive :size="24" />
-        </div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.disk_used_mb }} MB</div>
-          <div class="stat-label">空间占用</div>
-        </div>
+      <div v-for="s in statDefs" :key="s.label" class="stat-card glass">
+        <template v-if="loading">
+          <div class="stat-icon-box" :class="s.bg" style="visibility:hidden;"><component :is="s.icon" :size="24" /></div>
+          <div class="stat-info" style="flex:1;"><Skeleton width="60%" /><Skeleton width="40%" /></div>
+        </template>
+        <template v-else>
+          <div class="stat-icon-box" :class="s.bg"><component :is="s.icon" :size="24" /></div>
+          <div class="stat-info">
+            <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
+            <div class="stat-label">{{ s.label }}</div>
+            <div v-if="s.trend" class="stat-trend" :class="s.trend[0] === '+' ? 'trend-up' : 'trend-down'">{{ s.trend }}</div>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -84,17 +62,19 @@ import {
   Server, ChevronRight, ShieldCheck, Zap
 } from 'lucide-vue-next'
 import api from '../api.js'
+import Skeleton from '../components/Skeleton.vue'
 
 export default {
   components: { 
     Users, CalendarDays, FileText, HardDrive, 
-    Server, ChevronRight, ShieldCheck, Zap
+    Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: {} }),
+  data: () => ({ stats: {}, loading: true }),
   async mounted() {
     try {
       this.stats = await api.stats()
     } catch (e) {}
+    this.loading = false
   },
   computed: {
     uptime() {
@@ -102,6 +82,14 @@ export default {
       const h = Math.floor(s / 3600)
       const m = Math.floor((s % 3600) / 60)
       return `${h} 小时 ${m} 分钟`
+    },
+    statDefs() {
+      return [
+        { key: 'contacts_count', label: '联系人', icon: 'Users', bg: 'bg-blue', unit: '', trend: '' },
+        { key: 'events_count', label: '日程事件', icon: 'CalendarDays', bg: 'bg-green', unit: '', trend: '' },
+        { key: 'files_count', label: '存储文件', icon: 'FileText', bg: 'bg-orange', unit: '', trend: '' },
+        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: '+2%' },
+      ]
     },
   },
 }
@@ -150,6 +138,9 @@ export default {
 
 .stat-num { font-size: 32px; font-weight: 800; color: var(--text-primary); line-height: 1.1; letter-spacing: -1px; }
 .stat-label { color: var(--text-secondary); font-size: 14px; margin-top: 4px; font-weight: 600; }
+.stat-trend { font-size: 12px; font-weight: 600; margin-top: 6px; }
+.trend-up { color: #52c41a; }
+.trend-down { color: var(--danger); }
 
 .system-grid {
   display: grid;

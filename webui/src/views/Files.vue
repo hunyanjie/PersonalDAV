@@ -129,7 +129,7 @@
               <th class="col-actions">操作</th>
             </tr>
           </thead>
-          <tbody>
+          <transition-group tag="tbody" name="list">
             <tr v-for="item in sortedItems" :key="item.path" class="file-row">
               <td class="col-name">
                 <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
@@ -148,7 +148,7 @@
                 </div>
               </td>
             </tr>
-          </tbody>
+          </transition-group>
         </table>
       </div>
       <div v-else-if="!loading" class="empty-state">
@@ -536,10 +536,14 @@ export default {
 .img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
 .preview-img { max-width: 95%; max-height: 95%; cursor: grab; user-select: none; transition: transform 0.1s ease-out; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.1)); }
 .preview-img.dragging { cursor: grabbing; transition: none; }
-.img-zoom-bar { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); border-radius: 30px; display: flex; align-items: center; gap: 4px; padding: 6px 12px; backdrop-filter: blur(8px); }
+
 .zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background-color .2s; }
-.zoom-btn:hover { background: rgba(255,255,255,0.2); }
-.zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
+.zoom-btn:hover { background: rgba(255,255,255,0.15); }
+
+.list-move, .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
+.list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
+.list-leave-active { position: absolute; }
+
 
 .dropzone-overlay { position: fixed; inset: 0; z-index: 3000; background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
 .dropzone-content { background: white; border: 2px dashed var(--brand); border-radius: 32px; padding: 60px 100px; text-align: center; box-shadow: var(--shadow-xl); }
