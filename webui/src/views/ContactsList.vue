@@ -50,19 +50,20 @@
                   <span v-for="g in splitGroups(c.groups)" :key="g" class="group-tag">{{ g }}</span>
                 </div>
               </td>
-              <td class="actions" :style="swipeStyle(c.uid)">
-                <!-- 移动端专属：三点菜单按钮 -->
+              <td class="actions">
+                <!-- 始终可见的三个点按钮 (对标文件页面) -->
                 <button class="btn-icon btn-more-trigger" @click.stop="toggleMenu(c.uid)" title="更多">
                   <MoreHorizontal :size="20" />
                 </button>
                 
-                <div class="row-actions-main">
-                  <button class="btn-icon" @click.stop="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
-                  <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑" @click.stop><Pencil :size="16" /></router-link>
-                  <button class="btn-icon btn-danger" @click.stop="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
+                <!-- 仅在侧滑或桌面端显示的按钮组 -->
+                <div class="row-actions-main" :style="swipeStyle(c.uid)">
+                  <button class="btn-icon" @touchstart.stop @click.stop="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
+                  <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑" @touchstart.stop @click.stop><Pencil :size="16" /></router-link>
+                  <button class="btn-icon btn-danger" @touchstart.stop @click.stop="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
                 </div>
 
-                <!-- 弹出式菜单 -->
+                <!-- 弹出式菜单 (层级修正) -->
                 <transition name="pop">
                   <div v-if="_menuUid === c.uid" class="ctx-menu-popover glass" @click.stop>
                     <div class="ctx-item" @click="doExport(c); _menuUid = null"><ArrowDownToLine :size="16" /> 导出 VCF</div>
@@ -169,31 +170,34 @@ export default {
     },
     swipeStart(uid, e) {
       if (window.innerWidth > 768) return
-      // Don't restart if already open and not dragging
       if (this._swipeUid === uid && this._swipeOffset === 140) return
+      if (e.target.closest('.actions, .btn-more-trigger, .ctx-menu-popover')) return
       this._swipeUid = uid
       this._swipeStartX = e.touches[0].clientX
       this._swipeStartY = e.touches[0].clientY
       this._swipeOffset = 0
-      this._isDragging = true
+      this._isDragging = false
     },
     swipeMove(e) {
       if (!this._swipeUid) return
       const dx = this._swipeStartX - e.touches[0].clientX
       const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
-      if (dy > 30) { this.closeSwipe(); return }
-      if (Math.abs(dx) > 15) {
+      if (dy > 40) { this.closeSwipe(); return }
+      
+      if (Math.abs(dx) > 30) {
         this._isDragging = true
         e.stopPropagation()
         this._swipeOffset = Math.max(0, Math.min(140, dx))
       }
     },
     swipeEnd(uid) {
+      const wasDragging = this._isDragging
       this._isDragging = false
       if (this._swipeUid !== uid) return
-      if (this._swipeOffset > 40) { // Reduced threshold for better UX
+      
+      if (wasDragging && this._swipeOffset > 70) {
         this._swipeOffset = 140
-      } else {
+      } else if (wasDragging) {
         this.closeSwipe()
       }
     },
@@ -201,10 +205,12 @@ export default {
     toggleMenu(uid) { this._menuUid = this._menuUid === uid ? null : uid },
     _closeMenu() { this._menuUid = null },
     swipeStyle(uid) {
-      if (this._swipeUid !== uid) return ''
+      if (window.innerWidth > 768) return {}
+      if (this._swipeUid !== uid) return { transform: 'translateX(100%)' }
       const offset = 140 - this._swipeOffset
       const style = { transform: `translateX(${offset}px)` }
       if (this._isDragging) style.transition = 'none'
+      else style.transition = 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)'
       return style
     },
     async doImport(e) {
@@ -233,7 +239,7 @@ export default {
         const a = document.createElement('a')
         a.href = url; a.download = `${c.full_name || '联系人'}.vcf`
         a.click(); URL.revokeObjectURL(url)
-      } catch(e) { alert('导出失败') }
+      } catch(e) { window.showToast('导出失败', 'error') }
     },
   },
 }
@@ -253,7 +259,7 @@ export default {
   border: 1px solid var(--border-base);
   align-items: center;
 }
-.search-box { flex: 1 1 0; position: relative; min-width: 0; }
+.search-box { flex: 1 1 0; position: relative; min-width: 140px; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { 
   width: 100%; 
@@ -303,7 +309,8 @@ export default {
 .th-inner { display: flex; align-items: center; gap: 8px; }
 .data-table td { padding: 14px 20px; border-bottom: 1px solid var(--border-base); font-size: 14px; color: var(--text-primary); }
 
-.contact-row { transition: background .15s, z-index 0s; position: relative; }
+.contact-row { transition: background .15s, z-index 0s; position: relative; overflow: hidden; }
+.contact-row.menu-active { overflow: visible; }
 .contact-row:hover { background: var(--bg-table-header); }
 .contact-row.menu-active { z-index: 100 !important; }
 
@@ -324,10 +331,10 @@ export default {
   border: 1px solid hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1);
 }
 
-.actions { display: flex; gap: 6px; justify-content: flex-end; position: relative; align-items: center; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.actions { display: flex; gap: 6px; justify-content: flex-end; position: relative; align-items: center; width: 140px; }
 .row-actions-main { display: flex; gap: 6px; }
 .btn-more-trigger { display: none; }
-.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all .2s; }
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
@@ -410,17 +417,18 @@ export default {
     position: relative; overflow: visible;
   }
   .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
-  .row-actions-main { display: none; }
-
-  /* 移动端侧滑层 */
-  .contact-row.swipe-open .actions { 
+  
+  /* 移动端专属侧滑层 */
+  .row-actions-main { 
     position: absolute; right: 0; top: 0; bottom: 0; width: 140px; 
-    background: var(--bg-card); transform: translateX(0) !important;
-    display: flex; gap: 8px; padding: 0 12px; border-left: 1px solid var(--brand);
-    box-shadow: -4px 0 12px rgba(0,0,0,0.05); z-index: 10;
+    background: var(--bg-card); display: flex; gap: 8px; padding: 0 12px; 
+    border-left: 1px solid var(--brand); box-shadow: -4px 0 12px rgba(0,0,0,0.05); 
+    z-index: 10; align-items: center;
+    transform: translateX(calc(100% + 8px)); /* 默认隐藏在屏幕右侧 */
+    transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  .contact-row.swipe-open .row-actions-main { display: flex; align-items: center; gap: 8px; }
-  .contact-row.swipe-open .btn-more-trigger { display: none; }
+  .contact-row.swipe-open .row-actions-main { transform: translateX(0); }
+  .contact-row.swipe-open .btn-more-trigger { opacity: 0; pointer-events: none; }
 
   .btn-icon { width: 42px; height: 42px; }
   .ctx-menu-popover { right: 54px; top: 12px; }

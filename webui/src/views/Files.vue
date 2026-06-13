@@ -73,9 +73,9 @@
       </div>
     </transition>
 
-    <!-- Preview Modal -->
+    <!-- Preview Modal (FIXED CSS) -->
     <transition name="modal">
-      <div v-if="previewItem" class="inline-modal-overlay" @click.self="previewItem = null">
+      <div v-if="previewItem" class="preview-overlay" @click.self="previewItem = null">
         <div class="preview-dialog glass no-transition">
           <div class="preview-header">
             <h3>{{ previewItem.name }}</h3>
@@ -156,17 +156,17 @@
               </td>
               <td class="col-size hide-mobile">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.modified_at) }}</td>
-              <td class="col-actions" :style="swipeStyle(item.path)">
-                <!-- 移动端三点菜单 -->
+              <td class="col-actions">
+                <!-- 三点按钮 (对标 Files 原有逻辑修复) -->
                 <button class="btn-icon btn-more-trigger" @click.stop="toggleMenu(item.path)" title="更多">
                   <MoreHorizontal :size="20" />
                 </button>
 
-                <div class="row-actions-main">
-                  <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
-                  <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
-                  <button class="btn-icon" @click="startRename(item)" title="重命名"><Pencil :size="16" /></button>
-                  <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
+                <div class="row-actions-main" :style="swipeStyle(item.path)">
+                  <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @touchstart.stop @click.stop="doPreview(item)" title="预览"><Eye :size="16" /></button>
+                  <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" @touchstart.stop @click.stop title="下载"><Download :size="16" /></a>
+                  <button class="btn-icon" @touchstart.stop @click.stop="startRename(item)" title="重命名"><Pencil :size="16" /></button>
+                  <button class="btn-icon btn-danger" @touchstart.stop @click.stop="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
                 </div>
 
                 <!-- 弹出式菜单 -->
@@ -222,7 +222,7 @@ export default {
     loading: false,
     uploadProgress: null,
     _swipePath: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
-    _menuPath: null,
+    _menuPath: null, _isDragging: false,
     errorMsg: '',
     sortField: 'name',
     sortDir: 'asc',
@@ -387,34 +387,46 @@ export default {
     },
     swipeStart(path, e) {
       if (window.innerWidth > 768) return
+      if (this._swipePath === path && this._swipeOffset === 160) return
+      if (e.target.closest('.col-actions, .btn-more-trigger, .ctx-menu-popover')) return
       this._swipePath = path
       this._swipeStartX = e.touches[0].clientX
       this._swipeStartY = e.touches[0].clientY
       this._swipeOffset = 0
+      this._isDragging = false
     },
     swipeMove(e) {
       if (!this._swipePath) return
       const dx = this._swipeStartX - e.touches[0].clientX
       const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
-      if (dy > 30) { this.closeSwipe(); return }
-      // Use a threshold of 15px to avoid sensitivity
-      if (Math.abs(dx) > 15) {
+      if (dy > 40) { this.closeSwipe(); return }
+      if (Math.abs(dx) > 30) {
+        this._isDragging = true
         e.stopPropagation()
         this._swipeOffset = Math.max(0, Math.min(160, dx))
       }
     },
     swipeEnd(path) {
+      const wasDragging = this._isDragging
+      this._isDragging = false
       if (this._swipePath !== path) return
-      if (this._swipeOffset > 80) this._swipeOffset = 160
-      else this.closeSwipe()
+      if (wasDragging && this._swipeOffset > 80) {
+        this._swipeOffset = 160
+      } else if (wasDragging) {
+        this.closeSwipe()
+      }
     },
-    closeSwipe() { this._swipePath = null; this._swipeOffset = 0 },
+    closeSwipe() { this._swipePath = null; this._swipeOffset = 0; this._isDragging = false },
     toggleMenu(path) { this._menuPath = this._menuPath === path ? null : path },
     _closeMenu() { this._menuPath = null },
     swipeStyle(path) {
-      if (this._swipePath !== path) return ''
+      if (window.innerWidth > 768) return {}
+      if (this._swipePath !== path) return { transform: 'translateX(100%)' }
       const offset = 160 - this._swipeOffset
-      return `transform:translateX(${offset}px);transition:none`
+      const style = { transform: `translateX(${offset}px)` }
+      if (this._isDragging) style.transition = 'none'
+      else style.transition = 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)'
+      return style
     },
     async doRename() {
       const newName = this.renameName.trim()
@@ -578,8 +590,9 @@ export default {
 .col-time { width: 180px; }
 .col-actions { width: 160px; text-align: right !important; position: relative; }
 
-.file-row { transition: background .15s, z-index 0s; position: relative; }
+.file-row { transition: background .15s, z-index 0s; position: relative; overflow: hidden; }
 .file-row:hover { background: var(--bg-table-header); }
+.file-row.menu-active { overflow: visible; }
 .file-row.menu-active { z-index: 100 !important; }
 
 .file-main-info { display: flex; align-items: center; gap: 12px; transition: color .2s; cursor: pointer; }
@@ -593,11 +606,15 @@ export default {
 .mobile-meta { display: none; gap: 6px; font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 .meta-sep { opacity: 0.5; }
 
-.actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.actions { 
+  display: flex; gap: 6px; justify-content: flex-end; align-items: center; 
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); 
+  width: 160px; position: relative;
+}
 .row-actions-main { display: flex; justify-content: flex-end; gap: 6px; }
 .btn-more-trigger { display: none; }
 
-.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all .2s; }
+.btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
 
@@ -620,6 +637,24 @@ export default {
 .ctx-menu-popover .ctx-item:hover { background: var(--bg-info); color: var(--brand); }
 .ctx-menu-popover .ctx-item.danger:hover { background: var(--bg-danger); color: var(--danger); }
 .ctx-divider { height: 1px; background: var(--border-base); margin: 4px 6px; }
+
+/* 预览叠加层与对话框 */
+.preview-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+.preview-dialog { background: var(--bg-card); width: 90vw; height: 85vh; max-width: 1100px; border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-xl); border: 1px solid var(--glass-border); position: relative; }
+.preview-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-base); background: #fafafa; }
+.preview-header h3 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-close-preview { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); padding: 4px; border-radius: 50%; display: flex; transition: .2s; }
+.btn-close-preview:hover { background: var(--bg-hover); color: var(--text-primary); transform: rotate(90deg); }
+.preview-body { flex: 1; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; }
+.preview-iframe { width: 100%; height: 100%; border: none; background: white; }
+.img-viewport { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
+.preview-img { max-width: 95%; max-height: 95%; cursor: grab; user-select: none; transition: transform 0.1s ease-out; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.1)); }
+.preview-img.dragging { cursor: grabbing; transition: none; }
+.img-zoom-bar { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); border-radius: 30px; display: flex; align-items: center; gap: 4px; padding: 6px 12px; backdrop-filter: blur(8px); z-index: 10; }
+.zoom-btn { border: none; background: transparent; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background-color .2s; }
+.zoom-btn:hover { background: rgba(255,255,255,0.2); }
+.zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
+.preview-footer { padding: 16px 24px; border-top: 1px solid var(--border-base); background: #fafafa; display: flex; justify-content: flex-end; gap: 12px; }
 
 .pop-enter-active, .pop-leave-active { transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(-50%) scale(0.9) translateX(10px); }
@@ -650,17 +685,18 @@ export default {
     position: relative; overflow: visible;
   }
   .btn-more-trigger { display: inline-flex; border: none; background: transparent; color: var(--text-tertiary); }
-  .row-actions-main { display: none; }
-
-  /* 移动端侧滑层 */
-  .file-row.swipe-open .actions { 
+  
+  /* 移动端专属侧滑层 */
+  .row-actions-main { 
     position: absolute; right: 0; top: 0; bottom: 0; width: 160px; 
-    background: var(--bg-card); transform: translateX(0) !important;
-    display: flex; gap: 8px; padding: 0 12px; border-left: 1px solid var(--brand);
-    box-shadow: -4px 0 12px rgba(0,0,0,0.05); z-index: 10;
+    background: var(--bg-card); display: flex; gap: 8px; padding: 0 12px; 
+    border-left: 1px solid var(--brand); box-shadow: -4px 0 12px rgba(0,0,0,0.05); 
+    z-index: 10; align-items: center;
+    transform: translateX(calc(100% + 8px));
+    transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  .file-row.swipe-open .row-actions-main { display: flex; align-items: center; gap: 8px; }
-  .file-row.swipe-open .btn-more-trigger { display: none; }
+  .file-row.swipe-open .row-actions-main { transform: translateX(0); }
+  .file-row.swipe-open .btn-more-trigger { opacity: 0; pointer-events: none; }
 
   .btn-icon { width: 42px; height: 42px; }
   .preview-dialog { height: 95vh; width: 100vw; border-radius: 0; }
