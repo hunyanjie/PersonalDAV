@@ -77,6 +77,36 @@ button:active, .btn:active, [role="button"]:active, a:active, label:active {
   transform: scale(0.97);
 }
 
+.btn-sm {
+  padding: 8px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-sm:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.btn-sm.btn-primary {
+  background: var(--brand);
+  color: var(--text-inverse);
+  border: none;
+}
+.btn-sm.btn-primary:hover {
+  background: var(--brand-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2);
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }

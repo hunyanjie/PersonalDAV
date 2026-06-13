@@ -636,7 +636,7 @@ export default {
   .settings-content { padding: 20px; }
   .form-grid { grid-template-columns: 1fr; gap: 16px; }
   .hide-mobile { display: none; }
-  .mh-actions { width: 80px; }
+  .mh-actions { width: auto; min-width: 0; }
 }
 @media (max-width: 400px) {
   .nav-btn { font-size: 11px; padding: 6px 8px; gap: 6px; }
