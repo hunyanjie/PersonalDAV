@@ -654,7 +654,7 @@ export default {
     },
     exportSelected() {
       const items = this.events.filter(e => this.selectedUids.includes(e.uid))
-        .sort((a,b) => a.dtstart.localeCompare(b.dtstart))
+        .sort((a,b) => (a.dtstart || '').localeCompare(b.dtstart || ''))
       const content = this._toICS(items)
       this._downloadIcs(content, `日程_${Date.now()}.ics`)
       this.ctxMenu.show = false
