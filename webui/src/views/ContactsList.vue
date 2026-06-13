@@ -32,7 +32,7 @@
             <tr v-for="c in items" :key="c.uid" class="contact-row"
               :class="{ 'swipe-open': _swipeUid === c.uid }"
               @touchstart="swipeStart(c.uid, $event)"
-              @touchmove.prevent="swipeMove($event)"
+              @touchmove="swipeMove($event)"
               @touchend="swipeEnd(c.uid)">
               <td class="col-name">
                 <div class="name-info" @click="closeSwipe">
@@ -156,6 +156,7 @@ export default {
       const dx = this._swipeStartX - e.touches[0].clientX
       const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
       if (dy > 20) { this.closeSwipe(); return }
+      if (dx > 5) e.preventDefault()
       this._swipeOffset = Math.max(0, Math.min(140, dx))
     },
     swipeEnd(uid) {
@@ -179,7 +180,7 @@ export default {
           try { await api.createContact(block.trim()) } catch(e) {}
         }
         this.load()
-      } catch(e) { showToast('导入失败', 'error') }
+      } catch(e) { window.showToast('导入失败', 'error') }
       e.target.value = ''
     },
     async doDelete(uid) {
@@ -195,7 +196,7 @@ export default {
         const a = document.createElement('a')
         a.href = url; a.download = `${c.full_name || '联系人'}.vcf`
         a.click(); URL.revokeObjectURL(url)
-      } catch(e) { showToast('导出失败', 'error') }
+      } catch(e) { window.showToast('导出失败', 'error') }
     },
   },
 }

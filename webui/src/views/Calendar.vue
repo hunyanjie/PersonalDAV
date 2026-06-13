@@ -549,7 +549,7 @@ export default {
 .event-dots { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; padding: 0 2px; align-content: flex-start; flex: 1; overflow: hidden; }
 .dot { width: 6px; height: 6px; background: var(--brand); border-radius: 50%; transition: all .2s; flex-shrink: 0; box-shadow: 0 0 0 1px white; }
 .dot-past { background: #d9d9d9; }
-.dot-more { font-size: 11px; color: var(--brand); font-weight: 800; margin-top: -2px; }
+.dot-more { font-size: 11px; color: var(--brand); font-weight: 800; margin-top: -2px; white-space: nowrap; }
 
 .day-panel { margin-top: 16px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-md); border: 1px solid var(--border-base); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }

@@ -120,7 +120,7 @@ export default {
   },
   methods: {
     async save() {
-      if (!this.form.full_name) return showToast('姓名不能为空', 'warning')
+      if (!this.form.full_name) return window.showToast('姓名不能为空', 'warning')
       this.saving = true
       try {
         if (this.isNew) {
@@ -148,7 +148,7 @@ export default {
           await api.updateContact(this.$route.params.uid, buildVCard(this.form))
         }
         this.$router.push('/contacts')
-      } catch(e) { showToast('保存失败: ' + (e.message || e), 'error') } finally { this.saving = false }
+      } catch(e) { window.showToast('保存失败: ' + (e.message || e), 'error') } finally { this.saving = false }
     },
   },
 }

@@ -139,7 +139,7 @@
             <tr v-for="item in sortedItems" :key="item.path" class="file-row"
               :class="{ 'swipe-open': _swipePath === item.path }"
               @touchstart="swipeStart(item.path, $event)"
-              @touchmove.prevent="swipeMove($event)"
+              @touchmove="swipeMove($event)"
               @touchend="swipeEnd(item.path)">
               <td class="col-name" @click="closeSwipe">
                 <div class="name-box" @click="item.is_dir ? cd(item.path) : null" :class="{ 'is-clickable': item.is_dir }">
@@ -339,7 +339,7 @@ export default {
         try {
           await api.uploadFileWithProgress(file, this.currentPath, pct => { this.uploadProgress = pct })
         } catch(e) {
-          showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
+          window.showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
       this.uploadProgress = null
@@ -354,7 +354,7 @@ export default {
         this.newFolderName = ''
         this.showNewFolder = false
         this.load()
-      } catch(e) { showToast('创建失败：' + (e.message || e), 'error') }
+      } catch(e) { window.showToast('创建失败：' + (e.message || e), 'error') }
     },
     startRename(item) {
       this.renaming = item; this.renameName = item.name
@@ -372,6 +372,7 @@ export default {
       const dx = this._swipeStartX - e.touches[0].clientX
       const dy = Math.abs(this._swipeStartY - e.touches[0].clientY)
       if (dy > 20) { this.closeSwipe(); return }
+      if (dx > 5) e.preventDefault()
       this._swipeOffset = Math.max(0, Math.min(160, dx))
     },
     swipeEnd(path) {
@@ -392,14 +393,14 @@ export default {
         await api.renameFile(this.renaming.path, newName)
         this.renaming = null; this.renameName = ''
         this.load()
-      } catch(e) { showToast('重命名失败：' + (e.message || e), 'error') }
+      } catch(e) { window.showToast('重命名失败：' + (e.message || e), 'error') }
     },
     async doDelete(item) {
       if (!await window.showConfirm({ message: `确认删除 ${item.name}？此操作无法撤销。`, type: 'danger' })) return
       try { 
         await api.deleteFile(item.path)
         this.load() 
-      } catch(e) { showToast('删除失败：' + (e.message || e), 'error') }
+      } catch(e) { window.showToast('删除失败：' + (e.message || e), 'error') }
     },
     formatSize(s) {
       if (!s) return '0 B'
@@ -449,7 +450,7 @@ export default {
         try {
           await api.uploadFileWithProgress(file, this.currentPath, pct => { this.uploadProgress = pct })
         } catch(e) {
-          showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
+          window.showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
       this.uploadProgress = null
