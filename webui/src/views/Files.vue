@@ -85,7 +85,8 @@
             <template v-if="previewSrc">
               <div v-if="_isImage" class="img-viewport" ref="imgViewport"
                 @wheel.prevent="onImgWheel"
-                @mousedown="onImgDown" @mousemove="onImgMove" @mouseup="onImgUp" @mouseleave="onImgUp">
+                @mousedown="onImgDown" @mousemove="onImgMove" @mouseup="onImgUp" @mouseleave="onImgUp"
+                @touchstart="onImgTouchStart" @touchmove="onImgTouchMove" @touchend="onImgTouchEnd">
                 <img :src="previewSrc" :style="imgStyle" class="preview-img" :class="{ dragging: _isPanning }" draggable="false" />
                 <div class="img-zoom-bar">
                   <button @click="zoomOut" class="zoom-btn" title="缩小">−</button>
@@ -319,6 +320,22 @@ export default {
       this._panY = this._panStartPy + (e.clientY - this._panStartY)
     },
     onImgUp() { this._isPanning = false },
+    onImgTouchStart(e) {
+      if (this._zoom <= 1) return
+      this._isPanning = true
+      const t = e.touches[0]
+      this._panStartX = t.clientX
+      this._panStartY = t.clientY
+      this._panStartPx = this._panX
+      this._panStartPy = this._panY
+    },
+    onImgTouchMove(e) {
+      if (!this._isPanning) return
+      const t = e.touches[0]
+      this._panX = this._panStartPx + (t.clientX - this._panStartX)
+      this._panY = this._panStartPy + (t.clientY - this._panStartY)
+    },
+    onImgTouchEnd() { this._isPanning = false },
     async load() {
       this.loading = true
       this.errorMsg = ''
@@ -612,11 +629,18 @@ export default {
   width: 160px; position: relative;
 }
 .row-actions-main { display: flex; justify-content: flex-end; gap: 6px; }
-.btn-more-trigger { display: none; }
 
 .btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
+.btn-more-trigger { display: none; }
+
+.inline-dialog { background: var(--bg-card); width: 90vw; max-width: 400px; border-radius: var(--radius-lg); padding: 24px; box-shadow: var(--shadow-xl); }
+.inline-dialog h3 { margin: 0 0 16px; font-size: 16px; color: var(--text-primary); }
+.inline-dialog input { width: 100%; padding: 10px 14px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); font-size: 14px; box-sizing: border-box; outline: none; }
+.inline-dialog input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
+.inline-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+.inline-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 3000; }
 
 .empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px; color: var(--text-tertiary); }
 .empty-icon { color: var(--border-strong); margin-bottom: 16px; opacity: 0.5; }

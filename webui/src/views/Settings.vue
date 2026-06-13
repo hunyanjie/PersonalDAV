@@ -85,7 +85,7 @@
                     <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
                   </div>
                 </div>
-                <div class="dialog-actions" style="margin-top:16px">
+                <div class="dialog-actions" style="margin-top:16px; gap: 12px;">
                   <button class="btn-sm" @click="showMountForm = false; editingMount = null">取消</button>
                   <button class="btn-sm btn-primary" @click="saveMount" :disabled="!mountForm.name || !mountForm.path">保存挂载点</button>
                 </div>
@@ -636,6 +636,8 @@ export default {
   .settings-content { padding: 20px; }
   .form-grid { grid-template-columns: 1fr; gap: 16px; }
   .hide-mobile { display: none; }
+    .mount-header, .mount-row { flex-wrap: wrap; }
+  .mh-name { width: auto; flex: 1; min-width: 0; }
   .mh-actions { width: auto; min-width: 0; }
 }
 @media (max-width: 400px) {

@@ -332,10 +332,10 @@ export default {
 
 .actions { display: flex; gap: 6px; justify-content: flex-end; position: relative; align-items: center; width: 140px; }
 .row-actions-main { display: flex; gap: 6px; }
-.btn-more-trigger { display: none; }
 .btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
+.btn-more-trigger { display: none; }
 
 .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 100px 0; color: var(--text-tertiary); }
 .empty-icon { opacity: 0.2; margin-bottom: 20px; }
