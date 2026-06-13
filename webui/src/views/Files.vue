@@ -689,8 +689,8 @@ export default {
 
 .list-move, .list-enter-active { transition: all 0.3s ease; }
 .list-enter-from { opacity: 0; transform: translateX(-10px); }
-.list-leave-active { position: absolute; transition: opacity 0.2s ease, transform 0.2s ease; }
-.list-leave-to { opacity: 0; transform: scale(0.8); }
+.list-leave-active { position: absolute; transition: opacity 0.25s ease; right: 0; left: 0; }
+.list-leave-to { opacity: 0; }
 
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
