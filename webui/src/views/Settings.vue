@@ -641,6 +641,7 @@ export default {
     .mount-header, .mount-row { flex-wrap: wrap; }
   .mh-name { width: auto; flex: 1; min-width: 0; }
   .mh-actions { width: auto; min-width: 0; }
+  .form-item.full { grid-column: span 1; }
 }
 @media (max-width: 400px) {
   .nav-btn { font-size: 11px; padding: 6px 8px; gap: 6px; }
