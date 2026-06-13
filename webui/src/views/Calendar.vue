@@ -53,8 +53,8 @@
                 <div class="day-cell-content">
                   <div class="day-num">{{ day.day }}</div>
                   <div class="event-dots">
-                    <span v-for="e in day.events.slice(0, 12)" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
-                    <span v-if="day.events.length > 12" class="dot-more">+{{ day.events.length - 12 }}</span>
+                    <span v-for="e in day.events.slice(0, 999)" :key="e.uid" class="dot" :class="{ 'dot-past': isEventPast(e) }" :title="e.summary || e.uid" />
+                    <span v-if="day.events.length > 999" class="dot-more">+{{ day.events.length - 999 }}</span>
                   </div>
                 </div>
               </td>
@@ -482,6 +482,7 @@ export default {
 }
 
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 12px; }
+.action-group { display: flex; flex: 1; gap: 8px; }
 .toolbar-center { flex: 1; display: flex; justify-content: center; min-width: 240px; }
 
 .nav-controls { display: flex; align-items: center; gap: 8px; }
@@ -501,9 +502,11 @@ export default {
   color: var(--text-secondary);
   text-decoration: none;
 }
+
+.btn-import { flex: 1; }
 .btn-icon { padding: 8px; width: 38px; height: 38px; }
 .btn-nav:hover, .btn-icon:hover, .btn-tool:hover { border-color: var(--brand); color: var(--brand); background: var(--bg-info); transform: translateY(-1px); }
-.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); }
+.btn-primary { background: var(--brand); color: var(--text-inverse); border-color: var(--brand); flex: 1; }
 .btn-primary:hover { opacity: 0.9; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); }
 
 .month-label { font-size: 18px; font-weight: 800; min-width: 120px; text-align: center; color: var(--text-primary); letter-spacing: -0.5px; }
@@ -630,7 +633,7 @@ button:active, .btn-icon:active, .btn-nav:active, .btn-tool:active { transform: 
   .btn-nav { flex: 1; }
   
   .toolbar-right { flex-direction: row; align-items: center; }
-  .action-group { flex: 1; justify-content: flex-end; }
+  .action-group { justify-content: flex-end; }
   .date-input { flex: 1; min-width: 0; }
 
   .calendar-grid-wrapper { min-height: 320px; }
