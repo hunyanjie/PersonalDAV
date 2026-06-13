@@ -51,9 +51,22 @@
                 </div>
               </td>
               <td class="actions" :style="swipeStyle(c.uid)">
-                <button class="btn-icon" @click="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
-                <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑"><Pencil :size="16" /></router-link>
-                <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
+                <button class="btn-icon btn-more" @click.stop="toggleMenu(c.uid)" title="更多">
+                  <MoreVertical :size="16" />
+                </button>
+                <div class="row-actions-main">
+                  <button class="btn-icon" @click="doExport(c)" title="导出 VCF"><ArrowDownToLine :size="16" /></button>
+                  <router-link :to="`/contacts/${c.uid}/edit`" class="btn-icon" title="编辑"><Pencil :size="16" /></router-link>
+                  <button class="btn-icon btn-danger" @click="doDelete(c.uid)" title="删除"><Trash2 :size="16" /></button>
+                </div>
+                <transition name="fade">
+                  <div v-if="_menuUid === c.uid" class="ctx-menu-mobile" @click.stop>
+                    <div class="ctx-item" @click="doExport(c); _menuUid = null"><ArrowDownToLine :size="15" /> 导出</div>
+                    <router-link :to="`/contacts/${c.uid}/edit`" class="ctx-item" @click="_menuUid = null"><Pencil :size="15" /> 编辑</router-link>
+                    <div class="ctx-divider" />
+                    <div class="ctx-item danger" @click="doDelete(c.uid); _menuUid = null"><Trash2 :size="15" /> 删除</div>
+                  </div>
+                </transition>
               </td>
             </tr>
           </transition-group>
@@ -91,7 +104,7 @@
 import { 
   Search, Upload, Plus, User, Mail, Phone, Tag, 
   ArrowDownToLine, Pencil, Trash2, Users,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, MoreVertical
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -99,12 +112,13 @@ export default {
   components: { 
     Search, Upload, Plus, User, Mail, Phone, Tag, 
     ArrowDownToLine, Pencil, Trash2, Users,
-    ChevronLeft, ChevronRight
+    ChevronLeft, ChevronRight, MoreVertical
   },
   data: () => ({ 
     items: [], query: '', page: 0, pageSize: 50, total: 0, 
     loading: false, _timer: null, pageInput: 1, localPageSize: 50,
     _swipeUid: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
+    _menuUid: null,
   }),
   computed: {
     maxPage() { return Math.max(1, Math.ceil(this.total / this.pageSize)) },
@@ -112,7 +126,8 @@ export default {
   watch: { 
     page() { this.pageInput = this.page + 1; this.load() } 
   },
-  async mounted() { this.load() },
+  async   mounted() { this.load(); document.addEventListener('click', this._closeMenu) },
+  beforeUnmount() { document.removeEventListener('click', this._closeMenu) },
   methods: {
     splitGroups(g) {
       if (!g) return []
@@ -165,6 +180,8 @@ export default {
       else this.closeSwipe()
     },
     closeSwipe() { this._swipeUid = null; this._swipeOffset = 0 },
+    toggleMenu(uid) { this._menuUid = this._menuUid === uid ? null : uid },
+    _closeMenu() { this._menuUid = null },
     swipeStyle(uid) {
       if (this._swipeUid !== uid || this._swipeOffset <= 0) return ''
       const offset = 140 - this._swipeOffset
@@ -285,7 +302,9 @@ export default {
   border: 1px solid hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1);
 }
 
-.actions { display: flex; gap: 6px; justify-content: flex-end; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; position: relative; }
+.row-actions-main { display: flex; gap: 6px; }
+.btn-more { display: none; }
 .btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: white; cursor: pointer; text-decoration: none; color: var(--text-secondary); transition: all 0.2s; }
 .btn-icon:hover { border-color: var(--brand); color: var(--brand); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .btn-icon.btn-danger:hover { color: var(--danger); background: var(--bg-danger); border-color: var(--danger-border); }
@@ -314,6 +333,21 @@ export default {
 .page-input:focus { border-color: var(--brand); }
 .page-size-select { padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); font-size: 13px; background: white; font-weight: 600; cursor: pointer; }
 
+.ctx-menu-mobile {
+  position: absolute; right: 0; top: 100%; z-index: 100;
+  background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
+  border: 1px solid var(--border-base); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg); min-width: 140px; padding: 8px;
+}
+.ctx-menu-mobile .ctx-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  font-size: 14px; cursor: pointer; border-radius: var(--radius-sm);
+  color: var(--text-secondary); text-decoration: none; transition: .2s;
+}
+.ctx-menu-mobile .ctx-item:hover { background: var(--brand); color: white; }
+.ctx-menu-mobile .ctx-item.danger:hover { background: var(--danger); }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
+
 .list-move, .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
 .list-leave-active { position: absolute; }
@@ -335,9 +369,12 @@ export default {
   .contact-row td { display: block; border: none; padding: 14px 12px; }
   .col-name { flex: 1; min-width: 0; }
   .col-email, .col-phone, .hide-tablet { display: none; }
-  .actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; box-shadow: -4px 0 12px rgba(0,0,0,0.08); z-index: 2; }
+  .btn-more { display: inline-flex; width: 38px; height: 38px; }
+  .row-actions-main { display: none; }
+  .actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; z-index: 2; }
   .contact-row:not(.swipe-open) .actions { transform: translateX(calc(100% + 8px)); transition: transform 0.25s ease; }
   .contact-row.swipe-open .actions { transition: transform 0.25s ease; }
+  .contact-row.swipe-open .row-actions-main { display: flex; gap: 4px; }
   .btn-icon { width: 40px; height: 40px; }
   .btn-page { width: 44px; height: 44px; }
   .pagination-bar { padding: 16px 12px; flex-direction: column; gap: 16px; align-items: center; }

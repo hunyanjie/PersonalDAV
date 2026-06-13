@@ -150,12 +150,24 @@
               <td class="col-size hide-mobile">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.modified_at) }}</td>
               <td class="col-actions" :style="swipeStyle(item.path)">
+                <button class="btn-icon btn-more" @click.stop="toggleMenu(item.path)" title="更多">
+                  <MoreVertical :size="16" />
+                </button>
                 <div class="row-actions">
                   <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @click="doPreview(item)" title="预览"><Eye :size="16" /></button>
                   <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" title="下载"><Download :size="16" /></a>
                   <button class="btn-icon" @click="startRename(item)" title="重命名"><Pencil :size="16" /></button>
                   <button class="btn-icon btn-danger" @click="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
                 </div>
+                <transition name="fade">
+                  <div v-if="_menuPath === item.path" class="ctx-menu-mobile" @click.stop>
+                    <div v-if="!item.is_dir && canPreview(item.name)" class="ctx-item" @click="doPreview(item); _menuPath = null"><Eye :size="15" /> 预览</div>
+                    <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="ctx-item"><Download :size="15" /> 下载</a>
+                    <div class="ctx-item" @click="startRename(item); _menuPath = null"><Pencil :size="15" /> 重命名</div>
+                    <div class="ctx-divider" />
+                    <div class="ctx-item danger" @click="doDelete(item); _menuPath = null"><Trash2 :size="15" /> 删除</div>
+                  </div>
+                </transition>
               </td>
             </tr>
           </transition-group>
@@ -175,7 +187,7 @@ import {
   Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
   RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
   File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
-  FileQuestion, Folder, FolderOpen, RefreshCw
+  FileQuestion, Folder, FolderOpen, RefreshCw, MoreVertical
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -199,6 +211,7 @@ export default {
     loading: false,
     uploadProgress: null,
     _swipePath: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
+    _menuPath: null,
     errorMsg: '',
     sortField: 'name',
     sortDir: 'asc',
@@ -221,9 +234,11 @@ export default {
     this.updateBreadcrumbs()
     this.load()
     document.addEventListener('dragenter', this.onDragEnter)
+    document.addEventListener('click', this._closeMenu)
   },
   beforeUnmount() {
     document.removeEventListener('dragenter', this.onDragEnter)
+    document.removeEventListener('click', this._closeMenu)
   },
   computed: {
     sortedItems() {
@@ -381,6 +396,8 @@ export default {
       else this.closeSwipe()
     },
     closeSwipe() { this._swipePath = null; this._swipeOffset = 0 },
+    toggleMenu(path) { this._menuPath = this._menuPath === path ? null : path },
+    _closeMenu() { this._menuPath = null },
     swipeStyle(path) {
       if (this._swipePath !== path || this._swipeOffset <= 0) return ''
       const offset = 160 - this._swipeOffset
@@ -551,7 +568,8 @@ export default {
 .col-name { width: auto; min-width: 250px; }
 .col-size { width: 120px; }
 .col-time { width: 180px; }
-.col-actions { width: 160px; text-align: right !important; }
+.col-actions { width: 160px; text-align: right !important; position: relative; }
+.btn-more { display: none; }
 
 .file-row { transition: background .15s; }
 .file-row:hover { background: var(--bg-table-header); }
@@ -598,6 +616,20 @@ export default {
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-10px); }
 .list-leave-active { position: absolute; }
 
+.ctx-menu-mobile {
+  position: absolute; right: 0; top: 100%; z-index: 100;
+  background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
+  border: 1px solid var(--border-base); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg); min-width: 140px; padding: 8px;
+}
+.ctx-menu-mobile .ctx-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  font-size: 14px; cursor: pointer; border-radius: var(--radius-sm);
+  color: var(--text-secondary); text-decoration: none; transition: .2s;
+}
+.ctx-menu-mobile .ctx-item:hover { background: var(--brand); color: white; }
+.ctx-menu-mobile .ctx-item.danger:hover { background: var(--danger); }
+.ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
 
 .dropzone-overlay { position: fixed; inset: 0; z-index: 3000; background: hsla(var(--brand-hue), var(--brand-sat), var(--brand-lit), 0.1); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
 .dropzone-content { background: white; border: 2px dashed var(--brand); border-radius: 32px; padding: 60px 100px; text-align: center; box-shadow: var(--shadow-xl); }
@@ -615,10 +647,13 @@ export default {
   .file-row td { display: block; border: none; padding: 14px 12px; vertical-align: middle; }
   .col-name { flex: 1; min-width: 0; }
   .col-size, .col-time { display: none; }
-  .col-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; box-shadow: -4px 0 12px rgba(0,0,0,0.08); z-index: 2; }
+  .btn-more { display: inline-flex; width: 38px; height: 38px; }
+  .file-row:not(.swipe-open) .row-actions { display: none; }
+  .col-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding-right: 8px; background: var(--bg-card); border-radius: 0 var(--radius-md) var(--radius-md) 0; z-index: 2; }
   .file-row:not(.swipe-open) .col-actions { transform: translateX(calc(100% + 8px)); transition: transform 0.25s ease; }
   .file-row.swipe-open .col-actions { transition: transform 0.25s ease; }
-  .row-actions { opacity: 1; display: flex; gap: 4px; }
+  .file-row.swipe-open .row-actions { display: flex; gap: 4px; }
+  .row-actions { display: flex; gap: 4px; }
   .btn-icon { width: 40px; height: 40px; }
   .preview-dialog { height: 95vh; width: 100vw; border-radius: 0; }
 }

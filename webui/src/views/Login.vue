@@ -110,11 +110,13 @@ export default {
   background: rgba(255, 255, 255, 0.8); 
   padding: 48px; 
   border-radius: var(--radius-xl); 
-  box-shadow: var(--shadow-xl); 
-  width: 400px; 
+  box-shadow: var(--shadow-xl);
   text-align: center; 
   z-index: 10;
   border: 1px solid var(--glass-border);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  width: clamp(200px, 60vw, 400px);
+  margin: 0 auto;
 }
 
 .login-header { margin-bottom: 32px; }
@@ -200,4 +202,5 @@ export default {
   animation: spin 1s ease-in-out infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
 </style>

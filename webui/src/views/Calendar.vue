@@ -359,11 +359,13 @@ export default {
         }
       }, 300)
     },
-    jumpToDate() {
+    async jumpToDate() {
       if (!this.jumpDate) return
       const d = new Date(this.jumpDate)
       if (isNaN(d.getTime())) return
-      this.monthOffset = (d.getFullYear() - new Date().getFullYear()) * 12 + (d.getMonth() - new Date().getMonth())
+      const target = { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() }
+      this.monthOffset = (target.year - new Date().getFullYear()) * 12 + (target.month - 1 - new Date().getMonth())
+      this.$nextTick(() => { this.selectedDay = target })
     },
     eventLeft(e) {
       const st = icalDateToObj(e.dtstart)
@@ -634,6 +636,7 @@ button:active, .btn-icon:active, .btn-nav:active, .btn-tool:active { transform: 
   
   .toolbar-right { flex-direction: row; align-items: center; }
   .action-group { justify-content: flex-end; }
+  .btn-import, .btn-primary { flex: none; }
   .date-input { flex: 1; min-width: 0; }
 
   .calendar-grid-wrapper { min-height: 320px; }
