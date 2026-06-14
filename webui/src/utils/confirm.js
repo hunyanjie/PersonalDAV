@@ -1,4 +1,6 @@
-const state = { visible: false, title: '', message: '', type: 'info', confirmText: '确定', cancelText: '取消' }
+import { reactive } from 'vue'
+
+const state = reactive({ visible: false, title: '', message: '', type: 'info', confirmText: '确定', cancelText: '取消' })
 let _resolve = null
 
 export function showConfirm({ title, message, type, confirmText, cancelText } = {}) {

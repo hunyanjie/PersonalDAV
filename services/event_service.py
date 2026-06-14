@@ -34,6 +34,17 @@ class EventService(BaseService):
             else:
                 raise ValueError(f"Unexpected component: {ical.name}")
             
+            # ── 迁移附件到磁盘 ──────────────────────────────────────────
+            from services.ical_builder import _parse_attachments, _build_attachments
+            attachments = _parse_attachments(ev)
+            if any(a.get('inline') and not a.get('filepath') for a in attachments):
+                if 'attach' in ev.contents:
+                    # 保留原有的 URI 附件，只清除需要迁移的
+                    ev.contents['attach'] = [a for a in ev.contents['attach'] 
+                                           if not (hasattr(a, 'encoding_param') and a.encoding_param == 'BASE64')]
+                _build_attachments(ev, {'attachments': [a for a in attachments if a.get('inline') and not a.get('filepath')]})
+                ical_data = ical.serialize()
+
             if not hasattr(ev, 'uid'):
                 import uuid
                 uid = str(uuid.uuid4())

@@ -581,18 +581,22 @@ export default {
     async saveEdit() {
       if (!this.editForm.summary || !this.editForm.dtstart || !this.editForm.dtend) return window.showToast('请填写完整信息', 'warning')
       this.saving = true
-      const ical = [
+      const icalParts = [
         'BEGIN:VEVENT',
         `UID:${this.editModal.isNew ? '' : this.editModal.uid}`,
         `SUMMARY:${this.editForm.summary}`,
         `DTSTART:${this.editForm.dtstart.replace(/[-:]/g, '')}00`,
         `DTEND:${this.editForm.dtend.replace(/[-:]/g, '')}00`,
-        'STATUS:CONFIRMED',
+      ]
+      if (this.editModal.isNew) icalParts.push('STATUS:CONFIRMED')
+      
+      icalParts.push(
         `LOCATION:${this.editForm.location}`,
         `DESCRIPTION:${this.editForm.description}`,
         `CATEGORIES:${this.editForm.categories}`,
         'END:VEVENT'
-      ].join('\r\n')
+      )
+      const ical = icalParts.join('\r\n')
       try {
         const uid = this.editModal.uid
         if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(uid, ical)
