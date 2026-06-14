@@ -52,6 +52,9 @@ class StructuredLogger:
         self._logger.setLevel(logging.DEBUG)
         self._logger.propagate = True
         
+        # Suppress noisy but harmless asyncio ConnectionResetError tracebacks
+        logging.getLogger("asyncio").setLevel(logging.WARNING)
+
         root = logging.getLogger()
         if not any(isinstance(h, LogBufferHandler) for h in root.handlers):
             h = LogBufferHandler()
