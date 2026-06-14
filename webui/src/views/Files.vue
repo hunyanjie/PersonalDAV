@@ -73,6 +73,34 @@
       </div>
     </transition>
 
+    <transition name="modal">
+      <div v-if="showPreviewSelector" class="inline-modal-overlay" @click.self="showPreviewSelector = false">
+        <div class="inline-dialog glass no-transition" style="max-width: 480px;">
+          <h3>选择预览方式</h3>
+          <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 20px;">请选择 "{{ previewSelectorItem?.name }}" 的预览方式：</p>
+          <div class="selector-options">
+            <button class="selector-btn" @click="selectPreviewMode('ms_online')">
+              <div class="opt-icon" style="background: var(--bg-info); color: var(--brand);"><ExternalLink :size="20" /></div>
+              <div class="opt-text">
+                <div class="opt-title">微软 Office Online</div>
+                <div class="opt-desc">使用微软云端服务预览，文件需外网可访问</div>
+              </div>
+            </button>
+            <button class="selector-btn" @click="selectPreviewMode('local')">
+              <div class="opt-icon" style="background: var(--bg-success); color: var(--success);"><Eye :size="20" /></div>
+              <div class="opt-text">
+                <div class="opt-title">本地转换预览</div>
+                <div class="opt-desc">由服务器转换（需安装 LibreOffice/ONLYOFFICE）</div>
+              </div>
+            </button>
+          </div>
+          <div class="dialog-actions">
+            <button class="btn-sm" @click="showPreviewSelector = false">取消</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- Preview Modal (FIXED CSS) -->
     <transition name="modal">
       <div v-if="previewItem" class="preview-overlay" @click.self="previewItem = null">
@@ -241,7 +269,8 @@ import {
   Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
   RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
   File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
-  FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal
+  FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal,
+  ExternalLink
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -287,6 +316,8 @@ export default {
     tab: 'files',
     trashItems: [],
     _officeMode: 'off',
+    showPreviewSelector: false,
+    previewSelectorItem: null,
   }),
   mounted() { 
     this.updateBreadcrumbs()
@@ -392,18 +423,8 @@ export default {
             this._previewError = '预览失败：请检查是否已安装 LibreOffice'
           }
         } else if (mode === 'ask') {
-          const choice = await window.showConfirm({
-            title: '选择预览方式',
-            message: `选择 "${item.name}" 的预览方式：`,
-            type: 'info',
-            confirmText: 'Office Online',
-            cancelText: '取消'
-          })
-          if (choice === null) { this.previewItem = null; return }
-          // If user clicked confirm (Office Online)
-          const absUrl = window.location.origin + '/api' + api.previewUrl(item.path).split('/api').pop()
-          window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(absUrl)}`, '_blank')
-          this.previewItem = null
+          this.previewSelectorItem = item
+          this.showPreviewSelector = true
           return
         } else {
           this._previewError = '不支持预览该文件类型（可在设置中开启 Office 预览）'
@@ -422,6 +443,30 @@ export default {
         this._previewError = '预览失败: ' + (e.message || e)
       }
       this.previewItem = item
+    },
+    async selectPreviewMode(mode) {
+      const item = this.previewSelectorItem
+      this.showPreviewSelector = false
+      this.previewSelectorItem = null
+      
+      if (mode === 'ms_online') {
+        const absUrl = window.location.origin + '/api' + api.previewUrl(item.path).split('/api').pop()
+        window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(absUrl)}`, '_blank')
+      } else {
+        // local
+        this._previewSrc = null
+        this._previewError = ''
+        this.previewItem = item
+        this._zoom = 1
+        this._panX = 0
+        this._panY = 0
+        this._isPanning = false
+        try {
+          this._previewSrc = await api.previewFile(item.path)
+        } catch(e) {
+          this._previewError = '预览失败：请检查服务器是否已安装 LibreOffice/ONLYOFFICE'
+        }
+      }
     },
     async _loadOfficeMode() {
       try { const r = await api.getSetting('office_preview_mode'); this._officeMode = r.value || 'off'
@@ -783,6 +828,20 @@ export default {
 
 .empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px; color: var(--text-tertiary); }
 .empty-icon { color: var(--border-strong); margin-bottom: 16px; opacity: 0.5; }
+
+/* 预览选择器样式 */
+.selector-options { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.selector-btn {
+  display: flex; align-items: center; gap: 16px; padding: 16px;
+  background: var(--bg-card); border: 1px solid var(--border-base);
+  border-radius: var(--radius-md); cursor: pointer; text-align: left;
+  transition: all .2s;
+}
+.selector-btn:hover { border-color: var(--brand); background: var(--bg-info); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.opt-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.opt-text { flex: 1; }
+.opt-title { font-weight: 700; font-size: 15px; color: var(--text-primary); margin-bottom: 2px; }
+.opt-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 
 /* 弹出菜单样式 */
 .ctx-menu-popover {
