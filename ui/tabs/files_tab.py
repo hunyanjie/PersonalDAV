@@ -391,7 +391,8 @@ class FilesTab(ttk.Frame):
         ttk.Button(btn_frame, text="关闭", command=win.destroy).pack(side=tk.RIGHT, padx=2)
 
         refresh()
-    
+
+    def rename_file(self) -> None:
         if not self._virtual_path:
             return
         items = self.tree.selection()
