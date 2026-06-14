@@ -232,6 +232,7 @@ def _build_public_url(request: Request, path: str) -> str:
 async def upload_file(
     file: UploadFile = File(...),
     path: str = Form("/", description="目标目录"),
+    overwrite: bool = Form(False, description="存在时是否覆盖"),
     token: str = Depends(get_current_token),
 ):
     svc = _mount_svc()
@@ -240,7 +241,19 @@ async def upload_file(
     except ValueError as e:
         raise HTTPException(403, str(e))
     os.makedirs(target_dir, exist_ok=True)
+
+    # Handle duplicate name
     dest = os.path.join(target_dir, file.filename)
+    if os.path.exists(dest):
+        if overwrite:
+            os.remove(dest)
+        else:
+            base, ext = os.path.splitext(file.filename)
+            counter = 1
+            while os.path.exists(os.path.join(target_dir, f"{base}({counter}){ext}")):
+                counter += 1
+            dest = os.path.join(target_dir, f"{base}({counter}){ext}")
+
     try:
         content = await file.read()
         with open(dest, "wb") as f:
@@ -262,7 +275,13 @@ async def mkdir(
     except ValueError as e:
         raise HTTPException(403, str(e))
     if os.path.exists(abs_path):
-        raise HTTPException(400, "路径已存在")
+        base = os.path.basename(path.rstrip("/\\"))
+        parent = os.path.dirname(abs_path)
+        counter = 1
+        while os.path.exists(os.path.join(parent, f"{base}({counter})")):
+            counter += 1
+        abs_path = os.path.join(parent, f"{base}({counter})")
+        path = os.path.join(os.path.dirname(path.rstrip("/\\")), f"{base}({counter})")
     os.makedirs(abs_path, exist_ok=True)
     return {"path": path, "created": True}
 

@@ -245,7 +245,8 @@ import {
 } from 'lucide-vue-next'
 import api from '../api.js'
 
-const PREVIEW_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'pdf', 'txt', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'log']
+const PREVIEW_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'pdf', 'txt', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+const OFFICE_EXTS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
 
 export default {
   components: { 
@@ -285,10 +286,12 @@ export default {
     dragOver: false,
     tab: 'files',
     trashItems: [],
+    _officeMode: 'off',
   }),
   mounted() { 
     this.updateBreadcrumbs()
     this.load()
+    this._loadOfficeMode()
     document.addEventListener('dragenter', this.onDragEnter)
     document.addEventListener('click', this._closeMenu)
   },
@@ -326,9 +329,9 @@ export default {
     },
     async loadTrash() {
       try {
-        const res = await api.get('/api/trash')
+        const res = await api.get('/trash')
         this.trashItems = res.items || []
-      } catch(e) { this.trashItems = [] }
+      } catch(e) { window.showToast('加载回收站失败', 'error'); this.trashItems = [] }
     },
     async restoreFromTrash(uuid) {
       if (!window.showConfirm) { this.doTrashOp(uuid, 'restore'); return }
@@ -344,8 +347,8 @@ export default {
     },
     async doTrashOp(uuid, op) {
       try {
-        if (op === 'restore') await api.post(`/api/trash/restore?uuid=${uuid}`)
-        else await api.delete(`/api/trash?uuid=${uuid}`)
+        if (op === 'restore') await api.post(`/trash/restore?uuid=${uuid}`)
+        else await api.delete(`/trash?uuid=${uuid}`)
         this.loadTrash()
       } catch(e) { window.showToast(op === 'restore' ? '还原失败' : '删除失败', 'error') }
     },
@@ -354,7 +357,7 @@ export default {
       const ok = await window.showConfirm({ message: '永久清空回收站所有条目？无法恢复！', type: 'danger' })
       if (!ok) return
       try {
-        await api.post('/api/trash/purge?days=0')
+        await api.post('/trash/purge?days=0')
         this.loadTrash()
         window.showToast('回收站已清空', 'success')
       } catch(e) { window.showToast('清空失败', 'error') }
@@ -372,6 +375,43 @@ export default {
       this._previewError = ''
       const ext = item.name.split('.').pop().toLowerCase()
       this._isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)
+
+      // Office files
+      if (OFFICE_EXTS.includes(ext)) {
+        const mode = this._officeMode || 'off'
+        if (mode === 'ms_online') {
+          const absUrl = window.location.origin + '/api' + api.previewUrl(item.path).split('/api').pop()
+          window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(absUrl)}`, '_blank')
+          this.previewItem = null
+          return
+        } else if (mode === 'libreoffice' || mode === 'onlyoffice') {
+          // Use backend conversion preview
+          try {
+            this._previewSrc = await api.previewFile(item.path)
+          } catch(e) {
+            this._previewError = '预览失败：请检查是否已安装 LibreOffice'
+          }
+        } else if (mode === 'ask') {
+          const choice = await window.showConfirm({
+            title: '选择预览方式',
+            message: `选择 "${item.name}" 的预览方式：`,
+            type: 'info',
+            confirmText: 'Office Online',
+            cancelText: '取消'
+          })
+          if (choice === null) { this.previewItem = null; return }
+          // If user clicked confirm (Office Online)
+          const absUrl = window.location.origin + '/api' + api.previewUrl(item.path).split('/api').pop()
+          window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(absUrl)}`, '_blank')
+          this.previewItem = null
+          return
+        } else {
+          this._previewError = '不支持预览该文件类型（可在设置中开启 Office 预览）'
+        }
+        this.previewItem = item
+        return
+      }
+
       this._zoom = 1
       this._panX = 0
       this._panY = 0
@@ -382,6 +422,10 @@ export default {
         this._previewError = '预览失败: ' + (e.message || e)
       }
       this.previewItem = item
+    },
+    async _loadOfficeMode() {
+      try { const r = await api.getSetting('office_preview_mode'); this._officeMode = r.value || 'off'
+      } catch(e) { this._officeMode = 'off' }
     },
     zoomIn() { this._zoom = Math.min(4, +(this._zoom * 1.5).toFixed(2)) },
     zoomOut() { this._zoom = Math.max(0.25, +(this._zoom / 1.5).toFixed(2)) },
