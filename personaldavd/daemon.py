@@ -108,9 +108,21 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
         if os.path.isdir(webui_dist):
             from fastapi.responses import FileResponse
             app.mount("/assets", StaticFiles(directory=os.path.join(webui_dist, "assets")), name="spa_assets")
+            icons_dir = os.path.join(webui_dist, "icons")
+            if os.path.isdir(icons_dir):
+                app.mount("/icons", StaticFiles(directory=icons_dir), name="spa_icons")
+
             @app.get("/", include_in_schema=False)
             async def serve_spa():
                 return FileResponse(os.path.join(webui_dist, "index.html"))
+
+            @app.get("/manifest.json", include_in_schema=False)
+            async def serve_manifest():
+                return FileResponse(os.path.join(webui_dist, "manifest.json"))
+
+            @app.get("/sw.js", include_in_schema=False)
+            async def serve_sw():
+                return FileResponse(os.path.join(webui_dist, "sw.js"))
 
     app.include_router(dav_router)
     return app

@@ -298,7 +298,7 @@
 import { 
   Server, Sliders, FolderTree, Bot, ShieldCheck, 
   Terminal, Palette, Info, Pencil, Trash2, Plus, 
-  RotateCw, RotateCcw
+  RotateCw, RotateCcw, Download, Smartphone
 } from 'lucide-vue-next'
 import api from '../api.js'
 
