@@ -43,11 +43,7 @@ async def get_current_token(
         return "bypass"
     if credentials is None:
         raise HTTPException(401, "Authorization header required")
-    if not svc.verify_mcp_token(credentials.credentials):
-        raise HTTPException(403, "Invalid token")
-    scope = getattr(credentials, "_scope", None)
-    if scope and scope not in credentials.credentials:
-        raise HTTPException(403, f"Insufficient scope: {scope}")
+    # 认证已由 AuthMiddleware 中间件完成，此处仅传递 token
     return credentials.credentials
 
 
@@ -100,13 +96,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = auth_header[7:]
         elif request.method == "GET" and request.url.path.startswith("/api/files/"):
             token = request.query_params.get("token", "")
-        if token and svc.verify_mcp_token(token):
+        if token:
             scope = _required_scope(request.method, request.url.path)
-            if scope and not svc.verify_scope(token, scope):
-                svc.log_auth(False, client_ip, "ASGI", f"Scope denied: {scope}")
-                return Response("Insufficient permissions", status_code=403)
-            svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
-            return await call_next(request)
+            # Full MCP token
+            if svc.verify_mcp_token(token):
+                if scope and not svc.verify_scope(token, scope):
+                    svc.log_auth(False, client_ip, "ASGI", f"Scope denied: {scope}")
+                    return Response("Insufficient permissions", status_code=403)
+                svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
+                return await call_next(request)
+            # Scoped token
+            if scope and svc.verify_scope(token, scope):
+                svc.log_auth(True, client_ip, "ASGI", f"Scoped token OK: {scope}")
+                return await call_next(request)
 
         # Try Basic Auth (for DAV clients)
         if auth_header.startswith("Basic "):
