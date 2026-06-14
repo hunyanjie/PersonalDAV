@@ -1,8 +1,8 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time, os, shutil
+import time, os, shutil, uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
 from services.contact_service import ContactService
 from services.event_service import EventService
@@ -422,3 +422,99 @@ async def trash_purge(days: int = Query(30), token: str = Depends(get_current_to
     from services.trash_service import TrashService
     TrashService.purge(days)
     return {"purged": True}
+
+
+@api_router.get("/apple/config", summary="生成 Apple 设备配置 (.mobileconfig)")
+async def apple_config(token: str = Depends(get_current_token)):
+    ss = SettingsService()
+    host = ss.get_setting("apple_config_host", "localhost")
+    port = ss.get_setting("default_port", "8000")
+    use_ssl = ss.get_setting("ssl_enabled", "False") == "True"
+    scheme = "https" if use_ssl else "http"
+    url_suffix = "" if (use_ssl and port == "443") or (not use_ssl and port == "80") else f":{port}"
+
+    payload_uuid = str(uuid.uuid4())
+    carddav_uuid = str(uuid.uuid4())
+    caldav_uuid = str(uuid.uuid4())
+
+    ssl_true = 'true' if use_ssl else 'false'
+
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>CalendarAccountDescription</key>
+            <string>PersonalDAV 日历</string>
+            <key>CalendarHostName</key>
+            <string>{host}</string>
+            <key>CalendarPort</key>
+            <integer>{port}</integer>
+            <key>CalendarPrincipalURL</key>
+            <string>{scheme}://{host}{url_suffix}/events/</string>
+            <key>CalendarUseSSL</key>
+            <{ssl_true}/>
+            <key>PayloadDescription</key>
+            <string>配置 CalDAV 日历账户</string>
+            <key>PayloadDisplayName</key>
+            <string>PersonalDAV 日历</string>
+            <key>PayloadIdentifier</key>
+            <string>com.personaldav.caldav.{caldav_uuid}</string>
+            <key>PayloadType</key>
+            <string>com.apple.caldav.account</string>
+            <key>PayloadUUID</key>
+            <string>{caldav_uuid}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+        <dict>
+            <key>CardDAVAccountDescription</key>
+            <string>PersonalDAV 联系人</string>
+            <key>CardDAVHostName</key>
+            <string>{host}</string>
+            <key>CardDAVPort</key>
+            <integer>{port}</integer>
+            <key>CardDAVPrincipalURL</key>
+            <string>{scheme}://{host}{url_suffix}/contacts/</string>
+            <key>CardDAVUseSSL</key>
+            <{ssl_true}/>
+            <key>PayloadDescription</key>
+            <string>配置 CardDAV 联系人账户</string>
+            <key>PayloadDisplayName</key>
+            <string>PersonalDAV 联系人</string>
+            <key>PayloadIdentifier</key>
+            <string>com.personaldav.carddav.{carddav_uuid}</string>
+            <key>PayloadType</key>
+            <string>com.apple.carddav.account</string>
+            <key>PayloadUUID</key>
+            <string>{carddav_uuid}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>自动配置 PersonalDAV 联系人和日历账户</string>
+    <key>PayloadDisplayName</key>
+    <string>PersonalDAV 配置</string>
+    <key>PayloadIdentifier</key>
+    <string>com.personaldav.apple-config.{payload_uuid}</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>{payload_uuid}</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>"""
+
+    return Response(
+        content=plist,
+        media_type="application/x-apple-aspen-config",
+        headers={
+            "Content-Disposition": 'attachment; filename="personaldav.mobileconfig"'
+        }
+    )
