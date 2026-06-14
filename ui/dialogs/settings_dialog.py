@@ -439,6 +439,19 @@ class SettingsDialog(tk.Toplevel):
             self.mcp_port_var.trace("w", update_url)
         self.after(100, update_url)
 
+        # 作用域令牌
+        tok_f = ttk.LabelFrame(parent, text="作用域令牌 (API 细粒度权限)")
+        tok_f.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Label(tok_f, text="每个令牌仅限特定操作. 完整 MCP 令牌包含所有权限.",
+                  wraplength=500, foreground="gray").pack(anchor="w", padx=10, pady=2)
+        self._tok_tree = ttk.Treeview(tok_f, columns=("scope", "token"), show="headings", height=6)
+        self._tok_tree.heading("scope", text="作用域")
+        self._tok_tree.heading("token", text="令牌")
+        self._tok_tree.column("scope", width=140)
+        self._tok_tree.column("token", width=260)
+        self._tok_tree.pack(fill=tk.X, padx=10, pady=5)
+        self._refresh_scoped_tokens()
+
         tools = ttk.LabelFrame(parent, text="可用工具列表")
         tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         cols = ("工具名", "类别", "说明")
@@ -889,6 +902,21 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
     # 已提取至 ReminderPresetSection
 
     # ── 搜索设置 ────────────────────────────────────────────────
+
+    def _refresh_scoped_tokens(self) -> None:
+        try:
+            from services.auth_service import AuthService
+            auth = AuthService()
+            for i in self._tok_tree.get_children():
+                self._tok_tree.delete(i)
+            labels = {"contacts:read": "联系人(只读)", "contacts:write": "联系人(读写)",
+                      "events:read": "日程(只读)", "events:write": "日程(读写)",
+                      "dav:read": "文件(只读)", "dav:write": "文件(读写)"}
+            for entry in auth.list_scoped_tokens():
+                label = labels.get(entry["scope"], entry["scope"])
+                self._tok_tree.insert("", tk.END, values=(label, entry["token"]))
+        except Exception as e:
+            self._tok_tree.insert("", tk.END, values=("加载失败", str(e)))
 
     def create_search_settings(self, parent):
         f = ttk.LabelFrame(parent, text="搜索模式")
