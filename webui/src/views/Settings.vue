@@ -226,29 +226,31 @@
           <section v-if="activeSection === 'app'" class="config-section">
             <h3><Sliders :size="20" /> 可配置选项</h3>
             <div class="settings-list">
-              <div v-for="def in editableDefs" :key="def.key" class="setting-row">
-                <div class="setting-info">
-                  <div class="setting-label">{{ def.label }}</div>
-                  <div class="setting-key">{{ def.key }}</div>
-                </div>
-                <div class="setting-control">
-                  <template v-if="def.type === 'check'">
-                    <input type="checkbox" v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])" />
-                  </template>
-                  <template v-else-if="def.type === 'combo'">
-                    <select v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])">
-                      <option v-for="opt in def.options" :key="opt.val" :value="opt.val">{{ opt.text }}</option>
-                    </select>
-                  </template>
-                  <template v-else>
-                    <div class="input-group">
-                      <input v-if="editingKey === def.key" v-model="editValue" :type="def.inputType || 'text'" class="edit-input" />
-                      <span v-else class="val-text">{{ settings[def.key] }}</span>
-                      <button v-if="editingKey === def.key" class="btn-save-sm" @click="confirmUpdate(def)">保存</button>
-                      <button v-if="editingKey === def.key" class="btn-cancel-sm" @click="editingKey = null">取消</button>
-                      <button v-else class="btn-edit-sm" @click="startEdit(def.key, settings[def.key])">修改</button>
-                    </div>
-                  </template>
+              <div v-for="def in editableDefs" :key="def.key">
+                <div v-if="!def.showIf || def.showIf(settings)" class="setting-row">
+                  <div class="setting-info">
+                    <div class="setting-label">{{ def.label }}</div>
+                    <div class="setting-key">{{ def.key }}</div>
+                  </div>
+                  <div class="setting-control">
+                    <template v-if="def.type === 'check'">
+                      <input type="checkbox" v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])" />
+                    </template>
+                    <template v-else-if="def.type === 'combo'">
+                      <select v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])">
+                        <option v-for="opt in def.options" :key="opt.val" :value="opt.val">{{ opt.text }}</option>
+                      </select>
+                    </template>
+                    <template v-else>
+                      <div class="input-group">
+                        <input v-if="editingKey === def.key" v-model="editValue" :type="def.inputType || 'text'" class="edit-input" />
+                        <span v-else class="val-text">{{ settings[def.key] }}</span>
+                        <button v-if="editingKey === def.key" class="btn-save-sm" @click="confirmUpdate(def)">保存</button>
+                        <button v-if="editingKey === def.key" class="btn-cancel-sm" @click="editingKey = null">取消</button>
+                        <button v-else class="btn-edit-sm" @click="startEdit(def.key, settings[def.key])">修改</button>
+                      </div>
+                    </template>
+                  </div>
                 </div>
               </div>
             </div>
@@ -399,7 +401,7 @@ const SETTING_DEFS = [
     { text: '7 天', val: '7' }, { text: '14 天', val: '14' }, { text: '30 天（推荐）', val: '30' },
     { text: '自定义', val: 'custom' }
   ]},
-  { key: 'trash_retention_custom', label: '自定义保留天数', type: 'text', inputType: 'number', min: 1 },
+  { key: 'trash_retention_custom', label: '自定义保留天数', type: 'text', inputType: 'number', min: 1, showIf: s => s.trash_retention_days === 'custom' },
   { key: 'onlyoffice_host', label: 'ONLYOFFICE 服务器地址', type: 'text', placeholder: 'http://192.168.1.100:8081' },
 ]
 
