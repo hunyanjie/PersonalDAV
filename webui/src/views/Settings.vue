@@ -142,6 +142,19 @@
                 </label>
               </div>
             </div>
+            <div style="margin-top: 16px; border-top: 1px solid var(--border-base); padding-top: 12px;">
+              <h4 style="font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">作用域令牌 (API 细粒度权限)</h4>
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">每个令牌仅限特定操作。完整 MCP 令牌包含所有权限。</p>
+              <button v-if="!scopedTokens.length" class="btn-sm" @click="loadScopedTokens" style="margin-bottom: 8px;">生成令牌列表</button>
+              <div v-for="st in scopedTokens" :key="st.scope" class="setting-row" style="padding: 6px 0;">
+                <div class="setting-info">
+                  <div class="setting-label" style="font-size:13px; font-weight:500;">{{ st.scope }}</div>
+                </div>
+                <div class="setting-control">
+                  <input :value="st.token" readonly style="width:280px; font-family:monospace; font-size:11px; padding:4px 6px; border:1px solid var(--border-base); border-radius:4px; background:var(--bg-hover);" @click="$event.target.select()" />
+                </div>
+              </div>
+            </div>
           </section>
 
           <!-- App Settings -->
@@ -335,6 +348,7 @@ export default {
     settings: {},
     authLogs: [],
     systemLogs: [],
+    scopedTokens: [],
     editingKey: null,
     editValue: '',
     editableDefs: SETTING_DEFS,
@@ -398,6 +412,14 @@ export default {
     },
     async loadLogs() {
       try { this.authLogs = await api.authLogs(30) } catch(e) {}
+    },
+    async loadScopedTokens() {
+      try {
+        const res = await api.get('/api/auth/tokens/scoped')
+        this.scopedTokens = res
+      } catch(e) {
+        window.showToast('无法加载作用域令牌: ' + (e.message || e), 'error')
+      }
     },
     async loadSystemLogs() {
       try { 

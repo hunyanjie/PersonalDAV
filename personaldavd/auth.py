@@ -101,6 +101,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         elif request.method == "GET" and request.url.path.startswith("/api/files/"):
             token = request.query_params.get("token", "")
         if token and svc.verify_mcp_token(token):
+            scope = _required_scope(request.method, request.url.path)
+            if scope and not svc.verify_scope(token, scope):
+                svc.log_auth(False, client_ip, "ASGI", f"Scope denied: {scope}")
+                return Response("Insufficient permissions", status_code=403)
             svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
             return await call_next(request)
 
