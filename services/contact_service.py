@@ -31,7 +31,13 @@ class ContactService(BaseService):
             try:
                 vcard = vobject.readOne(vcard_data)
                 uid_node = getattr(vcard, 'uid', None)
-                uid = uid_node.value if uid_node else str(uuid.uuid4())
+                if uid_node:
+                    uid = uid_node.value
+                else:
+                    uid = str(uuid.uuid4())
+                    vcard.add('uid').value = uid
+                    vcard_data = vcard.serialize()
+
                 parsed_data = {
                     "uid": uid,
                     "full_name": self._extract_full_name(vcard),

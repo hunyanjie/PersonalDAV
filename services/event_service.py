@@ -33,7 +33,14 @@ class EventService(BaseService):
                 ev = ical
             else:
                 raise ValueError(f"Unexpected component: {ical.name}")
-            uid = ev.uid.value
+            
+            if not hasattr(ev, 'uid'):
+                import uuid
+                uid = str(uuid.uuid4())
+                ev.add('uid').value = uid
+                ical_data = ical.serialize()
+            else:
+                uid = ev.uid.value
 
             def to_str(val):
                 if hasattr(val, 'isoformat'):

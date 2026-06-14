@@ -282,7 +282,8 @@ export default {
     Home, ChevronRight, ChevronUp, ChevronDown, FolderPlus, Upload, 
     RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
     File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
-    FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal
+    FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal,
+    ExternalLink
   },
   data: () => ({
     items: [], 
@@ -824,7 +825,7 @@ export default {
 .inline-dialog input { width: 100%; padding: 10px 14px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); font-size: 14px; box-sizing: border-box; outline: none; }
 .inline-dialog input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
 .inline-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
-.inline-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 3000; }
+.inline-modal-overlay { position: fixed; inset: 0; background: #0009; display: flex; align-items: center; justify-content: center; z-index: 3000; backdrop-filter: blur(8px); }
 
 .empty-state, .loading-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px; color: var(--text-tertiary); }
 .empty-icon { color: var(--border-strong); margin-bottom: 16px; opacity: 0.5; }

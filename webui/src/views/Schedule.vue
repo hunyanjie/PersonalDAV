@@ -68,14 +68,14 @@
       </div>
     </div>
 
-    <!-- Detail Side (Hidden on mobile if not selected, or use Modal) -->
+    <!-- Detail Overlay -->
     <transition name="modal">
-      <div v-if="selectedEvent" class="agenda-detail-side glass mobile-overlay-detail" @click.self="selectedUids = []">
+      <div v-if="selectedEvent" class="detail-overlay glass" @click.self="selectedUids = []">
         <div class="detail-box no-transition">
           <div class="detail-header">
             <div class="dh-top">
               <h2>{{ selectedEvent.summary || '(无标题)' }}</h2>
-              <button class="mobile-close" @click="selectedUids = []"><X :size="20" /></button>
+              <button class="close-btn" @click="selectedUids = []"><X :size="20" /></button>
             </div>
             <div class="detail-meta">
               <span class="meta-tag"><Tag :size="12" /> {{ selectedEvent.categories || '默认' }}</span>
@@ -106,22 +106,6 @@
         </div>
       </div>
     </transition>
-
-    <!-- Empty Detail Side (Desktop only) -->
-    <div v-if="!selectedEvent && !isMobile" class="agenda-detail-side empty-side glass">
-      <div v-if="selectedUids.length > 1" class="detail-empty">
-        <div class="empty-icon"><Users :size="48" /></div>
-        <p>已选中 <strong>{{ selectedUids.length }}</strong> 个日程</p>
-        <div class="batch-actions">
-          <button class="btn-action" @click="exportSelected"><Share2 :size="14" /> 批量导出</button>
-          <button class="btn-action btn-danger" @click="deleteSelected"><Trash2 :size="14" /> 批量删除</button>
-        </div>
-      </div>
-      <div v-else class="detail-empty">
-        <div class="empty-icon"><Calendar :size="48" /></div>
-        <p>选择日程查看详细内容</p>
-      </div>
-    </div>
 
     <!-- Edit Modal -->
     <transition name="modal">
@@ -603,6 +587,7 @@ export default {
         `SUMMARY:${this.editForm.summary}`,
         `DTSTART:${this.editForm.dtstart.replace(/[-:]/g, '')}00`,
         `DTEND:${this.editForm.dtend.replace(/[-:]/g, '')}00`,
+        'STATUS:CONFIRMED',
         `LOCATION:${this.editForm.location}`,
         `DESCRIPTION:${this.editForm.description}`,
         `CATEGORIES:${this.editForm.categories}`,
@@ -683,9 +668,9 @@ export default {
 </script>
 
 <style scoped>
-.agenda-container { display: flex; height: 100%; background: transparent; gap: 20px; padding: 4px; box-sizing: border-box; }
+.agenda-container { height: 100%; background: transparent; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column; }
 
-.agenda-list-side { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; border: 1px solid var(--border-base); }
+.agenda-list-side { flex: 1; display: flex; flex-direction: column; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; border: 1px solid var(--border-base); }
 .agenda-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; background: #fafafa; }
 .ah-left { display: flex; flex-direction: column; gap: 4px; }
 .ah-title { font-size: 20px; font-weight: 700; color: var(--text-primary); }
@@ -721,10 +706,51 @@ export default {
 .now-bar-wrapper { display: flex; align-items: center; padding: 0 24px; }
 .now-bar-line { flex: 1; height: 2px; background: var(--danger); border-radius: 2px; box-shadow: 0 0 8px rgba(255,77,79,0.5); }
 
-.agenda-detail-side { width: 380px; flex-shrink: 0; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 32px; overflow-y: auto; border: 1px solid var(--border-base); }
-.detail-header h2 { margin: 0; font-size: 22px; color: var(--text-primary); line-height: 1.3; }
-.dh-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.mobile-close { display: none; background: transparent; border: none; padding: 4px; color: var(--text-tertiary); cursor: pointer; }
+.agenda-container { height: 100%; background: transparent; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column; }
+
+.agenda-list-side { flex: 1; display: flex; flex-direction: column; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; border: 1px solid var(--border-base); }
+
+/* Overlay & Modal Styles */
+.modal-overlay, .detail-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.detail-box, .modal-card {
+  background: white;
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--glass-border);
+  position: relative;
+  padding: 32px;
+}
+
+.close-btn, .btn-close-circle {
+  background: transparent; border: none; padding: 4px;
+  color: var(--text-tertiary); cursor: pointer;
+  transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+}
+.close-btn:hover, .btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg); }
+
+.detail-header h2 { margin: 0; font-size: 22px; color: var(--text-primary); line-height: 1.3; padding-right: 32px; }
 
 .detail-meta { margin-top: 12px; }
 .meta-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; background: var(--bg-hover); border-radius: 20px; font-size: 12px; color: var(--text-secondary); font-weight: 500; }
@@ -744,24 +770,15 @@ export default {
 .btn-danger { color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: var(--bg-danger); border-color: var(--danger); }
 
-.detail-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-tertiary); text-align: center; }
-.empty-icon { opacity: 0.15; margin-bottom: 20px; }
-.batch-actions { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; width: 100%; }
-.batch-actions .btn-action { justify-content: center; }
-
-.modal-card { background: white; border-radius: var(--radius-xl); width: 500px; box-shadow: var(--shadow-xl); overflow: hidden; border: 1px solid var(--glass-border); }
-.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-base); display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
-.btn-close-circle { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); transition: .2s cubic-bezier(0.4, 0, 0.2, 1); padding: 4px; display: flex; }
-.btn-close-circle:hover { color: var(--text-primary); transform: rotate(90deg); }
-
-.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.modal-header { padding-bottom: 16px; border-bottom: 1px solid var(--border-base); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+.modal-body { display: flex; flex-direction: column; gap: 20px; }
 .form-group { display: flex; flex-direction: column; gap: 8px; }
 .form-group label { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
 .form-group input, .form-group textarea { padding: 12px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 14px; background: #fafafa; transition: all .2s; }
 .form-group input:focus, .form-group textarea:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); outline: none; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
-.modal-footer { padding: 20px 24px; background: #fafafa; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--border-base); }
+.modal-footer { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-base); display: flex; justify-content: flex-end; gap: 12px; }
 .btn-save { background: var(--brand); color: var(--text-inverse); border: none; padding: 10px 28px; border-radius: var(--radius-md); cursor: pointer; font-weight: 600; box-shadow: 0 4px 12px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.2); transition: all .2s; }
 .btn-save:hover { background: var(--brand-hover); transform: translateY(-1px); box-shadow: 0 6px 16px hsla(var(--brand-hue) var(--brand-sat) var(--brand-lit) / 0.3); }
 .btn-cancel { background: white; border: 1px solid var(--border-strong); padding: 10px 24px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500; color: var(--text-secondary); }
@@ -777,13 +794,9 @@ export default {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
-  .agenda-container { flex-direction: column; padding: 0; gap: 0; }
+  .agenda-container { padding: 0; }
   .agenda-list-side { border-radius: 0; border: none; }
-  .mobile-overlay-detail { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); width: 100%; padding: 20px; box-sizing: border-box; }
-  .detail-box { background: white; border-radius: var(--radius-xl); width: 100%; max-height: 80vh; overflow-y: auto; padding: 24px; }
-  .mobile-close { display: block; }
-  .empty-side { display: none; }
-  .modal-card { width: 100%; margin: 0; border-radius: var(--radius-lg); }
+  .detail-box, .modal-card { max-width: 100%; height: 100%; border-radius: 0; max-height: 100vh; }
   .form-row { grid-template-columns: 1fr; }
 }
 </style>
