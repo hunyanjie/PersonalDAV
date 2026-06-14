@@ -33,7 +33,8 @@
               :class="{ 'swipe-open': _swipeUid === c.uid, 'menu-active': _menuUid === c.uid }"
               @touchstart="swipeStart(c.uid, $event)"
               @touchmove="swipeMove($event)"
-              @touchend="swipeEnd(c.uid)">
+              @touchend="swipeEnd(c.uid)"
+              @dblclick="$router.push(`/contacts/${c.uid}/edit`)">
               <td class="col-name">
                 <div class="name-info" @click="closeSwipe">
                   <span class="avatar">{{ (c.full_name || '?')[0].toUpperCase() }}</span>

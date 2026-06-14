@@ -1,7 +1,7 @@
 {
   "name": "personaldav-webui",
   "private": true,
-  "version": "3.3",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

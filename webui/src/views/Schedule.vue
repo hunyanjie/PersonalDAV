@@ -23,6 +23,7 @@
             :class="{ 'type-header': item.type === 'header', 'type-event': item.type === 'event', 'type-empty': item.type === 'empty', 'is-selected': isSelected(item) }"
             :style="{ transform: `translateY(${item.top}px)` }"
             @click="onItemClick(item, $event)"
+            @dblclick="startEdit(item)"
             @contextmenu.prevent="onCtxMenu(item, $event)">
             
             <template v-if="item.type === 'header'">

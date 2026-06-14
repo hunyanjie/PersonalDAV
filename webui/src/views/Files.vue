@@ -149,7 +149,7 @@
               @touchmove="swipeMove($event)"
               @touchend="swipeEnd(item.path)">
               <td class="col-name">
-                <div class="file-main-info" @click="item.is_dir ? cd(item.path) : null">
+                <div class="file-main-info" @click="item.is_dir ? cd(item.path) : null" @dblclick="!item.is_dir && canPreview(item.name) && doPreview(item)">
                   <component :is="getFileIconComponent(item)" class="file-icon-comp" :class="{ 'dir-icon': item.is_dir }" :size="20" />
                   <div class="file-text-wrapper">
                     <span class="file-name" :class="{ 'is-dir': item.is_dir }">{{ item.name }}</span>

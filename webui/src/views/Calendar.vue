@@ -49,7 +49,8 @@
             <tr v-for="(week, wi) in weeks" :key="wi">
               <td v-for="(day, di) in week" :key="di"
                 :class="cellClass(day)"
-                @click="day.current && selectDay(day)">
+                @click="day.current && selectDay(day)"
+                @dblclick="day.current && openDayEvents(day)">
                 <div class="day-cell-content">
                   <div class="day-num">{{ day.day }}</div>
                   <div class="event-dots">
@@ -330,6 +331,10 @@ export default {
       this.selectedDay = { year: this.year, month: this.month, day: day.day }
       this.selectedUids = []
       this.ctxMenu.show = false
+    },
+    openDayEvents(day) {
+      const dateStr = `${this.year}-${String(this.month+1).padStart(2,'0')}-${String(day.day).padStart(2,'0')}`
+      this.$router.push(`/schedule?date=${dateStr}`)
     },
     cellClass(day) {
       return {
