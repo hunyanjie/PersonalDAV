@@ -107,7 +107,13 @@
       </div>
     </transition>
 
-    <div class="files-list-wrapper glass">
+    <!-- Tab bar: 文件 | 回收站 -->
+    <div class="tab-bar">
+      <button class="tab-btn" :class="{ active: tab === 'files' }" @click="switchTab('files')"><File :size="16" /> 文件</button>
+      <button class="tab-btn" :class="{ active: tab === 'trash' }" @click="switchTab('trash')"><Trash2 :size="16" /> 回收站</button>
+    </div>
+
+    <div v-if="tab === 'files'" class="files-list-wrapper glass">
       <div v-if="sortedItems.length" class="table-container">
         <table class="files-table">
           <thead>
@@ -158,19 +164,15 @@
               <td class="col-size hide-mobile">{{ item.is_dir ? '-' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.modified_at) }}</td>
               <td class="col-actions">
-                <!-- 三点按钮 (对标 Files 原有逻辑修复) -->
                 <button class="btn-icon btn-more-trigger" @click.stop="toggleMenu(item.path)" title="更多">
                   <MoreHorizontal :size="20" />
                 </button>
-
                 <div class="row-actions-main" :style="swipeStyle(item.path)">
                   <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @touchstart.stop @click.stop="doPreview(item)" title="预览"><Eye :size="16" /></button>
                   <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" @touchstart.stop @click.stop title="下载"><Download :size="16" /></a>
                   <button class="btn-icon" @touchstart.stop @click.stop="startRename(item)" title="重命名"><Pencil :size="16" /></button>
                   <button class="btn-icon btn-danger" @touchstart.stop @click.stop="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
                 </div>
-
-                <!-- 弹出式菜单 -->
                 <transition name="pop">
                   <div v-if="_menuPath === item.path" class="ctx-menu-popover glass" @click.stop>
                     <div v-if="!item.is_dir && canPreview(item.name)" class="ctx-item" @click="doPreview(item); _menuPath = null"><Eye :size="16" /> 预览文件</div>
@@ -190,6 +192,46 @@
         <p>此目录空空如也</p>
       </div>
       <div v-if="loading && !items.length" class="loading-state">正在加载文件列表...</div>
+    </div>
+
+    <!-- Trash view -->
+    <div v-if="tab === 'trash'" class="files-list-wrapper glass">
+      <div class="trash-toolbar">
+        <span class="trash-count">共 {{ trashItems.length }} 项</span>
+        <button class="btn-sm btn-danger" @click="purgeTrash" :disabled="!trashItems.length">清空回收站</button>
+      </div>
+      <div v-if="trashItems.length" class="table-container">
+        <table class="files-table">
+          <thead>
+            <tr>
+              <th class="col-name">原路径</th>
+              <th class="col-size hide-mobile">大小</th>
+              <th class="col-time hide-tablet">删除时间</th>
+              <th class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in trashItems" :key="item.uuid" class="file-row">
+              <td class="col-name">
+                <div class="file-main-info">
+                  <component :is="item.is_dir ? 'Folder' : 'File'" class="file-icon-comp" :size="20" />
+                  <span class="file-name">{{ item.original_path }}</span>
+                </div>
+              </td>
+              <td class="col-size hide-mobile">{{ item.is_dir ? '目录' : formatSize(item.size) }}</td>
+              <td class="col-time hide-tablet">{{ formatDate(item.deleted_at) }}</td>
+              <td class="col-actions">
+                <button class="btn-icon" @click="restoreFromTrash(item.uuid)" title="还原"><RefreshCw :size="16" /></button>
+                <button class="btn-icon btn-danger" @click="deleteFromTrash(item.uuid)" title="永久删除"><Trash2 :size="16" /></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else class="empty-state">
+        <div class="empty-icon"><Trash2 :size="48" /></div>
+        <p>回收站空空如也</p>
+      </div>
     </div>
   </div>
 </template>
@@ -241,6 +283,8 @@ export default {
     _panStartPx: 0,
     _panStartPy: 0,
     dragOver: false,
+    tab: 'files',
+    trashItems: [],
   }),
   mounted() { 
     this.updateBreadcrumbs()
@@ -276,6 +320,45 @@ export default {
   },
   methods: {
     api() { return api },
+    switchTab(t) {
+      this.tab = t
+      if (t === 'trash') this.loadTrash()
+    },
+    async loadTrash() {
+      try {
+        const res = await api.get('/api/trash')
+        this.trashItems = res.items || []
+      } catch(e) { this.trashItems = [] }
+    },
+    async restoreFromTrash(uuid) {
+      if (!window.showConfirm) { this.doTrashOp(uuid, 'restore'); return }
+      const ok = await window.showConfirm({ message: '还原该文件到原位置？', type: 'info' })
+      if (!ok) return
+      this.doTrashOp(uuid, 'restore')
+    },
+    async deleteFromTrash(uuid) {
+      if (!window.showConfirm) { this.doTrashOp(uuid, 'delete'); return }
+      const ok = await window.showConfirm({ message: '永久删除该文件？无法恢复！', type: 'danger' })
+      if (!ok) return
+      this.doTrashOp(uuid, 'delete')
+    },
+    async doTrashOp(uuid, op) {
+      try {
+        if (op === 'restore') await api.post(`/api/trash/restore?uuid=${uuid}`)
+        else await api.delete(`/api/trash?uuid=${uuid}`)
+        this.loadTrash()
+      } catch(e) { window.showToast(op === 'restore' ? '还原失败' : '删除失败', 'error') }
+    },
+    async purgeTrash() {
+      if (!window.showConfirm) { this.doPurge(); return }
+      const ok = await window.showConfirm({ message: '永久清空回收站所有条目？无法恢复！', type: 'danger' })
+      if (!ok) return
+      try {
+        await api.post('/api/trash/purge?days=0')
+        this.loadTrash()
+        window.showToast('回收站已清空', 'success')
+      } catch(e) { window.showToast('清空失败', 'error') }
+    },
     toggleSort(field) {
       if (this.sortField === field) this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc'
       else { this.sortField = field; this.sortDir = 'asc' }
@@ -521,6 +604,14 @@ export default {
 
 <style scoped>
 .files-container { height: 100%; display: flex; flex-direction: column; gap: 16px; }
+
+.tab-bar { display: flex; gap: 0; background: var(--bg-card); border-radius: var(--radius-lg); padding: 4px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-base); }
+.tab-btn { flex: 1; border: none; background: transparent; padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s; }
+.tab-btn.active { background: var(--brand); color: white; }
+.tab-btn:hover:not(.active) { background: var(--bg-hover); }
+
+.trash-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid var(--border-base); }
+.trash-count { font-size: 13px; color: var(--text-muted); }
 
 .toolbar { 
   display: flex; 

@@ -134,4 +134,7 @@ export default {
   },
   systemLogs() { return request('GET', '/logs') },
   health() { return request('GET', '/health') },
+  get(path) { return request('GET', path) },
+  post(path, body) { return request('POST', path, { body }) },
+  delete(path) { return request('DELETE', path) },
 }

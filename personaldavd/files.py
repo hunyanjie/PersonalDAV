@@ -232,8 +232,6 @@ async def delete(
         raise HTTPException(403, str(e))
     if not os.path.exists(abs_path):
         raise HTTPException(404, "路径不存在")
-    if os.path.isfile(abs_path):
-        os.remove(abs_path)
-    else:
-        shutil.rmtree(abs_path)
-    return {"deleted": True}
+    from services.trash_service import TrashService
+    TrashService.delete(abs_path, path)
+    return {"deleted": True, "trashed": True}

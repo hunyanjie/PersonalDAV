@@ -391,3 +391,34 @@ async def stats(token: str = Depends(get_current_token)):
         uptime=time.time() - _start_time,
         version=SOFTWARE_VERSION,
     )
+
+
+@api_router.get("/trash", summary="回收站列表")
+async def trash_list(token: str = Depends(get_current_token)):
+    from services.trash_service import TrashService
+    return {"items": TrashService.list_items()}
+
+
+@api_router.post("/trash/restore", summary="从回收站还原")
+async def trash_restore(uuid: str = Query(...), token: str = Depends(get_current_token)):
+    from services.trash_service import TrashService
+    ok = TrashService.restore(uuid)
+    if not ok:
+        raise HTTPException(404, "条目不存在")
+    return {"restored": True}
+
+
+@api_router.delete("/trash", summary="永久删除回收站条目")
+async def trash_delete(uuid: str = Query(...), token: str = Depends(get_current_token)):
+    from services.trash_service import TrashService
+    ok = TrashService.permanent_delete(uuid)
+    if not ok:
+        raise HTTPException(404, "条目不存在")
+    return {"deleted": True}
+
+
+@api_router.post("/trash/purge", summary="清理过期回收站条目")
+async def trash_purge(days: int = Query(30), token: str = Depends(get_current_token)):
+    from services.trash_service import TrashService
+    TrashService.purge(days)
+    return {"purged": True}

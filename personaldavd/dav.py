@@ -353,10 +353,9 @@ async def webdav_handler(request: Request, rest: str = ""):
             fs_path = _resolve(rest)
         except ValueError:
             return Response("Forbidden", status_code=403)
-        if os.path.isdir(fs_path):
-            shutil.rmtree(fs_path)
-        elif os.path.isfile(fs_path):
-            os.remove(fs_path)
+        if os.path.exists(fs_path):
+            from services.trash_service import TrashService
+            TrashService.delete(fs_path, f"/dav/{rest}")
         else:
             return Response("Not found", status_code=404)
         return Response(status_code=204)

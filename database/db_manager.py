@@ -222,7 +222,8 @@ class Database:
                 ('default_end_count', "5"),
                 ('ssl_enabled', "False"),
                 ('ssl_certfile', ""),
-                ('ssl_keyfile', "")
+                ('ssl_keyfile', ""),
+                ('trash_retention_days', "30"),
             ]
 
             c.executemany("INSERT INTO settings (key, value) VALUES (?, ?)", initial_settings)
