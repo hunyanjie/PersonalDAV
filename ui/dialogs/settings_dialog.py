@@ -474,6 +474,7 @@ class SettingsDialog(tk.Toplevel):
             menu = tk.Menu(self, tearoff=0)
             if tok_data.get("_raw"):
                 menu.add_command(label="复制令牌", command=_copy_token)
+            menu.add_command(label="修改备注", command=lambda: self._update_api_token_note(item))
             menu.add_command(label="删除", command=lambda: self._delete_api_token(item))
             menu.post(event.x_root, event.y_root)
 
@@ -1022,6 +1023,17 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             from services.api_token_service import ApiTokenService
             ApiTokenService().delete_token(tok_data["id"])
         self._refresh_api_tokens()
+
+    def _update_api_token_note(self, item_id: str) -> None:
+        tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(item_id, {})
+        if not tok_data:
+            return
+        import tkinter.simpledialog
+        new_note = tkinter.simpledialog.askstring("修改备注", "请输入新的备注:", initialvalue=tok_data.get("note", ""), parent=self)
+        if new_note is not None:
+            from services.api_token_service import ApiTokenService
+            ApiTokenService().update_token_note(tok_data["id"], new_note)
+            self._refresh_api_tokens()
 
     def create_search_settings(self, parent):
         f = ttk.LabelFrame(parent, text="搜索模式")

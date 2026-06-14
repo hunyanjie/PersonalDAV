@@ -148,7 +148,15 @@
               <!-- 令牌列表 -->
               <div v-for="t in apiTokens" :key="t.id" class="setting-row" style="padding: 6px 0;">
                 <div class="setting-info">
-                  <div class="setting-label" style="font-size:13px; font-weight:500;">{{ t.note || t.id.slice(0,8)+'…' }}</div>
+                  <div v-if="editingTokenId === t.id" style="display:flex; gap:8px; align-items:center; margin-right:16px;">
+                    <input v-model="editingTokenNote" @keyup.enter="confirmUpdateTokenNote(t.id)" @keyup.esc="editingTokenId = null" style="flex:1; padding:4px 8px; border:1px solid var(--brand); border-radius:4px; font-size:13px;" ref="tokenNoteInput" />
+                    <button class="btn-edit-sm" @click="confirmUpdateTokenNote(t.id)">保存</button>
+                    <button class="btn-edit-sm" @click="editingTokenId = null">取消</button>
+                  </div>
+                  <div v-else class="setting-label" style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:8px;">
+                    {{ t.note || t.id.slice(0,8)+'…' }}
+                    <button class="btn-inline-edit" @click="startEditTokenNote(t)" title="修改备注"><Pencil :size="12" /></button>
+                  </div>
                   <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap;">
                     <span v-for="s in t.scopes" :key="s" class="scope-badge">{{ s }}</span>
                     <span v-if="t.expires_at" style="color:#e67e22;">到期 {{ t.expires_at.slice(0,10) }}</span>
@@ -418,6 +426,8 @@ export default {
     authLogs: [],
     systemLogs: [],
     apiTokens: [],
+    editingTokenId: null,
+    editingTokenNote: '',
     showCreateToken: false,
     tokenFormScopes: [],
     tokenFormNote: '',
@@ -525,6 +535,21 @@ export default {
         this.loadApiTokens()
         window.showToast('令牌已删除', 'success')
       } catch(e) { window.showToast('删除失败: ' + (e.message || e), 'error') }
+    },
+    startEditTokenNote(t) {
+      this.editingTokenId = t.id
+      this.editingTokenNote = t.note || ''
+      this.$nextTick(() => {
+        if (this.$refs.tokenNoteInput && this.$refs.tokenNoteInput[0]) this.$refs.tokenNoteInput[0].focus()
+      })
+    },
+    async confirmUpdateTokenNote(id) {
+      try {
+        await api.put(`/auth/tokens/${id}/note`, { note: this.editingTokenNote })
+        this.editingTokenId = null
+        this.loadApiTokens()
+        window.showToast('备注已更新', 'success')
+      } catch(e) { window.showToast('更新失败: ' + (e.message || e), 'error') }
     },
     copyToken(raw) {
       navigator.clipboard.writeText(raw).then(() => {
@@ -835,4 +860,6 @@ export default {
 .btn-primary { background:var(--brand); color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; transition:.2s; }
 .btn-primary:hover { opacity:0.85; }
 .btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
+.btn-inline-edit { background:transparent; border:none; color:var(--brand); cursor:pointer; padding:2px; display:inline-flex; align-items:center; opacity:0.6; transition:.2s; }
+.btn-inline-edit:hover { opacity:1; background:var(--bg-hover); border-radius:4px; }
 </style>

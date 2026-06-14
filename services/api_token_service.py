@@ -87,5 +87,11 @@ class ApiTokenService:
         logger.info(f"删除 API 令牌: {token_id}")
         return True
 
+    def update_token_note(self, token_id: str, note: str) -> bool:
+        db = Database()
+        db.execute('UPDATE api_tokens SET note=? WHERE id=?', (note, token_id))
+        logger.info(f"更新 API 令牌备注: {token_id} note={note}")
+        return True
+
     def has_scope(self, token_scopes: list[str], required_scope: str) -> bool:
         return required_scope in token_scopes
