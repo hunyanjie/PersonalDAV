@@ -3,6 +3,9 @@ import queue
 from logging.handlers import RotatingFileHandler
 from config import SOFTWARE_NAME, DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL
 
+# Suppress noisy but harmless asyncio ConnectionResetError tracebacks (Windows)
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+
 class GUIHandler(logging.Handler):
     log_queue: queue.Queue
 
