@@ -649,7 +649,7 @@ export default {
 <style scoped>
 .files-container { height: 100%; display: flex; flex-direction: column; gap: 16px; }
 
-.tab-bar { display: flex; gap: 0; background: var(--bg-card); border-radius: var(--radius-lg); padding: 4px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-base); }
+.tab-bar { display: flex; gap: 4px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 4px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-base); }
 .tab-btn { flex: 1; border: none; background: transparent; padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s; }
 .tab-btn.active { background: var(--brand); color: white; }
 .tab-btn:hover:not(.active) { background: var(--bg-hover); }

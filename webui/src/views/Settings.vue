@@ -165,11 +165,11 @@
               <button class="btn-sm" @click="showCreateToken = true" style="margin-top:8px;">+ 创建令牌</button>
 
               <!-- 创建令牌弹窗 -->
-              <div v-if="showCreateToken" class="modal-overlay" @click.self="showCreateToken=false">
+              <div v-if="showCreateToken" class="modal-overlay" @click.self="closeTokenDialog()">
                 <div class="modal-dialog" style="max-width:560px;">
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                     <h4 style="margin:0;">创建 API 令牌</h4>
-                    <button class="btn-sm" @click="showCreateToken=false" style="border:none; background:transparent; font-size:20px; cursor:pointer;">×</button>
+                    <button class="btn-sm" @click="closeTokenDialog()" style="border:none; background:transparent; font-size:20px; cursor:pointer;">×</button>
                   </div>
                   <div v-if="!newTokenResult">
                     <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">选择权限 (支持多选):</p>
@@ -179,13 +179,13 @@
                         <span>{{ label }}</span>
                       </label>
                     </div>
-                    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
-                      <div>
-                        <label style="font-size:12px; color:var(--text-muted);">备注</label>
+                    <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px;">
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">备注</label>
                         <input v-model="tokenFormNote" placeholder="例如: 给 opencode 用" style="width:200px; padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;" />
                       </div>
-                      <div>
-                        <label style="font-size:12px; color:var(--text-muted);">过期时间</label>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">过期时间</label>
                         <select v-model="tokenFormExpires" style="padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;">
                           <option value="">永不过期</option>
                           <option value="7">7 天</option>
@@ -194,7 +194,7 @@
                           <option value="365">1 年</option>
                           <option value="custom">自定义日期</option>
                         </select>
-                        <input v-if="tokenFormExpires==='custom'" v-model="tokenFormCustomDate" type="date" style="margin-left:8px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                        <input v-if="tokenFormExpires==='custom'" v-model="tokenFormCustomDate" type="date" style="margin-left:0px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
                       </div>
                     </div>
                     <button class="btn-sm btn-primary" @click="createApiToken" :disabled="!tokenFormScopes.length" style="background:var(--brand); color:white; border:none; padding:8px 20px;">生成令牌</button>
@@ -382,7 +382,7 @@ const SETTING_DEFS = [
     { text: 'UTF-8', val: 'utf-8' }, { text: 'GBK (中文)', val: 'gbk' }, { text: 'Big5', val: 'big5' }
   ]},
   { key: 'office_preview_mode', label: 'Office 文档预览', type: 'combo', options: [
-    { text: '关闭（不显示预览按钮）', val: 'off' }, { text: 'LibreOffice（推荐）', val: 'libreoffice' },
+    { text: '关闭', val: 'off' }, { text: 'LibreOffice（推荐）', val: 'libreoffice' },
     { text: 'ONLYOFFICE（Docker）', val: 'onlyoffice' }, { text: '微软 Office Online', val: 'ms_online' },
     { text: '每次询问', val: 'ask' }
   ]},
