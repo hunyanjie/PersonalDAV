@@ -3,10 +3,16 @@
 import os
 import shutil
 import mimetypes
+import tempfile
+import subprocess
+from urllib.parse import quote
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
+from fastapi.responses import FileResponse, RedirectResponse
 from .auth import get_current_token
 from .config import DaemonConfig
+
+_OFFICE_EXTS = {'.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp'}
 
 files_router = APIRouter(tags=["文件管理"])
 
@@ -144,6 +150,7 @@ _MIME_OVERRIDES = {
 @files_router.get("/files/preview", summary="预览文件内容")
 async def preview_file(
     path: str = Query(..., description="文件路径"),
+    request: Request = None,
 ):
     svc = _mount_svc()
     try:
@@ -155,9 +162,70 @@ async def preview_file(
     _, ext = os.path.splitext(abs_path)
     ctype = mimetypes.guess_type(abs_path)[0] or _MIME_OVERRIDES.get(ext.lower())
     if ctype and ctype.startswith(("text/", "image/", "application/pdf")):
-        from fastapi.responses import FileResponse
         return FileResponse(abs_path, media_type=ctype)
+
+    # Office document preview
+    if ext.lower() in _OFFICE_EXTS:
+        from services.settings_service import SettingsService
+        office_mode = SettingsService().get_setting("office_preview_mode", "off")
+
+        if office_mode == "libreoffice":
+            if not shutil.which("soffice"):
+                raise HTTPException(415, "需要 LibreOffice: soffice 未安装")
+            pdf_path = _convert_office_to_pdf(abs_path)
+            if not pdf_path:
+                raise HTTPException(500, "文档转换失败")
+            return FileResponse(pdf_path, media_type="application/pdf",
+                                filename=os.path.basename(abs_path).rsplit('.', 1)[0] + '.pdf')
+
+        elif office_mode == "onlyoffice":
+            onlyoffice_host = SettingsService().get_setting("onlyoffice_host", "")
+            if not onlyoffice_host:
+                raise HTTPException(415, "未配置 ONLYOFFICE 服务器地址")
+            file_url = _build_public_url(request, path)
+            return RedirectResponse(
+                f"{onlyoffice_host.rstrip('/')}/documentserver/doceditor?"
+                f"filePath={quote(file_url)}&editorType=view"
+            )
+
+        elif office_mode == "ms_online":
+            file_url = _build_public_url(request, path)
+            return RedirectResponse(
+                f"https://view.officeapps.live.com/op/view.aspx?src={quote(file_url)}"
+            )
+
     raise HTTPException(415, "不支持预览该文件类型")
+
+
+def _convert_office_to_pdf(src_path: str) -> str | None:
+    """Convert Office document to PDF using LibreOffice headless."""
+    out_dir = tempfile.mkdtemp(prefix="personaldav_office_")
+    try:
+        result = subprocess.run(
+            ["soffice", "--headless", "--convert-to", "pdf",
+             "--outdir", out_dir, src_path],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode != 0:
+            shutil.rmtree(out_dir, ignore_errors=True)
+            return None
+        # Find generated PDF
+        base = os.path.splitext(os.path.basename(src_path))[0]
+        pdf_path = os.path.join(out_dir, base + ".pdf")
+        if os.path.isfile(pdf_path):
+            return pdf_path
+        shutil.rmtree(out_dir, ignore_errors=True)
+        return None
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(out_dir, ignore_errors=True)
+        return None
+
+
+def _build_public_url(request: Request, path: str) -> str:
+    """Build a public URL for the file, used by Office Online / ONLYOFFICE."""
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", "localhost:8000"))
+    return f"{scheme}://{host}/api/files/download?path={quote(path)}"
 
 
 @files_router.post("/files/upload", summary="上传文件")

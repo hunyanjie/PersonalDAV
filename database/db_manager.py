@@ -224,6 +224,8 @@ class Database:
                 ('ssl_certfile', ""),
                 ('ssl_keyfile', ""),
                 ('trash_retention_days', "30"),
+                ('office_preview_mode', "off"),
+                ('onlyoffice_host', ""),
             ]
 
             c.executemany("INSERT INTO settings (key, value) VALUES (?, ?)", initial_settings)

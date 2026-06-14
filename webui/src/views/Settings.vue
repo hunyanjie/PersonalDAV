@@ -324,6 +324,11 @@ const SETTING_DEFS = [
   { key: 'ftp_encoding', label: 'FTP 文件编码', type: 'combo', options: [
     { text: 'UTF-8', val: 'utf-8' }, { text: 'GBK (中文)', val: 'gbk' }, { text: 'Big5', val: 'big5' }
   ]},
+  { key: 'office_preview_mode', label: 'Office 文档预览', type: 'combo', options: [
+    { text: '关闭', val: 'off' }, { text: 'LibreOffice（推荐）', val: 'libreoffice' },
+    { text: 'ONLYOFFICE（Docker）', val: 'onlyoffice' }, { text: '微软 Office Online', val: 'ms_online' }
+  ]},
+  { key: 'onlyoffice_host', label: 'ONLYOFFICE 服务器地址', type: 'text', placeholder: 'http://192.168.1.100:8081' },
 ]
 
 export default {
