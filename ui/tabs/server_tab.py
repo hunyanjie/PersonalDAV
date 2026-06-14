@@ -409,12 +409,11 @@ class ServerTab(ttk.Frame):
         webui_lines = ""
         if self.webui_enabled.get():
             http_label = (
-                f"\n  HTTPS: https://localhost:{ssl_port}/ (SSL)" if ssl_enabled
-                else f"\n  HTTP:  http://localhost:{port}/"
+                f"\n  HTTPS (SSL): https://localhost:{ssl_port}/" if ssl_enabled else ""
             )
             webui_lines = f"""
 Web 管理面板:
-  http://localhost:{port}/{http_label}
+  HTTP: http://localhost:{port}/{http_label}
 
 REST API 文档:
   http://localhost:{port}/api/docs - Swagger 接口文档{(" (HTTPS: https://localhost:" + ssl_port + "/api/docs)") if ssl_enabled else ""}

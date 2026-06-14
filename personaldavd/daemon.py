@@ -133,14 +133,16 @@ class DaemonServer:
     def start(self):
         import time as _time
         import uvicorn
+        import logging as _logging
         self.start_time = _time.time()
-        app = create_app(self.config)
         self._servers.clear()
         self._secondary_threads.clear()
+        self.ssl_port = None
 
-        # HTTP — always started
+        # Each server needs its own app instance to avoid lifespan/logger conflicts
+        app_http = create_app(self.config)
         uv_config_http = uvicorn.Config(
-            app,
+            app_http,
             host=self.config.host,
             port=self.config.port,
             log_level=self.config.log_level.lower(),
@@ -151,24 +153,38 @@ class DaemonServer:
 
         # HTTPS — if SSL enabled (port = config.port + 1)
         if self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile:
-            ssl_port = self.config.port + 1
-            uv_config_https = uvicorn.Config(
-                app,
-                host=self.config.host,
-                port=ssl_port,
-                log_level=self.config.log_level.lower(),
-                ssl_keyfile=self.config.ssl_keyfile,
-                ssl_certfile=self.config.ssl_certfile,
-                log_config=UVICORN_LOG_CONFIG,
-            )
-            server_https = uvicorn.Server(uv_config_https)
-            self._servers.append(server_https)
-            t = threading.Thread(target=server_https.run, daemon=True)
-            t.start()
-            self._secondary_threads.append(t)
-            self.ssl_port = ssl_port
-        else:
-            self.ssl_port = None
+            import os as _os
+            if not _os.path.isfile(self.config.ssl_certfile):
+                _logging.warning("HTTPS 服务未启动: 证书文件不存在 (%s)", self.config.ssl_certfile)
+            elif not _os.path.isfile(self.config.ssl_keyfile):
+                _logging.warning("HTTPS 服务未启动: 密钥文件不存在 (%s)", self.config.ssl_keyfile)
+            else:
+                ssl_port = self.config.port + 1
+                app_https = create_app(self.config)
+                uv_config_https = uvicorn.Config(
+                    app_https,
+                    host=self.config.host,
+                    port=ssl_port,
+                    log_level=self.config.log_level.lower(),
+                    ssl_keyfile=self.config.ssl_keyfile,
+                    ssl_certfile=self.config.ssl_certfile,
+                    log_config=UVICORN_LOG_CONFIG,
+                )
+                server_https = uvicorn.Server(uv_config_https)
+                self._servers.append(server_https)
+
+                def _run_https(srv):
+                    """Wrap HTTPS server run with error logging."""
+                    try:
+                        srv.run()
+                    except Exception as exc:
+                        _logging.error("HTTPS 服务启动失败 (端口 %s): %s", ssl_port, exc)
+
+                t = threading.Thread(target=_run_https, args=(server_https,), daemon=True)
+                t.start()
+                self._secondary_threads.append(t)
+                self.ssl_port = ssl_port
+                _logging.info("HTTPS 服务已启动 (端口 %s)", ssl_port)
 
         # Block on HTTP (headless mode), or just run (GUI background thread)
         server_http.run()
