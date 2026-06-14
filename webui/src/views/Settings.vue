@@ -417,7 +417,6 @@ export default {
     settings: {},
     authLogs: [],
     systemLogs: [],
-    scopedTokens: [],
     apiTokens: [],
     showCreateToken: false,
     tokenFormScopes: [],

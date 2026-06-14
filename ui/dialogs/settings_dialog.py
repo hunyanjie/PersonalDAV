@@ -454,7 +454,7 @@ class SettingsDialog(tk.Toplevel):
         self._tok_tree.column("expires", width=100)
         self._tok_tree.column("used", width=120)
         self._tok_tree.pack(fill=tk.X, padx=10, pady=5)
-        tk.Button(tok_f, text="新建令牌", command=self._show_create_token).pack(anchor="w", padx=10, pady=5)
+        ttk.Button(tok_f, text="新建令牌", command=self._show_create_token).pack(anchor="w", padx=10, pady=5)
 
         def _copy_token(event=None):
             sel = self._tok_tree.selection()
@@ -479,7 +479,7 @@ class SettingsDialog(tk.Toplevel):
 
         self._tok_tree.bind("<Button-3>", _tok_right_click)
         self._tok_tree.bind("<Control-c>", _copy_token)
-        self._refresh_scoped_tokens()
+        self._refresh_api_tokens()
 
         tools = ttk.LabelFrame(parent, text="可用工具列表")
         tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -932,7 +932,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
     # ── 搜索设置 ────────────────────────────────────────────────
 
-    def _refresh_scoped_tokens(self) -> None:
+    def _refresh_api_tokens(self) -> None:
         try:
             from services.api_token_service import ApiTokenService, SCOPE_LABELS
             ats = ApiTokenService()
@@ -1010,7 +1010,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             ttk.Label(win, text=f"权限: {', '.join(selected)}", font=("", 9)).pack()
             if result["expires_at"]:
                 ttk.Label(win, text=f"到期: {result['expires_at'][:10]}", font=("", 9)).pack()
-            ttk.Button(win, text="关闭", command=lambda: (win.destroy(), self._refresh_scoped_tokens())).pack(pady=10)
+            ttk.Button(win, text="关闭", command=lambda: (win.destroy(), self._refresh_api_tokens())).pack(pady=10)
         ttk.Button(win, text="生成令牌", command=do_create).grid(row=row, column=0, columnspan=2, pady=10)
 
     def _delete_api_token(self, item_id: str) -> None:
@@ -1021,7 +1021,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         if ConfirmDialog(self, "确认删除", f"确定删除令牌 [{tok_data.get('note', tok_data['id'][:8]+'...')}]?").result:
             from services.api_token_service import ApiTokenService
             ApiTokenService().delete_token(tok_data["id"])
-            self._refresh_scoped_tokens()
+        self._refresh_api_tokens()
 
     def create_search_settings(self, parent):
         f = ttk.LabelFrame(parent, text="搜索模式")

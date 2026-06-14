@@ -476,12 +476,6 @@ async def delete_api_token(token_id: str, token: str = Depends(get_current_token
     ApiTokenService().delete_token(token_id)
     return {"deleted": True}
 
-
-@api_router.get("/auth/tokens/scoped", summary="列出作用域令牌")
-async def list_scoped_tokens(token: str = Depends(get_current_token)):
-    return AuthService().list_scoped_tokens()
-
-
 @api_router.get("/apple/config", summary="生成 Apple 设备配置 (.mobileconfig)")
 async def apple_config(request_host: str = Query(None, alias="host"), token: str = Depends(get_current_token)):
     ss = SettingsService()

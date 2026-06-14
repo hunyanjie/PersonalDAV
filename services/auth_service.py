@@ -113,24 +113,6 @@ class AuthService:
             return True
         return secrets.compare_digest(self.get_mcp_token(), token)
 
-    def verify_scope(self, token: str, required_scope: str) -> bool:
-        if not self.is_password_required():
-            return True
-        if self.verify_mcp_token(token):
-            return True
-        expected = hashlib.sha256(f"scope:{required_scope}:{self._mcp_token_seed()}".encode('utf-8')).hexdigest()
-        return secrets.compare_digest(expected, token)
-
-    def get_scoped_token(self, scope: str) -> str:
-        seed = self._mcp_token_seed()
-        if not seed:
-            return ""
-        return hashlib.sha256(f"scope:{scope}:{seed}".encode('utf-8')).hexdigest()
-
-    def list_scoped_tokens(self) -> list[dict]:
-        scopes = ["contacts:read", "contacts:write", "events:read", "events:write", "dav:read", "dav:write"]
-        return [{"scope": s, "token": self.get_scoped_token(s)} for s in scopes]
-
     def rotate_mcp_token(self):
         SettingsService().set_setting("mcp_token_salt", secrets.token_hex(16))
         SettingsService().set_setting("mcp_token_rotated_at", datetime.now().isoformat())
