@@ -8,7 +8,6 @@ from personaldavd.config import DaemonConfig
 from personaldavd.daemon import DaemonServer
 from ui.widgets.right_click_menu import RightClickMenu
 from services.ftp_service import FTPService
-from ui.widgets.collapsible_frame import CollapsibleFrame
 from utils.logger import logger, GUIHandler
 
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
@@ -59,9 +58,12 @@ class ServerTab(ttk.Frame):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind("<MouseWheel>", _on_mousewheel)
 
-        # 端口设置
-        port_frame = ttk.LabelFrame(inner, text="服务器控制")
-        port_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+        # 顶部行：左 服务器控制 + 右 FTP 快速控制
+        top_row = ttk.Frame(inner)
+        top_row.pack(fill=tk.X, padx=10, pady=(10, 5))
+
+        port_frame = ttk.LabelFrame(top_row, text="服务器控制")
+        port_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
         ttk.Label(port_frame, text="端口号:").pack(side=tk.LEFT, padx=5, pady=10)
         self.port_var = tk.StringVar(value=self.settings_service.get_setting("default_port", "8000"))
@@ -80,18 +82,17 @@ class ServerTab(ttk.Frame):
         self._webui_cb = ttk.Checkbutton(port_frame, text="Web面板", variable=self.webui_enabled)
         self._webui_cb.pack(side=tk.LEFT, padx=2)
 
-        # FTP / SFTP / TFTP 快速控制（配置已移至 设置→FTP/SFTP/TFTP/WebDAV 设置）
-        ftp_collapse = CollapsibleFrame(inner, text="FTP / SFTP / TFTP 文件服务", expanded=False)
-        ftp_collapse.pack(fill=tk.X, padx=10, pady=(2, 5))
-
-        ftp_ctrl = ttk.Frame(ftp_collapse.body)
-        ftp_ctrl.pack(fill=tk.X, padx=5, pady=5)
+        # FTP 快速控制（配置已移至 设置）
+        ftp_frame = ttk.LabelFrame(top_row, text="FTP / SFTP / TFTP 文件服务")
+        ftp_frame.pack(side=tk.LEFT, padx=(5, 0))
+        ftp_ctrl = ttk.Frame(ftp_frame)
+        ftp_ctrl.pack(padx=5, pady=5)
         self.ftp_start_btn = ttk.Button(ftp_ctrl, text="启动选中服务", command=self.start_ftp_services)
-        self.ftp_start_btn.pack(side=tk.LEFT, padx=5)
+        self.ftp_start_btn.pack(side=tk.LEFT, padx=3)
         self.ftp_stop_btn = ttk.Button(ftp_ctrl, text="停止选中服务", command=self.stop_ftp_services, state=tk.DISABLED)
-        self.ftp_stop_btn.pack(side=tk.LEFT, padx=5)
+        self.ftp_stop_btn.pack(side=tk.LEFT, padx=3)
         self.ftp_status_label = ttk.Label(ftp_ctrl, text="状态: 已停止")
-        self.ftp_status_label.pack(side=tk.LEFT, padx=10)
+        self.ftp_status_label.pack(side=tk.LEFT, padx=5)
 
         # 日志显示
         log_frame = ttk.LabelFrame(inner, text="运行日志")

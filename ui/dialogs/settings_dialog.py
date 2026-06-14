@@ -295,60 +295,61 @@ class SettingsDialog(tk.Toplevel):
         body.grid_columnconfigure(1, weight=1)
 
         # FTP / WebDAV / TFTP 设置
-        extra_f = ttk.LabelFrame(parent, text="FTP / SFTP / TFTP / WebDAV 设置")
+        extra_f = CollapsibleFrame(parent, text="FTP / SFTP / TFTP / WebDAV 设置", expanded=False)
         extra_f.pack(fill=tk.X, padx=5, pady=2)
+        body = extra_f.body
         row = 0
-        ttk.Label(extra_f, text="WebDAV 根目录:（已迁移至「文件挂载」标签页管理）",
+        ttk.Label(body, text="WebDAV 根目录:（已迁移至「文件挂载」标签页管理）",
                   foreground="gray").grid(row=row, column=0, columnspan=5, sticky="w", padx=5, pady=2)
         row += 1
 
         # FTP row
         self.ftp_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(extra_f, text="FTP", variable=self.ftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
-        ttk.Label(extra_f, text="端口:").grid(row=row, column=1, sticky="w")
+        ttk.Checkbutton(body, text="FTP", variable=self.ftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="端口:").grid(row=row, column=1, sticky="w")
         self.ftp_port_var = tk.StringVar(value="21")
-        ttk.Entry(extra_f, textvariable=self.ftp_port_var, width=6).grid(row=row, column=2, sticky="w")
+        ttk.Entry(body, textvariable=self.ftp_port_var, width=6).grid(row=row, column=2, sticky="w")
         self.ftps_check_var = tk.BooleanVar()
-        ttk.Checkbutton(extra_f, text="FTPS(SSL)", variable=self.ftps_check_var).grid(row=row, column=3, padx=5)
-        ttk.Label(extra_f, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
+        ttk.Checkbutton(body, text="FTPS(SSL)", variable=self.ftps_check_var).grid(row=row, column=3, padx=5)
+        ttk.Label(body, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
         self.ftp_root_var = tk.StringVar(value="./ftp_root")
-        ttk.Entry(extra_f, textvariable=self.ftp_root_var, width=30).grid(row=row, column=5, sticky="we")
-        ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_ftp_dir(self.ftp_root_var)).grid(row=row, column=6)
-        extra_f.grid_columnconfigure(5, weight=1)
+        ttk.Entry(body, textvariable=self.ftp_root_var, width=30).grid(row=row, column=5, sticky="we")
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ftp_dir(self.ftp_root_var)).grid(row=row, column=6)
+        body.grid_columnconfigure(5, weight=1)
         row += 1
 
         # SFTP row
         self.sftp_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(extra_f, text="SFTP", variable=self.sftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
-        ttk.Label(extra_f, text="端口:").grid(row=row, column=1, sticky="w")
+        ttk.Checkbutton(body, text="SFTP", variable=self.sftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="端口:").grid(row=row, column=1, sticky="w")
         self.sftp_port_var = tk.StringVar(value="22")
-        ttk.Entry(extra_f, textvariable=self.sftp_port_var, width=6).grid(row=row, column=2, sticky="w")
-        ttk.Label(extra_f, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
+        ttk.Entry(body, textvariable=self.sftp_port_var, width=6).grid(row=row, column=2, sticky="w")
+        ttk.Label(body, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
         self.sftp_root_var = tk.StringVar(value="./sftp_root")
-        ttk.Entry(extra_f, textvariable=self.sftp_root_var, width=30).grid(row=row, column=5, sticky="we")
-        ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_ftp_dir(self.sftp_root_var)).grid(row=row, column=6)
+        ttk.Entry(body, textvariable=self.sftp_root_var, width=30).grid(row=row, column=5, sticky="we")
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ftp_dir(self.sftp_root_var)).grid(row=row, column=6)
         row += 1
 
         # TFTP row
         self.tftp_enabled_var = tk.BooleanVar()
-        ttk.Checkbutton(extra_f, text="TFTP", variable=self.tftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
-        ttk.Label(extra_f, text="端口:").grid(row=row, column=1, sticky="w")
+        ttk.Checkbutton(body, text="TFTP", variable=self.tftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="端口:").grid(row=row, column=1, sticky="w")
         self.tftp_port_var = tk.StringVar(value="69")
-        ttk.Entry(extra_f, textvariable=self.tftp_port_var, width=6).grid(row=row, column=2, sticky="w")
-        ttk.Label(extra_f, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
+        ttk.Entry(body, textvariable=self.tftp_port_var, width=6).grid(row=row, column=2, sticky="w")
+        ttk.Label(body, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
         self.tftp_root_var = tk.StringVar(value="./tftp_root")
-        ttk.Entry(extra_f, textvariable=self.tftp_root_var, width=30).grid(row=row, column=5, sticky="we")
-        ttk.Button(extra_f, text="浏览...", command=lambda: self._browse_ftp_dir(self.tftp_root_var)).grid(row=row, column=6)
+        ttk.Entry(body, textvariable=self.tftp_root_var, width=30).grid(row=row, column=5, sticky="we")
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ftp_dir(self.tftp_root_var)).grid(row=row, column=6)
         row += 1
 
         # Encoding + Password row
-        ttk.Label(extra_f, text="FTP 独立密码:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
+        ttk.Label(body, text="FTP 独立密码:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
         self.ftp_password_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.ftp_password_var, show="*", width=16).grid(row=row, column=1, columnspan=2, sticky="w", padx=2)
-        ttk.Label(extra_f, text="（留空=统一账号）").grid(row=row, column=3, sticky="w", padx=2)
-        ttk.Label(extra_f, text="编码:").grid(row=row, column=4, sticky="w", padx=5)
+        ttk.Entry(body, textvariable=self.ftp_password_var, show="*", width=16).grid(row=row, column=1, columnspan=2, sticky="w", padx=2)
+        ttk.Label(body, text="（留空=统一账号）").grid(row=row, column=3, sticky="w", padx=2)
+        ttk.Label(body, text="编码:").grid(row=row, column=4, sticky="w", padx=5)
         self.ftp_encoding_var = tk.StringVar(value="utf-8")
-        ttk.Combobox(extra_f, textvariable=self.ftp_encoding_var, values=[
+        ttk.Combobox(body, textvariable=self.ftp_encoding_var, values=[
             "utf-8", "gbk", "gb2312", "big5", "shift-jis", "euc-kr", "euc-jp",
             "cp1250", "cp1251", "cp1252", "cp1253", "cp1254", "cp1255", "cp1256",
             "cp1257", "cp1258", "iso-8859-1", "koi8-r", "koi8-u",
@@ -357,12 +358,12 @@ class SettingsDialog(tk.Toplevel):
 
         # Auto-save + start mode
         self.ftp_auto_save_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(extra_f, text="自动保存 FTP/SFTP/TFTP 设置", variable=self.ftp_auto_save_var).grid(
+        ttk.Checkbutton(body, text="自动保存 FTP/SFTP/TFTP 设置", variable=self.ftp_auto_save_var).grid(
             row=row, column=0, columnspan=4, sticky="w", padx=5, pady=3)
 
         # Load port validation for each port entry
         for port_key in ("ftp_port", "sftp_port", "tftp_port"):
-            self._setup_port_validation(extra_f, port_key)
+            self._setup_port_validation(body, port_key)
 
         # 备份与恢复
         bk_f = CollapsibleFrame(parent, text="备份与恢复")
