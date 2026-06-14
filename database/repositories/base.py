@@ -50,13 +50,26 @@ class BaseRepository(Generic[T]):
         return True
 
     def search(self, columns: list[str], keyword: str, limit: int = 20) -> list[T]:
-        conditions = " OR ".join(f"{col} LIKE ?" for col in columns)
-        pattern = f"%{keyword}%"
-        rows = self.db.query(
-            f"SELECT {self._col_str} FROM {self.table} WHERE {conditions} LIMIT ?",
-            (*([pattern] * len(columns)), limit)
-        )
-        return [self._to_model(row) for row in rows]
+        fts_table = f"{self.table}_fts"
+        try:
+            # Escape FTS5 special chars and build prefix MATCH
+            safe = keyword.replace('"', '""').replace("'", "''")
+            terms = ' OR '.join(f'{col}:"{safe}"*' for col in columns)
+            rows = self.db.query(
+                f"SELECT {self._col_str} FROM {self.table} "
+                f"WHERE id IN (SELECT rowid FROM {fts_table} WHERE {fts_table} MATCH ?) LIMIT ?",
+                (terms, limit)
+            )
+            return [self._to_model(row) for row in rows]
+        except Exception:
+            # Fallback to LIKE
+            conditions = " OR ".join(f"{col} LIKE ?" for col in columns)
+            pattern = f"%{keyword}%"
+            rows = self.db.query(
+                f"SELECT {self._col_str} FROM {self.table} WHERE {conditions} LIMIT ?",
+                (*([pattern] * len(columns)), limit)
+            )
+            return [self._to_model(row) for row in rows]
 
     def search_by_date_range(self, start_col: str, end_col: str, start: str, end: str) -> list[T]:
         rows = self.db.query(

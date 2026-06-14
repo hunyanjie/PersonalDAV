@@ -131,6 +131,59 @@ class Database:
                 prev = h
             logger.info(f"已回填 {missing} 条审计日志的哈希链")
 
+        # FTS5 全文索引（v3.4）
+        try:
+            c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS contacts_fts USING fts5(
+                full_name, email, phone, vcard, groups,
+                content='contacts', content_rowid='id',
+                tokenize='unicode61'
+            )''')
+            c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+                summary, ical,
+                content='events', content_rowid='id',
+                tokenize='unicode61'
+            )''')
+            # 同步触发器 (content-sync 需要完整列值做 delete)
+            contacts_cols = 'full_name, email, phone, vcard, groups'
+            events_cols = 'summary, ical'
+            for table, fts_table, cols in [
+                ('contacts', 'contacts_fts', contacts_cols),
+                ('events', 'events_fts', events_cols)
+            ]:
+                c.execute(f"""
+                    CREATE TRIGGER IF NOT EXISTS {table}_fts_ad
+                    AFTER DELETE ON {table} BEGIN
+                        INSERT INTO {fts_table}({fts_table}, rowid, {cols})
+                        VALUES ('delete', old.id, {','.join(f'old.{c.strip()}' for c in cols.split(','))});
+                    END
+                """)
+                c.execute(f"""
+                    CREATE TRIGGER IF NOT EXISTS {table}_fts_ai
+                    AFTER INSERT ON {table} BEGIN
+                        INSERT INTO {fts_table}(rowid, {cols})
+                        VALUES (new.id, {','.join(f'new.{c.strip()}' for c in cols.split(','))});
+                    END
+                """)
+                c.execute(f"""
+                    CREATE TRIGGER IF NOT EXISTS {table}_fts_au
+                    AFTER UPDATE ON {table} BEGIN
+                        INSERT INTO {fts_table}({fts_table}, rowid, {cols})
+                        VALUES ('delete', old.id, {','.join(f'old.{c.strip()}' for c in cols.split(','))});
+                        INSERT INTO {fts_table}(rowid, {cols})
+                        VALUES (new.id, {','.join(f'new.{c.strip()}' for c in cols.split(','))});
+                    END
+                """)
+            # 迁移：已有数据入 FTS
+            for table, fts_table in [('contacts', 'contacts_fts'), ('events', 'events_fts')]:
+                cnt = c.execute(f"SELECT COUNT(*) FROM {fts_table}").fetchone()[0]
+                if cnt == 0:
+                    c.execute(f"INSERT INTO {fts_table}({fts_table}) VALUES('rebuild')")
+                    count = c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    if count > 0:
+                        logger.info(f"FTS5 索引已为 {table} 构建 ({count} 条)")
+        except Exception as e:
+            logger.warning(f"FTS5 初始化失败（降级为 LIKE 搜索）: {e}")
+
         # 远程连接表（FTP/FTPS/SFTP 保存的连接）
         c.execute('''CREATE TABLE IF NOT EXISTS remote_connections
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
