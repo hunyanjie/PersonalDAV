@@ -439,33 +439,42 @@ class SettingsDialog(tk.Toplevel):
             self.mcp_port_var.trace("w", update_url)
         self.after(100, update_url)
 
-        # 作用域令牌
-        tok_f = ttk.LabelFrame(parent, text="作用域令牌 (API 细粒度权限)")
+        # API 令牌 (v3.4)
+        tok_f = ttk.LabelFrame(parent, text="API 令牌 (可自定义权限和有效期)")
         tok_f.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Label(tok_f, text="每个令牌仅限特定操作. 完整 MCP 令牌包含所有权限.",
+        ttk.Label(tok_f, text="令牌通过 SHA256 哈希存储，关闭弹窗后无法再次查看原始令牌。",
                   wraplength=500, foreground="gray").pack(anchor="w", padx=10, pady=2)
-        self._tok_tree = ttk.Treeview(tok_f, columns=("scope", "token"), show="headings", height=6)
-        self._tok_tree.heading("scope", text="作用域")
-        self._tok_tree.heading("token", text="令牌")
-        self._tok_tree.column("scope", width=140)
-        self._tok_tree.column("token", width=260)
+        self._tok_tree = ttk.Treeview(tok_f, columns=("note", "scopes", "expires", "used"), show="headings", height=5)
+        self._tok_tree.heading("note", text="备注")
+        self._tok_tree.heading("scopes", text="权限")
+        self._tok_tree.heading("expires", text="过期")
+        self._tok_tree.heading("used", text="最后使用")
+        self._tok_tree.column("note", width=100)
+        self._tok_tree.column("scopes", width=200)
+        self._tok_tree.column("expires", width=100)
+        self._tok_tree.column("used", width=120)
         self._tok_tree.pack(fill=tk.X, padx=10, pady=5)
+        tk.Button(tok_f, text="新建令牌", command=self._show_create_token).pack(anchor="w", padx=10, pady=5)
 
         def _copy_token(event=None):
             sel = self._tok_tree.selection()
             if not sel:
                 return
-            token = self._tok_tree.item(sel[0], "values")[1] if self._tok_tree.item(sel[0], "values") else ""
-            if token:
+            tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(sel[0])
+            if tok_data and tok_data.get("_raw"):
                 self.clipboard_clear()
-                self.clipboard_append(token)
+                self.clipboard_append(tok_data["_raw"])
 
         def _tok_right_click(event):
             item = self._tok_tree.identify_row(event.y)
-            if item:
-                self._tok_tree.selection_set(item)
+            if not item:
+                return
+            self._tok_tree.selection_set(item)
+            tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(item, {})
             menu = tk.Menu(self, tearoff=0)
-            menu.add_command(label="复制令牌", command=_copy_token)
+            if tok_data.get("_raw"):
+                menu.add_command(label="复制令牌", command=_copy_token)
+            menu.add_command(label="删除", command=lambda: self._delete_api_token(item))
             menu.post(event.x_root, event.y_root)
 
         self._tok_tree.bind("<Button-3>", _tok_right_click)
@@ -925,18 +934,94 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
     def _refresh_scoped_tokens(self) -> None:
         try:
-            from services.auth_service import AuthService
-            auth = AuthService()
+            from services.api_token_service import ApiTokenService, SCOPE_LABELS
+            ats = ApiTokenService()
             for i in self._tok_tree.get_children():
                 self._tok_tree.delete(i)
-            labels = {"contacts:read": "联系人(只读)", "contacts:write": "联系人(读写)",
-                      "events:read": "日程(只读)", "events:write": "日程(读写)",
-                      "dav:read": "文件(只读)", "dav:write": "文件(读写)"}
-            for entry in auth.list_scoped_tokens():
-                label = labels.get(entry["scope"], entry["scope"])
-                self._tok_tree.insert("", tk.END, values=(label, entry["token"]))
+            self._tok_tree._tok_id_map = {}
+            for t in ats.list_tokens():
+                scopes_str = " ".join(SCOPE_LABELS.get(s, s) for s in t.get("scopes", []))
+                expires_str = t.get("expires_at", "")[:10] if t.get("expires_at") else "永不过期"
+                used_str = t.get("last_used_at", "")[:10] if t.get("last_used_at") else "从未"
+                iid = self._tok_tree.insert("", tk.END, values=(
+                    t.get("note", t["id"][:8]+"..."), scopes_str, expires_str, used_str
+                ))
+                self._tok_tree._tok_id_map[iid] = t
         except Exception as e:
-            self._tok_tree.insert("", tk.END, values=("加载失败", str(e)))
+            for i in self._tok_tree.get_children():
+                self._tok_tree.delete(i)
+            self._tok_tree.insert("", tk.END, values=("加载失败", str(e), "", ""))
+
+    def _show_create_token(self) -> None:
+        from services.api_token_service import SCOPE_LABELS
+        import tkinter.simpledialog
+        win = tk.Toplevel(self)
+        win.title("创建 API 令牌")
+        win.transient(self)
+        win.grab_set()
+        scopes = {}
+        row = 0
+        ttk.Label(win, text="选择权限 (支持多选):", font=("", 10, "bold")).grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+        row += 1
+        cb_frame = ttk.Frame(win)
+        cb_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+        for i, (scope, label) in enumerate(sorted(SCOPE_LABELS.items())):
+            var = tk.BooleanVar()
+            scopes[scope] = var
+            cb = ttk.Checkbutton(cb_frame, text=label, variable=var)
+            cb.grid(row=i // 2, column=i % 2, sticky="w", padx=5, pady=2)
+        row += 1
+        ttk.Label(win, text="备注:").grid(row=row, column=0, padx=10, pady=5, sticky="w")
+        note_var = tk.StringVar()
+        ttk.Entry(win, textvariable=note_var, width=40).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+        row += 1
+        ttk.Label(win, text="过期:").grid(row=row, column=0, padx=10, pady=5, sticky="w")
+        expires_var = tk.StringVar(value="")
+        expire_combo = ttk.Combobox(win, textvariable=expires_var, values=["", "7天", "30天", "90天", "1年", "自定义"], state="readonly", width=15)
+        expire_combo.grid(row=row, column=1, padx=10, pady=5, sticky="w")
+        expire_combo.bind("<<ComboboxSelected>>", lambda e: (
+            None if expires_var.get() != "自定义" else (expire_combo.set("自定义"), None)
+        ))
+        row += 1
+        def do_create():
+            selected = [s for s, v in scopes.items() if v.get()]
+            if not selected:
+                from ui.dialogs.toast import Toast
+                Toast.show(win, "请至少选择一个权限", duration=2000)
+                return
+            expires_at = ""
+            val = expires_var.get()
+            if val and val != "自定义":
+                import datetime
+                days = {"7天": 7, "30天": 30, "90天": 90, "1年": 365}[val]
+                expires_at = (datetime.datetime.now() + datetime.timedelta(days=days)).isoformat()
+            from services.api_token_service import ApiTokenService
+            result = ApiTokenService().create_token(selected, note_var.get(), expires_at)
+            for c in win.winfo_children():
+                c.destroy()
+            ttk.Label(win, text="令牌已生成，请立即复制:", font=("", 10, "bold")).pack(padx=10, pady=10)
+            raw_var = tk.StringVar(value=result["token"])
+            entry = ttk.Entry(win, textvariable=raw_var, width=60, state="readonly")
+            entry.pack(padx=10, pady=5)
+            def copy_raw():
+                win.clipboard_clear()
+                win.clipboard_append(result["token"])
+            ttk.Button(win, text="复制", command=copy_raw).pack(pady=5)
+            ttk.Label(win, text=f"权限: {', '.join(selected)}", font=("", 9)).pack()
+            if result["expires_at"]:
+                ttk.Label(win, text=f"到期: {result['expires_at'][:10]}", font=("", 9)).pack()
+            ttk.Button(win, text="关闭", command=lambda: (win.destroy(), self._refresh_scoped_tokens())).pack(pady=10)
+        ttk.Button(win, text="生成令牌", command=do_create).grid(row=row, column=0, columnspan=2, pady=10)
+
+    def _delete_api_token(self, item_id: str) -> None:
+        tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(item_id, {})
+        if not tok_data:
+            return
+        from ui.dialogs.confirm_dialog import ConfirmDialog
+        if ConfirmDialog(self, "确认删除", f"确定删除令牌 [{tok_data.get('note', tok_data['id'][:8]+'...')}]?").result:
+            from services.api_token_service import ApiTokenService
+            ApiTokenService().delete_token(tok_data["id"])
+            self._refresh_scoped_tokens()
 
     def create_search_settings(self, parent):
         f = ttk.LabelFrame(parent, text="搜索模式")
