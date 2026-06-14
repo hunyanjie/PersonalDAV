@@ -99,6 +99,18 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     app.state.config = cfg
     app.add_middleware(AuthMiddleware)
 
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request, exc):
+        import traceback
+        tb = traceback.format_exc()
+        logger = getLogger("personaldavd")
+        logger.error("未捕获异常 [%s %s]: %s\n%s", request.method, request.url.path, exc, tb)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"{type(exc).__name__}: {exc}", "path": request.url.path}
+        )
+
     if cfg.webui_enabled:
         app.include_router(api_router, prefix="/api")
         app.include_router(files_router, prefix="/api")
