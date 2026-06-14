@@ -65,7 +65,8 @@ export default {
 .toast-info { background: rgba(230, 244, 255, 0.9); color: var(--brand); border-color: var(--brand-ring); }
 
 .toast-enter-active { transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.toast-leave-active { transition: all 0.25s ease; }
+.toast-leave-active { transition: all 0.25s ease; position: absolute; }
+.toast-move { transition: all 0.3s ease; }
 .toast-enter-from { opacity: 0; transform: translateX(100%) scale(0.9); }
-.toast-leave-to { opacity: 0; transform: translateX(100%); }
+.toast-leave-to { opacity: 0; transform: translateX(100%) scale(0.9); }
 </style>

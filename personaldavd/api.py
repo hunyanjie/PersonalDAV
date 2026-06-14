@@ -1,6 +1,6 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time, os, shutil, uuid
+import time, os, shutil, uuid, logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -19,50 +19,61 @@ from .logging import LOG_QUEUE
 
 api_router = APIRouter(tags=["API 接口"])
 _start_time = time.time()
+_logger = logging.getLogger("api")
 
 
 def _contact_to_out(raw: str) -> ContactOut | None:
     """Convert a vCard string to ContactOut (minimal parse)."""
-    uid = ""
-    full_name = email = phone = groups = ""
-    for line in raw.splitlines():
-        if line.upper().startswith("UID:"):
-            uid = line[4:].strip()
-        elif line.upper().startswith("FN:"):
-            full_name = line[3:].strip()
-        elif line.upper().startswith("EMAIL"):
-            email = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("TEL"):
-            phone = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("CATEGORIES"):
-            groups = line.split(":", 1)[-1].strip() if ":" in line else ""
-    if not uid:
+    try:
+        uid = ""
+        full_name = email = phone = groups = ""
+        for line in raw.splitlines():
+            if line.upper().startswith("UID:"):
+                uid = line[4:].strip()
+            elif line.upper().startswith("FN:"):
+                full_name = line[3:].strip()
+            elif line.upper().startswith("EMAIL"):
+                email = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("TEL"):
+                phone = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("CATEGORIES"):
+                groups = line.split(":", 1)[-1].strip() if ":" in line else ""
+        if not uid:
+            _logger.error("_contact_to_out: vCard 缺少 UID 行，无法解析:\n%s", raw[:300])
+            return None
+        return ContactOut(uid=uid, full_name=full_name, email=email, phone=phone, groups=groups, vcard=raw)
+    except Exception as e:
+        _logger.error("_contact_to_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
         return None
-    return ContactOut(uid=uid, full_name=full_name, email=email, phone=phone, groups=groups, vcard=raw)
 
 
 def _event_to_out(raw: str) -> EventOut | None:
     """Convert an iCal string to EventOut (minimal parse)."""
-    uid = summary = dtstart = dtend = description = location = categories = ""
-    for line in raw.splitlines():
-        if line.upper().startswith("UID:"):
-            uid = line[4:].strip()
-        elif line.upper().startswith("SUMMARY"):
-            summary = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("DTSTART"):
-            dtstart = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("DTEND"):
-            dtend = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("DESCRIPTION"):
-            description = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("LOCATION"):
-            location = line.split(":", 1)[-1].strip() if ":" in line else ""
-        elif line.upper().startswith("CATEGORIES"):
-            categories = line.split(":", 1)[-1].strip() if ":" in line else ""
-    if not uid:
+    try:
+        uid = summary = dtstart = dtend = description = location = categories = ""
+        for line in raw.splitlines():
+            if line.upper().startswith("UID:"):
+                uid = line[4:].strip()
+            elif line.upper().startswith("SUMMARY"):
+                summary = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("DTSTART"):
+                dtstart = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("DTEND"):
+                dtend = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("DESCRIPTION") and not description:
+                description = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("LOCATION"):
+                location = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif line.upper().startswith("CATEGORIES"):
+                categories = line.split(":", 1)[-1].strip() if ":" in line else ""
+        if not uid:
+            _logger.error("_event_to_out: iCal 缺少 UID 行:\n%s", raw[:300])
+            return None
+        return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend,
+                        description=description, location=location, categories=categories, ical=raw)
+    except Exception as e:
+        _logger.error("_event_to_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
         return None
-    return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend,
-                    description=description, location=location, categories=categories, ical=raw)
 
 
 # ── Health ──────────────────────────────────────────────────────
@@ -168,10 +179,12 @@ async def get_contact(uid: str, token: str = Depends(get_current_token)):
     svc = ContactService()
     raw = svc.get_by_uid(uid)
     if not raw:
+        _logger.warning("get_contact: UID=%s 不存在", uid)
         raise HTTPException(404, "联系人不存在")
     out = _contact_to_out(raw)
     if not out:
-        raise HTTPException(500, "解析联系人失败")
+        _logger.error("get_contact: UID=%s 解析失败, raw前300字符:\n%s", uid, raw[:300])
+        raise HTTPException(500, f"解析联系人失败 (UID={uid})")
     return out
 
 
@@ -219,11 +232,20 @@ async def create_contact_structured(body: ContactStructuredCreate, token: str = 
 async def update_contact(uid: str, body: ContactUpdate, token: str = Depends(get_current_token)):
     """用新的 vCard 数据覆盖更新指定联系人。"""
     svc = ContactService()
-    existing = svc.get_by_uid(uid)
-    if not existing:
-        raise HTTPException(404, "联系人不存在")
-    new_uid, op = svc.add_contact(body.vcard_data, force=True)
-    return {"uid": new_uid, "operation": op}
+    try:
+        existing = svc.get_by_uid(uid)
+        if not existing:
+            raise HTTPException(404, "联系人不存在")
+        new_uid, op = svc.add_contact(body.vcard_data, force=True)
+        if new_uid is None:
+            _logger.error("update_contact uid=%s 失败: %s", uid, op)
+            raise HTTPException(400, f"更新联系人失败: {op}")
+        return {"uid": new_uid, "operation": op}
+    except HTTPException:
+        raise
+    except Exception as e:
+        _logger.error("update_contact uid=%s 异常: %s", uid, e)
+        raise HTTPException(500, f"更新联系人异常: {e}")
 
 
 @api_router.delete("/contacts/{uid}", response_model=dict, summary="删除联系人")
@@ -263,10 +285,12 @@ async def get_event(uid: str, token: str = Depends(get_current_token)):
     svc = EventService()
     raw = svc.get_by_uid(uid)
     if not raw:
+        _logger.warning("get_event: UID=%s 不存在", uid)
         raise HTTPException(404, "事件不存在")
     out = _event_to_out(raw)
     if not out:
-        raise HTTPException(500, "解析事件失败")
+        _logger.error("get_event: UID=%s 解析失败, raw前300字符:\n%s", uid, raw[:300])
+        raise HTTPException(500, f"解析事件失败 (UID={uid})")
     return out
 
 
@@ -284,13 +308,20 @@ async def create_event(body: EventCreate, token: str = Depends(get_current_token
 async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_current_token)):
     """用新的 iCalendar 数据覆盖更新指定事件。"""
     svc = EventService()
-    existing = svc.get_by_uid(uid)
-    if not existing:
-        raise HTTPException(404, "事件不存在")
-    new_uid, op = svc.add_event(body.ical_data, force=True)
-    if new_uid is None:
-        raise HTTPException(400, f"更新事件失败: {op}")
-    return {"uid": new_uid, "operation": op}
+    try:
+        existing = svc.get_by_uid(uid)
+        if not existing:
+            raise HTTPException(404, "事件不存在")
+        new_uid, op = svc.add_event(body.ical_data, force=True)
+        if new_uid is None:
+            _logger.error("update_event uid=%s 失败: %s", uid, op)
+            raise HTTPException(400, f"更新事件失败: {op}")
+        return {"uid": new_uid, "operation": op}
+    except HTTPException:
+        raise
+    except Exception as e:
+        _logger.error("update_event uid=%s 异常: %s", uid, e)
+        raise HTTPException(500, f"更新事件异常: {e}")
 
 
 @api_router.delete("/events/{uid}", response_model=dict, summary="删除事件")
