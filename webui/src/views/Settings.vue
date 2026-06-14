@@ -329,6 +329,12 @@ const SETTING_DEFS = [
     { text: 'ONLYOFFICE（Docker）', val: 'onlyoffice' }, { text: '微软 Office Online', val: 'ms_online' },
     { text: '每次询问', val: 'ask' }
   ]},
+  { key: 'trash_retention_days', label: '回收站保留天数', type: 'combo', options: [
+    { text: '1 天', val: '1' }, { text: '3 天', val: '3' }, { text: '5 天', val: '5' },
+    { text: '7 天', val: '7' }, { text: '14 天', val: '14' }, { text: '30 天（推荐）', val: '30' },
+    { text: '自定义', val: 'custom' }
+  ]},
+  { key: 'trash_retention_custom', label: '自定义保留天数', type: 'text', inputType: 'number', min: 1 },
   { key: 'onlyoffice_host', label: 'ONLYOFFICE 服务器地址', type: 'text', placeholder: 'http://192.168.1.100:8081' },
 ]
 

@@ -369,7 +369,13 @@ export default {
         input.type = 'file'
         input.onchange = () => {
           const file = input.files[0]
-          if (file) this.form.attachments.push({ url: URL.createObjectURL(file), name: file.name })
+          if (file) {
+            const reader = new FileReader()
+            reader.onload = (e) => {
+              this.form.attachments.push({ url: e.target.result, name: file.name })
+            }
+            reader.readAsDataURL(file)
+          }
         }
         input.click()
       } else {
