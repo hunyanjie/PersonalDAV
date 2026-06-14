@@ -64,16 +64,6 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
-    SettingDef("auto_start_ftp", "启动时自动启动文件服务 (FTP/SFTP/TFTP)", "check",
-               "服务器控制", default=False, db_default="False"),
-    SettingDef("ftps_enabled", "启用 FTPS (SSL)", "check", "服务器控制",
-               default=False, db_default="False"),
-    SettingDef("ftp_encoding", "FTP 文件编码:", "combo", "服务器控制",
-               default="utf-8",
-               options=["utf-8", "gbk", "gb2312", "big5", "shift-jis",
-                        "euc-kr", "euc-jp", "cp1252", "iso-8859-1",
-                        "cp1250", "cp1251", "koi8-r"],
-               width=10),
     SettingDef("attachment_mode", "日历附件模式:", "combo", "服务器控制",
                default="内联 Base64", db_default="inline",
                options=["内联 Base64", "HTTP 链接"],
@@ -359,6 +349,12 @@ class SettingsDialog(tk.Toplevel):
         # Auto-save + start mode
         self.ftp_auto_save_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(body, text="自动保存 FTP/SFTP/TFTP 设置", variable=self.ftp_auto_save_var).grid(
+            row=row, column=0, columnspan=4, sticky="w", padx=5, pady=3)
+        row += 1
+
+        self.ftp_auto_start_var = tk.BooleanVar()
+        ttk.Checkbutton(body, text="启动时自动启动文件服务 (FTP/SFTP/TFTP)",
+                        variable=self.ftp_auto_start_var).grid(
             row=row, column=0, columnspan=4, sticky="w", padx=5, pady=3)
 
         # Load port validation for each port entry
@@ -1253,6 +1249,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ftp_encoding_var.set(s.get_setting("ftp_encoding", "utf-8"))
         self.ftps_check_var.set(s.get_setting("ftps_enabled", "False") == "True")
         self.ftp_auto_save_var.set(s.get_setting("ftp_auto_save", "True") == "True")
+        self.ftp_auto_start_var.set(s.get_setting("auto_start_ftp", "False") == "True")
 
         self.sync_url_var.set(s.get_setting("sync_url", ""))
         self.sync_user_var.set(s.get_setting("sync_user", ""))
@@ -1353,6 +1350,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ftp_encoding_var.set("utf-8")
         self.ftps_check_var.set(False)
         self.ftp_auto_save_var.set(True)
+        self.ftp_auto_start_var.set(False)
 
         self.ssl_enabled_var.set(False)
         self.ssl_cert_var.set("")
@@ -1511,6 +1509,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ftp_encoding", self.ftp_encoding_var.get())
         s.set_setting("ftps_enabled", str(self.ftps_check_var.get()))
         s.set_setting("ftp_auto_save", str(self.ftp_auto_save_var.get()))
+        s.set_setting("auto_start_ftp", str(self.ftp_auto_start_var.get()))
 
         s.set_setting("sync_url", self.sync_url_var.get())
         s.set_setting("sync_user", self.sync_user_var.get())
