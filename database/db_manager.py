@@ -196,6 +196,16 @@ class Database:
                       label TEXT,
                       created_at TEXT)''')
 
+        # API 令牌表 (v3.4)
+        c.execute('''CREATE TABLE IF NOT EXISTS api_tokens
+                     (id TEXT PRIMARY KEY,
+                      token_hash TEXT UNIQUE NOT NULL,
+                      scopes TEXT NOT NULL,
+                      note TEXT DEFAULT '',
+                      expires_at TEXT,
+                      created_at TEXT NOT NULL,
+                      last_used_at TEXT DEFAULT '')''')
+
         # 迁移: 联系人分组
         try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
         except Exception: pass

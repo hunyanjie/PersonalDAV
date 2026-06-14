@@ -455,6 +455,26 @@ async def trash_purge(days: int = Query(30), token: str = Depends(get_current_to
     from services.trash_service import TrashService
     TrashService.purge(days)
     return {"purged": True}
+from services.api_token_service import ApiTokenService
+
+@api_router.get("/auth/tokens", summary="列出 API 令牌（不含原始令牌）")
+async def list_api_tokens(token: str = Depends(get_current_token)):
+    return ApiTokenService().list_tokens()
+
+@api_router.post("/auth/tokens", summary="创建 API 令牌")
+async def create_api_token(body: dict, token: str = Depends(get_current_token)):
+    scopes = body.get("scopes", [])
+    if not scopes:
+        raise HTTPException(400, "至少需要选择一个权限")
+    note = body.get("note", "")
+    expires_at = body.get("expires_at", "")
+    result = ApiTokenService().create_token(scopes, note, expires_at)
+    return result
+
+@api_router.delete("/auth/tokens/{token_id}", summary="删除 API 令牌")
+async def delete_api_token(token_id: str, token: str = Depends(get_current_token)):
+    ApiTokenService().delete_token(token_id)
+    return {"deleted": True}
 
 
 @api_router.get("/auth/tokens/scoped", summary="列出作用域令牌")

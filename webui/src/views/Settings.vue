@@ -143,15 +143,72 @@
               </div>
             </div>
             <div style="margin-top: 16px; border-top: 1px solid var(--border-base); padding-top: 12px;">
-              <h4 style="font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">作用域令牌 (API 细粒度权限)</h4>
-              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">每个令牌仅限特定操作。完整 MCP 令牌包含所有权限。</p>
-              <button v-if="!scopedTokens.length" class="btn-sm" @click="loadScopedTokens" style="margin-bottom: 8px;">生成令牌列表</button>
-              <div v-for="st in scopedTokens" :key="st.scope" class="setting-row" style="padding: 6px 0;">
+              <h4 style="font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">API 令牌 <span style="font-weight:400; font-size:12px; color:var(--text-muted);">可自定义权限和有效期</span></h4>
+
+              <!-- 令牌列表 -->
+              <div v-for="t in apiTokens" :key="t.id" class="setting-row" style="padding: 6px 0;">
                 <div class="setting-info">
-                  <div class="setting-label" style="font-size:13px; font-weight:500;">{{ st.scope }}</div>
+                  <div class="setting-label" style="font-size:13px; font-weight:500;">{{ t.note || t.id.slice(0,8)+'…' }}</div>
+                  <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap;">
+                    <span v-for="s in t.scopes" :key="s" class="scope-badge">{{ s }}</span>
+                    <span v-if="t.expires_at" style="color:#e67e22;">到期 {{ t.expires_at.slice(0,10) }}</span>
+                    <span v-else style="color:#27ae60;">永不过期</span>
+                    <span v-if="t.last_used_at">上次使用 {{ t.last_used_at.slice(0,10) }}</span>
+                  </div>
                 </div>
                 <div class="setting-control">
-                  <input :value="st.token" readonly style="width:280px; font-family:monospace; font-size:11px; padding:4px 6px; border:1px solid var(--border-base); border-radius:4px; background:var(--bg-hover);" @click="$event.target.select()" />
+                  <button class="btn-sm btn-danger" @click="deleteApiToken(t.id)" style="border-color:#e74c3c; color:#e74c3c; padding:4px 10px; font-size:12px;">删除</button>
+                </div>
+              </div>
+              <div v-if="!apiTokens.length" style="padding:8px 0; font-size:13px; color:var(--text-muted);">暂无 API 令牌</div>
+
+              <button class="btn-sm" @click="showCreateToken = true" style="margin-top:8px;">+ 创建令牌</button>
+
+              <!-- 创建令牌弹窗 -->
+              <div v-if="showCreateToken" class="modal-overlay" @click.self="showCreateToken=false">
+                <div class="modal-dialog" style="max-width:560px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h4 style="margin:0;">创建 API 令牌</h4>
+                    <button class="btn-sm" @click="showCreateToken=false" style="border:none; background:transparent; font-size:20px; cursor:pointer;">×</button>
+                  </div>
+                  <div v-if="!newTokenResult">
+                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">选择权限 (支持多选):</p>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; max-height:240px; overflow-y:auto; margin-bottom:12px;">
+                      <label v-for="(label, scope) in scopeOptions" :key="scope" class="scope-checkbox">
+                        <input type="checkbox" :value="scope" v-model="tokenFormScopes" />
+                        <span>{{ label }}</span>
+                      </label>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+                      <div>
+                        <label style="font-size:12px; color:var(--text-muted);">备注</label>
+                        <input v-model="tokenFormNote" placeholder="例如: 给 opencode 用" style="width:200px; padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;" />
+                      </div>
+                      <div>
+                        <label style="font-size:12px; color:var(--text-muted);">过期时间</label>
+                        <select v-model="tokenFormExpires" style="padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;">
+                          <option value="">永不过期</option>
+                          <option value="7">7 天</option>
+                          <option value="30">30 天</option>
+                          <option value="90">90 天</option>
+                          <option value="365">1 年</option>
+                          <option value="custom">自定义日期</option>
+                        </select>
+                        <input v-if="tokenFormExpires==='custom'" v-model="tokenFormCustomDate" type="date" style="margin-left:8px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                      </div>
+                    </div>
+                    <button class="btn-sm btn-primary" @click="createApiToken" :disabled="!tokenFormScopes.length" style="background:var(--brand); color:white; border:none; padding:8px 20px;">生成令牌</button>
+                  </div>
+                  <div v-else>
+                    <p style="font-size:13px; color:var(--text-muted); margin-bottom:8px;">令牌已生成，请立即复制并保存。关闭弹窗后将无法再次查看。</p>
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                      <input :value="newTokenResult.token" readonly style="flex:1; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--brand); border-radius:4px; background:var(--bg-hover);" @click="$event.target.select()" />
+                      <button class="btn-sm" @click="copyToken(newTokenResult.token)" style="white-space:nowrap;">复制</button>
+                    </div>
+                    <p style="font-size:11px; color:var(--text-muted);">权限: {{ newTokenResult.scopes.join(', ') }}</p>
+                    <p v-if="newTokenResult.expires_at" style="font-size:11px; color:var(--text-muted);">到期: {{ newTokenResult.expires_at.slice(0,10) }}</p>
+                    <button class="btn-sm" @click="closeTokenDialog()" style="margin-top:8px;">关闭</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -361,6 +418,13 @@ export default {
     authLogs: [],
     systemLogs: [],
     scopedTokens: [],
+    apiTokens: [],
+    showCreateToken: false,
+    tokenFormScopes: [],
+    tokenFormNote: '',
+    tokenFormExpires: '',
+    tokenFormCustomDate: '',
+    newTokenResult: null,
     editingKey: null,
     editValue: '',
     editableDefs: SETTING_DEFS,
@@ -398,6 +462,7 @@ export default {
     this.loadTheme()
     await this.load()
     await this.loadMounts()
+    this.loadApiTokens()
     this._logTimer = setInterval(() => {
       if (this.activeSection === 'syslogs') this.loadSystemLogs()
     }, 5000)
@@ -425,13 +490,51 @@ export default {
     async loadLogs() {
       try { this.authLogs = await api.authLogs(30) } catch(e) {}
     },
-    async loadScopedTokens() {
-        try {
-        const res = await api.get('/auth/tokens/scoped')
-        this.scopedTokens = res
-        } catch(e) {
-          window.showToast('无法加载作用域令牌: ' + (e.message || e), 'error')
-        }
+    async loadApiTokens() {
+      try {
+        this.apiTokens = await api.get('/auth/tokens')
+      } catch(e) { /* not critical */ }
+    },
+    async createApiToken() {
+      const scopes = this.tokenFormScopes
+      if (!scopes.length) return window.showToast('请至少选择一个权限', 'warning')
+      let expires_at = ''
+      if (this.tokenFormExpires === 'custom') {
+        if (!this.tokenFormCustomDate) return window.showToast('请选择自定义过期日期', 'warning')
+        expires_at = this.tokenFormCustomDate + 'T23:59:59'
+      } else if (this.tokenFormExpires) {
+        const d = new Date()
+        d.setDate(d.getDate() + parseInt(this.tokenFormExpires))
+        expires_at = d.toISOString().slice(0, 19)
+      }
+      try {
+        const res = await api.post('/auth/tokens', { scopes, note: this.tokenFormNote, expires_at })
+        this.newTokenResult = res
+        this.loadApiTokens()
+      } catch(e) { window.showToast('创建失败: ' + (e.message || e), 'error') }
+    },
+    async deleteApiToken(id) {
+      if (!window.confirm('确定删除此令牌?')) return
+      try {
+        await api.delete('/auth/tokens/' + id)
+        this.loadApiTokens()
+        window.showToast('令牌已删除', 'success')
+      } catch(e) { window.showToast('删除失败: ' + (e.message || e), 'error') }
+    },
+    copyToken(raw) {
+      navigator.clipboard.writeText(raw).then(() => {
+        window.showToast('已复制', 'success')
+      }).catch(() => {
+        window.showToast('复制失败', 'error')
+      })
+    },
+    closeTokenDialog() {
+      this.showCreateToken = false
+      this.newTokenResult = null
+      this.tokenFormScopes = []
+      this.tokenFormNote = ''
+      this.tokenFormExpires = ''
+      this.tokenFormCustomDate = ''
     },
     async loadSystemLogs() {
       try { 
@@ -719,4 +822,12 @@ export default {
   .nav-btn { font-size: 11px; padding: 6px 8px; gap: 6px; }
   .nav-btn svg { width: 14px; height: 14px; }
 }
+.scope-badge { display:inline-block; font-size:10px; background:var(--brand); color:white; padding:1px 6px; border-radius:3px; font-weight:600; }
+.scope-checkbox { display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; padding:4px; }
+.scope-checkbox:hover { background:var(--bg-hover); border-radius:4px; }
+.modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
+.modal-dialog { background:white; border-radius:12px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.15); max-width:560px; width:90%; max-height:80vh; overflow-y:auto; }
+.btn-primary { background:var(--brand); color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; transition:.2s; }
+.btn-primary:hover { opacity:0.85; }
+.btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
 </style>

@@ -11,12 +11,12 @@ from services.auth_service import AuthService
 _bearer = HTTPBearer(auto_error=False)
 
 SCOPE_MAP: dict[str, dict[str, str]] = {
-    "GET": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read"},
-    "HEAD": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read"},
-    "PUT": {"contacts": "contacts:write", "events": "events:write", "dav": "dav:write"},
-    "POST": {"contacts": "contacts:write", "events": "events:write", "dav": "dav:write"},
-    "DELETE": {"contacts": "contacts:write", "events": "events:write", "dav": "dav:write"},
-    "PROPFIND": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read"},
+    "GET": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read", "files": "files:read"},
+    "HEAD": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read", "files": "files:read"},
+    "PUT": {"contacts": "contacts:update", "events": "events:update", "dav": "dav:write"},
+    "POST": {"contacts": "contacts:create", "events": "events:create", "files": "files:upload"},
+    "DELETE": {"contacts": "contacts:delete", "events": "events:delete", "dav": "dav:write", "files": "files:delete"},
+    "PROPFIND": {"contacts": "dav:read", "events": "dav:read", "dav": "dav:read"},
     "MKCOL": {"dav": "dav:write"},
     "COPY": {"dav": "dav:write"},
     "MOVE": {"dav": "dav:write"},
@@ -108,6 +108,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Scoped token
             if scope and svc.verify_scope(token, scope):
                 svc.log_auth(True, client_ip, "ASGI", f"Scoped token OK: {scope}")
+                return await call_next(request)
+            # API 令牌 (v3.4)
+            from services.api_token_service import ApiTokenService
+            ats = ApiTokenService()
+            tok_data = ats.verify_token(token)
+            if tok_data:
+                if scope and not any(s == scope for s in tok_data['scopes']):
+                    svc.log_auth(False, client_ip, "ASGI", f"Token scope denied: {scope}")
+                    return Response("Insufficient permissions", status_code=403)
+                svc.log_auth(True, client_ip, "ASGI", f"API token OK: {tok_data['note'] or tok_data['id']}")
                 return await call_next(request)
 
         # Try Basic Auth (for DAV clients)
