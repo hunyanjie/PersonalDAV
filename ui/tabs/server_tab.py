@@ -380,9 +380,12 @@ class ServerTab(ttk.Frame):
 
     def _update_info(self):
         port = self.port_entry.get() or "8000"
-        scheme = "https" if self.ssl_enabled.get() else "http"
+        ssl_enabled = self.ssl_enabled.get()
+        scheme = "https" if ssl_enabled else "http"
         ips = self._get_local_ips()
         ip_lines = "  ".join(ips[:3])
+        ssl_port = str(int(port) + 1) if ssl_enabled else ""
+        ssl_suffix = f" (HTTPS: {ssl_port})" if ssl_enabled else ""
 
         ftp_port = self.ftp_port_var.get() or "21"
         sftp_port = self.sftp_port_var.get() or "22"
@@ -405,22 +408,23 @@ class ServerTab(ttk.Frame):
 
         webui_lines = ""
         if self.webui_enabled.get():
+            http_label = (
+                f"\n  HTTPS: https://localhost:{ssl_port}/ (SSL)" if ssl_enabled
+                else f"\n  HTTP:  http://localhost:{port}/"
+            )
             webui_lines = f"""
 Web 管理面板:
-  {scheme}://localhost:{port}/ - 浏览器管理联系人/日历/文件
+  http://localhost:{port}/{http_label}
 
 REST API 文档:
-  {scheme}://localhost:{port}/api/docs - 在线接口文档
+  http://localhost:{port}/api/docs - Swagger 接口文档{(" (HTTPS: https://localhost:" + ssl_port + "/api/docs)") if ssl_enabled else ""}
 
 在浏览器中测试:
-  {scheme}://localhost:{port}/ - 管理面板
-  {scheme}://localhost:{port}/contacts/ - 所有联系人
-  {scheme}://localhost:{port}/events/ - 所有日历事件"""
+  http://localhost:{port}/ - 管理面板{(" (HTTPS: https://localhost:" + ssl_port + "/)") if ssl_enabled else ""}"""
 
         self.info_label.config(text=f"""DAV 服务:
-  CardDAV: {scheme}://localhost:{port}/contacts/
-  CalDAV:  {scheme}://localhost:{port}/events/
-  WebDAV:  {scheme}://localhost:{port}/dav/{webui_lines}
+  CardDAV/CalDAV/WebDAV(DAV): {scheme}://localhost:{port}/{ssl_suffix}
+  原始数据: {scheme}://localhost:{port}/contacts/  {scheme}://localhost:{port}/events/{webui_lines}
 
 文件服务:{ftp_lines}""")
 
@@ -471,8 +475,10 @@ REST API 文档:
         self.stop_btn.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.DISABLED)
         self._webui_cb.config(state=tk.DISABLED)
-        scheme = "HTTPS" if ssl_enabled else "HTTP"
-        msg = f"服务器已启动 ({scheme}) 在端口 {port}"
+        if ssl_enabled:
+            msg = f"服务器已启动 (HTTP:{port} + HTTPS:{int(port)+1})"
+        else:
+            msg = f"服务器已启动 (HTTP:{port})"
         logger.info(msg)
         self.log_message(msg, logging.INFO)
         event_bus.publish(EVENT_SERVER_STATE_CHANGED)

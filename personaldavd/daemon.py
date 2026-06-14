@@ -26,6 +26,42 @@ def _unique_id(route: APIRoute) -> str:
 
 logger: StructuredLogger | None = None
 
+# Custom uvicorn log config: propagate uvicorn.access to root logger
+# so HTTP access lines are captured by LogBufferHandler, RotatingFileHandler, and GUIHandler.
+UVICORN_LOG_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "fmt": "%(levelprefix)s %(message)s",
+            "use_colors": None,
+        },
+        "access": {
+            "()": "uvicorn.logging.AccessFormatter",
+            "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            "use_colors": None,
+        },
+    },
+    "handlers": {
+        "default": {
+            "formatter": "default",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+        },
+        "access": {
+            "formatter": "access",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+        },
+    },
+    "loggers": {
+        "uvicorn": {"handlers": ["default"], "level": "INFO"},
+        "uvicorn.error": {"level": "INFO"},
+        "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": True},
+    },
+}
+
 
 # Ensure database & WebDAV root exist before first request
 def _init_environment(cfg: "DaemonConfig"):
@@ -85,33 +121,64 @@ class DaemonServer:
 
     start() / stop() 生命周期管理，内部使用 uvicorn.Server 程序化启停，
     同时提供 REST API、MCP、Web UI SPA 以及传统 DAV 协议。
+    支持双端口：HTTP + HTTPS（若启用 SSL）。
     """
 
     def __init__(self, config: DaemonConfig):
         self.config = config
-        self._uvicorn_server = None
+        self._servers = []
         self.start_time = 0.0
+        self._secondary_threads = []
 
     def start(self):
         import time as _time
         import uvicorn
         self.start_time = _time.time()
         app = create_app(self.config)
-        uv_config = uvicorn.Config(
+        self._servers.clear()
+        self._secondary_threads.clear()
+
+        # HTTP — always started
+        uv_config_http = uvicorn.Config(
             app,
             host=self.config.host,
             port=self.config.port,
             log_level=self.config.log_level.lower(),
-            ssl_keyfile=self.config.ssl_keyfile if self.config.ssl_enabled and self.config.ssl_keyfile else None,
-            ssl_certfile=self.config.ssl_certfile if self.config.ssl_enabled and self.config.ssl_certfile else None,
+            log_config=UVICORN_LOG_CONFIG,
         )
-        self._uvicorn_server = uvicorn.Server(uv_config)
-        self._uvicorn_server.run()
+        server_http = uvicorn.Server(uv_config_http)
+        self._servers.append(server_http)
+
+        # HTTPS — if SSL enabled (port = config.port + 1)
+        if self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile:
+            ssl_port = self.config.port + 1
+            uv_config_https = uvicorn.Config(
+                app,
+                host=self.config.host,
+                port=ssl_port,
+                log_level=self.config.log_level.lower(),
+                ssl_keyfile=self.config.ssl_keyfile,
+                ssl_certfile=self.config.ssl_certfile,
+                log_config=UVICORN_LOG_CONFIG,
+            )
+            server_https = uvicorn.Server(uv_config_https)
+            self._servers.append(server_https)
+            t = threading.Thread(target=server_https.run, daemon=True)
+            t.start()
+            self._secondary_threads.append(t)
+            self.ssl_port = ssl_port
+        else:
+            self.ssl_port = None
+
+        # Block on HTTP (headless mode), or just run (GUI background thread)
+        server_http.run()
 
     def stop(self):
-        if self._uvicorn_server:
-            self._uvicorn_server.should_exit = True
-            self._uvicorn_server = None
+        for srv in self._servers:
+            srv.should_exit = True
+        self._servers.clear()
+        self._secondary_threads.clear()
+        self.ssl_port = None
 
 
 def run_daemon(config: DaemonConfig | None = None):
