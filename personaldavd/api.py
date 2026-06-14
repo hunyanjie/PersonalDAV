@@ -425,9 +425,9 @@ async def trash_purge(days: int = Query(30), token: str = Depends(get_current_to
 
 
 @api_router.get("/apple/config", summary="生成 Apple 设备配置 (.mobileconfig)")
-async def apple_config(token: str = Depends(get_current_token)):
+async def apple_config(request_host: str = Query(None, alias="host"), token: str = Depends(get_current_token)):
     ss = SettingsService()
-    host = ss.get_setting("apple_config_host", "localhost")
+    host = request_host or ss.get_setting("apple_config_host", "localhost")
     port = ss.get_setting("default_port", "8000")
     use_ssl = ss.get_setting("ssl_enabled", "False") == "True"
     scheme = "https" if use_ssl else "http"

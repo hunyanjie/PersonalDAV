@@ -47,6 +47,27 @@
             </div>
           </section>
 
+          <!-- Apple Device Config -->
+          <section v-if="activeSection === 'apple-config'" class="config-section">
+            <h3><Smartphone :size="20" /> Apple 设备一键配置</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>生成 .mobileconfig 文件，在 iPhone/iPad 上用 Safari 打开即可自动配置 CardDAV（联系人）和 CalDAV（日历）账户。</span>
+            </div>
+            <div class="form-grid">
+              <div class="form-item full">
+                <label>服务器地址</label>
+                <input v-model="appleConfigHost" placeholder="例如: dav.example.com" />
+                <p class="help-text" style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">填入外部可访问的域名或 IP 地址。留空使用当前主机名。</p>
+              </div>
+              <div class="form-item full" style="margin-top: 8px;">
+                <button class="btn-sm btn-primary" @click="downloadAppleConfig">
+                  <Download :size="16" /> 下载配置 (.mobileconfig)
+                </button>
+              </div>
+            </div>
+          </section>
+
           <!-- Mount Settings -->
           <section v-if="activeSection === 'mounts'" class="config-section">
             <h3><FolderTree :size="20" /> 文件挂载点管理</h3>
@@ -296,7 +317,7 @@ export default {
   components: { 
     Server, Sliders, FolderTree, Bot, ShieldCheck, 
     Terminal, Palette, Info, Pencil, Trash2, Plus, 
-    RotateCw, RotateCcw
+    RotateCw, RotateCcw, Download, Smartphone
   },
   data: () => ({
     activeSection: 'server',
@@ -304,6 +325,7 @@ export default {
       { id: 'server', label: '核心配置', iconComp: 'Server' },
       { id: 'app', label: '通用选项', iconComp: 'Sliders' },
       { id: 'mounts', label: '文件挂载', iconComp: 'FolderTree' },
+      { id: 'apple-config', label: 'Apple 配置', iconComp: 'Smartphone' },
       { id: 'mcp', label: 'AI 服务', iconComp: 'Bot' },
       { id: 'logs', label: '安全审计', iconComp: 'ShieldCheck' },
       { id: 'syslogs', label: '系统日志', iconComp: 'Terminal' },
@@ -321,6 +343,7 @@ export default {
     showMountForm: false,
     editingMount: null,
     mountForm: { name: '', path: '' },
+    appleConfigHost: window.location.hostname || 'localhost',
     presets: PRESETS,
     themeH: 210,
     themeS: 88,
@@ -501,6 +524,21 @@ export default {
       try {
         await api.updateSetting('theme_hsl', '')
       } catch (e) {}
+    },
+    async downloadAppleConfig() {
+      try {
+        const host = this.appleConfigHost || window.location.hostname || 'localhost'
+        const url = `/api/apple/config?host=${encodeURIComponent(host)}`
+        const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') } })
+        if (!resp.ok) throw new Error('下载失败')
+        const blob = await resp.blob()
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = 'personaldav.mobileconfig'
+        a.click()
+        URL.revokeObjectURL(a.href)
+        window.showToast('配置已下载，在 iPhone/iPad 上用 Safari 打开', 'success')
+      } catch(e) { window.showToast('下载失败：' + (e.message || e), 'error') }
     },
   },
 }
