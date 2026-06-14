@@ -425,6 +425,12 @@ export default {
     tokenFormExpires: '',
     tokenFormCustomDate: '',
     newTokenResult: null,
+    scopeOptions: {
+      'contacts:read':'联系人(只读)','contacts:create':'联系人(创建)','contacts:update':'联系人(编辑)','contacts:delete':'联系人(删除)',
+      'events:read':'日程(只读)','events:create':'日程(创建)','events:update':'日程(编辑)','events:delete':'日程(删除)',
+      'files:read':'文件(只读)','files:upload':'文件(上传)','files:rename':'文件(重命名)','files:delete':'文件(删除)',
+      'dav:read':'DAV(只读)','dav:write':'DAV(读写)',
+    },
     editingKey: null,
     editValue: '',
     editableDefs: SETTING_DEFS,

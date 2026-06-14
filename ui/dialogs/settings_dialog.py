@@ -986,7 +986,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         def do_create():
             selected = [s for s, v in scopes.items() if v.get()]
             if not selected:
-                from ui.dialogs.toast import Toast
+                from ui.widgets.toast import Toast
                 Toast.show(win, "请至少选择一个权限", duration=2000)
                 return
             expires_at = ""
