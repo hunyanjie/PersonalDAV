@@ -393,7 +393,7 @@ const SETTING_DEFS = [
   ]},
   { key: 'office_preview_mode', label: 'Office 文档预览', type: 'combo', options: [
     { text: '关闭', val: 'off' }, { text: 'LibreOffice（推荐）', val: 'libreoffice' },
-    { text: 'ONLYOFFICE（Docker）', val: 'onlyoffice' }, { text: '微软 Office Online', val: 'ms_online' },
+    { text: 'ONLYOFFICE（Docker）', val: 'onlyoffice' }, { text: '微软 Office Online（需公网 IP）', val: 'ms_online' },
     { text: '每次询问', val: 'ask' }
   ]},
   { key: 'trash_retention_days', label: '回收站保留天数', type: 'combo', options: [

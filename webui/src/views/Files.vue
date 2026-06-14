@@ -83,7 +83,7 @@
               <div class="opt-icon" style="background: var(--bg-info); color: var(--brand);"><ExternalLink :size="20" /></div>
               <div class="opt-text">
                 <div class="opt-title">微软 Office Online</div>
-                <div class="opt-desc">使用微软云端服务预览，文件需外网可访问</div>
+                <div class="opt-desc">使用微软云端服务预览。注意：文件需公网可访问（localhost 或内网 IP 无法使用）</div>
               </div>
             </button>
             <button class="selector-btn" @click="selectPreviewMode('local')">
