@@ -450,12 +450,32 @@ class SettingsDialog(tk.Toplevel):
         self._tok_tree.column("scope", width=140)
         self._tok_tree.column("token", width=260)
         self._tok_tree.pack(fill=tk.X, padx=10, pady=5)
+
+        def _copy_token(event=None):
+            sel = self._tok_tree.selection()
+            if not sel:
+                return
+            token = self._tok_tree.item(sel[0], "values")[1] if self._tok_tree.item(sel[0], "values") else ""
+            if token:
+                self.clipboard_clear()
+                self.clipboard_append(token)
+
+        def _tok_right_click(event):
+            item = self._tok_tree.identify_row(event.y)
+            if item:
+                self._tok_tree.selection_set(item)
+            menu = tk.Menu(self, tearoff=0)
+            menu.add_command(label="复制令牌", command=_copy_token)
+            menu.post(event.x_root, event.y_root)
+
+        self._tok_tree.bind("<Button-3>", _tok_right_click)
+        self._tok_tree.bind("<Control-c>", _copy_token)
         self._refresh_scoped_tokens()
 
         tools = ttk.LabelFrame(parent, text="可用工具列表")
         tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         cols = ("工具名", "类别", "说明")
-        tree = ttk.Treeview(tools, columns=cols, show="headings", height=20)
+        tree = ttk.Treeview(tools, columns=cols, show="headings", height=10)
         for c in cols:
             tree.heading(c, text=c)
             tree.column(c, width=200 if c == "说明" else 100)
