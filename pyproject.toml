@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PersonalDAV"
-version = "3.2"
+version = "3.3"
 description = "全能 DAV 服务 (CardDAV + CalDAV + WebDAV)"
 readme = "README.md"
 license = { text = "Apache-2.0" }

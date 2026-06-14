@@ -26,6 +26,7 @@ const routes = [
       { path: 'calendar/:uid/edit', component: CalendarEventEdit, meta: { title: '编辑事件' } },
       { path: 'files', component: Files, meta: { title: '文件' } },
       { path: 'settings', component: Settings, meta: { title: '设置' } },
+      { path: '/:pathMatch(.*)*', redirect: '/' },
     ],
   },
 ]

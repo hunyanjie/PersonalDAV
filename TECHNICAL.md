@@ -30,10 +30,12 @@
 > v2.6 变动：移除 `lxml` 依赖，改用标准库 `xml.etree.ElementTree`。`pyftpdlib`、`paramiko`、`pysmb` 改为惰性导入（首次使用时才加载），未安装时功能不可用但程序不崩溃。
 
 > v3.0 变动：引入 FastAPI + Uvicorn 作为统一 ASGI 运行时，替代 Python 内置 `http.server`。新增 `personaldavd/` 包支持无界面守护进程模式，新增 `services/backend.py` Backend 抽象层支持本地/远程切换。
->
+
 > v3.1 变动：新增 `services/embeddings.py` Embedding 抽象层 + `mcp_tools/analysis_tools.py` 冲突检测工具。ONNX Runtime 和 tokenizers 作为可选依赖，不安装时自动降级为关键词搜索。设置页新增「搜索」标签页，支持 provider 切换、ONNX 模型下载、API 配置。
 
 > v3.2 变动：新增 `webui/` Vue 3 + Vite SPA 前端项目，FastAPI 挂载 SPA 构建产物。新增 `personaldavd/files.py` 文件管理 REST API。新增 `services/file_mount_service.py` 多挂载点管理（替代单 dav_root）。新增 `ui/tabs/files_tab.py` 桌面文件管理标签页。统一日志系统添加 `LogBufferHandler` 支持 WebUI 实时日志查看。GUI 模式统一使用 FastAPI 替代 `http.server`。
+
+> v3.3 变动：WebUI 全端企业级交互升级（Toast/Modal/骨架屏/FLIP/Skeleton/EmptyState/Micro-interactions/圆环图/右滑操作）。新增 `utils/cert_helper.py`（SSL 一键证书生成）。新增 `webui/src/components/Toast.vue` / `ModalConfirm.vue` / `EmptyState.vue` / `SkeletonCard.vue`。`personaldavd/daemon.py` 支持双端口 HTTPS+HTTP。FTP 配置从服务器页迁移至设置页并使用 SettingDef。asyncio 日志噪音两处抑制。
 
 ---
 
@@ -104,6 +106,169 @@ main.py --headless
 - **惰性服务（v2.7）**：`MCPServer` 对象在控制面板开启 MCP 功能前不创建；`mcp_tools/_state.py` 中 `ContactService`、`EventService`、`FTPService` 通过惰性 getter 在首次调用时实例化
 - **重型导入按需加载**：`Database`、`SettingsDialog`、`TrayManager` 等模块从文件顶部移到使用处导入，减少模块级的传递性导入开销
 - **后台线程**：MCP 工具注册 + uvicorn 启动、更新检查、证书续期、定时同步均在后台线程执行，主线程只处理 GUI 事件
+
+---
+
+## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
+
+### WebUI 企业级交互升级（Phase 1~5）
+
+v3.3 对 WebUI 进行了系统性交互升级，覆盖 5 个阶段共计 ~465 行新增代码。
+
+#### Phase 1 — 基础设施（组件化 UI）
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| Toast 通知系统 | `webui/src/components/Toast.vue` | 全局注入 `window.showToast()`，支持 success/error/warning/info，自动消失+堆叠，HSL 主题色 |
+| ModalConfirm 对话框 | `webui/src/components/ModalConfirm.vue` | Promise 式 `window.showConfirm({message, title, type})`，替换所有 `confirm()`，style 与 HSL 统一 |
+| EmptyState 空状态 | `webui/src/components/EmptyState.vue` | SVG 线条画插画 + CTA 按钮，适配联系人/日程/文件空列表 |
+| 全局 `:focus-visible` / `:active` | `theme.css` | 键盘 Tab 焦点指示器 + 按钮点击 `scale(0.97)` 缩小反馈 |
+
+#### Phase 2 — 加载体验
+
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| Skeleton 骨架屏 | `webui/src/components/SkeletonCard.vue` | 5 变体（card/row/circle/timeline/bar），灰色脉冲动画，Dashboard 和列表页使用 |
+| FLIP 列表动画 | `ContactsList.vue` / `Files.vue` / `Calendar.vue` | Vue `<TransitionGroup>` 实现列表增删/过滤/翻页时的位移过渡动画 |
+| 搜索防抖 | `ContactsList.vue` / `Calendar.vue` | `300ms debounce`，减少冗余 API 调用 |
+
+#### Phase 3 — Micro-interactions
+
+- **表单输入追踪**：`focus` 时 label 变品牌色、`invalid` 时变红色、`valid` 时变绿色，实时行内校验
+- **关闭按钮 hover 态**：`btn-close-preview` / `btn-close-circle` 悬停时 `scale(1.1)`
+- **预设色块过渡**：移除 Settings 预设色块的 `no-transition`，切换主题时平滑过渡
+- **Logo 入场动画**：页面加载时 `@keyframes fadeScale`（0.5s ease-out）
+
+#### Phase 4 — Dashboard 数据可视化
+
+- **磁盘占用圆环图**：SVG `<circle>` stroke-dashoffset 动画，CSS `transition: stroke-dashoffset 1s ease`
+- **趋势标签**：每张统计卡片下方显示 "较昨日 +2%" 标签（过渡期固定值）
+- **API 扩展**：`GET /api/stats` 新增 `disk_total_mb` / `disk_used_mb` / `disk_percent`
+
+#### Phase 5 — 移动端精细化
+
+- **右滑操作**：Contacts/Files 列表行 `< 768px` 时通过 touch 事件水平滑动露出编辑/删除按钮；swipeStart → swipeMove（实时偏移）→ swipeEnd（snap 展开/收回）
+- **触摸区域 44px**：分页按钮、路径分隔符等触控元素最小尺寸
+- **`window.showToast()` 替换所有 `alert()`**：全局 23 处替换
+- **404 路由**：`{path: '/:pathMatch(.*)*', redirect: '/'}`
+- **`scroll-behavior: smooth`**：`.content` 平滑滚动
+
+### 双端口 HTTPS + HTTP
+
+`personaldavd/daemon.py` `DaemonServer.start()`：
+
+- **HTTP 始终运行**在 `config.port`（默认 8000）
+- **HTTPS 辅助端口**在 `config.port + 1`（默认 8001），SSL 启用时在独立 daemon 线程中启动 `uvicorn.Server`
+- 两个实例使用独立的 `create_app()` 返回的 FastAPI 实例，避免 lifespan 冲突
+- `stop()` 同时停止 HTTP 和 HTTPS 实例
+- WebUI 前端 API 全部使用相对路径（`/api/contacts`），HTTP 和 HTTPS 等效工作
+- GUI 服务器面板同时显示两个地址
+
+```python
+# daemon.py — 双端口启动
+server_http = uvicorn.Server(uv_config_http)
+threading.Thread(target=server_http.run, daemon=True, name="http").start()
+
+if ssl_enabled:
+    uv_config_https = uvicorn.Config(... ssl_keyfile=, ssl_certfile=)
+    server_https = uvicorn.Server(uv_config_https)
+    threading.Thread(target=server_https.run, daemon=True, name="https").start()
+```
+
+服务器启动时进行证书/密钥文件存在性检查（`os.path.isfile()`），文件缺失时 log warning 不崩溃。
+
+### SSL 一键证书生成
+
+`utils/cert_helper.py` — `generate_self_signed_cert(cert_path, key_path, common_name="localhost")`：
+
+- 使用 `cryptography`（RSA-2048，SHA256，10 年有效期，SubjectAlternativeName DNS:localhost）
+- `settings_dialog.py` 增加：
+  - HTTPS 开关 + 证书/密钥路径文件选择（浏览按钮）
+  - 「一键生成自签名证书」按钮 → 目录选择器 → 生成 `cert.pem` + `key.pem` → 自动填入路径
+  - 生成后弹出引导对话框：添加证书信任的步骤（Windows/macOS/iOS/Linux）
+  - 「手动创建证书指引」按钮：OpenSSL 命令 + 平台信任步骤 + 验证方法
+- 保存设置时检测 SSL 开关是否变化 → 若服务器运行中则弹出「立即重启服务器?」提示
+
+### FTP 设置重构
+
+v3.3 将 FTP 配置从服务器页面完全移到设置页：
+
+- **服务器页面**（`server_tab.py`）：FTP 区域由 ~80 行配置控件简化为 LabelFrame + 启动/停止按钮，配置从 DB 直接读取
+- **设置页面**（`settings_dialog.py`）：新增 CollapsibleFrame「FTP / SFTP / TFTP / WebDAV 设置」包含：
+  - 三行协议配置（FTP/SFTP/TFTP）：启用复选框 + 端口 + 根目录 + 浏览按钮
+  - FTPS 复选框、FTP 独立密码、编码 Combo、自动保存、自动启动等
+- `ftp_encoding` / `auto_start_ftp` 改用 `SettingDef` 声明式管理，归入 section `"FTP 设置"`
+- 删除废弃的 `ftp_auto_save` 和手动变量管理代码
+
+### asyncio 日志抑制
+
+Windows 上 asyncio proactor 在客户端突然断开时抛出 `ConnectionResetError`，通过 `logging.getLogger("asyncio").setLevel(logging.WARNING)` 抑制，分别在两处设置：
+
+1. `personaldavd/logging.py:56` — 守护进程子进程
+2. `utils/logger.py:8` — 主 GUI 进程（新增于 v3.3）
+
+### PWA 离线支持
+
+`webui/public/sw.js` 是 Service Worker，注册于根路径，缓存策略：
+- **静态资源**（JS/CSS/字体）：Cache First，请求命中缓存直接返回，网络更新仅用于下次访问
+- **API 请求**（`/api/`）：Network First，超时或离线时返回缓存（用于已加载的数据）
+- **SPA 导航**：未匹配到缓存的路径直接返回 `caches.match('/')`（SPA 入口），确保刷新任意子路径不白屏
+
+`webui/public/manifest.json` 定义 PWA 清单（名称、图标、display: standalone、theme_color）。
+
+`webui/src/main.js` 在 `onMounted` 中注册 SW（`registerSW()`），skip-waiting 确保新版本立即激活。
+
+### 桌面通知轮询
+
+`webui/src/services/reminder.js`：
+- 每 60 秒通过 `setInterval` 调用 `api.listEvents(0, 50, today, today)` 获取今日事件
+- 对每事件计算 `dtstart - now`，若在 0~15 分钟内且尚未通知过（`_notifiedUids` Set），弹 `new Notification(summary, {body: timeRange})`
+- 组件卸载时 `clearInterval` + 清空 Set
+
+### 拖拽上传
+
+`webui/src/views/Files.vue`：
+- 全局 `dragenter` 检测 → 显示 dropzone overlay（模糊背景 + 虚线边框）
+- overlay 上监听 `drop.prevent` → 遍历 `e.dataTransfer.files`，逐文件调用 `api.uploadFile()`
+- 上传完成后刷新文件列表
+- 复用已有 `doUpload` 逻辑，仅入口不同
+
+### 联系人/日历导入
+
+`webui/src/views/ContactsList.vue` & `Calendar.vue`：
+- 工具栏新增 `<label class="btn-import">` 包裹 `<input type="file" accept=".vcf" hidden />`
+- `doImport` 方法：`file.text()` 读取内容，按 `/(?=BEGIN:VCARD)/` 或 `/(?=BEGIN:VEVENT)/` 分割为独立记录
+- 逐条调 `api.createContact(vcardBlock)` / `api.createEvent(icalBlock)`，汇总成功/失败数弹窗提示
+
+### 图片预览缩放
+
+`webui/src/views/Files.vue`：
+- `isImage` 检测扩展名 → 使用 `<img>` 替代 `<iframe>`，`max-width/height: 100%` 自适应容器
+- 缩放：`_zoom` 状态（0.25~4），步进 ×1.5 / ÷1.5，鼠标滚轮 `deltaY` 正/负控制
+- 平移：`_zoom > 1` 时 `mousedown` 启动拖拽，`mousemove` 更新 `_panX/_panY`，`transform: translate(pan) scale(zoom)`
+- `overflow: hidden` 容器裁剪溢出部分，半透明悬浮缩放条在底部居中
+
+### 农历日期
+
+`webui/src/views/Schedule.vue`：
+- 预编码 `LUNAR_DATA[]` 数组（1900~2100 年，传统 4+12+4 bit 编码：闰月号 + 各月天数 + 闰月天数）
+- `getLunar(dateStr)` 计算太阳日偏移 → 逐年减到定位年份 → 逐月减到定位月份 → 查表得农历月日
+- 配合现有日期头部渲染，`{{ item.lunar }}` 显示在右侧
+
+### 日程视图滚动修复
+
+`webui/src/views/Schedule.vue`：
+- 移除 `scroll-behavior: smooth` CSS，改为 `scrollTop` 直接赋值 + 同步 `this.scrollTop`
+- `scrollToToday` 中增加 `await this.$nextTick()` 确保虚拟列表 DOM 已更新
+- 有进行中事件 → 居中该事件；无进行中但有今日事件 → 按时段比例定位；无事件 → 居中"今日无日程"
+
+### 文件预览后端修复
+
+`personaldavd/files.py`：
+- `_MIME_OVERRIDES` 字典补充 Windows 缺失扩展名（`.md` → `text/markdown`、`.yaml` → `text/yaml` 等）
+- `mimetypes.guess_type` 返回 None 时回退到 `_MIME_OVERRIDES.get(ext)`，不再误判 415
+
+`webui/src/views/Files.vue` 预览请求改为 `fetch()` + `Authorization: Bearer` 头获取 blob URL，不再将 token 放在 URL 查询参数中。
 
 ---
 
@@ -303,6 +468,7 @@ PersonalDAV/
 │   ├── window_utils.py        # center_window()
 │   ├── validators.py          # 端口/IP/密码强度验证
 │   ├── attachment_store.py    # 附件文件存储管理
+│   ├── cert_helper.py         # SSL 自签名证书生成（v3.3）
 │   └── logger.py              # 日志系统（RotatingFile + GUI）
 ├── tests/                     # 单元测试
 │   ├── test_config.py         # 配置常量验证
@@ -1507,7 +1673,7 @@ pytest tests/ -v -q
 | `test_fuzzing.py` | 模糊测试：65 种变异输入 × 5 解析入口（vobject vCard/iCal、手动解析、service 入口）= 325 子测试 (v2.5) |
 | `test_memory_leak.py` | 重复创建/销毁 tkinter widget 验证无内存泄漏（tracemalloc + gc 对象追踪）(v2.5)                |
 | `test_ui_snapshot.py` | 像素截图对比 + GUI 控件结构验证；`SNAPSHOT_UPDATE=1` 更新参考图 (v2.5)                       |
-| `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.2增加到31个，v3.2增加到41个)                              |
+| `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.1创建16个，v2.2增加到33个，v2.5增加到32个，v3.2增加到41个)         |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
 

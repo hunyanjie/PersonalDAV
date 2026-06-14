@@ -1,6 +1,6 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time, os
+import time, os, shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -43,7 +43,7 @@ def _contact_to_out(raw: str) -> ContactOut | None:
 
 def _event_to_out(raw: str) -> EventOut | None:
     """Convert an iCal string to EventOut (minimal parse)."""
-    uid = summary = dtstart = dtend = ""
+    uid = summary = dtstart = dtend = description = location = categories = ""
     for line in raw.splitlines():
         if line.upper().startswith("UID:"):
             uid = line[4:].strip()
@@ -53,9 +53,16 @@ def _event_to_out(raw: str) -> EventOut | None:
             dtstart = line.split(":", 1)[-1].strip() if ":" in line else ""
         elif line.upper().startswith("DTEND"):
             dtend = line.split(":", 1)[-1].strip() if ":" in line else ""
+        elif line.upper().startswith("DESCRIPTION"):
+            description = line.split(":", 1)[-1].strip() if ":" in line else ""
+        elif line.upper().startswith("LOCATION"):
+            location = line.split(":", 1)[-1].strip() if ":" in line else ""
+        elif line.upper().startswith("CATEGORIES"):
+            categories = line.split(":", 1)[-1].strip() if ":" in line else ""
     if not uid:
         return None
-    return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend, ical=raw)
+    return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend,
+                    description=description, location=location, categories=categories, ical=raw)
 
 
 # ── Health ──────────────────────────────────────────────────────
@@ -279,6 +286,8 @@ async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_cur
     if not existing:
         raise HTTPException(404, "事件不存在")
     new_uid, op = svc.add_event(body.ical_data, force=True)
+    if new_uid is None:
+        raise HTTPException(400, f"更新事件失败: {op}")
     return {"uid": new_uid, "operation": op}
 
 
@@ -371,11 +380,14 @@ async def stats(token: str = Depends(get_current_token)):
                     file_count += 1
                 except Exception:
                     pass
+    try: disk_total = shutil.disk_usage(dav_root).total / (1024 * 1024)
+    except: disk_total = 0
     return StatsOut(
         contacts_count=cs.count(),
         events_count=es.count(),
         files_count=file_count,
         disk_used_mb=round(total_size / (1024 * 1024), 2),
+        disk_total_mb=round(disk_total, 2),
         uptime=time.time() - _start_time,
         version=SOFTWARE_VERSION,
     )

@@ -12,6 +12,7 @@ from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED
 from utils.logger import logger
 import os
 import threading
+import queue
 
 
 class ContactsTab(BaseTreeTab):
@@ -33,9 +34,11 @@ class ContactsTab(BaseTreeTab):
 
         super().__init__(parent)
         self._import_type = 'contacts'
+        self._tk_queue = queue.Queue()
 
         self.create_widgets()
         self.refresh_contacts()
+        self.after(100, self._poll_tk_queue)
 
         # 订阅数据变更事件
         event_bus.subscribe(EVENT_CONTACTS_CHANGED, self.refresh_contacts)
@@ -131,18 +134,24 @@ class ContactsTab(BaseTreeTab):
                     for g in gs.split(';'):
                         if g.strip(): groups.add(g.strip())
             
-            def _done():
-                if self._cancel_token != token: return
+            self._tk_queue.put((token, groups))
+        
+        threading.Thread(target=_scan, daemon=True).start()
+
+    def _poll_tk_queue(self):
+        try:
+            while True:
+                token, groups = self._tk_queue.get_nowait()
+                if self._cancel_token != token: continue
                 all_vals = ["全部"] + sorted(groups)
                 self._group_filter_combo['values'] = all_vals
                 if self._group_filter_var.get() not in all_vals:
                     self._group_filter_var.set("全部")
                 self.apply_filter(getattr(self, 'search_var', None) and self.search_var.get().lower() or "")
                 self._after_refresh()
-            
-            self.after(0, _done)
-        
-        threading.Thread(target=_scan, daemon=True).start()
+        except queue.Empty:
+            pass
+        self.after(100, self._poll_tk_queue)
 
     def _apply_group_filter(self):
         query = getattr(self, 'search_var', None) and self.search_var.get().lower() or ""

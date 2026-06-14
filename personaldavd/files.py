@@ -92,10 +92,11 @@ async def list_files(
             full = os.path.join(abs_path, name)
             try:
                 st = os.stat(full)
-                rel = mount_name + "/" + name
+                # Ensure path is properly joined and uses forward slashes
+                item_path = (path.rstrip("/") + "/" + name).replace("//", "/")
                 items.append({
                     "name": name,
-                    "path": "/" + rel,
+                    "path": item_path,
                     "is_dir": os.path.isdir(full),
                     "size": st.st_size if os.path.isfile(full) else 0,
                     "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
@@ -124,6 +125,22 @@ async def download_file(
     return FileResponse(abs_path, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+# MIME fallback for extensions mimetypes may miss on Windows
+_MIME_OVERRIDES = {
+    '.md': 'text/markdown',
+    '.yaml': 'text/yaml',
+    '.yml': 'text/yaml',
+    '.csv': 'text/csv',
+    '.log': 'text/plain',
+    '.json': 'application/json',
+    '.xml': 'application/xml',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain',
+    '.bmp': 'image/bmp',
+    '.webp': 'image/webp',
+}
+
+
 @files_router.get("/files/preview", summary="预览文件内容")
 async def preview_file(
     path: str = Query(..., description="文件路径"),
@@ -135,7 +152,8 @@ async def preview_file(
         raise HTTPException(403, str(e))
     if not os.path.isfile(abs_path):
         raise HTTPException(404, "文件不存在")
-    ctype, _ = mimetypes.guess_type(abs_path)
+    _, ext = os.path.splitext(abs_path)
+    ctype = mimetypes.guess_type(abs_path)[0] or _MIME_OVERRIDES.get(ext.lower())
     if ctype and ctype.startswith(("text/", "image/", "application/pdf")):
         from fastapi.responses import FileResponse
         return FileResponse(abs_path, media_type=ctype)

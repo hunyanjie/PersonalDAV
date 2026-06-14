@@ -64,16 +64,14 @@ SIMPLE_SETTINGS = [
     SettingDef("_sep2", "", "sep", "基本设置"),
     SettingDef("auto_start_app", "开机时自动启动程序", "check", "服务器控制",
                default=False, db_default="False"),
-    SettingDef("auto_start_ftp", "启动时自动启动文件服务 (FTP/SFTP/TFTP)", "check",
-               "服务器控制", default=False, db_default="False"),
-    SettingDef("ftps_enabled", "启用 FTPS (SSL)", "check", "服务器控制",
-               default=False, db_default="False"),
-    SettingDef("ftp_encoding", "FTP 文件编码:", "combo", "服务器控制",
+    SettingDef("ftp_encoding", "FTP 编码:", "combo", "FTP 设置",
                default="utf-8",
                options=["utf-8", "gbk", "gb2312", "big5", "shift-jis",
                         "euc-kr", "euc-jp", "cp1252", "iso-8859-1",
                         "cp1250", "cp1251", "koi8-r"],
                width=10),
+    SettingDef("auto_start_ftp", "启动时自动启动文件服务 (FTP/SFTP/TFTP)", "check",
+               "FTP 设置", default=False, db_default="False"),
     SettingDef("attachment_mode", "日历附件模式:", "combo", "服务器控制",
                default="内联 Base64", db_default="inline",
                options=["内联 Base64", "HTTP 链接"],
@@ -294,16 +292,67 @@ class SettingsDialog(tk.Toplevel):
                         variable=self._auto_renew_var).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
 
-        # FTP / WebDAV 设置
-        extra_f = ttk.LabelFrame(parent, text="FTP / WebDAV 设置")
+        # FTP / WebDAV / TFTP 设置
+        extra_f = CollapsibleFrame(parent, text="FTP / SFTP / TFTP / WebDAV 设置", expanded=False)
         extra_f.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(extra_f, text="WebDAV 根目录:（已迁移至「文件挂载」标签页管理）",
-                  foreground="gray").grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
-        ttk.Label(extra_f, text="FTP 独立密码:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        body = extra_f.body
+        row = 0
+        ttk.Label(body, text="WebDAV 根目录:（已迁移至「文件挂载」标签页管理）",
+                  foreground="gray").grid(row=row, column=0, columnspan=5, sticky="w", padx=5, pady=2)
+        row += 1
+
+        # FTP row
+        self.ftp_enabled_var = tk.BooleanVar()
+        ttk.Checkbutton(body, text="FTP", variable=self.ftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="端口:").grid(row=row, column=1, sticky="w")
+        self.ftp_port_var = tk.StringVar(value="21")
+        ttk.Entry(body, textvariable=self.ftp_port_var, width=6).grid(row=row, column=2, sticky="w")
+        self.ftps_check_var = tk.BooleanVar()
+        ttk.Checkbutton(body, text="FTPS(SSL)", variable=self.ftps_check_var).grid(row=row, column=3, padx=5)
+        ttk.Label(body, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
+        self.ftp_root_var = tk.StringVar(value="./ftp_root")
+        ttk.Entry(body, textvariable=self.ftp_root_var, width=30).grid(row=row, column=5, sticky="we")
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ftp_dir(self.ftp_root_var)).grid(row=row, column=6)
+        body.grid_columnconfigure(5, weight=1)
+        row += 1
+
+        # SFTP row
+        self.sftp_enabled_var = tk.BooleanVar()
+        ttk.Checkbutton(body, text="SFTP", variable=self.sftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="端口:").grid(row=row, column=1, sticky="w")
+        self.sftp_port_var = tk.StringVar(value="22")
+        ttk.Entry(body, textvariable=self.sftp_port_var, width=6).grid(row=row, column=2, sticky="w")
+        ttk.Label(body, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
+        self.sftp_root_var = tk.StringVar(value="./sftp_root")
+        ttk.Entry(body, textvariable=self.sftp_root_var, width=30).grid(row=row, column=5, sticky="we")
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ftp_dir(self.sftp_root_var)).grid(row=row, column=6)
+        row += 1
+
+        # TFTP row
+        self.tftp_enabled_var = tk.BooleanVar()
+        ttk.Checkbutton(body, text="TFTP", variable=self.tftp_enabled_var).grid(row=row, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="端口:").grid(row=row, column=1, sticky="w")
+        self.tftp_port_var = tk.StringVar(value="69")
+        ttk.Entry(body, textvariable=self.tftp_port_var, width=6).grid(row=row, column=2, sticky="w")
+        ttk.Label(body, text="根目录:").grid(row=row, column=4, sticky="w", padx=5)
+        self.tftp_root_var = tk.StringVar(value="./tftp_root")
+        ttk.Entry(body, textvariable=self.tftp_root_var, width=30).grid(row=row, column=5, sticky="we")
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ftp_dir(self.tftp_root_var)).grid(row=row, column=6)
+        row += 1
+
+        # FTP 独立密码
+        ttk.Label(body, text="FTP 独立密码:").grid(row=row, column=0, sticky="w", padx=5, pady=3)
         self.ftp_password_var = tk.StringVar()
-        ttk.Entry(extra_f, textvariable=self.ftp_password_var, show="*").grid(row=1, column=1, sticky="we", padx=2)
-        ttk.Label(extra_f, text="（留空=统一账号）").grid(row=1, column=2, sticky="w", padx=2)
-        extra_f.grid_columnconfigure(1, weight=1)
+        ttk.Entry(body, textvariable=self.ftp_password_var, show="*", width=16).grid(row=row, column=1, columnspan=2, sticky="w", padx=2)
+        ttk.Label(body, text="（留空=统一账号）").grid(row=row, column=3, sticky="w", padx=2)
+        row += 1
+
+        # Simple FTP settings from SettingDef
+        row = self._build_simple(body, "FTP 设置", start_row=row)
+
+        # Load port validation for each port entry
+        for port_key in ("ftp_port", "sftp_port", "tftp_port"):
+            self._setup_port_validation(body, port_key)
 
         # 备份与恢复
         bk_f = CollapsibleFrame(parent, text="备份与恢复")
@@ -1181,6 +1230,16 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.close_action_var.set(s.get_setting("close_action", "ask"))
 
         self.ftp_password_var.set(s.get_setting("ftp_password", ""))
+        self.ftp_enabled_var.set(s.get_setting("ftp_enabled", "True") == "True")
+        self.ftp_port_var.set(s.get_setting("ftp_port", "21"))
+        self.ftp_root_var.set(s.get_setting("ftp_root", "./ftp_root"))
+        self.sftp_enabled_var.set(s.get_setting("sftp_enabled", "False") == "True")
+        self.sftp_port_var.set(s.get_setting("sftp_port", "22"))
+        self.sftp_root_var.set(s.get_setting("sftp_root", "./sftp_root"))
+        self.tftp_enabled_var.set(s.get_setting("tftp_enabled", "False") == "True")
+        self.tftp_port_var.set(s.get_setting("tftp_port", "69"))
+        self.tftp_root_var.set(s.get_setting("tftp_root", "./tftp_root"))
+        self.ftps_check_var.set(s.get_setting("ftps_enabled", "False") == "True")
 
         self.sync_url_var.set(s.get_setting("sync_url", ""))
         self.sync_user_var.set(s.get_setting("sync_user", ""))
@@ -1269,6 +1328,17 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.sync_interval_var.set("30")
         self.sync_enabled_var.set(False)
 
+        self.ftp_enabled_var.set(True)
+        self.ftp_port_var.set("21")
+        self.ftp_root_var.set("./ftp_root")
+        self.sftp_enabled_var.set(False)
+        self.sftp_port_var.set("22")
+        self.sftp_root_var.set("./sftp_root")
+        self.tftp_enabled_var.set(False)
+        self.tftp_port_var.set("69")
+        self.tftp_root_var.set("./tftp_root")
+        self.ftps_check_var.set(False)
+
         self.ssl_enabled_var.set(False)
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
@@ -1277,6 +1347,11 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.close_action_var.set("ask")
 
         messagebox.showinfo("重置完成", "所有设置已恢复默认值，点击「保存」生效。", parent=self)
+
+    def _browse_ftp_dir(self, var):
+        path = filedialog.askdirectory(title="选择根目录", parent=self)
+        if path:
+            var.set(path)
 
     def _browse_data_dir(self):
         dir_path = filedialog.askdirectory(title="选择数据存储目录", parent=self)
@@ -1409,6 +1484,16 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                     return
 
         s.set_setting("ftp_password", self.ftp_password_var.get())
+        s.set_setting("ftp_enabled", str(self.ftp_enabled_var.get()))
+        s.set_setting("ftp_port", self.ftp_port_var.get())
+        s.set_setting("ftp_root", self.ftp_root_var.get())
+        s.set_setting("sftp_enabled", str(self.sftp_enabled_var.get()))
+        s.set_setting("sftp_port", self.sftp_port_var.get())
+        s.set_setting("sftp_root", self.sftp_root_var.get())
+        s.set_setting("tftp_enabled", str(self.tftp_enabled_var.get()))
+        s.set_setting("tftp_port", self.tftp_port_var.get())
+        s.set_setting("tftp_root", self.tftp_root_var.get())
+        s.set_setting("ftps_enabled", str(self.ftps_check_var.get()))
 
         s.set_setting("sync_url", self.sync_url_var.get())
         s.set_setting("sync_user", self.sync_user_var.get())

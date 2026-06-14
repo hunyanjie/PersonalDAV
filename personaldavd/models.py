@@ -40,6 +40,9 @@ class EventOut(BaseModel):
     summary: str = ""
     dtstart: str = ""
     dtend: str = ""
+    description: str = ""
+    location: str = ""
+    categories: str = ""
     ical: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -113,5 +116,6 @@ class StatsOut(BaseModel):
     events_count: int = 0
     files_count: int = 0
     disk_used_mb: float = 0.0
+    disk_total_mb: float = 0.0
     uptime: float = 0.0
     version: str = ""

@@ -18,6 +18,10 @@ async function request(method, path, options = {}) {
     window.location.hash = '#/login'
     throw new Error('未登录')
   }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || `请求失败 (${res.status})`)
+  }
   const ct = res.headers.get('content-type') || ''
   if (ct.includes('application/json')) {
     return res.json()
@@ -69,6 +73,25 @@ export default {
       body: form,
     }).then(r => r.json())
   },
+  uploadFileWithProgress(file, path = '/', onProgress) {
+    return new Promise((resolve, reject) => {
+      const t = token()
+      const form = new FormData()
+      form.append('file', file); form.append('path', path)
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${BASE}/files/upload`)
+      if (t) xhr.setRequestHeader('Authorization', `Bearer ${t}`)
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+        else reject(new Error(`上传失败 (${xhr.status})`))
+      }
+      xhr.onerror = () => reject(new Error('网络错误'))
+      xhr.send(form)
+    })
+  },
   downloadUrl(path) {
     const t = token()
     return `${BASE}/files/download?path=${encodeURIComponent(path)}${t ? `&token=${t}` : ''}`
@@ -76,6 +99,15 @@ export default {
   previewUrl(path) {
     const t = token()
     return `${BASE}/files/preview?path=${encodeURIComponent(path)}${t ? `&token=${t}` : ''}`
+  },
+  async previewFile(path) {
+    const t = token()
+    const url = `${BASE}/files/preview?path=${encodeURIComponent(path)}`
+    const headers = t ? { Authorization: `Bearer ${t}` } : {}
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error('预览请求失败')
+    const blob = await res.blob()
+    return URL.createObjectURL(blob)
   },
   renameFile(path, newName) {
     return request('PUT', '/files/rename', { params: qs({ path, new_name: newName }) })
