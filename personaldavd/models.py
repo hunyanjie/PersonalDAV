@@ -28,6 +28,7 @@ class ContactStructuredCreate(BaseModel):
     address: str = ""
     org: str = ""
     note: str = ""
+    photo: str = ""
 
 
 class ContactUpdate(BaseModel):

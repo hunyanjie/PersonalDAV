@@ -205,6 +205,8 @@ async def create_contact_structured(body: ContactStructuredCreate, token: str = 
         vcard += f"ORG:{body.org}\r\n"
     if body.note:
         vcard += f"NOTE:{body.note}\r\n"
+    if body.photo:
+        vcard += f"PHOTO;ENCODING=BASE64;TYPE=JPEG:{body.photo}\r\n"
     vcard += "END:VCARD\r\n"
     svc = ContactService()
     uid, op = svc.add_contact(vcard)

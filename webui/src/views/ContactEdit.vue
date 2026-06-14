@@ -40,6 +40,21 @@
           </div>
         </div>
 
+        <!-- Avatar -->
+        <div class="section-block">
+          <h4 class="section-title">头像</h4>
+          <div class="avatar-row">
+            <div class="avatar-preview">
+              <img v-if="avatarUrl" :src="avatarUrl" class="avatar-img" />
+              <div v-else class="avatar-placeholder">{{ (form.full_name||'?')[0] }}</div>
+            </div>
+            <div>
+              <button type="button" class="btn-sm" @click="uploadAvatar"><Upload :size="16" /> 选择图片</button>
+              <button v-if="avatarUrl" type="button" class="btn-sm" @click="removeAvatar" style="margin-left:8px;">移除</button>
+            </div>
+          </div>
+        </div>
+
         <div class="form-actions">
           <button type="submit" class="btn-primary" :disabled="saving">
             <Save :size="18" v-if="!saving" />
@@ -54,7 +69,7 @@
 </template>
 
 <script>
-import { Save } from 'lucide-vue-next'
+import { Save, Upload } from 'lucide-vue-next'
 import api from '../api.js'
 
 function getField(lines, key) {
@@ -83,14 +98,15 @@ function setField(lines, key, value) {
 }
 
 function buildVCard(form) {
-  return `BEGIN:VCARD\r\nVERSION:3.0\r\nFN:${form.full_name}\r\nN:${form.full_name};;;\r\n${form.email ? 'EMAIL:'+form.email+'\r\n' : ''}${form.phone ? 'TEL:'+form.phone+'\r\n' : ''}${form.groups ? 'CATEGORIES:'+form.groups+'\r\n' : ''}${form.address ? 'ADR:'+form.address+'\r\n' : ''}${form.org ? 'ORG:'+form.org+'\r\n' : ''}${form.note ? 'NOTE:'+form.note+'\r\n' : ''}END:VCARD\r\n`
+  return `BEGIN:VCARD\r\nVERSION:3.0\r\nFN:${form.full_name}\r\nN:${form.full_name};;;\r\n${form.email ? 'EMAIL:'+form.email+'\r\n' : ''}${form.phone ? 'TEL:'+form.phone+'\r\n' : ''}${form.groups ? 'CATEGORIES:'+form.groups+'\r\n' : ''}${form.address ? 'ADR:'+form.address+'\r\n' : ''}${form.org ? 'ORG:'+form.org+'\r\n' : ''}${form.note ? 'NOTE:'+form.note+'\r\n' : ''}${form.photo ? 'PHOTO;ENCODING=BASE64;TYPE=JPEG:'+form.photo+'\r\n' : ''}END:VCARD\r\n`
 }
 
 export default {
-  components: { Save },
+  components: { Save, Upload },
   data: () => ({
-    form: { full_name: '', email: '', phone: '', groups: '', address: '', org: '', note: '' },
+    form: { full_name: '', email: '', phone: '', groups: '', address: '', org: '', note: '', photo: '' },
     saving: false, isNew: true, _rawVcard: '',
+    avatarUrl: null,
     focusedField: null,
   }),
   computed: {
@@ -114,6 +130,11 @@ export default {
           address: getField(lines, 'ADR'),
           org: getField(lines, 'ORG'),
           note: getField(lines, 'NOTE'),
+          photo: getField(lines, 'PHOTO') || '',
+        }
+        if (this.form.photo) {
+          const data = this.form.photo.replace(/^data:image\/\w+;base64,/, '')
+          this.avatarUrl = `data:image/jpeg;base64,${data}`
         }
       } catch(e) {}
     }
@@ -132,6 +153,7 @@ export default {
             address: this.form.address,
             org: this.form.org,
             note: this.form.note,
+            photo: this.form.photo,
           })
         } else if (this._rawVcard) {
           const lines = this._rawVcard.split('\n').map(l => l.trim())
@@ -143,12 +165,35 @@ export default {
           setField(lines, 'ADR', this.form.address)
           setField(lines, 'ORG', this.form.org)
           setField(lines, 'NOTE', this.form.note)
+          if (this.form.photo) setField(lines, 'PHOTO;ENCODING=BASE64;TYPE=JPEG', this.form.photo)
+          else { const pi = lines.findIndex(l => l.toUpperCase().startsWith('PHOTO')); if (pi>=0) lines.splice(pi,1) }
           await api.updateContact(this.$route.params.uid, lines.join('\r\n'))
         } else {
           await api.updateContact(this.$route.params.uid, buildVCard(this.form))
         }
         this.$router.push('/contacts')
       } catch(e) { window.showToast('保存失败: ' + (e.message || e), 'error') } finally { this.saving = false }
+    },
+    uploadAvatar() {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.onchange = () => {
+        const file = input.files[0]
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataUrl = e.target.result
+          this.avatarUrl = dataUrl
+          this.form.photo = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+        }
+        reader.readAsDataURL(file)
+      }
+      input.click()
+    },
+    removeAvatar() {
+      this.avatarUrl = null
+      this.form.photo = ''
     },
   },
 }
@@ -232,4 +277,11 @@ input:focus, textarea:focus {
   .form-grid { grid-template-columns: 1fr; }
   .form-card { padding: 24px; }
 }
+
+.section-block { margin-top: 28px; border-top: 1px solid var(--border-base); padding-top: 20px; }
+.section-title { font-size: 15px; font-weight: 700; margin: 0 0 12px; color: var(--text-primary); }
+.avatar-row { display: flex; align-items: center; gap: 16px; }
+.avatar-preview { width: 72px; height: 72px; border-radius: 50%; overflow: hidden; flex-shrink: 0; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-placeholder { font-size: 28px; font-weight: 700; color: var(--text-tertiary); }
 </style>
