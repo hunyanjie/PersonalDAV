@@ -463,7 +463,12 @@ class SettingsDialog(tk.Toplevel):
         tok_f.pack(fill=tk.X, padx=5, pady=5)
         ttk.Label(tok_f, text="令牌通过 SHA256 哈希存储，关闭弹窗后无法再次查看原始令牌。",
                   wraplength=500, foreground="gray").pack(anchor="w", padx=10, pady=2)
-        self._tok_tree = ttk.Treeview(tok_f, columns=("note", "scopes", "expires", "used"), show="headings", height=5)
+        
+        # 使用 Frame 包装 Treeview 和 Scrollbar
+        tok_tree_frame = ttk.Frame(tok_f)
+        tok_tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        self._tok_tree = ttk.Treeview(tok_tree_frame, columns=("note", "scopes", "expires", "used"), show="headings", height=5)
         self._tok_tree.heading("note", text="备注")
         self._tok_tree.heading("scopes", text="权限")
         self._tok_tree.heading("expires", text="过期")
@@ -472,7 +477,14 @@ class SettingsDialog(tk.Toplevel):
         self._tok_tree.column("scopes", width=200)
         self._tok_tree.column("expires", width=100)
         self._tok_tree.column("used", width=120)
-        self._tok_tree.pack(fill=tk.X, padx=10, pady=5)
+        
+        # 添加垂直滚动条
+        tree_scroll = ttk.Scrollbar(tok_tree_frame, orient=tk.VERTICAL, command=self._tok_tree.yview)
+        self._tok_tree.configure(yscrollcommand=tree_scroll.set)
+        
+        self._tok_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
         ttk.Button(tok_f, text="新建令牌", command=self._show_create_token).pack(anchor="w", padx=10, pady=5)
 
         def _copy_token(event=None):
@@ -504,7 +516,7 @@ class SettingsDialog(tk.Toplevel):
         tools = ttk.LabelFrame(parent, text="可用工具列表")
         tools.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         cols = ("工具名", "类别", "说明")
-        tree = ttk.Treeview(tools, columns=cols, show="headings", height=10)
+        tree = ttk.Treeview(tools, columns=cols, show="headings", height=6)
         for c in cols:
             tree.heading(c, text=c)
             tree.column(c, width=200 if c == "说明" else 100)
@@ -982,38 +994,55 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         win.grab_set()
         center_window(win, self)
         scopes = {}
-        row = 0
-        ttk.Label(win, text="选择权限 (支持多选):", font=("", 10, "bold")).grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="w")
-        row += 1
+        ttk.Label(win, text="选择权限 (支持多选):", font=("", 10, "bold")).grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="w")
         cb_frame = ttk.Frame(win)
-        cb_frame.grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+        cb_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")
         for i, (scope, label) in enumerate(sorted(SCOPE_LABELS.items())):
             var = tk.BooleanVar()
             scopes[scope] = var
             cb = ttk.Checkbutton(cb_frame, text=label, variable=var)
             cb.grid(row=i // 2, column=i % 2, sticky="w", padx=5, pady=2)
-        row += 1
-        ttk.Label(win, text="备注:").grid(row=row, column=0, padx=10, pady=5, sticky="w")
+        ttk.Label(win, text="备注:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
         note_var = tk.StringVar()
-        ttk.Entry(win, textvariable=note_var, width=40).grid(row=row, column=1, padx=10, pady=5, sticky="w")
-        row += 1
-        ttk.Label(win, text="过期:").grid(row=row, column=0, padx=10, pady=5, sticky="w")
-        expires_var = tk.StringVar(value="")
-        expire_combo = ttk.Combobox(win, textvariable=expires_var, values=["", "7天", "30天", "90天", "1年", "自定义"], state="readonly", width=15)
-        expire_combo.grid(row=row, column=1, padx=10, pady=5, sticky="w")
-        expire_combo.bind("<<ComboboxSelected>>", lambda e: (
-            None if expires_var.get() != "自定义" else (expire_combo.set("自定义"), None)
-        ))
-        row += 1
+        ttk.Entry(win, textvariable=note_var, width=40).grid(row=2, column=1, padx=10, pady=5, sticky="w")
+        ttk.Label(win, text="过期:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        expires_var = tk.StringVar(value="永不过期")
+        expire_combo = ttk.Combobox(win, textvariable=expires_var, values=["永不过期", "7天", "30天", "90天", "1年", "自定义"], state="readonly", width=15)
+        expire_combo.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+
+        custom_frame = ttk.Frame(win)
+        custom_days_var = tk.StringVar(value="30")
+        ttk.Label(custom_frame, text="自定义天数:").pack(side=tk.LEFT, padx=(10, 5))
+        ttk.Entry(custom_frame, textvariable=custom_days_var, width=10).pack(side=tk.LEFT, padx=5)
+        
+        def toggle_custom(*_):
+            if expires_var.get() == "自定义":
+                custom_frame.grid(row=4, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+            else:
+                custom_frame.grid_remove()
+        
+        expire_combo.bind("<<ComboboxSelected>>", toggle_custom)
+
         def do_create():
             selected = [s for s, v in scopes.items() if v.get()]
             if not selected:
                 from ui.widgets.toast import Toast
                 Toast.show(win, "请至少选择一个权限", duration=2000)
                 return
-            expires_at = ""
+            expires_at = None
             val = expires_var.get()
-            if val and val != "自定义":
+            if val == "永不过期":
+                expires_at = None
+            elif val == "自定义":
+                try:
+                    days = int(custom_days_var.get())
+                    import datetime
+                    expires_at = (datetime.datetime.now() + datetime.timedelta(days=days)).isoformat()
+                except ValueError:
+                    from ui.widgets.toast import Toast
+                    Toast.show(win, "请输入有效的天数", duration=2000)
+                    return
+            else:
                 import datetime
                 days = {"7天": 7, "30天": 30, "90天": 90, "1年": 365}[val]
                 expires_at = (datetime.datetime.now() + datetime.timedelta(days=days)).isoformat()
@@ -1021,26 +1050,31 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             result = ApiTokenService().create_token(selected, note_var.get(), expires_at)
             for c in win.winfo_children():
                 c.destroy()
-            ttk.Label(win, text="令牌已生成，请立即复制:", font=("", 10, "bold")).pack(padx=10, pady=10)
-            raw_var = tk.StringVar(value=result["token"])
-            entry = ttk.Entry(win, textvariable=raw_var, width=60, state="readonly")
+            ttk.Label(win, text="令牌已生成，请立即复制：", font=("", 10, "bold")).pack(padx=10, pady=10)
+            entry = ttk.Entry(win, width=60)
             entry.pack(padx=10, pady=5)
+            entry.insert(0, result["token"])
+            entry.config(state="readonly")
+            
             def copy_raw():
                 win.clipboard_clear()
                 win.clipboard_append(result["token"])
             ttk.Button(win, text="复制", command=copy_raw).pack(pady=5)
             ttk.Label(win, text=f"权限: {', '.join(selected)}", font=("", 9)).pack()
-            if result["expires_at"]:
+            if result.get("expires_at"):
                 ttk.Label(win, text=f"到期: {result['expires_at'][:10]}", font=("", 9)).pack()
+            else:
+                ttk.Label(win, text="到期: 永不过期", font=("", 9)).pack()
             ttk.Button(win, text="关闭", command=lambda: (win.destroy(), self._refresh_api_tokens())).pack(pady=10)
-        ttk.Button(win, text="生成令牌", command=do_create).grid(row=row, column=0, columnspan=2, pady=10)
+            win.update_idletasks()
+        ttk.Button(win, text="生成令牌", command=do_create).grid(row=5, column=0, columnspan=2, pady=10)
 
     def _delete_api_token(self, item_id: str) -> None:
         tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(item_id, {})
         if not tok_data:
             return
         from ui.dialogs.confirm_dialog import ConfirmDialog
-        if ConfirmDialog(self, "确认删除", f"确定删除令牌 [{tok_data.get('note', tok_data['id'][:8]+'...')}]?").result:
+        if ConfirmDialog.ask(self, "确认删除", f"确定删除令牌 [{tok_data.get('note', tok_data['id'][:8]+'...')}]?"):
             from services.api_token_service import ApiTokenService
             ApiTokenService().delete_token(tok_data["id"])
         self._refresh_api_tokens()

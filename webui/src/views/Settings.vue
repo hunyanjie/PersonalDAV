@@ -146,26 +146,28 @@
               <h4 style="font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">API 令牌 <span style="font-weight:400; font-size:12px; color:var(--text-muted);">可自定义权限和有效期</span></h4>
 
               <!-- 令牌列表 -->
-              <div v-for="t in apiTokens" :key="t.id" class="setting-row" style="padding: 6px 0;">
-                <div class="setting-info">
-                  <div v-if="editingTokenId === t.id" style="display:flex; gap:8px; align-items:center; margin-right:16px;">
-                    <input v-model="editingTokenNote" @keyup.enter="confirmUpdateTokenNote(t.id)" @keyup.esc="editingTokenId = null" style="flex:1; padding:4px 8px; border:1px solid var(--brand); border-radius:4px; font-size:13px;" ref="tokenNoteInput" />
-                    <button class="btn-edit-sm" @click="confirmUpdateTokenNote(t.id)">保存</button>
-                    <button class="btn-edit-sm" @click="editingTokenId = null">取消</button>
+              <div style="max-height: 250px; overflow-y: auto; padding-right: 8px;">
+                <div v-for="t in apiTokens" :key="t.id" class="setting-row" style="padding: 6px 0;">
+                  <div class="setting-info">
+                    <div v-if="editingTokenId === t.id" style="display:flex; gap:8px; align-items:center; margin-right:16px;">
+                      <input v-model="editingTokenNote" @keyup.enter="confirmUpdateTokenNote(t.id)" @keyup.esc="editingTokenId = null" style="flex:1; padding:4px 8px; border:1px solid var(--brand); border-radius:4px; font-size:13px;" ref="tokenNoteInput" />
+                      <button class="btn-edit-sm" @click="confirmUpdateTokenNote(t.id)">保存</button>
+                      <button class="btn-edit-sm" @click="editingTokenId = null">取消</button>
+                    </div>
+                    <div v-else style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:8px;">
+                      <span>{{ t.note || t.id.slice(0,8)+'…' }}</span>
+                      <button class="btn-inline-edit" @click="startEditTokenNote(t)" title="修改备注"><Pencil :size="12" /></button>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap;">
+                      <span v-for="s in t.scopes" :key="s" class="scope-badge">{{ s }}</span>
+                      <span v-if="t.expires_at" style="color:#e67e22;">到期 {{ t.expires_at.slice(0,10) }}</span>
+                      <span v-else style="color:#27ae60;">永不过期</span>
+                      <span v-if="t.last_used_at">上次使用 {{ t.last_used_at.slice(0,10) }}</span>
+                    </div>
                   </div>
-                  <div v-else style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:8px;">
-                    <span>{{ t.note || t.id.slice(0,8)+'…' }}</span>
-                    <button class="btn-inline-edit" @click="startEditTokenNote(t)" title="修改备注"><Pencil :size="12" /></button>
+                  <div class="setting-control">
+                    <button class="btn-sm btn-danger" @click="deleteApiToken(t.id)" style="border-color:#e74c3c; color:#e74c3c; padding:4px 10px; font-size:12px;">删除</button>
                   </div>
-                  <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap;">
-                    <span v-for="s in t.scopes" :key="s" class="scope-badge">{{ s }}</span>
-                    <span v-if="t.expires_at" style="color:#e67e22;">到期 {{ t.expires_at.slice(0,10) }}</span>
-                    <span v-else style="color:#27ae60;">永不过期</span>
-                    <span v-if="t.last_used_at">上次使用 {{ t.last_used_at.slice(0,10) }}</span>
-                  </div>
-                </div>
-                <div class="setting-control">
-                  <button class="btn-sm btn-danger" @click="deleteApiToken(t.id)" style="border-color:#e74c3c; color:#e74c3c; padding:4px 10px; font-size:12px;">删除</button>
                 </div>
               </div>
               <div v-if="!apiTokens.length" style="padding:8px 0; font-size:13px; color:var(--text-muted);">暂无 API 令牌</div>
@@ -201,9 +203,12 @@
                             <option value="30">30 天</option>
                             <option value="90">90 天</option>
                             <option value="365">1 年</option>
-                            <option value="custom">自定义日期</option>
+                            <option value="custom">自定义</option>
                           </select>
-                          <input v-if="tokenFormExpires==='custom'" v-model="tokenFormCustomDate" type="date" style="margin-left:0px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                          <div v-if="tokenFormExpires==='custom'" style="display:flex; align-items:center; gap:4px;">
+                             <input v-model="tokenFormCustomDays" type="number" min="1" style="width:60px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                             <span style="font-size:12px; color:var(--text-muted);">天</span>
+                          </div>
                         </div>
                       </div>
                       <button class="btn-sm btn-primary" @click="createApiToken" :disabled="!tokenFormScopes.length" style="background:var(--brand); color:white; border:none; padding:8px 20px;">生成令牌</button>
@@ -534,7 +539,7 @@ export default {
       } catch(e) { window.showToast('创建失败: ' + (e.message || e), 'error') }
     },
     async deleteApiToken(id) {
-      if (!window.confirm('确定删除此令牌?')) return
+      if (!await window.showConfirm({ message: '确定删除此令牌?', type: 'danger' })) return
       try {
         await api.delete('/auth/tokens/' + id)
         this.loadApiTokens()
@@ -870,11 +875,11 @@ export default {
 
 /* Modal Transitions */
 .modal-enter-active .modal-overlay { transition: opacity 0.2s ease; }
-.modal-enter-active .modal-dialog { transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease; }
+.modal-enter-active .modal-dialog { transition: transform 0.25s, opacity 0.2s ease; }
 .modal-leave-active .modal-overlay { transition: opacity 0.15s ease; }
 .modal-leave-active .modal-dialog { transition: transform 0.15s ease, opacity 0.15s ease; }
 .modal-enter-from .modal-overlay { opacity: 0; }
-.modal-enter-from .modal-dialog { opacity: 0; transform: scale(0.95) translateY(15px); }
+.modal-enter-from .modal-dialog { opacity: 0; transform: scale(0.95) }
 .modal-leave-to .modal-overlay { opacity: 0; }
-.modal-leave-to .modal-dialog { opacity: 0; transform: scale(0.95) translateY(10px); }
+.modal-leave-to .modal-dialog { opacity: 0; transform: scale(0.95); }
 </style>
