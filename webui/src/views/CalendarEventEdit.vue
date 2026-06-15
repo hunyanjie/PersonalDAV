@@ -477,6 +477,14 @@ export default {
       const files = e.dataTransfer.files
       if (files.length) this.addFilesAsAttachments(files)
     },
+    escapeIcal(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\n/g, '\\n');
+    },
     openUrlDialog() {
       this.showUrlDialog = true
       this.urlInput = ''
