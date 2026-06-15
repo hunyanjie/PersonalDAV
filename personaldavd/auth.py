@@ -55,8 +55,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip docs/openapi
-        if path.startswith("/api/docs") or path.startswith("/api/openapi"):
+        # Skip docs/openapi + public SPA assets + login
+        if (path.startswith("/api/docs") or path.startswith("/api/openapi") or
+            path.startswith("/assets") or path.startswith("/icons") or
+            path == "/" or path == "/index.html" or
+            path == "/manifest.json" or path == "/sw.js" or
+            path == "/api/auth/token"):
             return await call_next(request)
 
         svc = AuthService()
