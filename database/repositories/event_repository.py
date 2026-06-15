@@ -3,7 +3,7 @@ from database.repositories.base import BaseRepository
 from models.event import EventModel
 
 class EventRepository(BaseRepository[EventModel]):
-    SEARCH_COLUMNS = ['summary']
+    SEARCH_COLUMNS = ['summary', 'description', 'location']
 
     def search_by_keyword(self, keyword: str, limit: int = 20) -> list[EventModel]:
         return self.search(self.SEARCH_COLUMNS, keyword, limit)
