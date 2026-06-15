@@ -334,11 +334,13 @@ export default {
 
     // 拖拽监听
     document.addEventListener('dragenter', this._onGlobalDragEnter)
+    document.addEventListener('dragover', this._onGlobalDragOver)
     document.addEventListener('dragleave', this._onGlobalDragLeave)
     document.addEventListener('drop', this._onGlobalDrop)
   },
   beforeUnmount() {
     document.removeEventListener('dragenter', this._onGlobalDragEnter)
+    document.removeEventListener('dragover', this._onGlobalDragOver)
     document.removeEventListener('dragleave', this._onGlobalDragLeave)
     document.removeEventListener('drop', this._onGlobalDrop)
   },
@@ -503,6 +505,7 @@ export default {
     },
     _onGlobalDragEnter(e) {
       if (e.dataTransfer.types?.includes('Files')) {
+        e.preventDefault() // 关键：阻止默认行为
         this._dragCount++
         this.dragging = true
       }
@@ -515,9 +518,12 @@ export default {
       this._dragCount = 0
       this.dragging = false
       if (e.dataTransfer.files?.length) {
-        e.preventDefault()
+        e.preventDefault() // 关键：阻止默认行为
         this.addFilesAsAttachments(e.dataTransfer.files)
       }
+    },
+    _onGlobalDragOver(e) {
+      e.preventDefault() // 必须阻止 dragover 才能触发 drop
     },
   },
 }
