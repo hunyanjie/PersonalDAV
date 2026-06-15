@@ -97,6 +97,15 @@
               <FileText :size="20" class="detail-icon" />
               <div class="row-val desc-text">{{ selectedEvent.description }}</div>
             </div>
+            <div v-if="selectedEvent.attachments && selectedEvent.attachments.length" class="detail-row">
+              <File :size="20" class="detail-icon" />
+              <div class="row-content">
+                <div v-for="(a, idx) in selectedEvent.attachments" :key="idx" class="attachment-row">
+                  <span class="file-name">{{ a.name }}</span>
+                  <a :href="a.url" :download="a.name" class="btn-action btn-download" style="padding: 4px 8px;">下载</a>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="detail-footer">
             <button class="btn-action" @click="exportSingle(selectedEvent)"><Share2 :size="14" /> 导出</button>
@@ -416,7 +425,30 @@ export default {
     },
     selectedEvent() {
       if (this.selectedUids.length !== 1) return null
-      return this.eventsMap[this.selectedUids[0]]
+      const e = this.eventsMap[this.selectedUids[0]]
+      if (!e) return null
+      const lines = (e.ical || '').split(/\r?\n/)
+      const attachments = []
+      // 复用 CalendarEventEdit 的逻辑进行解析
+      const unfoldedLines = []
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0 && lines[i].startsWith(' ')) {
+          unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
+        } else {
+          unfoldedLines.push(lines[i])
+        }
+      }
+      for (const line of unfoldedLines) {
+        if (line.toUpperCase().includes('ATTACH')) {
+          const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
+          let fileName = '附件'
+          const nameMatch = head.match(/FILENAME=([^;]+)/i)
+          if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
+          else fileName = val.split('/').pop().split('\\').pop() || '附件'
+          attachments.push({ name: decodeURIComponent(fileName), url: val })
+        }
+      }
+      return { ...e, attachments }
     },
   },
   mounted() {

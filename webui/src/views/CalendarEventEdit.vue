@@ -272,16 +272,36 @@ export default {
 
         // 解析附件 (ATTACH)
         this.form.attachments = []
-        for (const line of lines) {
-          if (line.toUpperCase().startsWith('ATTACH')) {
+        // 先处理折行 (iCalendar 规范中折行以空格开头)
+        const unfoldedLines = []
+        for (let i = 0; i < lines.length; i++) {
+          if (i > 0 && lines[i].startsWith(' ')) {
+            unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
+          } else {
+            unfoldedLines.push(lines[i])
+          }
+        }
+        for (const line of unfoldedLines) {
+          if (line.toUpperCase().includes('ATTACH')) {
             const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
-            if (head.includes('ENCODING=BASE64')) {
-              const nameMatch = head.match(/FILENAME=(.*?)(;|$)/)
-              const typeMatch = head.match(/FMTTYPE=(.*?)(;|$)/)
-              const mime = typeMatch ? typeMatch[1] : 'application/octet-stream'
-              this.form.attachments.push({ name: nameMatch ? nameMatch[1] : '附件', url: `data:${mime};base64,${val}` })
+            let fileName = '附件'
+            
+            // 尝试从参数中获取文件名
+            const nameMatch = head.match(/FILENAME=([^;]+)/i)
+            if (nameMatch) {
+              fileName = decodeURIComponent(nameMatch[1].trim())
             } else {
-              this.form.attachments.push({ name: val.split('/').pop() || '链接', url: val })
+              // 降级使用路径或 URL 的最后部分
+              fileName = val.split('/').pop().split('\\').pop() || '附件'
+              fileName = decodeURIComponent(fileName)
+            }
+
+            if (head.toUpperCase().includes('ENCODING=BASE64')) {
+              const typeMatch = head.match(/FMTTYPE=(.*?)(;|$)/i)
+              const mime = typeMatch ? typeMatch[1] : 'application/octet-stream'
+              this.form.attachments.push({ name: fileName, url: `data:${mime};base64,${val}` })
+            } else {
+              this.form.attachments.push({ name: fileName, url: val })
             }
           }
         }

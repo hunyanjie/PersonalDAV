@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
 from ui.widgets.collapsible_frame import CollapsibleFrame
+from ui.widgets.enhanced_tooltip import EnhancedTooltip
 from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from ui.dialogs.settings_security import SecuritySettingsSection
 from ui.dialogs.settings_reminders import ReminderPresetSection
@@ -438,6 +439,24 @@ class SettingsDialog(tk.Toplevel):
         if hasattr(self, 'mcp_port_var'):
             self.mcp_port_var.trace("w", update_url)
         self.after(100, update_url)
+
+        # MCP 令牌
+        token_f = ttk.LabelFrame(parent, text="MCP 令牌（AI 连接用）")
+        token_f.pack(fill=tk.X, padx=5, pady=5)
+        self._mcp_token_var = tk.StringVar()
+        token_entry = ttk.Entry(token_f, textvariable=self._mcp_token_var, state="readonly", width=70)
+        token_entry.pack(fill=tk.X, padx=5, pady=5)
+        self._mcp_token_time_var = tk.StringVar()
+        ttk.Label(token_f, textvariable=self._mcp_token_time_var, foreground="gray", font=('', 8)).pack(anchor="w", padx=5)
+        btn_f = ttk.Frame(token_f)
+        btn_f.pack(fill=tk.X, padx=5, pady=5)
+        copy_btn = ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token)
+        copy_btn.pack(side=tk.LEFT, padx=2)
+        self._mcp_tip = EnhancedTooltip(copy_btn, "请先设置密码以生成令牌")
+        self._rotate_token_btn = ttk.Button(btn_f, text="轮换令牌", command=self._rotate_mcp_token)
+        self._rotate_token_btn.pack(side=tk.LEFT, padx=2)
+        ttk.Label(btn_f, text="  更改密码或轮换后旧令牌立即失效。",
+                  foreground="gray").pack(side=tk.LEFT)
 
         # API 令牌 (v3.4)
         tok_f = ttk.LabelFrame(parent, text="API 令牌 (可自定义权限和有效期)")
@@ -955,11 +974,13 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
     def _show_create_token(self) -> None:
         from services.api_token_service import SCOPE_LABELS
+        from utils.window_utils import center_window
         import tkinter.simpledialog
         win = tk.Toplevel(self)
         win.title("创建 API 令牌")
         win.transient(self)
         win.grab_set()
+        center_window(win, self)
         scopes = {}
         row = 0
         ttk.Label(win, text="选择权限 (支持多选):", font=("", 10, "bold")).grid(row=row, column=0, columnspan=2, padx=10, pady=5, sticky="w")
@@ -1034,6 +1055,39 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             from services.api_token_service import ApiTokenService
             ApiTokenService().update_token_note(tok_data["id"], new_note)
             self._refresh_api_tokens()
+
+    def _refresh_mcp_token(self) -> None:
+        from services.auth_service import AuthService
+        svc = AuthService()
+        enabled = svc.is_enabled()
+        token = svc.get_mcp_token() if enabled else "(未设置密码)"
+        if hasattr(self, '_mcp_token_var'):
+            self._mcp_token_var.set(token)
+            rotated = svc.get_mcp_token_rotated_at()
+            self._mcp_token_time_var.set(f"上次轮换: {rotated}" if rotated else "")
+            state = tk.NORMAL if enabled else tk.DISABLED
+            self._rotate_token_btn.config(state=state)
+            if hasattr(self, '_mcp_tip'):
+                self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
+
+    def _copy_mcp_token(self):
+        from services.auth_service import AuthService
+        token = AuthService().get_mcp_token()
+        if not token:
+            from tkinter import messagebox
+            messagebox.showinfo("提示", "请先设置密码", parent=self)
+            return
+        self.clipboard_clear()
+        self.clipboard_append(token)
+        from ui.widgets.toast import Toast
+        Toast.success(self, "MCP 令牌已复制到剪贴板")
+
+    def _rotate_mcp_token(self):
+        from services.auth_service import AuthService
+        AuthService().rotate_mcp_token()
+        self._refresh_mcp_token()
+        from ui.widgets.toast import Toast
+        Toast.success(self, "MCP 令牌已轮换，旧令牌立即失效")
 
     def create_search_settings(self, parent):
         f = ttk.LabelFrame(parent, text="搜索模式")
@@ -1358,6 +1412,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
 
         self._reminder_section.load()
         self._security_section.load()
+        self._refresh_mcp_token()
 
         self.enable_log_file_var.set(s.get_setting("enable_log_file", "False") == "True")
         self.log_path_var.set(s.get_setting("log_file_path", "log/dav_server.log"))

@@ -128,36 +128,46 @@
       </div>
     </transition>
 
-    <!-- Detail Modal -->
+    <!-- Detail Overlay -->
     <transition name="modal">
-      <div v-if="detailEvent" class="modal-overlay" @click.self="detailEvent = null">
-        <div class="modal-card glass no-transition">
-          <div class="modal-header">
-            <h3>{{ detailEvent.summary || '(无标题)' }}</h3>
-            <button class="btn-close-circle" @click="detailEvent = null"><X :size="20" /></button>
+      <div v-if="detailEvent" class="detail-overlay glass" @click.self="detailEvent = null">
+        <div class="detail-box no-transition">
+          <div class="detail-header">
+            <div class="dh-top">
+              <h2>{{ detailEvent.summary || '(无标题)' }}</h2>
+              <button class="close-btn" @click="detailEvent = null"><X :size="20" /></button>
+            </div>
+            <div class="detail-meta">
+              <span class="meta-tag"><Tag :size="12" /> {{ detailEvent.categories || '默认' }}</span>
+            </div>
           </div>
-          <div class="modal-body">
-            <div class="modal-row">
-              <Clock :size="18" class="row-icon" />
+          <div class="detail-body">
+            <div class="detail-row">
+              <Clock :size="20" class="detail-icon" />
               <div class="row-content">
-                <div class="row-val">{{ formatTime(detailEvent.dtstart) }} - {{ formatTime(detailEvent.dtend) }}</div>
-                <div class="row-label">{{ formatDateFull(detailEvent.dtstart) }}</div>
+                <div class="time-range">{{ formatTime(detailEvent.dtstart) }} - {{ formatTime(detailEvent.dtend) }}</div>
+                <div class="date-val">{{ formatDateFull(detailEvent.dtstart) }}</div>
               </div>
             </div>
-            <div v-if="detailEvent.location" class="modal-row">
-              <MapPin :size="18" class="row-icon" />
-              <div class="row-content"><div class="row-val">{{ detailEvent.location }}</div></div>
+            <div v-if="detailEvent.location" class="detail-row">
+              <MapPin :size="20" class="detail-icon" />
+              <div class="row-val">{{ detailEvent.location }}</div>
             </div>
-            <div v-if="detailEvent.categories" class="modal-row">
-              <Layers :size="18" class="row-icon" />
-              <div class="row-content"><div class="row-val">{{ detailEvent.categories }}</div></div>
+            <div v-if="detailEvent.description" class="detail-row">
+              <FileText :size="20" class="detail-icon" />
+              <div class="row-val desc-text">{{ detailEvent.description }}</div>
             </div>
-            <div v-if="detailEvent.description" class="modal-row">
-              <FileText :size="18" class="row-icon" />
-              <div class="row-content"><div class="row-val desc-text">{{ detailEvent.description }}</div></div>
+            <div v-if="detailEvent.attachments && detailEvent.attachments.length" class="detail-row">
+              <File :size="20" class="detail-icon" />
+              <div class="row-content">
+                <div v-for="(a, idx) in detailEvent.attachments" :key="idx" class="attachment-row">
+                  <span class="file-name">{{ a.name }}</span>
+                  <a :href="a.url" :download="a.name" class="btn-action btn-download" style="padding: 4px 8px;">下载</a>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="modal-footer">
+          <div class="detail-footer">
             <button class="btn-action" @click="exportSingle(detailEvent)"><Share2 :size="14" /> 导出</button>
             <router-link :to="`/calendar/${detailEvent.uid}/edit`" class="btn-action"><Pencil :size="14" /> 编辑</router-link>
             <button class="btn-action btn-danger" @click="deleteSingle(detailEvent)"><Trash2 :size="14" /> 删除</button>
@@ -172,8 +182,9 @@
 import { 
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
   Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
-  MapPin, Layers, FileText, X, Calendar as CalendarIcon
+  MapPin, Layers, FileText, X, Calendar as CalendarIcon, File, Tag, Pencil, Trash2
 } from 'lucide-vue-next'
+
 import api from '../api.js'
 
 function pad(n) { return String(n).padStart(2, '0') }
@@ -420,7 +431,30 @@ export default {
       this.ctxMenu = { show: true, x: ev.clientX, y: ev.clientY, uids: [...this.selectedUids] }
     },
     onClickAway() { this.ctxMenu.show = false },
-    openDetail(e) { this.detailEvent = e; this.ctxMenu.show = false },
+    openDetail(e) {
+      const lines = (e.ical || '').split(/\r?\n/)
+      const attachments = []
+      const unfoldedLines = []
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0 && lines[i].startsWith(' ')) {
+          unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
+        } else {
+          unfoldedLines.push(lines[i])
+        }
+      }
+      for (const line of unfoldedLines) {
+        if (line.toUpperCase().includes('ATTACH')) {
+          const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
+          let fileName = '附件'
+          const nameMatch = head.match(/FILENAME=([^;]+)/i)
+          if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
+          else fileName = val.split('/').pop().split('\\').pop() || '附件'
+          attachments.push({ name: decodeURIComponent(fileName), url: val })
+        }
+      }
+      this.detailEvent = { ...e, attachments }
+      this.ctxMenu.show = false
+    },
     _toICS(events) {
       const vevents = events.map(e => [
         'BEGIN:VEVENT', `UID:${e.uid || ''}`,
@@ -598,8 +632,8 @@ export default {
 .search-results-panel { padding: 24px; background: var(--bg-card); border-radius: var(--radius-lg); display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; border: 1px solid var(--border-base); }
 .card-date { font-size: 13px; color: var(--brand); margin-top: 8px; font-weight: 700; display: inline-block; }
 
-.ctx-menu { position: fixed; z-index: 3000; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border: 1px solid var(--border-base); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; padding: 8px; border: 1px solid rgba(0,0,0,0.05); }
-.ctx-item { padding: 12px 16px; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 12px; border-radius: var(--radius-sm); color: var(--text-secondary); font-weight: 500; transition: .2s; }
+.ctx-menu { position: fixed; z-index: 1100; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 6px; min-width: 150px; border: 1px solid var(--border-base); }
+.ctx-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; color: var(--text-secondary); transition: background-color .2s, color .2s, transform .2s; }
 .ctx-item:hover { background: var(--brand); color: white; transform: translateX(4px); }
 .ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
 .ctx-item.danger:hover { background: var(--danger); }
