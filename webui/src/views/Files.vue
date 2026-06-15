@@ -249,8 +249,10 @@
               <td class="col-size hide-mobile">{{ item.is_dir ? '目录' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.deleted_at) }}</td>
               <td class="col-actions">
-                <button class="btn-icon" @click="restoreFromTrash(item.uuid)" title="还原"><RefreshCw :size="16" /></button>
-                <button class="btn-icon btn-danger" @click="deleteFromTrash(item.uuid)" title="永久删除"><Trash2 :size="16" /></button>
+                <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                  <button class="btn-icon" @click="restoreFromTrash(item.uuid)" title="还原"><RefreshCw :size="16" /></button>
+                  <button class="btn-icon btn-danger" @click="deleteFromTrash(item.uuid)" title="永久删除"><Trash2 :size="16" /></button>
+                </div>
               </td>
             </tr>
           </tbody>
