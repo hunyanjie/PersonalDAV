@@ -6,7 +6,7 @@
         <p class="form-subtitle">管理您的个人日程并跨设备同步</p>
       </div>
 
-      <form @submit.prevent="save">
+      <form @submit.prevent="save" @dragover.prevent @drop.prevent="onFileDrop">
         <div class="form-grid">
           <div class="form-item full" :class="{ focused: focusedField === 'summary' }">
             <label>日程标题</label>
@@ -135,6 +135,26 @@
           <router-link to="/calendar" class="btn-cancel">取消</router-link>
         </div>
       </form>
+      <div v-if="dragging" class="drop-overlay"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>松开以上传文件作为附件</span></div>
+
+      <!-- URL 输入弹窗 -->
+      <transition name="modal">
+        <div v-if="showUrlDialog" class="modal-overlay" @click.self="cancelUrl">
+          <div class="modal-card" style="max-width:420px;">
+            <div class="modal-header"><h3>添加链接附件</h3><button type="button" class="btn-close-circle" @click="cancelUrl"><X :size="20" /></button></div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label>链接地址</label>
+                <input v-model="urlInput" placeholder="https://example.com/file.pdf" @keyup.enter="confirmUrl" autofocus />
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn-cancel" @click="cancelUrl" style="padding:8px 24px;">取消</button>
+              <button type="button" class="btn-primary" @click="confirmUrl" :disabled="!urlInput.trim()" style="padding:8px 24px;border:none;">确认</button>
+            </div>
+          </div>
+        </div>
+      </transition>
     </div>
   </div>
 </template>
@@ -183,6 +203,10 @@ export default {
     focusedField: null,
     reminderForm: null,
     editingReminderIdx: -1,
+    showUrlDialog: false,
+    urlInput: '',
+    dragging: false,
+    _dragCount: 0,
   }),
   async mounted() {
     const uid = this.$route.params.uid
@@ -307,6 +331,16 @@ export default {
         }
       } catch(e) { console.error('加载失败', e) }
     }
+
+    // 拖拽监听
+    document.addEventListener('dragenter', this._onGlobalDragEnter)
+    document.addEventListener('dragleave', this._onGlobalDragLeave)
+    document.addEventListener('drop', this._onGlobalDrop)
+  },
+  beforeUnmount() {
+    document.removeEventListener('dragenter', this._onGlobalDragEnter)
+    document.removeEventListener('dragleave', this._onGlobalDragLeave)
+    document.removeEventListener('drop', this._onGlobalDrop)
   },
   methods: {
     _buildIcal(ds, de, uid) {
@@ -408,22 +442,73 @@ export default {
     },
     addAttachment(type) {
       if (type === 'file') {
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.onchange = () => {
-          const file = input.files[0]
-          if (file) {
-            const reader = new FileReader()
-            reader.onload = (e) => {
-              this.form.attachments.push({ url: e.target.result, name: file.name })
-            }
-            reader.readAsDataURL(file)
-          }
-        }
-        input.click()
+        this._pickFile()
       } else {
-        const url = prompt('请输入链接地址:')
-        if (url) this.form.attachments.push({ url, name: url.split('/').pop() || '链接' })
+        this.showUrlDialog = true
+        this.urlInput = ''
+      }
+    },
+    addFilesAsAttachments(files) {
+      for (const file of files) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          this.form.attachments.push({ url: e.target.result, name: file.name })
+        }
+        reader.readAsDataURL(file)
+      }
+    },
+    _pickFile() {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.onchange = () => {
+        if (input.files[0]) {
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            this.form.attachments.push({ url: e.target.result, name: input.files[0].name })
+          }
+          reader.readAsDataURL(input.files[0])
+        }
+      }
+      input.click()
+    },
+    onFileDrop(e) {
+      this.dragging = false
+      this._dragCount = 0
+      const files = e.dataTransfer.files
+      if (files.length) this.addFilesAsAttachments(files)
+    },
+    openUrlDialog() {
+      this.showUrlDialog = true
+      this.urlInput = ''
+    },
+    confirmUrl() {
+      const url = this.urlInput.trim()
+      if (url) {
+        this.form.attachments.push({ url, name: url.split('/').pop() || '链接' })
+        this.showUrlDialog = false
+        this.urlInput = ''
+      }
+    },
+    cancelUrl() {
+      this.showUrlDialog = false
+      this.urlInput = ''
+    },
+    _onGlobalDragEnter(e) {
+      if (e.dataTransfer.types?.includes('Files')) {
+        this._dragCount++
+        this.dragging = true
+      }
+    },
+    _onGlobalDragLeave() {
+      this._dragCount--
+      if (this._dragCount <= 0) { this._dragCount = 0; this.dragging = false }
+    },
+    _onGlobalDrop(e) {
+      this._dragCount = 0
+      this.dragging = false
+      if (e.dataTransfer.files?.length) {
+        e.preventDefault()
+        this.addFilesAsAttachments(e.dataTransfer.files)
       }
     },
   },
@@ -536,4 +621,23 @@ input:focus, textarea:focus {
 .section-block select:focus { border-color: var(--brand); background: white; }
 
 .attachment-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+
+.drop-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; gap:16px; backdrop-filter:blur(4px); }
+.drop-overlay span { font-size:18px; font-weight:600; color:var(--brand); }
+
+.modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:5000; backdrop-filter:blur(8px); }
+.modal-card { background:white; border-radius:var(--radius-xl); width:100%; max-width:500px; max-height:90vh; overflow-y:auto; box-shadow:var(--shadow-xl); border:1px solid var(--glass-border); }
+.modal-header { padding:24px 32px; border-bottom:1px solid var(--border-base); display:flex; justify-content:space-between; align-items:center; position:relative; }
+.modal-header h3 { margin:0; font-size:18px; font-weight:700; color:var(--text-primary); }
+.modal-body { padding:24px 32px; display:flex; flex-direction:column; gap:16px; }
+.modal-footer { padding:20px 32px; border-top:1px solid var(--border-base); display:flex; gap:12px; justify-content:flex-end; }
+.btn-close-circle { background:transparent; border:none; padding:4px; color:var(--text-tertiary); cursor:pointer; transition:.2s; display:flex; }
+.btn-close-circle:hover { color:var(--text-primary); transform:rotate(90deg); }
+.form-group { display:flex; flex-direction:column; gap:6px; }
+.form-group label { font-size:13px; font-weight:600; color:var(--text-secondary); }
+.form-group input { padding:10px 12px; border:1px solid var(--border-input); border-radius:var(--radius-md); font-size:14px; background:#fafafa; transition:all .2s; outline:none; }
+.form-group input:focus { border-color:var(--brand); background:white; box-shadow:0 0 0 3px var(--brand-ring); }
+.btn-primary { padding:8px 24px; background:var(--brand); color:white; border:none; border-radius:var(--radius-md); font-size:14px; font-weight:600; cursor:pointer; transition:all .2s; }
+.btn-primary:hover { filter:brightness(1.1); }
+.btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
 </style>
