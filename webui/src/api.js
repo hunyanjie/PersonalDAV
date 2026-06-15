@@ -16,7 +16,7 @@ async function request(method, path, options = {}) {
   if (res.status === 401 || res.status === 403) {
     localStorage.removeItem('token')
     window.location.hash = '#/login'
-    throw new Error('未登录')
+    throw new Error('密码错误或未登录')
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))

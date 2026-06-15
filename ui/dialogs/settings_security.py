@@ -154,9 +154,12 @@ class SecuritySettingsSection:
         self._auth_status_label.config(
             text=f"访问密码: {'已设置' if enabled else '未设置'}",
             foreground="green" if enabled else "orange")
-        state = tk.NORMAL if enabled else tk.DISABLED
-        self._change_pw_btn.config(state=state)
-        self._clear_pw_btn.config(state=state)
+        
+        # 如果未设置，启用设置密码，禁用更改/清除
+        # 如果已设置，禁用设置密码，启用更改/清除
+        self._set_pw_btn.config(state=tk.DISABLED if enabled else tk.NORMAL)
+        self._change_pw_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
+        self._clear_pw_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _set_password(self):
         self._password_dialog(change=False)
