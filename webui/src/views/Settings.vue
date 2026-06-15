@@ -153,8 +153,8 @@
                     <button class="btn-edit-sm" @click="confirmUpdateTokenNote(t.id)">保存</button>
                     <button class="btn-edit-sm" @click="editingTokenId = null">取消</button>
                   </div>
-                  <div v-else class="setting-label" style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:8px;">
-                    {{ t.note || t.id.slice(0,8)+'…' }}
+                  <div v-else style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:8px;">
+                    <span>{{ t.note || t.id.slice(0,8)+'…' }}</span>
                     <button class="btn-inline-edit" @click="startEditTokenNote(t)" title="修改备注"><Pencil :size="12" /></button>
                   </div>
                   <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap;">
@@ -173,52 +173,54 @@
               <button class="btn-sm" @click="showCreateToken = true" style="margin-top:8px;">+ 创建令牌</button>
 
               <!-- 创建令牌弹窗 -->
-              <div v-if="showCreateToken" class="modal-overlay" @click.self="closeTokenDialog()">
-                <div class="modal-dialog" style="max-width:560px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <h4 style="margin:0;">创建 API 令牌</h4>
-                    <button class="btn-sm" @click="closeTokenDialog()" style="border:none; background:transparent; font-size:20px; cursor:pointer;">×</button>
-                  </div>
-                  <div v-if="!newTokenResult">
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">选择权限 (支持多选):</p>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; max-height:240px; overflow-y:auto; margin-bottom:12px;">
-                      <label v-for="(label, scope) in scopeOptions" :key="scope" class="scope-checkbox">
-                        <input type="checkbox" :value="scope" v-model="tokenFormScopes" />
-                        <span>{{ label }}</span>
-                      </label>
+              <transition name="modal">
+                <div v-if="showCreateToken" class="modal-overlay" @click.self="closeTokenDialog()">
+                  <div class="modal-dialog" style="max-width:560px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                      <h4 style="margin:0;">创建 API 令牌</h4>
+                      <button class="btn-sm" @click="closeTokenDialog()" style="border:none; background:transparent; font-size:20px; cursor:pointer;">×</button>
                     </div>
-                    <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px;">
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">备注</label>
-                        <input v-model="tokenFormNote" placeholder="例如: 给 opencode 用" style="width:200px; padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;" />
+                    <div v-if="!newTokenResult">
+                      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">选择权限 (支持多选):</p>
+                      <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; max-height:240px; overflow-y:auto; margin-bottom:12px;">
+                        <label v-for="(label, scope) in scopeOptions" :key="scope" class="scope-checkbox">
+                          <input type="checkbox" :value="scope" v-model="tokenFormScopes" />
+                          <span>{{ label }}</span>
+                        </label>
                       </div>
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">过期时间</label>
-                        <select v-model="tokenFormExpires" style="padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;">
-                          <option value="">永不过期</option>
-                          <option value="7">7 天</option>
-                          <option value="30">30 天</option>
-                          <option value="90">90 天</option>
-                          <option value="365">1 年</option>
-                          <option value="custom">自定义日期</option>
-                        </select>
-                        <input v-if="tokenFormExpires==='custom'" v-model="tokenFormCustomDate" type="date" style="margin-left:0px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">备注</label>
+                          <input v-model="tokenFormNote" placeholder="例如: 给 opencode 用" style="width:200px; padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;" />
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">过期时间</label>
+                          <select v-model="tokenFormExpires" style="padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;">
+                            <option value="">永不过期</option>
+                            <option value="7">7 天</option>
+                            <option value="30">30 天</option>
+                            <option value="90">90 天</option>
+                            <option value="365">1 年</option>
+                            <option value="custom">自定义日期</option>
+                          </select>
+                          <input v-if="tokenFormExpires==='custom'" v-model="tokenFormCustomDate" type="date" style="margin-left:0px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                        </div>
                       </div>
+                      <button class="btn-sm btn-primary" @click="createApiToken" :disabled="!tokenFormScopes.length" style="background:var(--brand); color:white; border:none; padding:8px 20px;">生成令牌</button>
                     </div>
-                    <button class="btn-sm btn-primary" @click="createApiToken" :disabled="!tokenFormScopes.length" style="background:var(--brand); color:white; border:none; padding:8px 20px;">生成令牌</button>
-                  </div>
-                  <div v-else>
-                    <p style="font-size:13px; color:var(--text-muted); margin-bottom:8px;">令牌已生成，请立即复制并保存。关闭弹窗后将无法再次查看。</p>
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
-                      <input :value="newTokenResult.token" readonly style="flex:1; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--brand); border-radius:4px; background:var(--bg-hover);" @click="$event.target.select()" />
-                      <button class="btn-sm" @click="copyToken(newTokenResult.token)" style="white-space:nowrap;">复制</button>
+                    <div v-else>
+                      <p style="font-size:13px; color:var(--text-muted); margin-bottom:8px;">令牌已生成，请立即复制并保存。关闭弹窗后将无法再次查看。</p>
+                      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                        <input :value="newTokenResult.token" readonly style="flex:1; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--brand); border-radius:4px; background:var(--bg-hover);" @click="$event.target.select()" />
+                        <button class="btn-sm" @click="copyToken(newTokenResult.token)" style="white-space:nowrap;">复制</button>
+                      </div>
+                      <p style="font-size:11px; color:var(--text-muted);">权限: {{ newTokenResult.scopes.join(', ') }}</p>
+                      <p v-if="newTokenResult.expires_at" style="font-size:11px; color:var(--text-muted);">到期: {{ newTokenResult.expires_at.slice(0,10) }}</p>
+                      <button class="btn-sm" @click="closeTokenDialog()" style="margin-top:8px;">关闭</button>
                     </div>
-                    <p style="font-size:11px; color:var(--text-muted);">权限: {{ newTokenResult.scopes.join(', ') }}</p>
-                    <p v-if="newTokenResult.expires_at" style="font-size:11px; color:var(--text-muted);">到期: {{ newTokenResult.expires_at.slice(0,10) }}</p>
-                    <button class="btn-sm" @click="closeTokenDialog()" style="margin-top:8px;">关闭</button>
                   </div>
                 </div>
-              </div>
+              </transition>
             </div>
           </section>
 
@@ -255,6 +257,7 @@
               </div>
             </div>
           </section>
+
 
           <!-- Auth Logs -->
           <section v-if="activeSection === 'logs'" class="config-section">
@@ -864,4 +867,14 @@ export default {
 .btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
 .btn-inline-edit { background:transparent; border:none; color:var(--brand); cursor:pointer; padding:2px; display:inline-flex; align-items:center; opacity:0.6; transition:.2s; }
 .btn-inline-edit:hover { opacity:1; background:var(--bg-hover); border-radius:4px; }
+
+/* Modal Transitions */
+.modal-enter-active .modal-overlay { transition: opacity 0.2s ease; }
+.modal-enter-active .modal-dialog { transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease; }
+.modal-leave-active .modal-overlay { transition: opacity 0.15s ease; }
+.modal-leave-active .modal-dialog { transition: transform 0.15s ease, opacity 0.15s ease; }
+.modal-enter-from .modal-overlay { opacity: 0; }
+.modal-enter-from .modal-dialog { opacity: 0; transform: scale(0.95) translateY(15px); }
+.modal-leave-to .modal-overlay { opacity: 0; }
+.modal-leave-to .modal-dialog { opacity: 0; transform: scale(0.95) translateY(10px); }
 </style>
