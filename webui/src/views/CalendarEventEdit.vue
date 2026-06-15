@@ -208,6 +208,19 @@ export default {
     dragging: false,
     _dragCount: 0,
   }),
+  watch: {
+    'form.allDay'(newVal) {
+      if (newVal) {
+        // datetime-local -> date
+        if (this.form.dtstart && this.form.dtstart.includes('T')) this.form.dtstart = this.form.dtstart.split('T')[0]
+        if (this.form.dtend && this.form.dtend.includes('T')) this.form.dtend = this.form.dtend.split('T')[0]
+      } else {
+        // date -> datetime-local (fallback to 08:00)
+        if (this.form.dtstart && !this.form.dtstart.includes('T')) this.form.dtstart = this.form.dtstart + 'T08:00'
+        if (this.form.dtend && !this.form.dtend.includes('T')) this.form.dtend = this.form.dtend + 'T08:00'
+      }
+    }
+  },
   async mounted() {
     const uid = this.$route.params.uid
     if (uid) {
@@ -216,7 +229,6 @@ export default {
         const e = await api.getEvent(uid)
         this._rawIcal = e.ical || ''
         
-        // 更鲁棒的解析逻辑
         const lines = this._rawIcal.split(/\r?\n/)
         this.form.summary = getField(lines, 'SUMMARY')
         this.form.description = getField(lines, 'DESCRIPTION')
@@ -225,21 +237,39 @@ export default {
 
         const rawStart = getField(lines, 'DTSTART')
         const rawEnd = getField(lines, 'DTEND')
+        
+        await this.$nextTick() // 确保绑定
+
+        const formatForInput = (raw, isAllDay) => {
+          if (!raw) return ''
+          if (isAllDay) {
+            return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}`
+          } else {
+            const y = raw.substring(0,4), m = raw.substring(4,6), d = raw.substring(6,8),
+                  h = raw.substring(9,11), min = raw.substring(11,13)
+            return `${y}-${m}-${d}T${h}:${min}`
+          }
+        }
+
         if (rawStart) {
           this.form.allDay = rawStart.length <= 8
-          if (this.form.allDay) this.form.dtstart = `${rawStart.substring(0,4)}-${rawStart.substring(4,6)}-${rawStart.substring(6,8)}`
-          else {
-            const s = new Date(rawStart.substring(0,4)+'-'+rawStart.substring(4,6)+'-'+rawStart.substring(6,8)+'T'+rawStart.substring(9,11)+':'+rawStart.substring(11,13))
-            if (!isNaN(s)) this.form.dtstart = toLocalISO(s)
-          }
+          this.form.dtstart = formatForInput(rawStart, this.form.allDay)
         }
+
         if (rawEnd) {
-          if (this.form.allDay) this.form.dtend = `${rawEnd.substring(0,4)}-${rawEnd.substring(4,6)}-${rawEnd.substring(6,8)}`
-          else {
-            const ed = new Date(rawEnd.substring(0,4)+'-'+rawEnd.substring(4,6)+'-'+rawEnd.substring(6,8)+'T'+rawEnd.substring(9,11)+':'+rawEnd.substring(11,13))
-            if (!isNaN(ed)) this.form.dtend = toLocalISO(ed)
+          if (this.form.allDay) {
+            const match = rawEnd.match(/^(\d{4})(\d{2})(\d{2})$/)
+            if (match) {
+              const d = new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]))
+              d.setDate(d.getDate() - 1)
+              this.form.dtend = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+            }
+          } else {
+            this.form.dtend = formatForInput(rawEnd, false)
           }
         }
+        
+        // ... (rest of the mounted logic)
 
         // 解析提醒 (VALARM)
         this.form.reminders = []
@@ -389,26 +419,79 @@ export default {
 
     async save() {
       if (!this.form.summary || !this.form.dtstart || !this.form.dtend) return window.showToast('请填写完整必填信息', 'warning')
+      
+      const start = new Date(this.form.dtstart)
+      const end = new Date(this.form.dtend)
+      if (start > end) return window.showToast('结束时间不能早于开始时间', 'warning')
+
       this.saving = true
       try {
         let ds, de
         if (this.form.allDay) {
           ds = this.form.dtstart.replace(/-/g, '')
-          de = this.form.dtend.replace(/-/g, '')
+          // 全天事件 DTEND 为排他性的次日
+          const d = new Date(this.form.dtend)
+          d.setDate(d.getDate() + 1)
+          de = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
         } else {
           ds = this.form.dtstart.replace(/[-:]/g, '').replace('T', '') + '00'
           de = this.form.dtend.replace(/[-:]/g, '').replace('T', '') + '00'
         }
 
+        // 转义字段并构建
+        const summary = this.escapeIcal(this.form.summary)
+        const desc = this.escapeIcal(this.form.description)
+        const loc = this.escapeIcal(this.form.location)
+        const cat = this.escapeIcal(this.form.categories)
+
+        // 修改 _buildIcal 逻辑以使用转义后的字段
+        // 为了方便，这里直接调用转义后的值，不需要在每个调用点再单独escape
+        let ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\nUID:${this.isNew ? Date.now() + '@personaldav' : this.loadedUid}\r\nDTSTART:${ds}\r\nDTEND:${de}\r\n`
+        if (this.isNew) ical += 'STATUS:CONFIRMED\r\n'
+        ical += `SUMMARY:${summary}\r\n`
+        if (cat) ical += `CATEGORIES:${cat}\r\n`
+        if (loc) ical += `LOCATION:${loc}\r\n`
+        if (desc) ical += `DESCRIPTION:${desc}\r\n`
+
+        if (this.form.repeatType !== '不重复') {
+          const freqMap = { '每日':'DAILY','每周':'WEEKLY','每月':'MONTHLY','每年':'YEARLY' }
+          let rr = `RRULE:FREQ=${freqMap[this.form.repeatType]};INTERVAL=${this.form.repeatInterval}`
+          if (this.form.repeatType === '每周') rr += `;BYDAY=${this.form.repeatByDay}`
+          if (this.form.repeatType === '每月') rr += `;BYMONTHDAY=${this.form.repeatByMonthDay}`
+          if (this.form.repeatEnd === '次数') rr += `;COUNT=${this.form.repeatCount}`
+          else if (this.form.repeatEnd === '日期' && this.form.repeatUntil) rr += `;UNTIL=${this.form.repeatUntil.replace(/-/g,'')}T235959Z`
+          ical += rr + '\r\n'
+        }
+
+        // ... reminders ...
+        for (const r of this.form.reminders) {
+          let trig
+          if (r.triggerType === 'after') trig = `PT${r.triggerValue}M`
+          else {
+            const d = Math.floor(r.triggerValue / 1440), h = Math.floor((r.triggerValue % 1440) / 60), m = r.triggerValue % 60
+            trig = '-P' + (d ? d+'D' : '') + (h||m ? 'T' : '') + (h ? h+'H' : '') + (m ? m+'M' : '')
+            if (!d && !h && !m) trig = '-PT0M'
+          }
+          ical += `BEGIN:VALARM\r\nACTION:${r.action}\r\nTRIGGER:${trig}\r\nEND:VALARM\r\n`
+        }
+
+        // ... attachments ...
+        for (const a of this.form.attachments) {
+          if (a.url.startsWith('data:')) {
+            const [meta, b64] = a.url.split(','), mime = meta.match(/:(.*?);/)?.[1] || 'application/octet-stream'
+            ical += `ATTACH;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=${mime};FILENAME=${this.escapeIcal(a.name)}:${b64}\r\n`
+          } else if (a.url) {
+            ical += `ATTACH:${a.url}\r\n`
+          }
+        }
+
+        ical += 'END:VEVENT\r\nEND:VCALENDAR\r\n'
+
         if (this.isNew) {
-          await api.createEvent(this._buildIcal(ds, de, Date.now() + '@personaldav'))
+          await api.createEvent(ical)
           window.showToast('日程创建成功', 'success')
-        } else if (this._rawIcal) {
-          const allIcal = this._buildIcal(ds, de, this.loadedUid)
-          await api.updateEvent(this.loadedUid, allIcal)
-          window.showToast('日程已更新', 'success')
         } else {
-          await api.updateEvent(this.loadedUid, this._buildIcal(ds, de, this.loadedUid))
+          await api.updateEvent(this.loadedUid, ical)
           window.showToast('日程已更新', 'success')
         }
         this.$router.push('/calendar')
