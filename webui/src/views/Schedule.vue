@@ -440,12 +440,21 @@ export default {
       }
       for (const line of unfoldedLines) {
         if (line.toUpperCase().includes('ATTACH')) {
-          const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
+          const idx = line.indexOf(':')
+          if (idx === -1) continue
+          const head = line.substring(0, idx)
+          const val = line.substring(idx + 1)
           let fileName = '附件'
           const nameMatch = head.match(/FILENAME=([^;]+)/i)
           if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
           else fileName = val.split('/').pop().split('\\').pop() || '附件'
-          attachments.push({ name: decodeURIComponent(fileName), url: val })
+          let fmttype = 'application/octet-stream'
+          const typeMatch = head.match(/FMTTYPE=([^;]+)/i)
+          if (typeMatch) fmttype = typeMatch[1]
+          const url = val.startsWith('http://') || val.startsWith('https://')
+            ? val
+            : `data:${fmttype};base64,${val}`
+          attachments.push({ name: decodeURIComponent(fileName), url })
         }
       }
       return { ...e, attachments }
