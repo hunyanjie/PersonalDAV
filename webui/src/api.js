@@ -62,22 +62,23 @@ export default {
 
   // Files
   listFiles(path = '/') { return request('GET', '/files', { params: { path } }) },
-  uploadFile(file, path = '/') {
+  uploadFile(file, path = '/', overwrite = false) {
     const t = token()
     const form = new FormData()
     form.append('file', file)
     form.append('path', path)
+    form.append('overwrite', overwrite ? 'True' : 'False')
     return fetch(`${BASE}/files/upload`, {
       method: 'POST',
       headers: t ? { Authorization: `Bearer ${t}` } : {},
       body: form,
     }).then(r => r.json())
   },
-  uploadFileWithProgress(file, path = '/', onProgress) {
+  uploadFileWithProgress(file, path = '/', onProgress, overwrite = false) {
     return new Promise((resolve, reject) => {
       const t = token()
       const form = new FormData()
-      form.append('file', file); form.append('path', path)
+      form.append('file', file); form.append('path', path); form.append('overwrite', overwrite ? 'True' : 'False')
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${BASE}/files/upload`)
       if (t) xhr.setRequestHeader('Authorization', `Bearer ${t}`)

@@ -132,7 +132,8 @@
             <span v-else class="spinning-icon">⏳</span>
             {{ saving ? '正在保存...' : '保存日程' }}
           </button>
-          <router-link to="/calendar" class="btn-cancel">取消</router-link>
+          <button v-if="isModal" type="button" class="btn-cancel" @click="$emit('close')">取消</button>
+          <router-link v-else to="/calendar" class="btn-cancel">取消</router-link>
         </div>
       </form>
       <div v-if="dragging" class="drop-overlay"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>松开以上传文件作为附件</span></div>
@@ -195,6 +196,7 @@ function setVeventField(lines, key, value) {
 
 export default {
   components: { Save, MapPin, Pencil, X },
+  props: ['visible', 'eventId', 'isModal'],
   data: () => ({
     form: { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
       reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
@@ -211,162 +213,25 @@ export default {
   watch: {
     'form.allDay'(newVal) {
       if (newVal) {
-        // datetime-local -> date
         if (this.form.dtstart && this.form.dtstart.includes('T')) this.form.dtstart = this.form.dtstart.split('T')[0]
         if (this.form.dtend && this.form.dtend.includes('T')) this.form.dtend = this.form.dtend.split('T')[0]
       } else {
-        // date -> datetime-local (fallback to 08:00)
         if (this.form.dtstart && !this.form.dtstart.includes('T')) this.form.dtstart = this.form.dtstart + 'T08:00'
         if (this.form.dtend && !this.form.dtend.includes('T')) this.form.dtend = this.form.dtend + 'T08:00'
       }
+    },
+    visible: {
+      immediate: true,
+      handler(val) {
+        if (val) this.init()
+      }
+    },
+    eventId: {
+      immediate: true,
+      handler(val) {
+        if (val) this.init()
+      }
     }
-  },
-  async mounted() {
-    const uid = this.$route.params.uid
-    if (uid) {
-      this.isNew = false; this.loadedUid = uid
-      try {
-        const e = await api.getEvent(uid)
-        this._rawIcal = e.ical || ''
-        
-        const lines = this._rawIcal.split(/\r?\n/)
-        this.form.summary = getField(lines, 'SUMMARY')
-        this.form.description = getField(lines, 'DESCRIPTION')
-        this.form.categories = getField(lines, 'CATEGORIES')
-        this.form.location = getField(lines, 'LOCATION')
-
-        const rawStart = getField(lines, 'DTSTART')
-        const rawEnd = getField(lines, 'DTEND')
-        
-        await this.$nextTick() // 确保绑定
-
-        const formatForInput = (raw, isAllDay) => {
-          if (!raw) return ''
-          if (isAllDay) {
-            return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}`
-          } else {
-            const y = raw.substring(0,4), m = raw.substring(4,6), d = raw.substring(6,8),
-                  h = raw.substring(9,11), min = raw.substring(11,13)
-            return `${y}-${m}-${d}T${h}:${min}`
-          }
-        }
-
-        if (rawStart) {
-          this.form.allDay = rawStart.length <= 8
-          this.form.dtstart = formatForInput(rawStart, this.form.allDay)
-        }
-
-        if (rawEnd) {
-          if (this.form.allDay) {
-            const match = rawEnd.match(/^(\d{4})(\d{2})(\d{2})$/)
-            if (match) {
-              const d = new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]))
-              d.setDate(d.getDate() - 1)
-              this.form.dtend = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-            }
-          } else {
-            this.form.dtend = formatForInput(rawEnd, false)
-          }
-        }
-        
-        // ... (rest of the mounted logic)
-
-        // 解析提醒 (VALARM)
-        this.form.reminders = []
-        let inAlarm = false, currentAlarm = {}
-        for (const line of lines) {
-          const u = line.toUpperCase()
-          if (u.startsWith('BEGIN:VALARM')) { inAlarm = true; currentAlarm = {} }
-          else if (u.startsWith('END:VALARM')) {
-            if (currentAlarm.trigger) {
-              let trig = currentAlarm.trigger, triggerType = 'before', triggerValue = 15, triggerUnit = 'M'
-              if (trig.startsWith('-P')) {
-                const m = trig.match(/-P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
-                if (m) {
-                  const d = parseInt(m[1]||'0'), h = parseInt(m[2]||'0'), min = parseInt(m[3]||'0')
-                  triggerValue = d * 1440 + h * 60 + min
-                  if (d > 0 && h === 0 && min === 0) triggerUnit = 'D'
-                  else if (h > 0 && min === 0) triggerUnit = 'H'
-                  else triggerUnit = 'M'
-                }
-              } else if (trig.startsWith('PT')) {
-                triggerType = 'after'
-                const m = trig.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
-                if (m) triggerValue = parseInt(m[1]||'0')*60 + parseInt(m[2]||'0')
-              }
-              this.form.reminders.push({
-                action: currentAlarm.action || 'DISPLAY',
-                triggerType, triggerValue, triggerUnit,
-                triggerDesc: (triggerType === 'before' ? '提前' : '延后') + triggerValue + '分钟'
-              })
-            }
-            inAlarm = false
-          } else if (inAlarm) {
-            if (u.startsWith('ACTION:')) currentAlarm.action = line.split(':')[1].trim()
-            if (u.startsWith('TRIGGER:')) currentAlarm.trigger = line.split(':')[1].trim()
-          }
-        }
-
-        // 解析重复规则 (RRULE)
-        const rrule = getField(lines, 'RRULE')
-        if (rrule) {
-          const parts = {}
-          rrule.split(';').forEach(p => { const [k,v] = p.split('='); parts[k.toUpperCase()] = v })
-          if (parts.FREQ === 'DAILY') this.form.repeatType = '每日'
-          else if (parts.FREQ === 'WEEKLY') { this.form.repeatType = '每周'; this.form.repeatByDay = (parts.BYDAY||'MO').split(',')[0] }
-          else if (parts.FREQ === 'MONTHLY') { this.form.repeatType = '每月'; this.form.repeatByMonthDay = parseInt(parts.BYMONTHDAY||'1') }
-          else if (parts.FREQ === 'YEARLY') this.form.repeatType = '每年'
-          this.form.repeatInterval = parseInt(parts.INTERVAL || '1')
-          if (parts.COUNT) { this.form.repeatEnd = '次数'; this.form.repeatCount = parseInt(parts.COUNT) }
-          else if (parts.UNTIL) {
-            const u = parts.UNTIL; this.form.repeatEnd = '日期'; 
-            this.form.repeatUntil = `${u.substring(0,4)}-${u.substring(4,6)}-${u.substring(6,8)}`
-          }
-        }
-
-        // 解析附件 (ATTACH)
-        this.form.attachments = []
-        // 先处理折行 (iCalendar 规范中折行以空格开头)
-        const unfoldedLines = []
-        for (let i = 0; i < lines.length; i++) {
-          if (i > 0 && lines[i].startsWith(' ')) {
-            unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
-          } else {
-            unfoldedLines.push(lines[i])
-          }
-        }
-        for (const line of unfoldedLines) {
-          if (line.toUpperCase().includes('ATTACH')) {
-            const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
-            let fileName = '附件'
-            
-            // 尝试从参数中获取文件名
-            const nameMatch = head.match(/FILENAME=([^;]+)/i)
-            if (nameMatch) {
-              fileName = decodeURIComponent(nameMatch[1].trim())
-            } else {
-              // 降级使用路径或 URL 的最后部分
-              fileName = val.split('/').pop().split('\\').pop() || '附件'
-              fileName = decodeURIComponent(fileName)
-            }
-
-            if (head.toUpperCase().includes('ENCODING=BASE64')) {
-              const typeMatch = head.match(/FMTTYPE=(.*?)(;|$)/i)
-              const mime = typeMatch ? typeMatch[1] : 'application/octet-stream'
-              this.form.attachments.push({ name: fileName, url: `data:${mime};base64,${val}` })
-            } else {
-              this.form.attachments.push({ name: fileName, url: val })
-            }
-          }
-        }
-      } catch(e) { console.error('加载失败', e) }
-    }
-
-    // 拖拽监听
-    document.addEventListener('dragenter', this._onGlobalDragEnter)
-    document.addEventListener('dragover', this._onGlobalDragOver)
-    document.addEventListener('dragleave', this._onGlobalDragLeave)
-    document.addEventListener('drop', this._onGlobalDrop)
   },
   beforeUnmount() {
     document.removeEventListener('dragenter', this._onGlobalDragEnter)
@@ -375,6 +240,144 @@ export default {
     document.removeEventListener('drop', this._onGlobalDrop)
   },
   methods: {
+    async init() {
+      console.log('CalendarEventEdit init() called, eventId:', this.eventId);
+      const uid = this.eventId || this.$route.params.uid
+      if (uid) {
+        this.isNew = false; this.loadedUid = uid
+        try {
+          console.log('CalendarEventEdit fetching event:', uid);
+          const e = await api.getEvent(uid)
+          this._rawIcal = e.ical || ''
+          
+          const lines = this._rawIcal.split(/\r?\n/)
+          this.form.summary = getField(lines, 'SUMMARY')
+          this.form.description = getField(lines, 'DESCRIPTION')
+          this.form.categories = getField(lines, 'CATEGORIES')
+          this.form.location = getField(lines, 'LOCATION')
+
+          const rawStart = getField(lines, 'DTSTART')
+          const rawEnd = getField(lines, 'DTEND')
+          
+          await this.$nextTick()
+
+          const formatForInput = (raw, isAllDay) => {
+            if (!raw) return ''
+            if (isAllDay) return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}`
+            const y = raw.substring(0,4), m = raw.substring(4,6), d = raw.substring(6,8), h = raw.substring(9,11), min = raw.substring(11,13)
+            return `${y}-${m}-${d}T${h}:${min}`
+          }
+
+          if (rawStart) {
+            this.form.allDay = rawStart.length <= 8
+            this.form.dtstart = formatForInput(rawStart, this.form.allDay)
+          }
+
+          if (rawEnd) {
+            if (this.form.allDay) {
+              const match = rawEnd.match(/^(\d{4})(\d{2})(\d{2})$/)
+              if (match) {
+                const d = new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]))
+                d.setDate(d.getDate() - 1)
+                this.form.dtend = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+              }
+            } else {
+              this.form.dtend = formatForInput(rawEnd, false)
+            }
+          }
+
+          // 解析提醒 (VALARM)
+          this.form.reminders = []
+          let inAlarm = false, currentAlarm = {}
+          for (const line of lines) {
+            const u = line.toUpperCase()
+            if (u.startsWith('BEGIN:VALARM')) { inAlarm = true; currentAlarm = {} }
+            else if (u.startsWith('END:VALARM')) {
+              if (currentAlarm.trigger) {
+                let trig = currentAlarm.trigger, triggerType = 'before', triggerValue = 15, triggerUnit = 'M'
+                if (trig.startsWith('-P')) {
+                  const m = trig.match(/-P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
+                  if (m) {
+                    const d = parseInt(m[1]||'0'), h = parseInt(m[2]||'0'), min = parseInt(m[3]||'0')
+                    triggerValue = d * 1440 + h * 60 + min
+                    if (d > 0 && h === 0 && min === 0) triggerUnit = 'D'
+                    else if (h > 0 && min === 0) triggerUnit = 'H'
+                    else triggerUnit = 'M'
+                  }
+                } else if (trig.startsWith('PT')) {
+                  triggerType = 'after'
+                  const m = trig.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
+                  if (m) triggerValue = parseInt(m[1]||'0')*60 + parseInt(m[2]||'0')
+                }
+                this.form.reminders.push({
+                  action: currentAlarm.action || 'DISPLAY',
+                  triggerType, triggerValue, triggerUnit,
+                  triggerDesc: (triggerType === 'before' ? '提前' : '延后') + triggerValue + '分钟'
+                })
+              }
+              inAlarm = false
+            } else if (inAlarm) {
+              if (u.startsWith('ACTION:')) currentAlarm.action = line.split(':')[1].trim()
+              if (u.startsWith('TRIGGER:')) currentAlarm.trigger = line.split(':')[1].trim()
+            }
+          }
+
+          // 解析重复规则 (RRULE)
+          const rrule = getField(lines, 'RRULE')
+          if (rrule) {
+            const parts = {}
+            rrule.split(';').forEach(p => { const [k,v] = p.split('='); parts[k.toUpperCase()] = v })
+            if (parts.FREQ === 'DAILY') this.form.repeatType = '每日'
+            else if (parts.FREQ === 'WEEKLY') { this.form.repeatType = '每周'; this.form.repeatByDay = (parts.BYDAY||'MO').split(',')[0] }
+            else if (parts.FREQ === 'MONTHLY') { this.form.repeatType = '每月'; this.form.repeatByMonthDay = parseInt(parts.BYMONTHDAY||'1') }
+            else if (parts.FREQ === 'YEARLY') this.form.repeatType = '每年'
+            this.form.repeatInterval = parseInt(parts.INTERVAL || '1')
+            if (parts.COUNT) { this.form.repeatEnd = '次数'; this.form.repeatCount = parseInt(parts.COUNT) }
+            else if (parts.UNTIL) {
+              const u = parts.UNTIL; this.form.repeatEnd = '日期'; 
+              this.form.repeatUntil = `${u.substring(0,4)}-${u.substring(4,6)}-${u.substring(6,8)}`
+            }
+          }
+
+          // 解析附件 (ATTACH)
+          this.form.attachments = []
+          const unfoldedLines = []
+          for (let i = 0; i < lines.length; i++) {
+            if (i > 0 && lines[i].startsWith(' ')) unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
+            else unfoldedLines.push(lines[i])
+          }
+          for (const line of unfoldedLines) {
+            if (line.toUpperCase().includes('ATTACH')) {
+              const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
+              let fileName = '附件'
+              const nameMatch = head.match(/FILENAME=([^;]+)/i)
+              if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
+              else fileName = val.split('/').pop().split('\\').pop() || '附件'
+              
+              if (head.toUpperCase().includes('ENCODING=BASE64')) {
+                const typeMatch = head.match(/FMTTYPE=(.*?)(;|$)/i)
+                const mime = typeMatch ? typeMatch[1] : 'application/octet-stream'
+                this.form.attachments.push({ name: decodeURIComponent(fileName), url: `data:${mime};base64,${val}` })
+              } else {
+                this.form.attachments.push({ name: decodeURIComponent(fileName), url: val })
+              }
+            }
+          }
+        } catch(e) { console.error('加载失败', e) }
+      } else {
+        this.isNew = true; this.loadedUid = '';
+        this.form = { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
+          reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
+          repeatEnd: '永不结束', repeatCount: 5, attachments: [] }
+      }
+
+      // 拖拽监听
+      document.addEventListener('dragenter', this._onGlobalDragEnter)
+      document.addEventListener('dragover', this._onGlobalDragOver)
+      document.addEventListener('dragleave', this._onGlobalDragLeave)
+      document.addEventListener('drop', this._onGlobalDrop)
+    },
+
     _buildIcal(ds, de, uid) {
       let lines = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nDTSTART:${ds}\r\nDTEND:${de}\r\n`
       if (this.isNew) lines += 'STATUS:CONFIRMED\r\n'
@@ -494,7 +497,8 @@ export default {
           await api.updateEvent(this.loadedUid, ical)
           window.showToast('日程已更新', 'success')
         }
-        this.$router.push('/calendar')
+        if (this.isModal) this.$emit('save')
+        else this.$router.push('/calendar')
       } catch(e) { window.showToast('保存失败: ' + (e.message || e), 'error') } finally { this.saving = false }
     },
 

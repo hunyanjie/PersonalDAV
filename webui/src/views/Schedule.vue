@@ -69,98 +69,21 @@
     </div>
 
     <!-- Detail Overlay -->
-    <transition name="modal">
-      <div v-if="selectedEvent" class="detail-overlay glass" @click.self="selectedUids = []">
-        <div class="detail-box no-transition">
-          <div class="detail-header">
-            <div class="dh-top">
-              <h2>{{ selectedEvent.summary || '(无标题)' }}</h2>
-              <button class="close-btn" @click="selectedUids = []"><X :size="20" /></button>
-            </div>
-            <div class="detail-meta">
-              <span class="meta-tag"><Tag :size="12" /> {{ selectedEvent.categories || '默认' }}</span>
-            </div>
-          </div>
-          <div class="detail-body">
-            <div class="detail-row">
-              <Clock :size="20" class="detail-icon" />
-              <div class="row-content">
-                <div class="time-range">{{ fmtTime(selectedEvent.dtstart) }} - {{ fmtTime(selectedEvent.dtend) }}</div>
-                <div class="date-val">{{ fmtFullDate(selectedEvent.dtstart) }}</div>
-              </div>
-            </div>
-            <div v-if="selectedEvent.location" class="detail-row">
-              <MapPin :size="20" class="detail-icon" />
-              <div class="row-val">{{ selectedEvent.location }}</div>
-            </div>
-            <div v-if="selectedEvent.description" class="detail-row">
-              <FileText :size="20" class="detail-icon" />
-              <div class="row-val desc-text">{{ selectedEvent.description }}</div>
-            </div>
-            <div v-if="selectedEvent.attachments && selectedEvent.attachments.length" class="detail-row">
-              <File :size="20" class="detail-icon" />
-              <div class="row-content">
-                <div v-for="(a, idx) in selectedEvent.attachments" :key="idx" class="attachment-row">
-                  <span class="file-name">{{ a.name }}</span>
-                  <a :href="a.url" :download="a.name" class="btn-action btn-download" style="padding: 4px 8px;">下载</a>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="detail-footer">
-            <button class="btn-action" @click="exportSingle(selectedEvent)"><Share2 :size="14" /> 导出</button>
-            <button class="btn-action" @click="startEdit(selectedEvent)"><Pencil :size="14" /> 编辑</button>
-            <button class="btn-action btn-danger" @click="deleteSingle(selectedEvent)"><Trash2 :size="14" /> 删除</button>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <EventDetailModal
+      :visible="!!selectedEvent"
+      :event="selectedEvent"
+      @close="selectedUids = []"
+      @edit="startEdit"
+      @delete="deleteSingle(selectedEvent)"
+      @export="exportSingle"
+    />
 
-    <!-- Edit Modal -->
-    <transition name="modal">
-      <div v-if="editModal" class="modal-overlay" @click.self="editModal = null">
-        <div class="modal-card glass no-transition">
-          <div class="modal-header">
-            <h3>{{ editModal.isNew ? '新建日程' : '编辑日程' }}</h3>
-            <button class="btn-close-circle" @click="editModal = null"><X :size="20" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label>日程标题</label>
-              <input v-model="editForm.summary" placeholder="给日程起个标题..." />
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>开始时间</label>
-                <input v-model="editForm.dtstart" type="datetime-local" />
-              </div>
-              <div class="form-group">
-                <label>结束时间</label>
-                <input v-model="editForm.dtend" type="datetime-local" />
-              </div>
-            </div>
-            <div class="form-group">
-              <label>地点</label>
-              <input v-model="editForm.location" placeholder="添加地点 (可选)" />
-            </div>
-            <div class="form-group">
-              <label>描述</label>
-              <textarea v-model="editForm.description" rows="4" placeholder="添加更多细节说明..."></textarea>
-            </div>
-            <div class="form-group">
-              <label>分类</label>
-              <input v-model="editForm.categories" placeholder="分类标签，用逗号分隔" />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-cancel" @click="editModal = null">取消</button>
-            <button class="btn-save" @click="saveEdit" :disabled="saving">
-              {{ saving ? '正在保存...' : '确认保存' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <ScheduleEditModal 
+      :visible="!!editModal" 
+      :eventId="editModal?.isNew ? null : editModal?.uid"
+      @close="editModal = null" 
+      @save="onEventSaved" 
+    />
 
     <!-- Context Menu -->
     <div v-if="ctxMenu.show" class="ctx-menu glass" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }" @click.stop>
@@ -178,6 +101,8 @@ import {
   Users, Calendar, X, RotateCw, Tag
 } from 'lucide-vue-next'
 import api from '../api.js'
+import ScheduleEditModal from '../components/ScheduleEditModal.vue'
+import EventDetailModal from '../components/EventDetailModal.vue'
 
 function pad(n) { return String(n).padStart(2, '0') }
 
@@ -299,7 +224,10 @@ const EMPTY_HEIGHT = 44
 const OVERSCAN = 15
 
 export default {
-  components: { Plus, Clock, MapPin, FileText, Share2, Pencil, Trash2, Users, Calendar, X, RotateCw, Tag },
+  components: { 
+    Plus, Clock, MapPin, FileText, Share2, Pencil, Trash2, 
+    Users, Calendar, X, RotateCw, Tag, ScheduleEditModal, EventDetailModal 
+  },
   data: () => ({
     events: [],
     loading: false,
@@ -580,6 +508,7 @@ export default {
     },
     isSelected(item) { return item.type === 'event' && this.selectedUids.includes(item.uid) },
     onItemClick(item, ev) {
+      console.log('Item clicked:', item);
       if (item.type !== 'event') return
       if (ev.ctrlKey || ev.metaKey) {
         const idx = this.selectedUids.indexOf(item.uid)
@@ -609,42 +538,10 @@ export default {
       return { background: `linear-gradient(to bottom, #e0e0e0 ${pct}%, var(--brand) ${pct}%)` }
     },
     startEdit(e) {
-      this.editForm = {
-        summary: e.summary || '',
-        dtstart: icalToDatetimeLocal(e.dtstart),
-        dtend: icalToDatetimeLocal(e.dtend),
-        location: e.location || '',
-        description: e.description || '',
-        categories: e.categories || '',
-      }
-      this.editModal = { ...e, isNew: false }
-    },
-    async saveEdit() {
-      if (!this.editForm.summary || !this.editForm.dtstart || !this.editForm.dtend) return window.showToast('请填写完整信息', 'warning')
-      this.saving = true
-      const icalParts = [
-        'BEGIN:VEVENT',
-        `UID:${this.editModal.isNew ? '' : this.editModal.uid}`,
-        `SUMMARY:${this.editForm.summary}`,
-        `DTSTART:${this.editForm.dtstart.replace(/[-:]/g, '')}00`,
-        `DTEND:${this.editForm.dtend.replace(/[-:]/g, '')}00`,
-      ]
-      if (this.editModal.isNew) icalParts.push('STATUS:CONFIRMED')
-      
-      icalParts.push(
-        `LOCATION:${this.editForm.location}`,
-        `DESCRIPTION:${this.editForm.description}`,
-        `CATEGORIES:${this.editForm.categories}`,
-        'END:VEVENT'
-      )
-      const ical = icalParts.join('\r\n')
-      try {
-        const uid = this.editModal.uid
-        if (this.editModal.isNew) await api.createEvent(ical); else await api.updateEvent(uid, ical)
-        this.editModal = null
-        await this.loadInitial()
-      } catch (e) { window.showToast('保存失败: ' + (e.message || e), 'error') }
-      this.saving = false
+      if (!e) return
+      console.log("触发startEdit")
+      console.log(e)
+      this.editModal = { uid: e.uid, isNew: false }
     },
     async deleteSingle(e) {
       if (!await window.showConfirm({ message: '确认删除此日程？', type: 'danger' })) return
@@ -689,6 +586,19 @@ export default {
       const content = this._toICS(items)
       this._downloadIcs(content, `日程_${Date.now()}.ics`)
       this.ctxMenu.show = false
+    },
+    onEventSaved() {
+      this.editModal = null
+      this.loadInitial()
+    },
+    onDetailEdit(e) {
+      console.log('Schedule: onDetailEdit triggered. Event:', e);
+      if (!e || !e.uid) {
+        console.error('Schedule: Event UID is missing!');
+        return;
+      }
+      this.editModal = { uid: e.uid, isNew: false }
+      this.selectedUids = []
     },
     createForFloatingDate() {
       const fd = this.floatingDateItem

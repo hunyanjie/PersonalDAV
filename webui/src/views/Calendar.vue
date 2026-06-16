@@ -129,52 +129,21 @@
     </transition>
 
     <!-- Detail Overlay -->
-    <transition name="modal">
-      <div v-if="detailEvent" class="detail-overlay glass" @click.self="detailEvent = null">
-        <div class="detail-box no-transition">
-          <div class="detail-header">
-            <div class="dh-top">
-              <h2>{{ detailEvent.summary || '(无标题)' }}</h2>
-              <button class="close-btn" @click="detailEvent = null"><X :size="20" /></button>
-            </div>
-            <div class="detail-meta">
-              <span class="meta-tag"><Tag :size="12" /> {{ detailEvent.categories || '默认' }}</span>
-            </div>
-          </div>
-          <div class="detail-body">
-            <div class="detail-row">
-              <Clock :size="20" class="detail-icon" />
-              <div class="row-content">
-                <div class="time-range">{{ formatTime(detailEvent.dtstart) }} - {{ formatTime(detailEvent.dtend) }}</div>
-                <div class="date-val">{{ formatDateFull(detailEvent.dtstart) }}</div>
-              </div>
-            </div>
-            <div v-if="detailEvent.location" class="detail-row">
-              <MapPin :size="20" class="detail-icon" />
-              <div class="row-val">{{ detailEvent.location }}</div>
-            </div>
-            <div v-if="detailEvent.description" class="detail-row">
-              <FileText :size="20" class="detail-icon" />
-              <div class="row-val desc-text">{{ detailEvent.description }}</div>
-            </div>
-            <div v-if="detailEvent.attachments && detailEvent.attachments.length" class="detail-row">
-              <File :size="20" class="detail-icon" />
-              <div class="row-content">
-                <div v-for="(a, idx) in detailEvent.attachments" :key="idx" class="attachment-row">
-                  <span class="file-name">{{ a.name }}</span>
-                  <a :href="a.url" :download="a.name" class="btn-action btn-download" style="padding: 4px 8px;">下载</a>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="detail-footer">
-            <button class="btn-action" @click="exportSingle(detailEvent)"><Share2 :size="14" /> 导出</button>
-            <router-link :to="`/calendar/${detailEvent.uid}/edit`" class="btn-action"><Pencil :size="14" /> 编辑</router-link>
-            <button class="btn-action btn-danger" @click="deleteSingle(detailEvent)"><Trash2 :size="14" /> 删除</button>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <EventDetailModal
+      :visible="!!detailEvent"
+      :event="detailEvent"
+      @close="detailEvent = null"
+      @edit="onDetailEdit"
+      @delete="deleteSingle(detailEvent)"
+      @export="exportSingle"
+    />
+
+    <ScheduleEditModal 
+      :visible="!!editModal" 
+      :eventId="editModal?.isNew ? null : editModal?.uid"
+      @close="editModal = null" 
+      @save="onEventSaved" 
+    />
   </div>
 </template>
 
@@ -186,6 +155,8 @@ import {
 } from 'lucide-vue-next'
 
 import api from '../api.js'
+import ScheduleEditModal from '../components/ScheduleEditModal.vue'
+import EventDetailModal from '../components/EventDetailModal.vue'
 
 function pad(n) { return String(n).padStart(2, '0') }
 
@@ -227,7 +198,7 @@ export default {
   components: { 
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
     Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
-    MapPin, Layers, FileText, X, CalendarIcon
+    MapPin, Layers, FileText, X, CalendarIcon, ScheduleEditModal, EventDetailModal
   },
   data: () => ({
     events: [],
@@ -238,6 +209,7 @@ export default {
     _searchTimer: null,
     errorMsg: '',
     detailEvent: null,
+    editModal: null,
     selectedUids: [],
     ctxMenu: { show: false, x: 0, y: 0, uids: [] },
     currentTime: new Date(),
@@ -268,6 +240,41 @@ export default {
       return this.selectedDay && this.selectedDay.year === this.todayDate.year
         && this.selectedDay.month === this.todayDate.month
         && this.selectedDay.day === this.todayDate.day
+    },
+    selectedEvent() {
+      if (this.selectedUids.length !== 1) return null
+      const e = this.eventsMap[this.selectedUids[0]]
+      if (!e) return null
+      const lines = (e.ical || '').split(/\r?\n/)
+      const attachments = []
+      const unfoldedLines = []
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0 && lines[i].startsWith(' ')) {
+          unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
+        } else {
+          unfoldedLines.push(lines[i])
+        }
+      }
+      for (const line of unfoldedLines) {
+        if (line.toUpperCase().includes('ATTACH')) {
+          const idx = line.indexOf(':')
+          if (idx === -1) continue
+          const head = line.substring(0, idx)
+          const val = line.substring(idx + 1)
+          let fileName = '附件'
+          const nameMatch = head.match(/FILENAME=([^;]+)/i)
+          if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
+          else fileName = val.split('/').pop().split('\\').pop() || '附件'
+          let fmttype = 'application/octet-stream'
+          const typeMatch = head.match(/FMTTYPE=([^;]+)/i)
+          if (typeMatch) fmttype = typeMatch[1]
+          const url = val.startsWith('http://') || val.startsWith('https://')
+            ? val
+            : `data:${fmttype};base64,${val}`
+          attachments.push({ name: decodeURIComponent(fileName), url })
+        }
+      }
+      return { ...e, attachments }
     },
     weeks() {
       const y = this.calNow.getFullYear(), m = this.calNow.getMonth()
@@ -419,6 +426,7 @@ export default {
       return d ? d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }) : ''
     },
     onCardClick(e, ev) {
+      console.log('Calendar: Card clicked', e);
       if (ev.ctrlKey || ev.metaKey) {
         const idx = this.selectedUids.indexOf(e.uid)
         if (idx >= 0) this.selectedUids.splice(idx, 1); else this.selectedUids.push(e.uid)
@@ -486,7 +494,20 @@ export default {
       const items = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid))
       this._downloadIcs(this._toICS(items), `日程_${Date.now()}.ics`); this.ctxMenu.show = false
     },
-    editSelected() { if (this.ctxMenu.uids.length === 1) this.$router.push(`/calendar/${this.ctxMenu.uids[0]}/edit`) },
+    onEventSaved() {
+      this.editModal = null
+      this.load()
+    },
+    onDetailEdit(e) {
+      console.log('Calendar: onDetailEdit triggered. Event:', e);
+      if (!e || !e.uid) {
+        console.error('Calendar: Event UID is missing!');
+        return;
+      }
+      this.editModal = { uid: e.uid, isNew: false }
+      this.detailEvent = null
+      console.log('Calendar: editModal set to:', this.editModal);
+    },
     async deleteSelected() {
       if (!await window.showConfirm({ message: `确认删除选中的 ${this.ctxMenu.uids.length} 个日程？`, type: 'danger' })) return
       Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid))).then(() => { this.ctxMenu.show = false; this.load() })

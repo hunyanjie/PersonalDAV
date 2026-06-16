@@ -554,14 +554,45 @@ export default {
       if (!files.length) return
       this.uploadProgress = 0
       for (const file of files) {
+        let uploadFile = file
+        let overwrite = false
+
+        if (this.items.some(i => i.name === file.name)) {
+          const choice = await window.showConfirm({ 
+            message: `"${file.name}" 已存在，是否覆盖？点击确定覆盖，点击取消则自动重命名`, 
+            type: 'warning',
+            confirmText: '覆盖',
+            cancelText: '自动重命名'
+          })
+          if (choice === true) {
+            overwrite = true
+          } else if (choice === null) { // User clicked 'Cancel' or closed modal
+             continue // Skip this file
+          } else {
+            // Auto-rename logic
+            let name = file.name
+            let ext = ''
+            const lastDot = name.lastIndexOf('.')
+            if (lastDot > 0) {
+                ext = name.substring(lastDot)
+                name = name.substring(0, lastDot)
+            }
+            let counter = 1
+            let newName = `${name}(${counter})${ext}`
+            while (this.items.some(i => i.name === newName)) {
+                counter++
+                newName = `${name}(${counter})${ext}`
+            }
+            uploadFile = new File([file], newName, { type: file.type })
+          }
+        }
+
         try {
-          await api.uploadFileWithProgress(file, this.currentPath, pct => { this.uploadProgress = pct })
+          await api.uploadFileWithProgress(uploadFile, this.currentPath, pct => { this.uploadProgress = pct }, overwrite)
         } catch(e) {
-          window.showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
+          window.showToast(`上传失败(${uploadFile.name}): ${e.message || e}`, 'error')
         }
       }
-      this.uploadProgress = null
-      e.target.value = ''
       this.load()
     },
     async doMkdir() {
