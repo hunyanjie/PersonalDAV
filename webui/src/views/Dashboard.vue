@@ -50,8 +50,8 @@
           </div>
           <div class="info-item">
             <span class="info-label">健康状态</span>
-            <span class="info-val status-ok">
-              <ShieldCheck :size="14" /> 正常运行
+            <span class="info-val" :class="healthStatus.class">
+              <ShieldCheck :size="14" /> {{ healthStatus.text }}
             </span>
           </div>
         </div>
@@ -88,14 +88,20 @@ export default {
     Users, CalendarDays, FileText, HardDrive, 
     Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: { disk_total_mb: 0 }, loading: true }),
+  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, loading: true }),
   async mounted() {
     try {
-      this.stats = await api.stats()
-    } catch (e) {}
+      [this.stats, this.health] = await Promise.all([api.stats(), api.health()])
+    } catch (e) {
+      console.error('Failed to load dashboard data:', e)
+    }
     this.loading = false
   },
   computed: {
+    healthStatus() {
+      if (this.health.status === 'ok') return { text: '正常运行', class: 'status-ok' }
+      return { text: '服务器异常', class: 'status-fail' }
+    },
     diskPercent() {
       const total = this.stats.disk_total_mb || 500
       return Math.min(1, (this.stats.disk_used_mb || 0) / total)
@@ -222,6 +228,7 @@ export default {
 }
 
 .status-ok { color: #52c41a; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.status-fail { color: var(--danger); display: flex; align-items: center; gap: 6px; font-weight: 700; }
 
 .welcome-card {
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-hover) 100%);
