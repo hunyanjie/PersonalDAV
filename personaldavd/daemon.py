@@ -69,6 +69,11 @@ def _init_environment(cfg: "DaemonConfig"):
     os.makedirs(os.path.dirname(cfg.db_path) or ".", exist_ok=True)
     if cfg.dav_root:
         os.makedirs(cfg.dav_root, exist_ok=True)
+    
+    # 同步回收站索引
+    from services.trash_service import TrashService
+    TrashService.startup_init()
+    
     conn = sqlite3.connect(cfg.db_path)
     conn.close()
 
