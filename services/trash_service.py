@@ -40,6 +40,7 @@ class TrashService:
         entry = {
             "uuid": item_uuid,
             "original_path": virtual_path,
+            "absolute_path": abs_path,
             "name": os.path.basename(abs_path.rstrip("/\\")),
             "is_dir": os.path.isdir(abs_path),
             "size": 0,
@@ -80,37 +81,45 @@ class TrashService:
         entry = next((e for e in manifest if e["uuid"] == uuid_), None)
         if not entry:
             return False
-        svc = _get_mount_service()
-        try:
-            _, abs_path = svc.resolve(entry["original_path"])
-        except Exception:
-            abs_path = entry["original_path"].lstrip("/")
+        
+        abs_path = entry.get("absolute_path")
+        if not abs_path:
+            svc = _get_mount_service()
+            try:
+                _, abs_path = svc.resolve(entry["original_path"])
+            except Exception:
+                abs_path = entry["original_path"].lstrip("/")
+        
         trash_item = os.path.join(TRASH_DIR, uuid_)
         if not os.path.exists(trash_item):
             manifest.remove(entry)
             cls._save_manifest()
             return False
-        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            
+        parent_dir = os.path.dirname(abs_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
+            
+        target_path = abs_path
+        if os.path.exists(target_path):
+            base, ext = os.path.splitext(abs_path)
+            target_path = f"{base} (还原_{datetime.now().strftime('%Y%m%d%H%M%S')}){ext}"
+            
         if entry["is_dir"]:
-            if os.path.exists(abs_path):
-                base, ext = os.path.splitext(abs_path)
-                abs_path = f"{base} (还原){ext}"
+            os.makedirs(target_path, exist_ok=True)
             for root, dirs, files in os.walk(trash_item):
                 for f in files:
                     src = os.path.join(root, f)
                     rel = os.path.relpath(src, trash_item)
-                    dst = os.path.join(abs_path, rel)
+                    dst = os.path.join(target_path, rel)
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     shutil.copy2(src, dst)
         else:
-            if os.path.exists(abs_path):
-                base, ext = os.path.splitext(abs_path)
-                abs_path = f"{base} (还原){ext}"
-            shutil.copy2(os.path.join(trash_item, entry["name"]), abs_path)
+            shutil.copy2(os.path.join(trash_item, entry["name"]), target_path)
         shutil.rmtree(trash_item)
         manifest.remove(entry)
         cls._save_manifest()
-        logger.info(f"已从回收站还原: {entry['original_path']} ({uuid_})")
+        logger.info(f"已从回收站还原: {entry['original_path']} -> {target_path} ({uuid_})")
         return True
 
     @classmethod
