@@ -433,9 +433,17 @@ async def trash_list(token: str = Depends(get_current_token)):
 
 
 @api_router.post("/trash/restore", summary="从回收站还原")
-async def trash_restore(uuid: str = Query(...), token: str = Depends(get_current_token)):
+async def trash_restore(
+    uuid: str = Query(...), 
+    target_path: str = Query(None), 
+    conflict_strategy: str = Query("error"),
+    token: str = Depends(get_current_token)
+):
     from services.trash_service import TrashService
-    ok = TrashService.restore(uuid)
+    try:
+        ok = TrashService.restore(uuid, target_path=target_path, conflict_strategy=conflict_strategy)
+    except FileExistsError as e:
+        raise HTTPException(409, str(e))
     if not ok:
         raise HTTPException(404, "条目不存在")
     return {"restored": True}

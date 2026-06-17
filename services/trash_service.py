@@ -76,19 +76,11 @@ class TrashService:
         return list(reversed(cls._load_manifest()))
 
     @classmethod
-    def restore(cls, uuid_: str) -> bool:
+    def restore(cls, uuid_: str, target_path: str = None, conflict_strategy: str = "error") -> bool:
         manifest = cls._load_manifest()
         entry = next((e for e in manifest if e["uuid"] == uuid_), None)
         if not entry:
             return False
-        
-        abs_path = entry.get("absolute_path")
-        if not abs_path:
-            svc = _get_mount_service()
-            try:
-                _, abs_path = svc.resolve(entry["original_path"])
-            except Exception:
-                abs_path = entry["original_path"].lstrip("/")
         
         trash_item = os.path.join(TRASH_DIR, uuid_)
         if not os.path.exists(trash_item):
@@ -96,14 +88,24 @@ class TrashService:
             cls._save_manifest()
             return False
             
-        parent_dir = os.path.dirname(abs_path)
+        # Determine target path
+        if not target_path:
+            abs_path = entry.get("absolute_path")
+            if not abs_path:
+                svc = _get_mount_service()
+                try:
+                    _, abs_path = svc.resolve(entry["original_path"])
+                except Exception:
+                    abs_path = entry["original_path"].lstrip("/")
+            target_path = abs_path
+            
+        # Check conflict
+        if os.path.exists(target_path) and conflict_strategy == "error":
+            raise FileExistsError(f"文件已存在: {target_path}")
+
+        parent_dir = os.path.dirname(target_path)
         if parent_dir and not os.path.exists(parent_dir):
             os.makedirs(parent_dir, exist_ok=True)
-            
-        target_path = abs_path
-        if os.path.exists(target_path):
-            base, ext = os.path.splitext(abs_path)
-            target_path = f"{base} (还原_{datetime.now().strftime('%Y%m%d%H%M%S')}){ext}"
             
         if entry["is_dir"]:
             os.makedirs(target_path, exist_ok=True)

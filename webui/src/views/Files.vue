@@ -249,10 +249,10 @@
               <td class="col-size hide-mobile">{{ item.is_dir ? '目录' : formatSize(item.size) }}</td>
               <td class="col-time hide-tablet">{{ formatDate(item.deleted_at) }}</td>
               <td class="col-actions">
-                <div style="display: flex; justify-content: flex-end; gap: 6px;">
-                  <button class="btn-icon" @click="restoreFromTrash(item.uuid)" title="还原"><RefreshCw :size="16" /></button>
-                  <button class="btn-icon btn-danger" @click="deleteFromTrash(item.uuid)" title="永久删除"><Trash2 :size="16" /></button>
-                </div>
+              <div style="display: flex; justify-content: flex-end; gap: 6px;">
+              <button class="btn-icon" @click="restoreFromTrash(item)" title="还原"><RefreshCw :size="16" /></button>
+              <button class="btn-icon btn-danger" @click="deleteFromTrash(item)" title="永久删除"><Trash2 :size="16" /></button>
+              </div>
               </td>
             </tr>
           </tbody>
@@ -367,24 +367,45 @@ export default {
         this.trashItems = res.items || []
       } catch(e) { window.showToast('加载回收站失败', 'error'); this.trashItems = [] }
     },
-    async restoreFromTrash(uuid) {
-      if (!window.showConfirm) { this.doTrashOp(uuid, 'restore'); return }
-      const ok = await window.showConfirm({ message: '还原该文件到原位置？', type: 'info' })
-      if (!ok) return
-      this.doTrashOp(uuid, 'restore')
+    async restoreFromTrash(item) {
+      this.doTrashOp(item.uuid, 'restore', item.absolute_path || item.original_path.replace(/^\/+/, ''))
     },
-    async deleteFromTrash(uuid) {
-      if (!window.showConfirm) { this.doTrashOp(uuid, 'delete'); return }
-      const ok = await window.showConfirm({ message: '永久删除该文件？无法恢复！', type: 'danger' })
-      if (!ok) return
-      this.doTrashOp(uuid, 'delete')
-    },
-    async doTrashOp(uuid, op) {
+    async doTrashOp(uuid, op, targetPath = null, conflictStrategy = 'error') {
       try {
-        if (op === 'restore') await api.post(`/trash/restore?uuid=${uuid}`)
-        else await api.delete(`/trash?uuid=${uuid}`)
+        if (op === 'restore') {
+          let url = `/trash/restore?uuid=${uuid}`
+          if (targetPath) url += `&target_path=${encodeURIComponent(targetPath)}`
+          if (conflictStrategy) url += `&conflict_strategy=${conflictStrategy}`
+          await api.post(url)
+          window.showToast('还原成功', 'success')
+        } else {
+          await api.delete(`/trash?uuid=${uuid}`)
+          window.showToast('删除成功', 'success')
+        }
         this.loadTrash()
-      } catch(e) { window.showToast(op === 'restore' ? '还原失败' : '删除失败', 'error') }
+      } catch(e) { 
+        if (e.status === 409) {
+          const action = await window.showConfirm({ 
+            message: `文件冲突：${e.message || '文件已存在'}，请选择：覆盖(确定) / 重命名(取消)`, 
+            type: 'warning',
+            confirmText: '覆盖',
+            cancelText: '重命名'
+          })
+          if (action === true) {
+            this.doTrashOp(uuid, 'restore', targetPath, 'overwrite')
+            return
+          } else if (action === false) {
+            const newPath = await window.showPrompt({ 
+              title: "重命名", 
+              message: "请输入新的保存路径", 
+              initialValue: targetPath 
+            })
+            if (newPath) this.doTrashOp(uuid, 'restore', newPath, 'error')
+            return
+          }
+        }
+        window.showToast(op === 'restore' ? '还原失败' : '删除失败', 'error') 
+      }
     },
     async purgeTrash() {
       if (!window.showConfirm) { this.doPurge(); return }

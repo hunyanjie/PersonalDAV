@@ -140,15 +140,30 @@ class FilesTab(ttk.Frame):
         if not in_mount:
             self.upload_btn.config(state=tk.DISABLED)
             self.download_btn.config(state=tk.DISABLED)
-            self.main_action_btn.config(text="删除挂载点", command=self.delete_mount)
-            self.rename_btn.config(text="重命名挂载点", command=self.rename_mount)
-            self.new_action_btn.config(text="新建挂载点", command=self.add_mount)
+            
+            self.main_action_btn.config(text="删除挂载点", state=tk.NORMAL)
+            self.main_action_btn.configure(command=self.delete_mount)
+            
+            self.rename_btn.config(text="重命名挂载点", state=tk.NORMAL)
+            self.rename_btn.configure(command=self.rename_mount)
+            
+            self.new_action_btn.config(text="新建挂载点", state=tk.NORMAL)
+            self.new_action_btn.configure(command=self.add_mount)
         else:
             self.upload_btn.config(state=tk.NORMAL)
             self.download_btn.config(state=tk.NORMAL)
-            self.main_action_btn.config(text="删除", command=self.delete_selected)
-            self.rename_btn.config(text="重命名", command=self.rename_file)
-            self.new_action_btn.config(text="新建文件夹", command=self.new_folder)
+            
+            self.main_action_btn.config(text="删除", state=tk.NORMAL)
+            self.main_action_btn.configure(command=self.delete_selected)
+            
+            self.rename_btn.config(text="重命名", state=tk.NORMAL)
+            self.rename_btn.configure(command=self.rename_file)
+            
+            self.new_action_btn.config(text="新建文件夹", state=tk.NORMAL)
+            self.new_action_btn.configure(command=self.new_folder)
+            
+        self.update_idletasks()
+        self.update()
 
     def refresh(self) -> None:
         mounts = self._mount().get_mounts()
@@ -413,85 +428,14 @@ class FilesTab(ttk.Frame):
                 name = values[0]
                 full = self._fs_path_for(name)
                 try:
-                    TrashService.delete(full, "/" + name)
+                    # 构造包含挂载点的完整虚拟路径
+                    full_virtual_path = "/" + self._virtual_path.rstrip("/") + "/" + name
+                    TrashService.delete(full, full_virtual_path)
                 except Exception as e:
                     self.after(0, lambda n=name: messagebox.showerror("删除失败", f"{n}: {e}", parent=self))
                     return
-            self.after(0, lambda: self._browse(self._virtual_path))
+            self.after(0, lambda: [self._browse(self._virtual_path), self.trash_tab.refresh()])
         threading.Thread(target=run, daemon=True).start()
-
-    def _show_trash(self) -> None:
-        from services.trash_service import TrashService
-        try:
-            items = TrashService._load_manifest()
-        except Exception as e:
-            messagebox.showerror("错误", f"无法读取回收站: {e}", parent=self)
-            return
-        if not items:
-            messagebox.showinfo("回收站", "回收站为空", parent=self)
-            return
-
-        win = tk.Toplevel(self)
-        win.title("回收站")
-        win.transient(self)
-        win.geometry("600x400")
-        from utils.window_utils import center_window
-        center_window(win)
-
-        tree = ttk.Treeview(win, columns=("name", "original", "deleted_at", "ops"), show="headings", selectmode="extended")
-        tree.heading("name", text="文件名")
-        tree.heading("original", text="原路径")
-        tree.heading("deleted_at", text="删除时间")
-        tree.heading("ops", text="操作")
-        tree.column("name", width=150)
-        tree.column("original", width=200)
-        tree.column("deleted_at", width=150)
-        tree.column("ops", width=100)
-        tree.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        btn_frame = ttk.Frame(win)
-        btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
-
-        def refresh():
-            for i in tree.get_children():
-                tree.delete(i)
-            for it in TrashService._load_manifest():
-                tree.insert("", tk.END, values=(it.get("name",""), it.get("original_path",""), it.get("deleted_at",""), ""))
-
-        def restore_selected():
-            sel = tree.selection()
-            if not sel: return
-            from services.trash_service import TrashService
-            for iid in sel:
-                idx = tree.index(iid)
-                item = TrashService._load_manifest()[idx]
-                try:
-                    TrashService.restore(item["uuid"])
-                except Exception as e:
-                    messagebox.showerror("还原失败", f"{item.get('name','')}: {e}", parent=self)
-            refresh()
-
-        def delete_permanent():
-            sel = tree.selection()
-            if not sel: return
-            if not messagebox.askyesno("确认", "永久删除选中的回收站条目？无法恢复！", parent=self):
-                return
-            from services.trash_service import TrashService
-            for iid in sel:
-                idx = tree.index(iid)
-                item = TrashService._load_manifest()[idx]
-                TrashService.permanent_delete(item["uuid"])
-            refresh()
-
-        ttk.Button(btn_frame, text="还原选中", command=restore_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="永久删除", command=delete_permanent).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="清空回收站", command=lambda: (
-            messagebox.askyesno("确认", "永久清空回收站所有条目？", parent=win) and
-            (TrashService.purge(0), refresh())[0] is None
-        )).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="关闭", command=win.destroy).pack(side=tk.RIGHT, padx=2)
-
-        refresh()
 
     def rename_file(self) -> None:
         if not self._virtual_path:
