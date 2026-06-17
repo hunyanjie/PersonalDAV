@@ -1232,40 +1232,15 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             self.mount_tree.insert("", tk.END, values=(m["name"], m["path"]))
 
     def _mount_add(self):
-        dialog = tk.Toplevel(self)
-        dialog.title("添加挂载点")
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-
-        ttk.Label(dialog, text="挂载名称（显示在根目录的名称）:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 2))
-        name_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=name_var, width=40).grid(row=0, column=1, padx=10, pady=(10, 2))
-
-        ttk.Label(dialog, text="文件系统路径:").grid(row=1, column=0, sticky="w", padx=10, pady=2)
-        path_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=path_var, width=40).grid(row=1, column=1, padx=10, pady=2)
-        ttk.Button(dialog, text="浏览...", command=lambda: path_var.set(filedialog.askdirectory(parent=dialog))).grid(row=1, column=2, padx=5, pady=2)
-
-        def confirm():
-            name = name_var.get().strip()
-            path = path_var.get().strip()
-            if not name or not path:
-                messagebox.showwarning("提示", "请填写完整信息", parent=dialog)
-                return
+        from ui.dialogs.mount_dialog import MountDialog
+        dialog = MountDialog(self)
+        self.wait_window(dialog)
+        if dialog.result:
             try:
-                self._mount_svc.add_mount(name, path)
-                dialog.destroy()
+                self._mount_svc.add_mount(dialog.result["name"], dialog.result["path"])
                 self._mount_refresh()
             except ValueError as e:
-                messagebox.showerror("错误", str(e), parent=dialog)
-
-        btn_f = ttk.Frame(dialog)
-        btn_f.grid(row=2, column=0, columnspan=3, pady=10)
-        ttk.Button(btn_f, text="确定", command=confirm).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-        from utils.window_utils import center_window
-        center_window(dialog, self)
+                messagebox.showerror("错误", str(e), parent=self)
 
     def _mount_edit(self):
         sel = self.mount_tree.selection()
@@ -1273,43 +1248,17 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             messagebox.showwarning("提示", "请先选择挂载点", parent=self)
             return
         values = self.mount_tree.item(sel[0], "values")
-        old_name = values[0]
-        old_path = values[1]
+        old_name, old_path = values[0], values[1]
 
-        dialog = tk.Toplevel(self)
-        dialog.title("编辑挂载点")
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-
-        ttk.Label(dialog, text="挂载名称:").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 2))
-        name_var = tk.StringVar(value=old_name)
-        ttk.Entry(dialog, textvariable=name_var, width=40).grid(row=0, column=1, padx=10, pady=(10, 2))
-
-        ttk.Label(dialog, text="文件系统路径:").grid(row=1, column=0, sticky="w", padx=10, pady=2)
-        path_var = tk.StringVar(value=old_path)
-        ttk.Entry(dialog, textvariable=path_var, width=40).grid(row=1, column=1, padx=10, pady=2)
-        ttk.Button(dialog, text="浏览...", command=lambda: path_var.set(filedialog.askdirectory(parent=dialog))).grid(row=1, column=2, padx=5, pady=2)
-
-        def confirm():
-            new_name = name_var.get().strip()
-            new_path = path_var.get().strip()
-            if not new_name or not new_path:
-                messagebox.showwarning("提示", "请填写完整信息", parent=dialog)
-                return
+        from ui.dialogs.mount_dialog import MountDialog
+        dialog = MountDialog(self, initial_name=old_name, initial_path=old_path)
+        self.wait_window(dialog)
+        if dialog.result:
             try:
-                self._mount_svc.update_mount(old_name, new_name, new_path)
-                dialog.destroy()
+                self._mount_svc.update_mount(old_name, dialog.result["name"], dialog.result["path"])
                 self._mount_refresh()
             except ValueError as e:
-                messagebox.showerror("错误", str(e), parent=dialog)
-
-        btn_f = ttk.Frame(dialog)
-        btn_f.grid(row=2, column=0, columnspan=3, pady=10)
-        ttk.Button(btn_f, text="确定", command=confirm).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-        from utils.window_utils import center_window
-        center_window(dialog, self)
+                messagebox.showerror("错误", str(e), parent=self)
 
     def _mount_delete(self):
         sel = self.mount_tree.selection()
