@@ -10,6 +10,7 @@ from ui.tabs.contacts_tab import ContactsTab
 from ui.tabs.calendar_tab import CalendarTab
 from ui.tabs.remote_tab import RemoteTab
 from ui.tabs.files_tab import FilesTab
+from ui.tabs.trash_tab import TrashTab
 from utils.logger import logger
 from utils.event_bus import event_bus, EVENT_CONTACTS_CHANGED, EVENT_EVENTS_CHANGED, EVENT_SETTINGS_CHANGED, EVENT_SERVER_STATE_CHANGED
 from config import SOFTWARE_NAME, SOFTWARE_VERSION
@@ -136,11 +137,13 @@ class DAVServerApp:
         self.calendar_tab = CalendarTab(self.notebook, self.event_service, self.settings_service, self.root)
         self.smb_tab = RemoteTab(self.notebook, self.settings_service)
         self.files_tab = FilesTab(self.notebook, self.settings_service)
+        self.trash_tab = TrashTab(self.notebook)
 
         self.notebook.add(self.server_tab, text="服务器")
         self.notebook.add(self.contacts_tab, text="联系人")
         self.notebook.add(self.calendar_tab, text="日历")
         self.notebook.add(self.files_tab, text="文件管理")
+        self.notebook.add(self.trash_tab, text="回收站")
         self.notebook.add(self.smb_tab, text="远程文件")
 
         self.status_bar = ttk.Label(self.root, text="就绪", relief=tk.SUNKEN, anchor=tk.W)

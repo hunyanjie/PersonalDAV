@@ -258,10 +258,29 @@ class FilesTab(ttk.Frame):
         paths = filedialog.askopenfilenames(parent=self, title="选择要上传的文件")
         if not paths:
             return
+            
+        def get_unique_path(path):
+            if not os.path.exists(path): return path
+            base, ext = os.path.splitext(path)
+            counter = 1
+            while os.path.exists(f"{base}({counter}){ext}"):
+                counter += 1
+            return f"{base}({counter}){ext}"
+
         def run():
             for src in paths:
                 try:
-                    dst = os.path.join(self._current_fs_path, os.path.basename(src))
+                    filename = os.path.basename(src)
+                    dst = os.path.join(self._current_fs_path, filename)
+                    
+                    if os.path.exists(dst):
+                        choice = messagebox.askyesnocancel("文件冲突", f"文件 '{filename}' 已存在。\n点击'是'覆盖，'否'自动重命名，'取消'跳过。")
+                        if choice is None: continue # Cancel/Skip
+                        elif choice: # Overwrite
+                            pass 
+                        else: # Rename
+                            dst = get_unique_path(dst)
+                            
                     shutil.copy2(src, dst)
                 except Exception as e:
                     self.after(0, lambda s=src: messagebox.showerror("上传失败", f"{s}: {e}", parent=self))

@@ -128,6 +128,34 @@ class TrashService:
         return True
 
     @classmethod
+    def clear_all(cls) -> None:
+        """清空所有回收站条目"""
+        manifest = cls._load_manifest()
+        for entry in manifest:
+            trash_item = os.path.join(TRASH_DIR, entry["uuid"])
+            if os.path.exists(trash_item):
+                shutil.rmtree(trash_item)
+        cls._manifest = []
+        cls._save_manifest()
+        logger.info("已清空回收站")
+
+    @classmethod
+    def startup_init(cls):
+        """启动时同步 manifest 与实际磁盘文件"""
+        if not os.path.exists(TRASH_DIR):
+            return
+        manifest = cls._load_manifest()
+        new_manifest = []
+        for entry in manifest:
+            if os.path.exists(os.path.join(TRASH_DIR, entry["uuid"])):
+                new_manifest.append(entry)
+        if len(new_manifest) != len(manifest):
+            cls._manifest = new_manifest
+            cls._save_manifest()
+            logger.info("回收站索引已同步")
+        cls._purge_expired()
+
+    @classmethod
     def purge(cls, retention_days: int = 30):
         manifest = cls._load_manifest()
         cutoff = datetime.now() - timedelta(days=retention_days)
