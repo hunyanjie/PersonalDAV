@@ -7,6 +7,8 @@ from datetime import datetime
 from services.settings_service import SettingsService
 from services.file_mount_service import FileMountService
 from utils.logger import logger
+from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
+from ui.tabs.trash_tab import TrashTab
 
 
 class FilesTab(ttk.Frame):
@@ -24,6 +26,7 @@ class FilesTab(ttk.Frame):
         self._search_var = tk.StringVar()
         self._search_var.trace("w", self._on_search_change)
         self.create_widgets()
+        event_bus.subscribe(EVENT_SETTINGS_CHANGED, self.refresh)
 
     @staticmethod
     def _tmp_dir() -> str:
@@ -57,10 +60,15 @@ class FilesTab(ttk.Frame):
         self.root_path_label = ttk.Label(path_f, text="", foreground="gray")
         self.root_path_label.pack(side=tk.LEFT, padx=2)
 
-        browse_frame = ttk.LabelFrame(self, text="文件浏览")
-        browse_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 5))
+        # 创建子 Notebook
+        self.sub_notebook = ttk.Notebook(self)
+        self.sub_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
 
-        toolbar = ttk.Frame(browse_frame)
+        # 1. 文件浏览页面
+        self.browse_frame = ttk.Frame(self.sub_notebook)
+        self.sub_notebook.add(self.browse_frame, text="文件浏览")
+
+        toolbar = ttk.Frame(self.browse_frame)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
 
         self.up_btn = ttk.Button(toolbar, text="返回上级", command=self.go_up, state=tk.DISABLED)
@@ -68,29 +76,37 @@ class FilesTab(ttk.Frame):
 
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=2)
 
-        self.upload_btn = ttk.Button(toolbar, text="上传", command=self.upload_file)
+        self.action_btn_frame = ttk.Frame(toolbar)
+        self.action_btn_frame.pack(side=tk.LEFT, fill=tk.Y)
+
+        self.upload_btn = ttk.Button(self.action_btn_frame, text="上传", command=self.upload_file)
         self.upload_btn.pack(side=tk.LEFT, padx=2)
-        self.download_btn = ttk.Button(toolbar, text="下载", command=self.download_selected)
+        self.download_btn = ttk.Button(self.action_btn_frame, text="下载", command=self.download_selected)
         self.download_btn.pack(side=tk.LEFT, padx=2)
-        self.delete_btn = ttk.Button(toolbar, text="删除", command=self.delete_selected)
-        self.delete_btn.pack(side=tk.LEFT, padx=2)
-        self.rename_btn = ttk.Button(toolbar, text="重命名", command=self.rename_file)
-        self.trash_btn = ttk.Button(toolbar, text="回收站", command=self._show_trash)
+        
+        self.main_action_btn = ttk.Button(toolbar, text="删除挂载点", command=self.delete_mount)
+        self.main_action_btn.pack(side=tk.LEFT, padx=2)
+        
+        self.rename_btn = ttk.Button(toolbar, text="重命名挂载点", command=self.rename_mount)
         self.rename_btn.pack(side=tk.LEFT, padx=2)
-        self.newdir_btn = ttk.Button(toolbar, text="新建文件夹", command=self.new_folder)
-        self.newdir_btn.pack(side=tk.LEFT, padx=2)
+        
+        self.new_action_btn = ttk.Button(toolbar, text="新建挂载点", command=self.add_mount)
+        self.new_action_btn.pack(side=tk.LEFT, padx=2)
+
+        self.refresh_btn = ttk.Button(toolbar, text="刷新", command=self.refresh)
+        self.refresh_btn.pack(side=tk.LEFT, padx=2)
 
         self.path_label = ttk.Label(toolbar, text="/")
         self.path_label.pack(side=tk.LEFT, padx=10)
 
-        search_f = ttk.Frame(browse_frame)
+        search_f = ttk.Frame(self.browse_frame)
         search_f.pack(fill=tk.X, padx=5, pady=(0, 5))
         ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
         self._search_entry = ttk.Entry(search_f, textvariable=self._search_var)
         self._search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
         ttk.Button(search_f, text="清空", width=5, command=lambda: self._search_var.set("")).pack(side=tk.LEFT, padx=2)
 
-        tree_frame = ttk.Frame(browse_frame)
+        tree_frame = ttk.Frame(self.browse_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
         columns = ("name", "type", "size", "modified")
@@ -110,17 +126,43 @@ class FilesTab(ttk.Frame):
 
         self.tree.bind("<Double-1>", self.on_double_click)
         self.tree.bind("<Button-3>", self._show_context_menu)
+        
+        # 2. 回收站页面
+        self.trash_tab = TrashTab(self.sub_notebook)
+        self.sub_notebook.add(self.trash_tab, text="回收站")
+        
+        self.update_ui_state()
+
+    def update_ui_state(self):
+        in_mount = bool(self._virtual_path)
+        logger.info(f"UI State Update: in_mount={in_mount}, path='{self._virtual_path}'")
+        
+        if not in_mount:
+            self.upload_btn.config(state=tk.DISABLED)
+            self.download_btn.config(state=tk.DISABLED)
+            self.main_action_btn.config(text="删除挂载点", command=self.delete_mount)
+            self.rename_btn.config(text="重命名挂载点", command=self.rename_mount)
+            self.new_action_btn.config(text="新建挂载点", command=self.add_mount)
+        else:
+            self.upload_btn.config(state=tk.NORMAL)
+            self.download_btn.config(state=tk.NORMAL)
+            self.main_action_btn.config(text="删除", command=self.delete_selected)
+            self.rename_btn.config(text="重命名", command=self.rename_file)
+            self.new_action_btn.config(text="新建文件夹", command=self.new_folder)
 
     def refresh(self) -> None:
         mounts = self._mount().get_mounts()
         self.root_path_label.config(text=" | ".join(f"{m['name']}:{m['path']}" for m in mounts) or "无挂载点")
-        if not self._virtual_path and self._mount().is_single_mount:
-            self._enter_mount(self._mount().get_mounts()[0]["name"])
+        # 即使是单挂载点自动进入，也要确保 update_ui_state 被正确调用
+        if not self._virtual_path and self._mount().is_single_mount and mounts:
+            self._enter_mount(mounts[0]["name"])
         else:
             self._browse(self._virtual_path)
+        self.update_ui_state()
 
     def _browse(self, virtual_path: str) -> None:
         self._virtual_path = virtual_path
+        self.update_ui_state()
         svc = self._mount()
         if not virtual_path:
             entries = svc.get_root_entries()
@@ -203,6 +245,46 @@ class FilesTab(ttk.Frame):
 
     def _enter_mount(self, mount_name: str) -> None:
         self._browse(mount_name)
+
+    def delete_mount(self):
+        items = self.tree.selection()
+        if not items:
+            messagebox.showwarning("提示", "请选择要删除的挂载点", parent=self)
+            return
+        name = self.tree.item(items[0], "values")[0]
+        if messagebox.askyesno("确认", f"确定要删除挂载点 '{name}' 吗？(仅删除挂载配置，不会删除实际磁盘文件)"):
+            if self._mount().remove_mount(name):
+                self.refresh()
+                event_bus.publish(EVENT_SETTINGS_CHANGED)
+
+    def add_mount(self):
+        from ui.dialogs.mount_dialog import MountDialog
+        dialog = MountDialog(self)
+        self.wait_window(dialog)
+        if dialog.result:
+            try:
+                self._mount().add_mount(dialog.result["name"], dialog.result["path"])
+                self.refresh()
+                event_bus.publish(EVENT_SETTINGS_CHANGED)
+            except ValueError as e:
+                messagebox.showerror("错误", str(e), parent=self)
+
+    def rename_mount(self):
+        items = self.tree.selection()
+        if len(items) != 1:
+            messagebox.showwarning("提示", "请选择单个挂载点", parent=self)
+            return
+        old_name = self.tree.item(items[0], "values")[0]
+        new_name = simpledialog.askstring("重命名", "新挂载点名称:", initialvalue=old_name, parent=self)
+        if not new_name or new_name == old_name: return
+        
+        m = self._mount().get_mount(old_name)
+        try:
+            self._mount().update_mount(old_name, new_name, m["path"])
+            self.refresh()
+            event_bus.publish(EVENT_SETTINGS_CHANGED)
+        except Exception as e:
+            messagebox.showerror("错误", str(e), parent=self)
 
     def on_double_click(self, event: tk.Event) -> None:
         item = self.tree.selection()
@@ -448,13 +530,16 @@ class FilesTab(ttk.Frame):
         if item:
             self.tree.selection_set(item)
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="下载", command=self.download_selected)
-        menu.add_command(label="重命名", command=self.rename_file)
-        menu.add_command(label="删除", command=self.delete_selected)
-        menu.add_separator()
-        menu.add_command(label="上传到此目录", command=self.upload_file)
-        menu.add_command(label="新建文件夹", command=self.new_folder)
-        if self._virtual_path:
+        if not self._virtual_path:
+            menu.add_command(label="重命名挂载点", command=self.rename_mount)
+            menu.add_command(label="删除挂载点", command=self.delete_mount)
+        else:
+            menu.add_command(label="下载", command=self.download_selected)
+            menu.add_command(label="重命名", command=self.rename_file)
+            menu.add_command(label="删除", command=self.delete_selected)
+            menu.add_separator()
+            menu.add_command(label="上传到此目录", command=self.upload_file)
+            menu.add_command(label="新建文件夹", command=self.new_folder)
             menu.add_separator()
             menu.add_command(label="返回上级目录", command=self.go_up)
         menu.post(event.x_root, event.y_root)

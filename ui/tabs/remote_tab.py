@@ -80,6 +80,15 @@ class RemoteTab(ttk.Frame):
         self.create_widgets()
         self.mount_mgr.refresh()
 
+    def refresh(self):
+        if not self._is_connected:
+            return
+        if self._current_share:
+            self.browse_share(self._current_share, self._current_path)
+        else:
+            # Re-list shares if not in a share
+            self.connect()
+
     def create_widgets(self) -> None:
         conn_frame = ttk.LabelFrame(self, text="连接信息")
         conn_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
@@ -131,10 +140,13 @@ class RemoteTab(ttk.Frame):
         self.rename_btn.pack(side=tk.LEFT, padx=2)
         self.newdir_btn = ttk.Button(toolbar, text="新建文件夹", command=self.file_ops.new_folder, state=tk.DISABLED)
         self.newdir_btn.pack(side=tk.LEFT, padx=2)
+        
+        self.refresh_btn = ttk.Button(toolbar, text="刷新", command=self.refresh)
+        self.refresh_btn.pack(side=tk.LEFT, padx=2)
 
         self.path_label = ttk.Label(toolbar, text="/")
         self.path_label.pack(side=tk.LEFT, padx=10)
-
+        
         search_f = ttk.Frame(browse_frame)
         search_f.pack(fill=tk.X, padx=5, pady=(0, 5))
         ttk.Label(search_f, text="搜索:").pack(side=tk.LEFT, padx=2)
