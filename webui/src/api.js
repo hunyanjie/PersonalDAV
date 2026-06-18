@@ -20,7 +20,9 @@ async function request(method, path, options = {}) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || `请求失败 (${res.status})`)
+    const error = new Error(body.detail || `请求失败 (${res.status})`)
+    error.status = res.status
+    throw error
   }
   const ct = res.headers.get('content-type') || ''
   if (ct.includes('application/json')) {
@@ -86,7 +88,13 @@ export default {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
       }
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText))
+          } catch(e) {
+            reject(new Error("服务器响应格式错误"))
+          }
+        }
         else reject(new Error(`上传失败 (${xhr.status})`))
       }
       xhr.onerror = () => reject(new Error('网络错误'))
