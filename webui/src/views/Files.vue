@@ -587,33 +587,36 @@ export default {
           })
           if (choice === true) {
             overwrite = true
-          } else if (choice === null) { // User clicked 'Cancel' or closed modal
-             continue // Skip this file
+          } else if (choice === null) {
+             continue
           } else {
-            // Auto-rename logic
-            let name = file.name
-            let ext = ''
-            const lastDot = name.lastIndexOf('.')
-            if (lastDot > 0) {
-                ext = name.substring(lastDot)
-                name = name.substring(0, lastDot)
-            }
-            let counter = 1
-            let newName = `${name}(${counter})${ext}`
-            while (this.items.some(i => i.name === newName)) {
-                counter++
-                newName = `${name}(${counter})${ext}`
-            }
-            uploadFile = new File([file], newName, { type: file.type })
+             let name = file.name
+             let ext = ''
+             const lastDot = name.lastIndexOf('.')
+             if (lastDot > 0) {
+                 ext = name.substring(lastDot)
+                 name = name.substring(0, lastDot)
+             }
+             let counter = 1
+             let newName = `${name}(${counter})${ext}`
+             while (this.items.some(i => i.name === newName)) {
+                 counter++
+                 newName = `${name}(${counter})${ext}`
+             }
+             uploadFile = new File([file], newName, { type: file.type })
           }
         }
 
         try {
           await api.uploadFileWithProgress(uploadFile, this.currentPath, pct => { this.uploadProgress = pct }, overwrite)
+          window.showToast(`上传成功: ${uploadFile.name}`, 'success')
         } catch(e) {
           window.showToast(`上传失败(${uploadFile.name}): ${e.message || e}`, 'error')
         }
       }
+      setTimeout(() => {
+        this.uploadProgress = null
+      }, 1000)
       this.load()
     },
     async doMkdir() {
