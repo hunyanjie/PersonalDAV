@@ -56,6 +56,16 @@ class ContactService(BaseService):
                 parsed_data = RobustVCardParser.manual_parse(vcard_data)
                 if parsed_data:
                     parsed_data['groups'] = self._extract_categories_from_text(vcard_data)
+                    if not uid_raw:
+                        uid = parsed_data.get('uid', '')
+                        if uid:
+                            lines = vcard_data.splitlines()
+                            for i, line in enumerate(lines):
+                                if line.strip().upper() == "END:VCARD":
+                                    lines.insert(i, f"UID:{uid}")
+                                    break
+                            vcard_data = "\r\n".join(lines)
+                            parsed_data['vcard'] = vcard_data
 
             if not parsed_data:
                 return None, "Parse Error"

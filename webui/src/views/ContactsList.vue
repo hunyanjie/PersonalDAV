@@ -39,7 +39,7 @@
                 <div class="name-info" @click="closeSwipe">
                   <span class="avatar">{{ (c.full_name || '?')[0].toUpperCase() }}</span>
                   <div class="name-text">
-                    <span class="full-name">{{ c.full_name }}</span>
+                    <span class="full-name">{{ c.full_name }}<span class="mobile-groups" v-if="c.groups"><span v-for="g in splitGroups(c.groups)" :key="g" class="group-tag">{{ g }}</span></span></span>
                     <span class="mobile-only-info">{{ c.phone || c.email }}</span>
                   </div>
                 </div>
@@ -319,6 +319,7 @@ export default {
 .name-text { display: flex; flex-direction: column; min-width: 0; }
 .full-name { font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-only-info { display: none; font-size: 12px; color: var(--text-tertiary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-groups { display: none; }
 
 .groups-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .group-tag { 
@@ -397,6 +398,8 @@ export default {
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
   .mobile-only-info { display: block; }
+  .mobile-groups { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 4px; }
+  .mobile-groups .group-tag { font-size: 10px; padding: 1px 7px; }
   .toolbar { padding: 12px; flex-direction: column; align-items: stretch; gap: 12px; }
   .search-box { width: 100%; min-width: 100%; order: 1; }
   .toolbar-actions { width: 100%; justify-content: space-between; order: 2; gap: 8px; }
