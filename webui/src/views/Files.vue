@@ -571,25 +571,28 @@ export default {
       this.breadcrumbs = crumbs
     },
     async doUpload(e) {
+      await this.load() // 确保获取最新文件列表
       const files = e.target.files
       if (!files.length) return
       this.uploadProgress = 0
       for (const file of files) {
         let uploadFile = file
+        let newFilename = null
         let overwrite = false
 
         if (this.items.some(i => i.name === file.name)) {
-          const choice = await window.showConfirm({ 
-            message: `"${file.name}" 已存在，是否覆盖？点击确定覆盖，点击取消则自动重命名`, 
+          const action = await window.showConfirm({ 
+            message: `"${file.name}" 已存在`, 
             type: 'warning',
             confirmText: '覆盖',
-            cancelText: '自动重命名'
+            cancelText: '取消',
+            extraText: '重命名',
+            showCancel: true
           })
-          if (choice === true) {
+          
+          if (action === 'confirm') { // 覆盖
             overwrite = true
-          } else if (choice === null) {
-             continue
-          } else {
+          } else if (action === 'extra') { // 重命名
              let name = file.name
              let ext = ''
              const lastDot = name.lastIndexOf('.')
@@ -603,20 +606,24 @@ export default {
                  counter++
                  newName = `${name}(${counter})${ext}`
              }
-             uploadFile = new File([file], newName, { type: file.type })
+             newFilename = newName
+          } else { // 取消或关闭
+             window.showToast(`已取消上传: ${file.name}`, 'info')
+             continue 
           }
         }
 
         try {
-          await api.uploadFileWithProgress(uploadFile, this.currentPath, pct => { this.uploadProgress = pct }, overwrite)
-          window.showToast(`上传成功: ${uploadFile.name}`, 'success')
+          await api.uploadFileWithProgress(uploadFile, this.currentPath, pct => { this.uploadProgress = pct }, overwrite, newFilename)
+          window.showToast(`上传成功: ${newFilename || file.name}`, 'success')
         } catch(e) {
-          window.showToast(`上传失败(${uploadFile.name}): ${e.message || e}`, 'error')
+          window.showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }
       }
       setTimeout(() => {
         this.uploadProgress = null
       }, 1000)
+      e.target.value = '' // 重置输入框
       this.load()
     },
     async doMkdir() {

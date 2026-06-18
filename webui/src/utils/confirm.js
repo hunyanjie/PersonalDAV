@@ -1,15 +1,17 @@
 import { reactive } from 'vue'
 
-const state = reactive({ visible: false, title: '', message: '', type: 'info', confirmText: '确定', cancelText: '取消' })
+const state = reactive({ visible: false, title: '', message: '', type: 'info', confirmText: '确定', cancelText: '取消', extraText: null, showCancel: true })
 let _resolve = null
 
-export function showConfirm({ title, message, type, confirmText, cancelText } = {}) {
+export function showConfirm({ title, message, type, confirmText, cancelText, extraText, showCancel = true } = {}) {
   state.visible = true
   state.title = title || '确认'
   state.message = message || ''
   state.type = type || 'info'
   state.confirmText = confirmText || '确定'
   state.cancelText = cancelText || '取消'
+  state.extraText = extraText || null
+  state.showCancel = showCancel
   return new Promise(resolve => { _resolve = resolve })
 }
 

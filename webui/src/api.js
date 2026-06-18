@@ -76,11 +76,13 @@ export default {
       body: form,
     }).then(r => r.json())
   },
-  uploadFileWithProgress(file, path = '/', onProgress, overwrite = false) {
+  uploadFileWithProgress(file, path = '/', onProgress, overwrite = false, filename = null) {
     return new Promise((resolve, reject) => {
       const t = token()
       const form = new FormData()
-      form.append('file', file); form.append('path', path); form.append('overwrite', overwrite ? 'True' : 'False')
+      form.append('file', file, filename || file.name)
+      form.append('path', path)
+      form.append('overwrite', overwrite ? 'True' : 'False')
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${BASE}/files/upload`)
       if (t) xhr.setRequestHeader('Authorization', `Bearer ${t}`)
