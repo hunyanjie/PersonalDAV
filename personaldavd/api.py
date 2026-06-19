@@ -10,7 +10,7 @@ from services.settings_service import SettingsService
 from services.auth_service import AuthService
 from services.embeddings import EmbeddingService
 from .models import (
-    ContactOut, ContactCreate, ContactStructuredCreate, ContactUpdate,
+    ContactOut, ContactCreate, ContactUpdate,
     EventOut, EventCreate, EventUpdate, HealthOut, AuthTokenOut, AuthTokenRequest,
     ServerConfigOut, AuthLogOut, StatsOut, ErrorOut, SystemLogOut,
 )
@@ -22,58 +22,186 @@ _start_time = time.time()
 _logger = logging.getLogger("api")
 
 
-def _contact_to_out(raw: str) -> ContactOut | None:
-    """Convert a vCard string to ContactOut (minimal parse)."""
+def _vcard_to_contact_out(raw: str) -> ContactOut | None:
+    """Convert a vCard string to ContactOut."""
     try:
-        uid = ""
-        full_name = email = phone = groups = ""
+        uid = full_name = email = phone = groups = address = org = note = photo = ""
         for line in raw.splitlines():
-            if line.upper().startswith("UID:"):
+            ul = line.upper()
+            if ul.startswith("UID:"):
                 uid = line[4:].strip()
-            elif line.upper().startswith("FN:"):
+            elif ul.startswith("FN:"):
                 full_name = line[3:].strip()
-            elif line.upper().startswith("EMAIL"):
+            elif ul.startswith("EMAIL"):
                 email = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("TEL"):
+            elif ul.startswith("TEL"):
                 phone = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("CATEGORIES"):
+            elif ul.startswith("CATEGORIES"):
                 groups = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("ADR"):
+                address = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("ORG"):
+                org = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("NOTE"):
+                note = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("PHOTO"):
+                photo = line.split(":", 1)[-1].strip() if ":" in line else ""
         if not uid:
-            _logger.error("_contact_to_out: vCard 缺少 UID 行，无法解析:\n%s", raw[:300])
+            _logger.error("_vcard_to_contact_out: vCard 缺少 UID 行，无法解析:\n%s", raw[:300])
             return None
-        return ContactOut(uid=uid, full_name=full_name, email=email, phone=phone, groups=groups, vcard=raw)
+        return ContactOut(uid=uid, full_name=full_name, email=email, phone=phone,
+                          groups=groups, address=address, org=org, note=note, photo=photo, vcard=raw)
     except Exception as e:
-        _logger.error("_contact_to_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
+        _logger.error("_vcard_to_contact_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
         return None
 
 
-def _event_to_out(raw: str) -> EventOut | None:
-    """Convert an iCal string to EventOut (minimal parse)."""
+def _ical_to_event_out(raw: str) -> EventOut | None:
+    """Convert an iCal string to EventOut."""
     try:
-        uid = summary = dtstart = dtend = description = location = categories = ""
+        uid = summary = dtstart = dtend = description = location = categories = rrule = ""
+        all_day = False
+        reminders = []
+        attachments = []
+        in_valarm = False
+        current_alarm = {}
         for line in raw.splitlines():
-            if line.upper().startswith("UID:"):
-                uid = line[4:].strip()
-            elif line.upper().startswith("SUMMARY"):
+            ul = line.strip().upper()
+            if ul == "BEGIN:VALARM":
+                in_valarm = True
+                current_alarm = {}
+                continue
+            if ul == "END:VALARM":
+                if current_alarm:
+                    reminders.append(current_alarm)
+                in_valarm = False
+                continue
+            if in_valarm:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k = k.strip().upper()
+                    current_alarm[k] = v.strip()
+                continue
+            if ul.startswith("UID:"):
+                uid = line.split(":", 1)[-1].strip()
+            elif ul.startswith("SUMMARY"):
                 summary = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("DTSTART"):
+            elif ul.startswith("DTSTART"):
                 dtstart = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("DTEND"):
+                if len(dtstart) <= 8:
+                    all_day = True
+            elif ul.startswith("DTEND"):
                 dtend = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("DESCRIPTION") and not description:
+            elif ul.startswith("DESCRIPTION") and not description:
                 description = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("LOCATION"):
+            elif ul.startswith("LOCATION"):
                 location = line.split(":", 1)[-1].strip() if ":" in line else ""
-            elif line.upper().startswith("CATEGORIES"):
+            elif ul.startswith("CATEGORIES"):
                 categories = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("RRULE"):
+                rrule = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("ATTACH"):
+                rest = line.split(":", 1)[-1].strip() if ":" in line else ""
+                attachments.append({"raw": rest})
         if not uid:
-            _logger.error("_event_to_out: iCal 缺少 UID 行:\n%s", raw[:300])
+            _logger.error("_ical_to_event_out: iCal 缺少 UID 行:\n%s", raw[:300])
             return None
         return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend,
-                        description=description, location=location, categories=categories, ical=raw)
+                        all_day=all_day, description=description, location=location,
+                        categories=categories, rrule=rrule, reminders=reminders,
+                        attachments=attachments, ical=raw)
     except Exception as e:
-        _logger.error("_event_to_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
+        _logger.error("_ical_to_event_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
         return None
+
+
+def _escape_ical_val(v: str) -> str:
+    return str(v).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _format_ical_dt(v: str, all_day: bool = False) -> str:
+    """Format a datetime string to iCal format (YYYYMMDD or YYYYMMDDTHHMMSS)."""
+    if not v:
+        return ""
+    s = v.replace("-", "").replace(":", "").replace("T", "")
+    if all_day:
+        return s[:8]
+    if "T" in v or len(s) > 8:
+        if len(s) == 10:  # YYYYMMDDHH → YYYYMMDDTHHMMSS
+            s = s[:8] + "T" + s[8:] + "00"
+        elif len(s) == 12:  # YYYYMMDDHHMM → YYYYMMDDTHHMMSS
+            s = s[:8] + "T" + s[8:12] + "00"
+        elif len(s) == 14 and not s[8:9] == "T":
+            s = s[:8] + "T" + s[8:14]
+    return s
+
+
+def _event_fields_to_ical(fields: EventCreate | EventUpdate, uid: str = "") -> str:
+    """Build iCalendar string from structured event fields."""
+    ical = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\n"
+    if uid:
+        ical += f"UID:{uid}\r\n"
+    else:
+        ical += f"UID:{int(__import__('time').time() * 1000)}@personaldav\r\n"
+        ical += "STATUS:CONFIRMED\r\n"
+
+    all_day = getattr(fields, 'all_day', False)
+    ds = fields.dtstart if fields.dtstart else ""
+    de = fields.dtend if fields.dtend else ""
+    if all_day and de:
+        try:
+            import datetime
+            d = datetime.date(int(de[:4]), int(de[5:7]), int(de[7:9]))
+            d += datetime.timedelta(days=1)
+            de = d.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    ical += f"DTSTART:{_format_ical_dt(ds, all_day)}\r\n"
+    ical += f"DTEND:{_format_ical_dt(de, all_day)}\r\n"
+    ical += f"SUMMARY:{_escape_ical_val(fields.summary or '')}\r\n"
+    if fields.description:
+        ical += f"DESCRIPTION:{_escape_ical_val(fields.description)}\r\n"
+    if fields.location:
+        ical += f"LOCATION:{_escape_ical_val(fields.location)}\r\n"
+    if fields.categories:
+        ical += f"CATEGORIES:{_escape_ical_val(fields.categories)}\r\n"
+    if fields.rrule:
+        ical += f"RRULE:{fields.rrule}\r\n"
+    for r in (fields.reminders or []):
+        action = r.get("ACTION") or r.get("action") or "DISPLAY"
+        trigger = r.get("TRIGGER") or r.get("trigger") or ""
+        if not trigger and "trigger_type" in r:
+            tv = int(r.get("trigger_value", 15))
+            tt = r.get("trigger_type", "before")
+            if tt == "after":
+                trigger = f"PT{tv}M"
+            else:
+                d = tv // 1440
+                h = (tv % 1440) // 60
+                m = tv % 60
+                trigger = "-P" + (f"{d}D" if d else "") + ("T" if (h or m) else "") + (f"{h}H" if h else "") + (f"{m}M" if m else "")
+                if not d and not h and not m:
+                    trigger = "-PT0M"
+        if trigger:
+            ical += "BEGIN:VALARM\r\n"
+            ical += f"ACTION:{action}\r\n"
+            ical += f"TRIGGER:{trigger}\r\n"
+            ical += "END:VALARM\r\n"
+    for a in (fields.attachments or []):
+        url = a.get("url") or a.get("raw") or ""
+        name = a.get("name", "attachment.bin")
+        if url.startswith("data:"):
+            _, b64 = url.split(",", 1)
+            mime = "application/octet-stream"
+            import re as _re
+            m = _re.search(r":(.*?);", url)
+            if m:
+                mime = m.group(1)
+            ical += f"ATTACH;VALUE=BINARY;ENCODING=BASE64;FMTTYPE={mime};FILENAME={_escape_ical_val(name)}:{b64}\r\n"
+        elif url:
+            ical += f"ATTACH:{url}\r\n"
+    ical += "END:VEVENT\r\nEND:VCALENDAR\r\n"
+    return ical
 
 
 # ── Health ──────────────────────────────────────────────────────
@@ -126,6 +254,34 @@ async def get_token(body: AuthTokenRequest, request: Request):
 
 # ── Contacts ────────────────────────────────────────────────────
 
+def _contact_fields_to_vcard(fields: ContactCreate | ContactUpdate, uid: str = "") -> str:
+    """Build vCard string from structured contact fields."""
+    vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+    if uid:
+        vcard += f"UID:{uid}\r\n"
+    vcard += f"FN:{fields.full_name}\r\nN:{fields.full_name};;;\r\n"
+    if fields.email:
+        vcard += f"EMAIL:{fields.email}\r\n"
+    if fields.phone:
+        vcard += f"TEL:{fields.phone}\r\n"
+    if fields.groups:
+        vcard += f"CATEGORIES:{fields.groups}\r\n"
+    if fields.address:
+        vcard += f"ADR:{fields.address}\r\n"
+    if fields.org:
+        vcard += f"ORG:{fields.org}\r\n"
+    if fields.note:
+        vcard += f"NOTE:{fields.note}\r\n"
+    if fields.photo:
+        vcard += f"PHOTO;ENCODING=BASE64;TYPE=JPEG:{fields.photo}\r\n"
+    vcard += "END:VCARD\r\n"
+    return vcard
+
+
+def _is_contact_field_set(v: str | None) -> bool:
+    return v is not None and v != ""
+
+
 @api_router.get("/contacts", summary="列出所有联系人")
 async def list_contacts(
     offset: int = Query(0, ge=0),
@@ -135,7 +291,7 @@ async def list_contacts(
     """返回联系人的摘要列表（姓名、邮箱、电话、分组），支持分页。"""
     svc = ContactService()
     raw_list, total = svc.get_all_raw_paginated(offset, limit)
-    items = [o for r in raw_list if (o := _contact_to_out(r))]
+    items = [o for r in raw_list if (o := _vcard_to_contact_out(r))]
     return {"items": items, "total": total}
 
 
@@ -181,46 +337,17 @@ async def get_contact(uid: str, token: str = Depends(get_current_token)):
     if not raw:
         _logger.warning("get_contact: UID=%s 不存在", uid)
         raise HTTPException(404, "联系人不存在")
-    out = _contact_to_out(raw)
+    out = _vcard_to_contact_out(raw)
     if not out:
         _logger.error("get_contact: UID=%s 解析失败, raw前300字符:\n%s", uid, raw[:300])
         raise HTTPException(500, f"解析联系人失败 (UID={uid})")
     return out
 
 
-@api_router.post("/contacts", response_model=dict, summary="从 vCard 创建联系人")
+@api_router.post("/contacts", response_model=dict, summary="创建联系人")
 async def create_contact(body: ContactCreate, token: str = Depends(get_current_token)):
-    """传入完整的 vCard 文本创建联系人，自动提取 UID。"""
-    svc = ContactService()
-    uid, op = svc.add_contact(body.vcard_data)
-    if uid is None:
-        raise HTTPException(400, f"创建联系人失败: {op}")
-    return {"uid": uid, "operation": op}
-
-
-@api_router.post("/contacts/structured", response_model=dict, summary="通过结构化信息创建联系人")
-async def create_contact_structured(body: ContactStructuredCreate, token: str = Depends(get_current_token)):
-    """通过姓名、邮箱、电话等结构化字段创建联系人，无需手动拼接 vCard。"""
-    vcard = (
-        "BEGIN:VCARD\r\nVERSION:3.0\r\n"
-        f"FN:{body.full_name}\r\n"
-        f"N:{body.full_name};;;\r\n"
-    )
-    if body.email:
-        vcard += f"EMAIL:{body.email}\r\n"
-    if body.phone:
-        vcard += f"TEL:{body.phone}\r\n"
-    if body.groups:
-        vcard += f"CATEGORIES:{body.groups}\r\n"
-    if body.address:
-        vcard += f"ADR:{body.address}\r\n"
-    if body.org:
-        vcard += f"ORG:{body.org}\r\n"
-    if body.note:
-        vcard += f"NOTE:{body.note}\r\n"
-    if body.photo:
-        vcard += f"PHOTO;ENCODING=BASE64;TYPE=JPEG:{body.photo}\r\n"
-    vcard += "END:VCARD\r\n"
+    """通过结构化字段创建联系人，后端自动构建 vCard。"""
+    vcard = _contact_fields_to_vcard(body)
     svc = ContactService()
     uid, op = svc.add_contact(vcard)
     if uid is None:
@@ -228,15 +355,40 @@ async def create_contact_structured(body: ContactStructuredCreate, token: str = 
     return {"uid": uid, "operation": op}
 
 
+@api_router.post("/contacts/import", response_model=dict, summary="从 vCard 导入联系人")
+async def import_contact(body: dict, token: str = Depends(get_current_token)):
+    """传入完整的 vCard 文本创建联系人（用于 .vcf 文件导入）。"""
+    vcard_data = body.get("vcard_data", "")
+    if not vcard_data:
+        raise HTTPException(400, "缺少 vcard_data")
+    svc = ContactService()
+    uid, op = svc.add_contact(vcard_data)
+    if uid is None:
+        raise HTTPException(400, f"导入联系人失败: {op}")
+    return {"uid": uid, "operation": op}
+
+
 @api_router.put("/contacts/{uid}", response_model=dict, summary="更新联系人")
 async def update_contact(uid: str, body: ContactUpdate, token: str = Depends(get_current_token)):
-    """用新的 vCard 数据覆盖更新指定联系人。"""
+    """通过结构化字段更新联系人，后端自动构建 vCard。"""
     svc = ContactService()
     try:
         existing = svc.get_by_uid(uid)
         if not existing:
             raise HTTPException(404, "联系人不存在")
-        new_uid, op = svc.add_contact(body.vcard_data, force=True)
+        out = _vcard_to_contact_out(existing)
+        merged = ContactCreate(
+            full_name=body.full_name if _is_contact_field_set(body.full_name) else (out.full_name if out else ""),
+            email=body.email if _is_contact_field_set(body.email) else (out.email if out else ""),
+            phone=body.phone if _is_contact_field_set(body.phone) else (out.phone if out else ""),
+            groups=body.groups if _is_contact_field_set(body.groups) else (out.groups if out else ""),
+            address=body.address if _is_contact_field_set(body.address) else (out.address if out else ""),
+            org=body.org if _is_contact_field_set(body.org) else (out.org if out else ""),
+            note=body.note if _is_contact_field_set(body.note) else (out.note if out else ""),
+            photo=body.photo if _is_contact_field_set(body.photo) else (out.photo if out else ""),
+        )
+        vcard = _contact_fields_to_vcard(merged, uid=uid)
+        new_uid, op = svc.add_contact(vcard, force=True)
         if new_uid is None:
             _logger.error("update_contact uid=%s 失败: %s", uid, op)
             raise HTTPException(400, f"更新联系人失败: {op}")
@@ -272,10 +424,10 @@ async def list_events(
     svc = EventService()
     if date_from and date_to:
         raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
-        items = [o for r in raw_list if (o := _event_to_out(r))]
+        items = [o for r in raw_list if (o := _ical_to_event_out(r))]
         return {"items": items, "total": len(items)}
     raw_list, total = svc.get_all_raw_paginated(offset, limit)
-    items = [o for r in raw_list if (o := _event_to_out(r))]
+    items = [o for r in raw_list if (o := _ical_to_event_out(r))]
     return {"items": items, "total": total}
 
 
@@ -287,32 +439,64 @@ async def get_event(uid: str, token: str = Depends(get_current_token)):
     if not raw:
         _logger.warning("get_event: UID=%s 不存在", uid)
         raise HTTPException(404, "事件不存在")
-    out = _event_to_out(raw)
+    out = _ical_to_event_out(raw)
     if not out:
         _logger.error("get_event: UID=%s 解析失败, raw前300字符:\n%s", uid, raw[:300])
         raise HTTPException(500, f"解析事件失败 (UID={uid})")
     return out
 
 
-@api_router.post("/events", response_model=dict, summary="从 iCalendar 创建事件")
+def _is_event_field_set(v):
+    return v is not None and v != ""
+
+
+@api_router.post("/events", response_model=dict, summary="创建事件")
 async def create_event(body: EventCreate, token: str = Depends(get_current_token)):
-    """传入完整的 iCalendar 文本创建事件，自动提取 UID。"""
+    """通过结构化字段创建事件，后端自动构建 iCalendar。"""
+    ical = _event_fields_to_ical(body)
     svc = EventService()
-    uid, op = svc.add_event(body.ical_data)
+    uid, op = svc.add_event(ical)
     if uid is None:
         raise HTTPException(400, f"创建事件失败: {op}")
     return {"uid": uid, "operation": op}
 
 
+@api_router.post("/events/import", response_model=dict, summary="从 iCalendar 导入事件")
+async def import_event(body: dict, token: str = Depends(get_current_token)):
+    """传入完整的 iCalendar 文本创建事件（用于 .ics 文件导入）。"""
+    ical_data = body.get("ical_data", "")
+    if not ical_data:
+        raise HTTPException(400, "缺少 ical_data")
+    svc = EventService()
+    uid, op = svc.add_event(ical_data)
+    if uid is None:
+        raise HTTPException(400, f"导入事件失败: {op}")
+    return {"uid": uid, "operation": op}
+
+
 @api_router.put("/events/{uid}", response_model=dict, summary="更新事件")
 async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_current_token)):
-    """用新的 iCalendar 数据覆盖更新指定事件。"""
+    """通过结构化字段更新事件，后端自动构建 iCalendar。"""
     svc = EventService()
     try:
         existing = svc.get_by_uid(uid)
         if not existing:
             raise HTTPException(404, "事件不存在")
-        new_uid, op = svc.add_event(body.ical_data, force=True)
+        out = _ical_to_event_out(existing)
+        merged = EventCreate(
+            summary=body.summary if _is_event_field_set(body.summary) else (out.summary if out else ""),
+            dtstart=body.dtstart if _is_event_field_set(body.dtstart) else (out.dtstart if out else ""),
+            dtend=body.dtend if _is_event_field_set(body.dtend) else (out.dtend if out else ""),
+            all_day=body.all_day if body.all_day is not None else (out.all_day if out else False),
+            description=body.description if _is_event_field_set(body.description) else (out.description if out else ""),
+            location=body.location if _is_event_field_set(body.location) else (out.location if out else ""),
+            categories=body.categories if _is_event_field_set(body.categories) else (out.categories if out else ""),
+            rrule=body.rrule if _is_event_field_set(body.rrule) else (out.rrule if out else ""),
+            reminders=body.reminders if body.reminders is not None else (out.reminders if out else []),
+            attachments=body.attachments if body.attachments is not None else (out.attachments if out else []),
+        )
+        ical = _event_fields_to_ical(merged, uid=uid)
+        new_uid, op = svc.add_event(ical, force=True)
         if new_uid is None:
             _logger.error("update_event uid=%s 失败: %s", uid, op)
             raise HTTPException(400, f"更新事件失败: {op}")

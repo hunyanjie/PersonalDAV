@@ -46,18 +46,19 @@ export default {
   // Contacts
   listContacts(offset = 0, limit = 50) { return request('GET', '/contacts', { params: { offset, limit } }) },
   getContact(uid) { return request('GET', `/contacts/${uid}`) },
-  createContact(vcardData) { return request('POST', '/contacts', { body: { vcard_data: vcardData } }) },
-  createContactStructured(data) { return request('POST', '/contacts/structured', { body: data }) },
-  updateContact(uid, vcardData) { return request('PUT', `/contacts/${uid}`, { body: { vcard_data: vcardData } }) },
+  createContact(data) { return request('POST', '/contacts', { body: data }) },
+  updateContact(uid, data) { return request('PUT', `/contacts/${uid}`, { body: data }) },
   deleteContact(uid) { return request('DELETE', `/contacts/${uid}`) },
+  importContactVcf(vcardData) { return request('POST', '/contacts/import', { body: { vcard_data: vcardData } }) },
   searchContacts(q, offset = 0, limit = 50) { return request('GET', '/contacts/search', { params: qs({ q, offset, limit }) }) },
 
   // Events
   listEvents(offset = 0, limit = 50, dateFrom = '', dateTo = '') { return request('GET', '/events', { params: qs({ offset, limit, date_from: dateFrom, date_to: dateTo }) }) },
   getEvent(uid) { return request('GET', `/events/${uid}`) },
-  createEvent(icalData) { return request('POST', '/events', { body: { ical_data: icalData } }) },
-  updateEvent(uid, icalData) { return request('PUT', `/events/${uid}`, { body: { ical_data: icalData } }) },
+  createEvent(data) { return request('POST', '/events', { body: data }) },
+  updateEvent(uid, data) { return request('PUT', `/events/${uid}`, { body: data }) },
   deleteEvent(uid) { return request('DELETE', `/events/${uid}`) },
+  importEventIcs(icalData) { return request('POST', '/events/import', { body: { ical_data: icalData } }) },
   searchEvents(q, dateFrom = '', dateTo = '', offset = 0, limit = 200) {
     return request('GET', '/events/search', { params: qs({ q, date_from: dateFrom, date_to: dateTo, offset, limit }) })
   },

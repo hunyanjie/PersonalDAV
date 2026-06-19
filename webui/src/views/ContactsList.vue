@@ -221,7 +221,7 @@ export default {
         const text = await file.text()
         const blocks = text.split(/(?=BEGIN:VCARD)/).filter(Boolean)
         for (const block of blocks) {
-          try { await api.createContact(block.trim()) } catch(e) {}
+          try { await api.importContactVcf(block.trim()) } catch(e) {}
         }
         this.load()
       } catch(e) { window.showToast('导入失败', 'error') }
@@ -229,7 +229,9 @@ export default {
     },
     async doDelete(uid) {
       if (!await window.showConfirm({ message: '确认删除该联系人？', type: 'danger' })) return
-      try { await api.deleteContact(uid); this.load() } catch(e) {}
+      this.items = this.items.filter(i => i.uid !== uid)
+      this.total = Math.max(0, this.total - 1)
+      try { await api.deleteContact(uid) } catch(e) { this.load() }
     },
     async doExport(c) {
       try {

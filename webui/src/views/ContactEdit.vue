@@ -72,40 +72,13 @@
 import { Save, Upload } from 'lucide-vue-next'
 import api from '../api.js'
 
-function getField(lines, key) {
-  for (const l of lines) {
-    if (l.toUpperCase().startsWith(key + ':') || l.toUpperCase().startsWith(key + ';'))
-      return l.split(':', 1)[0] === l.split(':')[0] ? l.substring(l.indexOf(':') + 1).trim() : l.split(':').slice(1).join(':').trim()
-  }
-  return ''
-}
 
-function setField(lines, key, value) {
-  const ukey = key.toUpperCase()
-  let found = false
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].toUpperCase().startsWith(ukey + ':') || lines[i].toUpperCase().startsWith(ukey + ';')) {
-      if (value) lines[i] = key + ':' + value
-      else lines.splice(i, 1)
-      found = true; break
-    }
-  }
-  if (value && !found) {
-    const ins = lines.findIndex(l => l.toUpperCase() === 'END:VCARD')
-    if (ins >= 0) lines.splice(ins, 0, key + ':' + value)
-    else lines.push(key + ':' + value)
-  }
-}
-
-function buildVCard(form) {
-  return `BEGIN:VCARD\r\nVERSION:3.0\r\nFN:${form.full_name}\r\nN:${form.full_name};;;\r\n${form.email ? 'EMAIL:'+form.email+'\r\n' : ''}${form.phone ? 'TEL:'+form.phone+'\r\n' : ''}${form.groups ? 'CATEGORIES:'+form.groups+'\r\n' : ''}${form.address ? 'ADR:'+form.address+'\r\n' : ''}${form.org ? 'ORG:'+form.org+'\r\n' : ''}${form.note ? 'NOTE:'+form.note+'\r\n' : ''}${form.photo ? 'PHOTO;ENCODING=BASE64;TYPE=JPEG:'+form.photo+'\r\n' : ''}END:VCARD\r\n`
-}
 
 export default {
   components: { Save, Upload },
   data: () => ({
     form: { full_name: '', email: '', phone: '', groups: '', address: '', org: '', note: '', photo: '' },
-    saving: false, isNew: true, _rawVcard: '',
+    saving: false, isNew: true,
     avatarUrl: null,
     focusedField: null,
   }),
@@ -120,21 +93,18 @@ export default {
       this.isNew = false
       try {
         const res = await api.getContact(uid)
-        this._rawVcard = res.vcard || ''
-        const lines = this._rawVcard.split('\n')
         this.form = {
-          full_name: getField(lines, 'FN'),
-          email: getField(lines, 'EMAIL'),
-          phone: getField(lines, 'TEL'),
-          groups: getField(lines, 'CATEGORIES'),
-          address: getField(lines, 'ADR'),
-          org: getField(lines, 'ORG'),
-          note: getField(lines, 'NOTE'),
-          photo: getField(lines, 'PHOTO') || '',
+          full_name: res.full_name || '',
+          email: res.email || '',
+          phone: res.phone || '',
+          groups: res.groups || '',
+          address: res.address || '',
+          org: res.org || '',
+          note: res.note || '',
+          photo: res.photo || '',
         }
         if (this.form.photo) {
-          const data = this.form.photo.replace(/^data:image\/\w+;base64,/, '')
-          this.avatarUrl = `data:image/jpeg;base64,${data}`
+          this.avatarUrl = `data:image/jpeg;base64,${this.form.photo}`
         }
       } catch(e) {}
     }
@@ -144,32 +114,20 @@ export default {
       if (!this.form.full_name) return window.showToast('姓名不能为空', 'warning')
       this.saving = true
       try {
+        const data = {
+          full_name: this.form.full_name,
+          email: this.form.email,
+          phone: this.form.phone,
+          groups: this.form.groups,
+          address: this.form.address,
+          org: this.form.org,
+          note: this.form.note,
+          photo: this.form.photo,
+        }
         if (this.isNew) {
-          await api.createContactStructured({
-            full_name: this.form.full_name,
-            email: this.form.email,
-            phone: this.form.phone,
-            groups: this.form.groups,
-            address: this.form.address,
-            org: this.form.org,
-            note: this.form.note,
-            photo: this.form.photo,
-          })
-        } else if (this._rawVcard) {
-          const lines = this._rawVcard.split('\n').map(l => l.trim())
-          setField(lines, 'FN', this.form.full_name)
-          setField(lines, 'N', this.form.full_name + ';;;')
-          setField(lines, 'EMAIL', this.form.email)
-          setField(lines, 'TEL', this.form.phone)
-          setField(lines, 'CATEGORIES', this.form.groups)
-          setField(lines, 'ADR', this.form.address)
-          setField(lines, 'ORG', this.form.org)
-          setField(lines, 'NOTE', this.form.note)
-          if (this.form.photo) setField(lines, 'PHOTO;ENCODING=BASE64;TYPE=JPEG', this.form.photo)
-          else { const pi = lines.findIndex(l => l.toUpperCase().startsWith('PHOTO')); if (pi>=0) lines.splice(pi,1) }
-          await api.updateContact(this.$route.params.uid, lines.join('\r\n'))
+          await api.createContact(data)
         } else {
-          await api.updateContact(this.$route.params.uid, buildVCard(this.form))
+          await api.updateContact(this.$route.params.uid, data)
         }
         this.$router.push('/contacts')
       } catch(e) { window.showToast('保存失败: ' + (e.message || e), 'error') } finally { this.saving = false }

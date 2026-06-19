@@ -164,36 +164,6 @@
 import { Save, MapPin, Pencil, X } from 'lucide-vue-next'
 import api from '../api.js'
 
-function toLocalISO(d) {
-  if (!d) return ''
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-function getField(lines, key) {
-  for (const l of lines) {
-    if (l.toUpperCase().startsWith(key + ':') || l.toUpperCase().startsWith(key + ';'))
-      return l.split(':').slice(1).join(':').trim()
-  }
-  return ''
-}
-
-function setVeventField(lines, key, value) {
-  const ukey = key.toUpperCase()
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].toUpperCase().startsWith(ukey + ':') || lines[i].toUpperCase().startsWith(ukey + ';')) {
-      if (value) lines[i] = key + ':' + value
-      else lines.splice(i, 1)
-      return
-    }
-  }
-  if (value) {
-    const ins = lines.findIndex(l => l.toUpperCase() === 'END:VEVENT')
-    if (ins >= 0) lines.splice(ins, 0, key + ':' + value)
-    else lines.push(key + ':' + value)
-  }
-}
-
 export default {
   components: { Save, MapPin, Pencil, X },
   props: ['visible', 'eventId', 'isModal'],
@@ -201,7 +171,7 @@ export default {
     form: { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
       reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
       repeatEnd: '永不结束', repeatCount: 5, attachments: [] },
-    saving: false, isNew: true, _rawIcal: '', loadedUid: '',
+    saving: false, isNew: true, loadedUid: '',
     focusedField: null,
     reminderForm: null,
     editingReminderIdx: -1,
@@ -241,92 +211,62 @@ export default {
   },
   methods: {
     async init() {
-      console.log('CalendarEventEdit init() called, eventId:', this.eventId);
       const uid = this.eventId || this.$route.params.uid
       if (uid) {
         this.isNew = false; this.loadedUid = uid
         try {
-          console.log('CalendarEventEdit fetching event:', uid);
           const e = await api.getEvent(uid)
-          this._rawIcal = e.ical || ''
-          
-          const lines = this._rawIcal.split(/\r?\n/)
-          this.form.summary = getField(lines, 'SUMMARY')
-          this.form.description = getField(lines, 'DESCRIPTION')
-          this.form.categories = getField(lines, 'CATEGORIES')
-          this.form.location = getField(lines, 'LOCATION')
-
-          const rawStart = getField(lines, 'DTSTART')
-          const rawEnd = getField(lines, 'DTEND')
-          
-          await this.$nextTick()
-
           const formatForInput = (raw, isAllDay) => {
             if (!raw) return ''
-            if (isAllDay) return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}`
-            const y = raw.substring(0,4), m = raw.substring(4,6), d = raw.substring(6,8), h = raw.substring(9,11), min = raw.substring(11,13)
-            return `${y}-${m}-${d}T${h}:${min}`
+            if (isAllDay || raw.length <= 8) return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}`
+            return `${raw.substring(0,4)}-${raw.substring(4,6)}-${raw.substring(6,8)}T${raw.substring(9,11)}:${raw.substring(11,13)}`
           }
-
-          if (rawStart) {
-            this.form.allDay = rawStart.length <= 8
-            this.form.dtstart = formatForInput(rawStart, this.form.allDay)
-          }
-
-          if (rawEnd) {
-            if (this.form.allDay) {
-              const match = rawEnd.match(/^(\d{4})(\d{2})(\d{2})$/)
-              if (match) {
-                const d = new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]))
+          const allDay = e.all_day || (e.dtstart && e.dtstart.length <= 8)
+          this.form = {
+            summary: e.summary || '',
+            description: e.description || '',
+            categories: e.categories || '',
+            location: e.location || '',
+            dtstart: formatForInput(e.dtstart, allDay),
+            dtend: allDay && e.dtend ? (() => {
+              const raw = e.dtend
+              if (raw.length <= 8) {
+                const d = new Date(parseInt(raw.substring(0,4)), parseInt(raw.substring(4,6))-1, parseInt(raw.substring(6,8)))
                 d.setDate(d.getDate() - 1)
-                this.form.dtend = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
               }
-            } else {
-              this.form.dtend = formatForInput(rawEnd, false)
-            }
-          }
-
-          // 解析提醒 (VALARM)
-          this.form.reminders = []
-          let inAlarm = false, currentAlarm = {}
-          for (const line of lines) {
-            const u = line.toUpperCase()
-            if (u.startsWith('BEGIN:VALARM')) { inAlarm = true; currentAlarm = {} }
-            else if (u.startsWith('END:VALARM')) {
-              if (currentAlarm.trigger) {
-                let trig = currentAlarm.trigger, triggerType = 'before', triggerValue = 15, triggerUnit = 'M'
-                if (trig.startsWith('-P')) {
-                  const m = trig.match(/-P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
-                  if (m) {
-                    const d = parseInt(m[1]||'0'), h = parseInt(m[2]||'0'), min = parseInt(m[3]||'0')
-                    triggerValue = d * 1440 + h * 60 + min
-                    if (d > 0 && h === 0 && min === 0) triggerUnit = 'D'
-                    else if (h > 0 && min === 0) triggerUnit = 'H'
-                    else triggerUnit = 'M'
-                  }
-                } else if (trig.startsWith('PT')) {
-                  triggerType = 'after'
-                  const m = trig.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
-                  if (m) triggerValue = parseInt(m[1]||'0')*60 + parseInt(m[2]||'0')
+              return formatForInput(raw, false)
+            })() : formatForInput(e.dtend, false),
+            allDay,
+            reminders: (e.reminders || []).map(r => {
+              const trig = r.TRIGGER || ''
+              let triggerType = 'before', triggerValue = 15, triggerUnit = 'M'
+              if (trig.startsWith('-P')) {
+                const m = trig.match(/-P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/)
+                if (m) {
+                  const d = parseInt(m[1]||'0'), h = parseInt(m[2]||'0'), min = parseInt(m[3]||'0')
+                  triggerValue = d * 1440 + h * 60 + min
+                  if (d > 0 && h === 0 && min === 0) triggerUnit = 'D'
+                  else if (h > 0 && min === 0) triggerUnit = 'H'
+                  else triggerUnit = 'M'
                 }
-                this.form.reminders.push({
-                  action: currentAlarm.action || 'DISPLAY',
-                  triggerType, triggerValue, triggerUnit,
-                  triggerDesc: (triggerType === 'before' ? '提前' : '延后') + triggerValue + '分钟'
-                })
+              } else if (trig.startsWith('PT')) {
+                triggerType = 'after'
+                const m = trig.match(/PT(?:(\d+)H)?(?:(\d+)M)?/)
+                if (m) triggerValue = parseInt(m[1]||'0')*60 + parseInt(m[2]||'0')
               }
-              inAlarm = false
-            } else if (inAlarm) {
-              if (u.startsWith('ACTION:')) currentAlarm.action = line.split(':')[1].trim()
-              if (u.startsWith('TRIGGER:')) currentAlarm.trigger = line.split(':')[1].trim()
-            }
+              return { action: r.ACTION || 'DISPLAY', triggerType, triggerValue, triggerUnit,
+                triggerDesc: (triggerType === 'before' ? '提前' : '延后') + triggerValue + '分钟' }
+            }),
+            repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
+            repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '',
+            attachments: (e.attachments || []).map(a => ({
+              name: a.name || a.filename || '附件', url: a.url || a.raw || ''
+            })),
           }
-
-          // 解析重复规则 (RRULE)
-          const rrule = getField(lines, 'RRULE')
-          if (rrule) {
+          if (e.rrule) {
             const parts = {}
-            rrule.split(';').forEach(p => { const [k,v] = p.split('='); parts[k.toUpperCase()] = v })
+            e.rrule.split(';').forEach(p => { const [k,v] = p.split('='); parts[k.toUpperCase()] = v })
             if (parts.FREQ === 'DAILY') this.form.repeatType = '每日'
             else if (parts.FREQ === 'WEEKLY') { this.form.repeatType = '每周'; this.form.repeatByDay = (parts.BYDAY||'MO').split(',')[0] }
             else if (parts.FREQ === 'MONTHLY') { this.form.repeatType = '每月'; this.form.repeatByMonthDay = parseInt(parts.BYMONTHDAY||'1') }
@@ -334,167 +274,61 @@ export default {
             this.form.repeatInterval = parseInt(parts.INTERVAL || '1')
             if (parts.COUNT) { this.form.repeatEnd = '次数'; this.form.repeatCount = parseInt(parts.COUNT) }
             else if (parts.UNTIL) {
-              const u = parts.UNTIL; this.form.repeatEnd = '日期'; 
-              this.form.repeatUntil = `${u.substring(0,4)}-${u.substring(4,6)}-${u.substring(6,8)}`
+              this.form.repeatEnd = '日期'
+              this.form.repeatUntil = `${parts.UNTIL.substring(0,4)}-${parts.UNTIL.substring(4,6)}-${parts.UNTIL.substring(6,8)}`
             }
           }
-
-          // 解析附件 (ATTACH)
-          this.form.attachments = []
-          const unfoldedLines = []
-          for (let i = 0; i < lines.length; i++) {
-            if (i > 0 && lines[i].startsWith(' ')) unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
-            else unfoldedLines.push(lines[i])
-          }
-          for (const line of unfoldedLines) {
-            if (line.toUpperCase().includes('ATTACH')) {
-              const parts = line.split(':'), head = parts[0], val = parts.slice(1).join(':')
-              let fileName = '附件'
-              const nameMatch = head.match(/FILENAME=([^;]+)/i)
-              if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
-              else fileName = val.split('/').pop().split('\\').pop() || '附件'
-              
-              if (head.toUpperCase().includes('ENCODING=BASE64')) {
-                const typeMatch = head.match(/FMTTYPE=(.*?)(;|$)/i)
-                const mime = typeMatch ? typeMatch[1] : 'application/octet-stream'
-                this.form.attachments.push({ name: decodeURIComponent(fileName), url: `data:${mime};base64,${val}` })
-              } else {
-                this.form.attachments.push({ name: decodeURIComponent(fileName), url: val })
-              }
-            }
-          }
-        } catch(e) { console.error('加载失败', e) }
+        } catch(e) {}
       } else {
         this.isNew = true; this.loadedUid = '';
         this.form = { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
           reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
-          repeatEnd: '永不结束', repeatCount: 5, attachments: [] }
+          repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '', attachments: [] }
       }
-
-      // 拖拽监听
       document.addEventListener('dragenter', this._onGlobalDragEnter)
       document.addEventListener('dragover', this._onGlobalDragOver)
       document.addEventListener('dragleave', this._onGlobalDragLeave)
       document.addEventListener('drop', this._onGlobalDrop)
     },
 
-    _buildIcal(ds, de, uid) {
-      let lines = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nDTSTART:${ds}\r\nDTEND:${de}\r\n`
-      if (this.isNew) lines += 'STATUS:CONFIRMED\r\n'
-      lines += `SUMMARY:${this.form.summary}\r\n`
-      if (this.form.categories) lines += `CATEGORIES:${this.form.categories}\r\n`
-      if (this.form.location) lines += `LOCATION:${this.form.location}\r\n`
-      if (this.form.description) lines += `DESCRIPTION:${this.form.description}\r\n`
-
-      if (this.form.repeatType !== '不重复') {
-        const freqMap = { '每日':'DAILY','每周':'WEEKLY','每月':'MONTHLY','每年':'YEARLY' }
-        let rr = `RRULE:FREQ=${freqMap[this.form.repeatType]};INTERVAL=${this.form.repeatInterval}`
-        if (this.form.repeatType === '每周') rr += `;BYDAY=${this.form.repeatByDay}`
-        if (this.form.repeatType === '每月') rr += `;BYMONTHDAY=${this.form.repeatByMonthDay}`
-        if (this.form.repeatEnd === '次数') rr += `;COUNT=${this.form.repeatCount}`
-        else if (this.form.repeatEnd === '日期' && this.form.repeatUntil) rr += `;UNTIL=${this.form.repeatUntil.replace(/-/g,'')}T235959Z`
-        lines += rr + '\r\n'
-      }
-
-      for (const r of this.form.reminders) {
-        let trig
-        if (r.triggerType === 'after') trig = `PT${r.triggerValue}M`
-        else {
-          const d = Math.floor(r.triggerValue / 1440), h = Math.floor((r.triggerValue % 1440) / 60), m = r.triggerValue % 60
-          trig = '-P' + (d ? d+'D' : '') + (h||m ? 'T' : '') + (h ? h+'H' : '') + (m ? m+'M' : '')
-          if (!d && !h && !m) trig = '-PT0M'
-        }
-        lines += `BEGIN:VALARM\r\nACTION:${r.action}\r\nTRIGGER:${trig}\r\nEND:VALARM\r\n`
-      }
-
-      for (const a of this.form.attachments) {
-        if (a.url.startsWith('data:')) {
-          const [meta, b64] = a.url.split(','), mime = meta.match(/:(.*?);/)?.[1] || 'application/octet-stream'
-          lines += `ATTACH;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=${mime};FILENAME=${a.name}:${b64}\r\n`
-        } else if (a.url) {
-          lines += `ATTACH:${a.url}\r\n`
-        }
-      }
-
-      lines += 'END:VEVENT\r\nEND:VCALENDAR\r\n'
-      return lines
-    },
-
     async save() {
       if (!this.form.summary || !this.form.dtstart || !this.form.dtend) return window.showToast('请填写完整必填信息', 'warning')
-      
       const start = new Date(this.form.dtstart)
       const end = new Date(this.form.dtend)
       if (start > end) return window.showToast('结束时间不能早于开始时间', 'warning')
-
       this.saving = true
       try {
-        let ds, de
-        if (this.form.allDay) {
-          ds = this.form.dtstart.replace(/-/g, '')
-          // 全天事件 DTEND 为排他性的次日
-          const d = new Date(this.form.dtend)
-          d.setDate(d.getDate() + 1)
-          de = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
-        } else {
-          ds = this.form.dtstart.replace(/[-:]/g, '').replace('T', '') + '00'
-          de = this.form.dtend.replace(/[-:]/g, '').replace('T', '') + '00'
-        }
-
-        // 转义字段并构建
-        const summary = this.escapeIcal(this.form.summary)
-        const desc = this.escapeIcal(this.form.description)
-        const loc = this.escapeIcal(this.form.location)
-        const cat = this.escapeIcal(this.form.categories)
-
-        // 修改 _buildIcal 逻辑以使用转义后的字段
-        // 为了方便，这里直接调用转义后的值，不需要在每个调用点再单独escape
-        let ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV\r\nBEGIN:VEVENT\r\nUID:${this.isNew ? Date.now() + '@personaldav' : this.loadedUid}\r\nDTSTART:${ds}\r\nDTEND:${de}\r\n`
-        if (this.isNew) ical += 'STATUS:CONFIRMED\r\n'
-        ical += `SUMMARY:${summary}\r\n`
-        if (cat) ical += `CATEGORIES:${cat}\r\n`
-        if (loc) ical += `LOCATION:${loc}\r\n`
-        if (desc) ical += `DESCRIPTION:${desc}\r\n`
-
+        const freqMap = { '每日':'DAILY','每周':'WEEKLY','每月':'MONTHLY','每年':'YEARLY' }
+        let rrule = ''
         if (this.form.repeatType !== '不重复') {
-          const freqMap = { '每日':'DAILY','每周':'WEEKLY','每月':'MONTHLY','每年':'YEARLY' }
-          let rr = `RRULE:FREQ=${freqMap[this.form.repeatType]};INTERVAL=${this.form.repeatInterval}`
-          if (this.form.repeatType === '每周') rr += `;BYDAY=${this.form.repeatByDay}`
-          if (this.form.repeatType === '每月') rr += `;BYMONTHDAY=${this.form.repeatByMonthDay}`
-          if (this.form.repeatEnd === '次数') rr += `;COUNT=${this.form.repeatCount}`
-          else if (this.form.repeatEnd === '日期' && this.form.repeatUntil) rr += `;UNTIL=${this.form.repeatUntil.replace(/-/g,'')}T235959Z`
-          ical += rr + '\r\n'
+          rrule = `FREQ=${freqMap[this.form.repeatType]};INTERVAL=${this.form.repeatInterval}`
+          if (this.form.repeatType === '每周') rrule += `;BYDAY=${this.form.repeatByDay}`
+          if (this.form.repeatType === '每月') rrule += `;BYMONTHDAY=${this.form.repeatByMonthDay}`
+          if (this.form.repeatEnd === '次数') rrule += `;COUNT=${this.form.repeatCount}`
+          else if (this.form.repeatEnd === '日期' && this.form.repeatUntil) rrule += `;UNTIL=${this.form.repeatUntil.replace(/-/g,'')}T235959Z`
         }
-
-        // ... reminders ...
-        for (const r of this.form.reminders) {
-          let trig
-          if (r.triggerType === 'after') trig = `PT${r.triggerValue}M`
-          else {
-            const d = Math.floor(r.triggerValue / 1440), h = Math.floor((r.triggerValue % 1440) / 60), m = r.triggerValue % 60
-            trig = '-P' + (d ? d+'D' : '') + (h||m ? 'T' : '') + (h ? h+'H' : '') + (m ? m+'M' : '')
-            if (!d && !h && !m) trig = '-PT0M'
-          }
-          ical += `BEGIN:VALARM\r\nACTION:${r.action}\r\nTRIGGER:${trig}\r\nEND:VALARM\r\n`
+        const data = {
+          summary: this.form.summary,
+          dtstart: this.form.dtstart,
+          dtend: this.form.dtend,
+          all_day: this.form.allDay,
+          description: this.form.description,
+          location: this.form.location,
+          categories: this.form.categories,
+          rrule,
+          reminders: this.form.reminders.map(r => ({
+            action: r.action,
+            trigger_type: r.triggerType,
+            trigger_value: r.triggerValue,
+            trigger_unit: r.triggerUnit,
+          })),
+          attachments: this.form.attachments.map(a => ({ name: a.name, url: a.url })),
         }
-
-        // ... attachments ...
-        for (const a of this.form.attachments) {
-          if (a.url.startsWith('data:')) {
-            const [meta, b64] = a.url.split(','), mime = meta.match(/:(.*?);/)?.[1] || 'application/octet-stream'
-            ical += `ATTACH;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=${mime};FILENAME=${this.escapeIcal(a.name)}:${b64}\r\n`
-          } else if (a.url) {
-            ical += `ATTACH:${a.url}\r\n`
-          }
-        }
-
-        ical += 'END:VEVENT\r\nEND:VCALENDAR\r\n'
-
         if (this.isNew) {
-          await api.createEvent(ical)
+          await api.createEvent(data)
           window.showToast('日程创建成功', 'success')
         } else {
-          await api.updateEvent(this.loadedUid, ical)
+          await api.updateEvent(this.loadedUid, data)
           window.showToast('日程已更新', 'success')
         }
         if (this.isModal) this.$emit('save')
@@ -565,14 +399,6 @@ export default {
       this._dragCount = 0
       const files = e.dataTransfer.files
       if (files.length) this.addFilesAsAttachments(files)
-    },
-    escapeIcal(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/\\/g, '\\\\')
-        .replace(/;/g, '\\;')
-        .replace(/,/g, '\\,')
-        .replace(/\n/g, '\\n');
     },
     openUrlDialog() {
       this.showUrlDialog = true

@@ -522,7 +522,7 @@ export default {
         const text = await file.text(); const blocks = text.split(/(?=BEGIN:VEVENT)/).filter(Boolean)
         for (const block of blocks) {
           const ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${block.trim()}\r\nEND:VCALENDAR`
-          await api.createEvent(ical)
+          await api.importEventIcs(ical)
         }
         this.load()
       } catch(e) { window.showToast('导入失败', 'error') }

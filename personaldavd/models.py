@@ -11,16 +11,16 @@ class ContactOut(BaseModel):
     email: str = ""
     phone: str = ""
     groups: str = ""
+    address: str = ""
+    org: str = ""
+    note: str = ""
+    photo: str = ""
     vcard: str = ""
     created_at: str = ""
     updated_at: str = ""
 
 
 class ContactCreate(BaseModel):
-    vcard_data: str
-
-
-class ContactStructuredCreate(BaseModel):
     full_name: str
     email: str = ""
     phone: str = ""
@@ -32,7 +32,14 @@ class ContactStructuredCreate(BaseModel):
 
 
 class ContactUpdate(BaseModel):
-    vcard_data: str
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    groups: str | None = None
+    address: str | None = None
+    org: str | None = None
+    note: str | None = None
+    photo: str | None = None
 
 
 class EventOut(BaseModel):
@@ -41,20 +48,42 @@ class EventOut(BaseModel):
     summary: str = ""
     dtstart: str = ""
     dtend: str = ""
+    all_day: bool = False
     description: str = ""
     location: str = ""
     categories: str = ""
+    rrule: str = ""
+    reminders: list[dict] = []
+    attachments: list[dict] = []
     ical: str = ""
     created_at: str = ""
     updated_at: str = ""
 
 
 class EventCreate(BaseModel):
-    ical_data: str
+    summary: str
+    dtstart: str
+    dtend: str
+    all_day: bool = False
+    description: str = ""
+    location: str = ""
+    categories: str = ""
+    rrule: str = ""
+    reminders: list[dict] = []
+    attachments: list[dict] = []
 
 
 class EventUpdate(BaseModel):
-    ical_data: str
+    summary: str | None = None
+    dtstart: str | None = None
+    dtend: str | None = None
+    all_day: bool | None = None
+    description: str | None = None
+    location: str | None = None
+    categories: str | None = None
+    rrule: str | None = None
+    reminders: list[dict] | None = None
+    attachments: list[dict] | None = None
 
 
 class HealthOut(BaseModel):
