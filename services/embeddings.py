@@ -9,6 +9,9 @@ import math
 
 logger = logging.getLogger(__name__)
 
+_EVENT_CONTACTS_CHANGED = "contacts_changed"
+_EVENT_EVENTS_CHANGED = "events_changed"
+
 MODELS_DIR = "data/models"
 
 
@@ -236,7 +239,23 @@ class EmbeddingService:
             cls._instance = super().__new__(cls)
             cls._instance._provider: EmbeddingProvider = KeywordProvider()
             cls._instance._cache: dict[str, list[float]] = {}
+            cls._instance._subscribe_events()
         return cls._instance
+
+    def _on_data_changed(self, event: str):
+        """Clear embedding cache when contacts or events change."""
+        if self._provider.is_semantic:
+            self._cache.clear()
+            logger.debug("Embedding cache cleared on %s", event)
+
+    def _subscribe_events(self):
+        """Subscribe to data change events for automatic cache invalidation."""
+        try:
+            from utils.event_bus import event_bus
+            event_bus.subscribe(_EVENT_CONTACTS_CHANGED, self._on_data_changed)
+            event_bus.subscribe(_EVENT_EVENTS_CHANGED, self._on_data_changed)
+        except Exception:
+            pass
 
     @property
     def provider(self) -> EmbeddingProvider:
@@ -279,7 +298,9 @@ class EmbeddingService:
         return " ".join(p for p in parts if p)
 
     def _get_event_text(self, event: dict) -> str:
-        return event.get("summary", "")
+        parts = [event.get("summary", ""), event.get("description", ""),
+                 event.get("location", ""), event.get("categories", "")]
+        return " ".join(p for p in parts if p)
 
     def _rank_candidates(self, query: str, candidates: list[dict], text_fn: callable, top_k: int) -> list[dict]:
         query_vec = self._provider.embed(query)
@@ -374,9 +395,22 @@ class EmbeddingService:
                     continue
                 if date_to and e.dtend > date_to:
                     continue
+                # Parse additional fields from raw ical
+                description = location = categories = ""
+                for line in (e.ical or "").splitlines():
+                    ul = line.upper()
+                    if ul.startswith("DESCRIPTION") and not description:
+                        description = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    elif ul.startswith("LOCATION"):
+                        location = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    elif ul.startswith("CATEGORIES"):
+                        categories = line.split(":", 1)[-1].strip() if ":" in line else ""
                 candidates.append({
                     "uid": e.uid,
                     "summary": e.summary,
+                    "description": description,
+                    "location": location,
+                    "categories": categories,
                     "dtstart": e.dtstart,
                     "dtend": e.dtend,
                     "created_at": e.created_at or "",
@@ -410,7 +444,19 @@ class EmbeddingService:
         for idx, (uid, raw) in enumerate(events):
             e = EventService().repo.get_by_uid(uid)
             if e:
-                text = self._get_event_text({"summary": e.summary})
+                description = location = categories = ""
+                for line in (e.ical or "").splitlines():
+                    ul = line.upper()
+                    if ul.startswith("DESCRIPTION") and not description:
+                        description = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    elif ul.startswith("LOCATION"):
+                        location = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    elif ul.startswith("CATEGORIES"):
+                        categories = line.split(":", 1)[-1].strip() if ":" in line else ""
+                text = self._get_event_text({
+                    "summary": e.summary, "description": description,
+                    "location": location, "categories": categories,
+                })
                 if text.strip():
                     self._cache[uid] = self._provider.embed(text)
             if progress_callback:
