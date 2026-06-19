@@ -15,3 +15,4 @@ class DaemonConfig:
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
     webui_enabled: bool = True
+    server_protocol: str = "http_https"

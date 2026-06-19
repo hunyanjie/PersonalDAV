@@ -557,6 +557,8 @@ async def server_config(token: str = Depends(get_current_token)):
         mcp_port=int(s.get_setting("mcp_port", "8100")),
         mcp_safety_mode=s.get_setting("mcp_safety_mode", "confirm"),
         mcp_readonly=s.get_setting("mcp_readonly", "False") == "True",
+        server_protocol=s.get_setting("server_protocol", "http_https"),
+        ssl_enabled=s.get_setting("ssl_enabled", "False") == "True",
     )
 
 
@@ -679,8 +681,9 @@ async def apple_config(request_host: str = Query(None, alias="host"), token: str
     ss = SettingsService()
     host = request_host or ss.get_setting("apple_config_host", "localhost")
     port = ss.get_setting("default_port", "8000")
+    proto = ss.get_setting("server_protocol", "http_https")
     use_ssl = ss.get_setting("ssl_enabled", "False") == "True"
-    scheme = "https" if use_ssl else "http"
+    scheme = "https" if (proto == "https_only" or (proto == "http_https" and use_ssl)) else "http"
     url_suffix = "" if (use_ssl and port == "443") or (not use_ssl and port == "80") else f":{port}"
 
     payload_uuid = str(uuid.uuid4())

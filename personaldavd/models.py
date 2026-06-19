@@ -119,6 +119,8 @@ class ServerConfigOut(BaseModel):
     mcp_port: int = 8100
     mcp_safety_mode: str = "confirm"
     mcp_readonly: bool = False
+    server_protocol: str = "http_https"
+    ssl_enabled: bool = False
 
 
 class AuthLogOut(BaseModel):

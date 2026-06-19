@@ -279,6 +279,7 @@ REST API 文档:
         ssl_enabled = self.ssl_enabled.get()
         ssl_cert = self.ssl_cert_var.get().strip()
         ssl_key = self.ssl_key_var.get().strip()
+        protocol = self.settings_service.get_setting("server_protocol", "http_https")
 
         self.settings_service.set_setting("ssl_enabled", str(ssl_enabled))
         self.settings_service.set_setting("ssl_certfile", ssl_cert)
@@ -294,6 +295,7 @@ REST API 文档:
             ssl_certfile=ssl_cert,
             ssl_keyfile=ssl_key,
             webui_enabled=self.webui_enabled.get(),
+            server_protocol=protocol,
         )
         try:
             self.server_instance = DaemonServer(cfg)
@@ -309,7 +311,9 @@ REST API 文档:
         self.stop_btn.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.DISABLED)
         self._webui_cb.config(state=tk.DISABLED)
-        if ssl_enabled:
+        if protocol == 'https_only':
+            msg = f"服务器已启动 (仅 HTTPS:{int(port)+1})"
+        elif protocol == 'http_https' and ssl_enabled:
             msg = f"服务器已启动 (HTTP:{port} + HTTPS:{int(port)+1})"
         else:
             msg = f"服务器已启动 (HTTP:{port})"

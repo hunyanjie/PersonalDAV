@@ -275,26 +275,32 @@ class SettingsDialog(tk.Toplevel):
         ttk.Checkbutton(body, text="启用 HTTPS (SSL/TLS)", variable=self.ssl_enabled_var).grid(
             row=0, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
-        ttk.Label(body, text="证书文件 (.pem):").grid(row=1, column=0, sticky="w", padx=5, pady=2)
-        self.ssl_cert_var = tk.StringVar()
-        ttk.Entry(body, textvariable=self.ssl_cert_var).grid(row=1, column=1, sticky="we", padx=2)
-        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=1, column=2, padx=2)
+        ttk.Label(body, text="连接方式:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+        self._protocol_var = tk.StringVar()
+        protocol_cb = ttk.Combobox(body, textvariable=self._protocol_var, state="readonly",
+                                   values=["HTTP + HTTPS（默认）", "仅 HTTPS", "仅 HTTP"], width=22)
+        protocol_cb.grid(row=1, column=1, columnspan=2, sticky="w", padx=5, pady=2)
 
-        ttk.Label(body, text="密钥文件 (.key):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        ttk.Label(body, text="证书文件 (.pem):").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+        self.ssl_cert_var = tk.StringVar()
+        ttk.Entry(body, textvariable=self.ssl_cert_var).grid(row=2, column=1, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("cert")).grid(row=2, column=2, padx=2)
+
+        ttk.Label(body, text="密钥文件 (.key):").grid(row=3, column=0, sticky="w", padx=5, pady=2)
         self.ssl_key_var = tk.StringVar()
-        ttk.Entry(body, textvariable=self.ssl_key_var).grid(row=2, column=1, sticky="we", padx=2)
-        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=2, column=2, padx=2)
+        ttk.Entry(body, textvariable=self.ssl_key_var).grid(row=3, column=1, sticky="we", padx=2)
+        ttk.Button(body, text="浏览...", command=lambda: self._browse_ssl("key")).grid(row=3, column=2, padx=2)
 
         btn_f = ttk.Frame(body)
-        btn_f.grid(row=3, column=0, columnspan=3, pady=5)
+        btn_f.grid(row=4, column=0, columnspan=3, pady=5)
         ttk.Button(btn_f, text="一键生成自签名证书", command=self._generate_cert).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_f, text="手动创建证书指引", command=self._show_cert_guide).pack(side=tk.LEFT, padx=5)
 
         self._cert_info_label = ttk.Label(body, text="", foreground="gray")
-        self._cert_info_label.grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=2)
+        self._cert_info_label.grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         self._auto_renew_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(body, text="自动续期（证书到期前自动生成新证书）",
-                        variable=self._auto_renew_var).grid(row=5, column=0, columnspan=3, sticky="w", padx=5, pady=2)
+                        variable=self._auto_renew_var).grid(row=6, column=0, columnspan=3, sticky="w", padx=5, pady=2)
         body.grid_columnconfigure(1, weight=1)
 
         # FTP / WebDAV / TFTP 设置
@@ -1410,6 +1416,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
         self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
         self._auto_renew_var.set(s.get_setting("ssl_auto_renew", "True") == "True")
+        proto_map = {"http_https": "HTTP + HTTPS（默认）", "https_only": "仅 HTTPS", "http_only": "仅 HTTP"}
+        self._protocol_var.set(proto_map.get(s.get_setting("server_protocol", "http_https"), "HTTP + HTTPS（默认）"))
         self._update_cert_info()
 
         self.data_dir_var.set(s.get_setting("data_dir", "data"))
@@ -1530,6 +1538,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.ssl_cert_var.set("")
         self.ssl_key_var.set("")
         self._auto_renew_var.set(True)
+        self._protocol_var.set("HTTP + HTTPS（默认）")
 
         self.close_action_var.set("ask")
 
@@ -1659,6 +1668,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         s.set_setting("ssl_certfile", self.ssl_cert_var.get())
         s.set_setting("ssl_keyfile", self.ssl_key_var.get())
         s.set_setting("ssl_auto_renew", str(self._auto_renew_var.get()))
+        proto_rev = {"HTTP + HTTPS（默认）": "http_https", "仅 HTTPS": "https_only", "仅 HTTP": "http_only"}
+        s.set_setting("server_protocol", proto_rev.get(self._protocol_var.get(), "http_https"))
 
         s.set_setting("data_dir", self.data_dir_var.get())
         s.set_setting("close_action", self.close_action_var.get())

@@ -230,6 +230,7 @@ class Database:
                 ('default_repeat', "不重复"),
                 ('default_end_cond', "永不结束"),
                 ('default_end_count', "5"),
+                ('server_protocol', "http_https"),
                 ('ssl_enabled', "False"),
                 ('ssl_certfile', ""),
                 ('ssl_keyfile', ""),

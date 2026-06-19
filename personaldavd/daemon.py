@@ -167,21 +167,26 @@ class DaemonServer:
         self._servers.clear()
         self._secondary_threads.clear()
         self.ssl_port = None
+        self.http_port = None
+        protocol = getattr(self.config, 'server_protocol', 'http_https')
+        can_https = self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile
 
-        # Each server needs its own app instance to avoid lifespan/logger conflicts
-        app_http = create_app(self.config)
-        uv_config_http = uvicorn.Config(
-            app_http,
-            host=self.config.host,
-            port=self.config.port,
-            log_level=self.config.log_level.lower(),
-            log_config=UVICORN_LOG_CONFIG,
-        )
-        server_http = uvicorn.Server(uv_config_http)
-        self._servers.append(server_http)
+        if protocol != 'https_only':
+            # Each server needs its own app instance to avoid lifespan/logger conflicts
+            app_http = create_app(self.config)
+            uv_config_http = uvicorn.Config(
+                app_http,
+                host=self.config.host,
+                port=self.config.port,
+                log_level=self.config.log_level.lower(),
+                log_config=UVICORN_LOG_CONFIG,
+            )
+            server_http = uvicorn.Server(uv_config_http)
+            self._servers.append(server_http)
+            self.http_port = self.config.port
 
         # HTTPS — if SSL enabled (port = config.port + 1)
-        if self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile:
+        if protocol != 'http_only' and can_https:
             import os as _os
             if not _os.path.isfile(self.config.ssl_certfile):
                 _logging.warning("HTTPS 服务未启动: 证书文件不存在 (%s)", self.config.ssl_certfile)
@@ -203,7 +208,6 @@ class DaemonServer:
                 self._servers.append(server_https)
 
                 def _run_https(srv):
-                    """Wrap HTTPS server run with error logging."""
                     try:
                         srv.run()
                     except Exception as exc:
@@ -215,8 +219,17 @@ class DaemonServer:
                 self.ssl_port = ssl_port
                 _logging.info("HTTPS 服务已启动 (端口 %s)", ssl_port)
 
-        # Block on HTTP (headless mode), or just run (GUI background thread)
-        server_http.run()
+        if protocol == 'https_only':
+            if can_https:
+                _logging.info("仅 HTTPS 模式，HTTP 服务已跳过。请通过 https://127.0.0.1:%s 访问", self.ssl_port or (self.config.port + 1))
+            else:
+                _logging.warning("HTTPS 仅模式但 SSL 未正确配置，无法启动任何服务")
+            # Run HTTPS thread blocking if no HTTP
+            if self._servers:
+                self._servers[0].run()
+        else:
+            # Block on HTTP (headless mode), or just run (GUI background thread)
+            server_http.run()
 
     def stop(self):
         for srv in self._servers:

@@ -60,7 +60,7 @@
       <div class="info-section welcome-card">
         <div class="welcome-content">
           <h3>欢迎回来！</h3>
-          <p>PersonalDAV 为您的数字生活保驾护航。您的数据已通过加密连接安全同步。</p>
+          <p>{{ welcomeMessage }}</p>
           <div class="welcome-actions">
             <router-link to="/files" class="btn-welcome">
               立即开始管理 <ChevronRight :size="16" />
@@ -88,10 +88,10 @@ export default {
     Users, CalendarDays, FileText, HardDrive, 
     Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, loading: true }),
+  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, serverConfig: null, loading: true }),
   async mounted() {
     try {
-      [this.stats, this.health] = await Promise.all([api.stats(), api.health()])
+      [this.stats, this.health, this.serverConfig] = await Promise.all([api.stats(), api.health(), api.serverConfig()])
     } catch (e) {
       console.error('Failed to load dashboard data:', e)
     }
@@ -111,6 +111,13 @@ export default {
       const total = this.stats.disk_total_mb || 0
       if (!total) return used.toFixed(1) + ' MB'
       return used.toFixed(1) + ' / ' + total.toFixed(1) + ' MB'
+    },
+    welcomeMessage() {
+      const proto = this.serverConfig?.server_protocol || 'http_https'
+      const ssl = this.serverConfig?.ssl_enabled || false
+      if (proto === 'https_only') return 'PersonalDAV 为您的数字生活保驾护航。您的数据已通过 HTTPS 加密连接安全同步。'
+      if (proto === 'http_https' && ssl) return 'PersonalDAV 为您的数字生活保驾护航。您的数据已通过加密连接安全同步。'
+      return 'PersonalDAV 为您的数字生活保驾护航。您的数据通过 HTTP 连接同步。'
     },
     uptime() {
       const s = Math.floor(this.stats.uptime || 0)
