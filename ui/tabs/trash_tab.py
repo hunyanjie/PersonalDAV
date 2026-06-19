@@ -50,10 +50,22 @@ class TrashTab(BaseTreeTab):
             TrashService.restore(uid)
         self.refresh()
 
+    def delete_selected(self):
+        """Delete key handler —永久删除选中文件。"""
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("提示", "未选中文件", parent=self)
+            return
+        if not messagebox.askyesno("确认", "永久删除？", parent=self): return
+        for iid in sel:
+            uid = self.tree.item(iid, "values")[1]
+            TrashService.permanent_delete(uid)
+        self.refresh()
+
     def delete_permanent(self):
         sel = self.tree.selection()
         if not sel: return
-        if not messagebox.askyesno("确认", "永久删除？"): return
+        if not messagebox.askyesno("确认", "永久删除？", parent=self): return
         for iid in sel:
             uid = self.tree.item(iid, "values")[1]
             TrashService.permanent_delete(uid)
