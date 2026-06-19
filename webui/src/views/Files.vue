@@ -363,7 +363,7 @@ export default {
     },
     async loadTrash() {
       try {
-        const res = await api.get('/trash')
+        const res = await api.listTrash()
         this.trashItems = res.items || []
       } catch(e) { window.showToast('加载回收站失败', 'error'); this.trashItems = [] }
     },
@@ -373,13 +373,10 @@ export default {
     async doTrashOp(uuid, op, targetPath = null, conflictStrategy = 'error') {
       try {
         if (op === 'restore') {
-          let url = `/trash/restore?uuid=${uuid}`
-          if (targetPath) url += `&target_path=${encodeURIComponent(targetPath)}`
-          if (conflictStrategy) url += `&conflict_strategy=${conflictStrategy}`
-          await api.post(url)
+          await api.restoreTrash(uuid, targetPath, conflictStrategy)
           window.showToast('还原成功', 'success')
         } else {
-          await api.delete(`/trash?uuid=${uuid}`)
+          await api.deleteTrashItem(uuid)
           window.showToast('删除成功', 'success')
         }
         this.loadTrash()
@@ -412,7 +409,7 @@ export default {
       const ok = await window.showConfirm({ message: '永久清空回收站所有条目？无法恢复！', type: 'danger' })
       if (!ok) return
       try {
-        await api.post('/trash/purge?days=0')
+        await api.purgeTrash(0)
         this.loadTrash()
         window.showToast('回收站已清空', 'success')
       } catch(e) { window.showToast('清空失败', 'error') }

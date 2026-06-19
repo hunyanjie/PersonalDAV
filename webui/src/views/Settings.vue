@@ -517,7 +517,7 @@ export default {
     },
     async loadApiTokens() {
       try {
-        this.apiTokens = await api.get('/auth/tokens')
+        this.apiTokens = await api.listApiTokens()
       } catch(e) { /* not critical */ }
     },
     async createApiToken() {
@@ -533,7 +533,7 @@ export default {
         expires_at = d.toISOString().slice(0, 19)
       }
       try {
-        const res = await api.post('/auth/tokens', { scopes, note: this.tokenFormNote, expires_at })
+        const res = await api.createApiToken(this.tokenFormScopes, this.tokenFormNote, expires_at)
         this.newTokenResult = res
         this.loadApiTokens()
       } catch(e) { window.showToast('创建失败: ' + (e.message || e), 'error') }
@@ -541,7 +541,7 @@ export default {
     async deleteApiToken(id) {
       if (!await window.showConfirm({ message: '确定删除此令牌?', type: 'danger' })) return
       try {
-        await api.delete('/auth/tokens/' + id)
+        await api.deleteApiToken(id)
         this.loadApiTokens()
         window.showToast('令牌已删除', 'success')
       } catch(e) { window.showToast('删除失败: ' + (e.message || e), 'error') }
@@ -555,7 +555,7 @@ export default {
     },
     async confirmUpdateTokenNote(id) {
       try {
-        await api.put(`/auth/tokens/${id}/note`, { note: this.editingTokenNote })
+        await api.updateTokenNote(id, this.editingTokenNote)
         this.editingTokenId = null
         this.loadApiTokens()
         window.showToast('备注已更新', 'success')
@@ -705,15 +705,7 @@ export default {
     async downloadAppleConfig() {
       try {
         const host = this.appleConfigHost || window.location.hostname || 'localhost'
-        const url = `/api/apple/config?host=${encodeURIComponent(host)}`
-        const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') } })
-        if (!resp.ok) throw new Error('下载失败')
-        const blob = await resp.blob()
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = 'personaldav.mobileconfig'
-        a.click()
-        URL.revokeObjectURL(a.href)
+        await api.downloadAppleConfig(host)
         window.showToast('配置已下载，在 iPhone/iPad 上用 Safari 打开', 'success')
       } catch(e) { window.showToast('下载失败：' + (e.message || e), 'error') }
     },

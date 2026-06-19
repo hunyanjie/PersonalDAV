@@ -49,27 +49,15 @@
 
 <script>
 import { X, Tag, Clock, MapPin, FileText, File, Share2, Pencil, Trash2 } from 'lucide-vue-next'
-
-function icalDateToObj(s) {
-  if (!s) return null
-  const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})[T ]?(\d{2}):?(\d{2})?(:\d{2})?/)
-  if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4] || 0, +(m[5] || 0), 0)
-}
+import { icalDateToObj, formatTime, formatDateFull } from '../utils/ical.js'
 
 export default {
   components: { X, Tag, Clock, MapPin, FileText, File, Share2, Pencil, Trash2 },
   props: ['event'],
   emits: ['close', 'edit', 'delete', 'export'],
   methods: {
-    formatTime(s) {
-      const d = icalDateToObj(s)
-      return d ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : s || ''
-    },
-    formatDateFull(s) {
-      const d = icalDateToObj(s)
-      return d ? d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }) : ''
-    },
+    formatTime(s) { return formatTime(s) },
+    formatDateFull(s) { return formatDateFull(s) },
     handleEditClick() {
       console.log('DetailModal: Edit button clicked, event:', this.event);
       if (!this.event || !this.event.uid) {

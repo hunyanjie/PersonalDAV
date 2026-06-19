@@ -103,15 +103,8 @@ import {
 import api from '../api.js'
 import ScheduleEditModal from '../components/ScheduleEditModal.vue'
 import EventDetailModal from '../components/EventDetailModal.vue'
-
-function pad(n) { return String(n).padStart(2, '0') }
-
-function icalDateToObj(s) {
-  if (!s) return null
-  const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})[T ]?(\d{2}):?(\d{2})?(:\d{2})?/)
-  if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4] || 0, +(m[5] || 0), 0)
-}
+import { icalDateToObj, eventStatus, parseAttachments, toICS, downloadIcs } from '../utils/ical.js'
+import { pad } from '../utils/format.js'
 
 function icalToDatetimeLocal(s) {
   if (!s) return ''
@@ -200,15 +193,6 @@ function weekNumber(d) {
   const s = new Date(d.getFullYear(), 0, 1)
   const diff = d - s + (s.getTimezoneOffset() - d.getTimezoneOffset()) * 60000
   return Math.ceil((diff / 86400000 + s.getDay() + 1) / 7)
-}
-
-function eventStatus(e, now) {
-  const st = icalDateToObj(e.dtstart)
-  const et = icalDateToObj(e.dtend)
-  if (!st || !et) return 'upcoming'
-  if (now >= et) return 'ended'
-  if (now >= st) return 'ongoing'
-  return 'upcoming'
 }
 
 function getMinutes(icalStr) {
@@ -355,37 +339,7 @@ export default {
       if (this.selectedUids.length !== 1) return null
       const e = this.eventsMap[this.selectedUids[0]]
       if (!e) return null
-      const lines = (e.ical || '').split(/\r?\n/)
-      const attachments = []
-      // 复用 CalendarEventEdit 的逻辑进行解析
-      const unfoldedLines = []
-      for (let i = 0; i < lines.length; i++) {
-        if (i > 0 && lines[i].startsWith(' ')) {
-          unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
-        } else {
-          unfoldedLines.push(lines[i])
-        }
-      }
-      for (const line of unfoldedLines) {
-        if (line.toUpperCase().includes('ATTACH')) {
-          const idx = line.indexOf(':')
-          if (idx === -1) continue
-          const head = line.substring(0, idx)
-          const val = line.substring(idx + 1)
-          let fileName = '附件'
-          const nameMatch = head.match(/FILENAME=([^;]+)/i)
-          if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
-          else fileName = val.split('/').pop().split('\\').pop() || '附件'
-          let fmttype = 'application/octet-stream'
-          const typeMatch = head.match(/FMTTYPE=([^;]+)/i)
-          if (typeMatch) fmttype = typeMatch[1]
-          const url = val.startsWith('http://') || val.startsWith('https://')
-            ? val
-            : `data:${fmttype};base64,${val}`
-          attachments.push({ name: decodeURIComponent(fileName), url })
-        }
-      }
-      return { ...e, attachments }
+      return { ...e, attachments: parseAttachments(e.ical) }
     },
   },
   mounted() {
@@ -555,36 +509,13 @@ export default {
         this.selectedUids = []
       } catch (e) { window.showToast('部分删除失败', 'error') }
     },
-    _toICS(events) {
-      const vevents = events.map(e => [
-        'BEGIN:VEVENT',
-        `UID:${e.uid || ''}`,
-        `DTSTART:${(e.dtstart || '').replace(/[-:]/g, '')}`,
-        `DTEND:${(e.dtend || '').replace(/[-:]/g, '')}`,
-        `SUMMARY:${e.summary || ''}`,
-        e.description ? `DESCRIPTION:${e.description}` : '',
-        e.location ? `LOCATION:${e.location}` : '',
-        e.categories ? `CATEGORIES:${e.categories}` : '',
-        'END:VEVENT',
-      ].filter(Boolean).join('\r\n')).join('\r\n')
-      return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${vevents}\r\nEND:VCALENDAR`
-    },
-    _downloadIcs(content, name) {
-      const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = name
-      a.click(); URL.revokeObjectURL(url)
-    },
     exportSingle(e) {
-      const content = this._toICS([e])
-      this._downloadIcs(content, `${e.summary || '日程'}.ics`)
+      downloadIcs(toICS([e]), `${e.summary || '日程'}.ics`)
     },
     exportSelected() {
       const items = this.events.filter(e => this.selectedUids.includes(e.uid))
         .sort((a,b) => (a.dtstart || '').localeCompare(b.dtstart || ''))
-      const content = this._toICS(items)
-      this._downloadIcs(content, `日程_${Date.now()}.ics`)
+      downloadIcs(toICS(items), `日程_${Date.now()}.ics`)
       this.ctxMenu.show = false
     },
     onEventSaved() {

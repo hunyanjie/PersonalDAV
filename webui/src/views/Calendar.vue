@@ -157,15 +157,8 @@ import {
 import api from '../api.js'
 import ScheduleEditModal from '../components/ScheduleEditModal.vue'
 import EventDetailModal from '../components/EventDetailModal.vue'
-
-function pad(n) { return String(n).padStart(2, '0') }
-
-function icalDateToObj(s) {
-  if (!s) return null
-  const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})[T ]?(\d{2}):?(\d{2})?(:\d{2})?/)
-  if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4] || 0, +(m[5] || 0), 0)
-}
+import { icalDateToObj, eventStatus, parseAttachments, toICS, downloadIcs } from '../utils/ical.js'
+import { pad } from '../utils/format.js'
 
 function icalDateToStr(s) {
   if (!s) return ''
@@ -183,15 +176,6 @@ function eventSpansDate(e, dateStr) {
 function toHours(d) {
   if (!d) return 0
   return d.getHours() + d.getMinutes() / 60
-}
-
-function eventStatus(e, now) {
-  const st = icalDateToObj(e.dtstart)
-  const et = icalDateToObj(e.dtend)
-  if (!st || !et) return 'upcoming'
-  if (now > et) return 'ended'
-  if (now >= st && now <= et) return 'ongoing'
-  return 'upcoming'
 }
 
 export default {
@@ -245,36 +229,7 @@ export default {
       if (this.selectedUids.length !== 1) return null
       const e = this.eventsMap[this.selectedUids[0]]
       if (!e) return null
-      const lines = (e.ical || '').split(/\r?\n/)
-      const attachments = []
-      const unfoldedLines = []
-      for (let i = 0; i < lines.length; i++) {
-        if (i > 0 && lines[i].startsWith(' ')) {
-          unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
-        } else {
-          unfoldedLines.push(lines[i])
-        }
-      }
-      for (const line of unfoldedLines) {
-        if (line.toUpperCase().includes('ATTACH')) {
-          const idx = line.indexOf(':')
-          if (idx === -1) continue
-          const head = line.substring(0, idx)
-          const val = line.substring(idx + 1)
-          let fileName = '附件'
-          const nameMatch = head.match(/FILENAME=([^;]+)/i)
-          if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
-          else fileName = val.split('/').pop().split('\\').pop() || '附件'
-          let fmttype = 'application/octet-stream'
-          const typeMatch = head.match(/FMTTYPE=([^;]+)/i)
-          if (typeMatch) fmttype = typeMatch[1]
-          const url = val.startsWith('http://') || val.startsWith('https://')
-            ? val
-            : `data:${fmttype};base64,${val}`
-          attachments.push({ name: decodeURIComponent(fileName), url })
-        }
-      }
-      return { ...e, attachments }
+      return { ...e, attachments: parseAttachments(e.ical) }
     },
     weeks() {
       const y = this.calNow.getFullYear(), m = this.calNow.getMonth()
@@ -440,59 +395,14 @@ export default {
     },
     onClickAway() { this.ctxMenu.show = false },
     openDetail(e) {
-      const lines = (e.ical || '').split(/\r?\n/)
-      const attachments = []
-      const unfoldedLines = []
-      for (let i = 0; i < lines.length; i++) {
-        if (i > 0 && lines[i].startsWith(' ')) {
-          unfoldedLines[unfoldedLines.length - 1] += lines[i].substring(1)
-        } else {
-          unfoldedLines.push(lines[i])
-        }
-      }
-      for (const line of unfoldedLines) {
-        if (line.toUpperCase().includes('ATTACH')) {
-          const idx = line.indexOf(':')
-          if (idx === -1) continue
-          const head = line.substring(0, idx)
-          const val = line.substring(idx + 1)
-          let fileName = '附件'
-          const nameMatch = head.match(/FILENAME=([^;]+)/i)
-          if (nameMatch) fileName = decodeURIComponent(nameMatch[1].trim())
-          else fileName = val.split('/').pop().split('\\').pop() || '附件'
-          let fmttype = 'application/octet-stream'
-          const typeMatch = head.match(/FMTTYPE=([^;]+)/i)
-          if (typeMatch) fmttype = typeMatch[1]
-          const url = val.startsWith('http://') || val.startsWith('https://')
-            ? val
-            : `data:${fmttype};base64,${val}`
-          attachments.push({ name: decodeURIComponent(fileName), url })
-        }
-      }
-      this.detailEvent = { ...e, attachments }
+      this.detailEvent = { ...e, attachments: parseAttachments(e.ical) }
       this.ctxMenu.show = false
     },
-    _toICS(events) {
-      const vevents = events.map(e => [
-        'BEGIN:VEVENT', `UID:${e.uid || ''}`,
-        `DTSTART:${(e.dtstart || '').replace(/[-:]/g, '')}`,
-        `DTEND:${(e.dtend || '').replace(/[-:]/g, '')}`,
-        `SUMMARY:${e.summary || ''}`,
-        e.description ? `DESCRIPTION:${e.description}` : '',
-        'END:VEVENT',
-      ].filter(Boolean).join('\r\n')).join('\r\n')
-      return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${vevents}\r\nEND:VCALENDAR`
-    },
-    _downloadIcs(content, name) {
-      const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
-      const url = URL.createObjectURL(blob); const a = document.createElement('a')
-      a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url)
-    },
-    exportDay() { this._downloadIcs(this._toICS(this.dayEvents), `日程_${this.todayStr}.ics`) },
-    exportSingle(e) { this._downloadIcs(this._toICS([e]), `${e.summary || '日程'}.ics`); this.detailEvent = null },
+    exportDay() { downloadIcs(toICS(this.dayEvents), `日程_${this.todayStr}.ics`) },
+    exportSingle(e) { downloadIcs(toICS([e]), `${e.summary || '日程'}.ics`); this.detailEvent = null },
     exportSelected() {
       const items = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid))
-      this._downloadIcs(this._toICS(items), `日程_${Date.now()}.ics`); this.ctxMenu.show = false
+      downloadIcs(toICS(items), `日程_${Date.now()}.ics`); this.ctxMenu.show = false
     },
     onEventSaved() {
       this.editModal = null

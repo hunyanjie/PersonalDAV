@@ -63,6 +63,20 @@ export default {
     return request('GET', '/events/search', { params: qs({ q, date_from: dateFrom, date_to: dateTo, offset, limit }) })
   },
 
+  // Trash
+  listTrash() { return request('GET', '/trash') },
+  restoreTrash(uuid, targetPath = '', conflictStrategy = 'error') {
+    return request('POST', '/trash/restore', { params: qs({ uuid, target_path: targetPath, conflict_strategy: conflictStrategy }) })
+  },
+  deleteTrashItem(uuid) { return request('DELETE', '/trash', { params: { uuid } }) },
+  purgeTrash(days = 0) { return request('POST', '/trash/purge', { params: { days } }) },
+
+  // Auth tokens
+  listApiTokens() { return request('GET', '/auth/tokens') },
+  createApiToken(scopes, note, expiresAt) { return request('POST', '/auth/tokens', { body: { scopes, note, expires_at: expiresAt } }) },
+  deleteApiToken(id) { return request('DELETE', `/auth/tokens/${id}`) },
+  updateTokenNote(id, note) { return request('PUT', `/auth/tokens/${id}/note`, { body: { note } }) },
+
   // Files
   listFiles(path = '/') { return request('GET', '/files', { params: { path } }) },
   uploadFile(file, path = '/', overwrite = false) {
@@ -146,6 +160,18 @@ export default {
   },
   systemLogs() { return request('GET', '/logs') },
   health() { return request('GET', '/health') },
+  async downloadAppleConfig(host) {
+    const t = token()
+    const url = `${BASE}/apple/config?host=${encodeURIComponent(host)}`
+    const headers = t ? { Authorization: `Bearer ${t}` } : {}
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error('下载失败')
+    const blob = await res.blob()
+    const dlUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = dlUrl; a.download = 'personaldav.mobileconfig'; a.click()
+    URL.revokeObjectURL(dlUrl)
+  },
   get(path) { return request('GET', path) },
   post(path, body) { return request('POST', path, { body }) },
   put(path, body) { return request('PUT', path, { body }) },
