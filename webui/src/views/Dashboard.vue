@@ -88,10 +88,10 @@ export default {
     Users, CalendarDays, FileText, HardDrive, 
     Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, serverConfig: null, loading: true, _refreshTimer: null }),
+  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, serverConfig: null, loading: true, _refreshTimer: null, _failCount: 0 }),
   async mounted() {
     this.loadData()
-    this._refreshTimer = setInterval(() => this.loadData(), 60000)
+    this._refreshTimer = setInterval(() => this.loadData(), 15000)
   },
   beforeUnmount() {
     if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null }
@@ -100,7 +100,9 @@ export default {
     async loadData() {
       try {
         [this.stats, this.health, this.serverConfig] = await Promise.all([api.stats(), api.health(), api.serverConfig()])
+        this._failCount = 0
       } catch (e) {
+        this._failCount++
         console.error('Failed to load dashboard data:', e)
       }
       this.loading = false
@@ -108,6 +110,7 @@ export default {
   },
   computed: {
     healthStatus() {
+      if (this._failCount >= 2) return { text: '服务器掉线', class: 'status-fail' }
       if (this.health.status === 'ok') return { text: '正常运行', class: 'status-ok' }
       return { text: '服务器异常', class: 'status-fail' }
     },
