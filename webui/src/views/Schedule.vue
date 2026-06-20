@@ -103,7 +103,7 @@ import {
 import api from '../api.js'
 import ScheduleEditModal from '../components/ScheduleEditModal.vue'
 import EventDetailModal from '../components/EventDetailModal.vue'
-import { icalDateToObj, eventStatus, parseAttachments, toICS, downloadIcs } from '../utils/ical.js'
+import { icalDateToObj, eventStatus, parseAttachments } from '../utils/ical.js'
 import { pad } from '../utils/format.js'
 
 function icalToDatetimeLocal(s) {
@@ -509,14 +509,16 @@ export default {
         this.selectedUids = []
       } catch (e) { window.showToast('部分删除失败', 'error') }
     },
-    exportSingle(e) {
-      downloadIcs(toICS([e]), `${e.summary || '日程'}.ics`)
+    async exportSingle(e) {
+      await api.exportEventsIcs({ uids: e.uid })
     },
-    exportSelected() {
+    async exportSelected() {
       const items = this.events.filter(e => this.selectedUids.includes(e.uid))
         .sort((a,b) => (a.dtstart || '').localeCompare(b.dtstart || ''))
-      downloadIcs(toICS(items), `日程_${Date.now()}.ics`)
+      const uids = items.map(e => e.uid).filter(Boolean)
+      if (!uids.length) return
       this.ctxMenu.show = false
+      await api.exportEventsIcs({ uids: uids.join(',') })
     },
     onEventSaved() {
       this.editModal = null

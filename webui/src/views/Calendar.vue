@@ -157,7 +157,7 @@ import {
 import api from '../api.js'
 import ScheduleEditModal from '../components/ScheduleEditModal.vue'
 import EventDetailModal from '../components/EventDetailModal.vue'
-import { icalDateToObj, eventStatus, parseAttachments, toICS, downloadIcs } from '../utils/ical.js'
+import { icalDateToObj, eventStatus, parseAttachments } from '../utils/ical.js'
 import { pad } from '../utils/format.js'
 
 function icalDateToStr(s) {
@@ -398,11 +398,20 @@ export default {
       this.detailEvent = { ...e, attachments: parseAttachments(e.ical) }
       this.ctxMenu.show = false
     },
-    exportDay() { downloadIcs(toICS(this.dayEvents), `日程_${this.todayStr}.ics`) },
-    exportSingle(e) { downloadIcs(toICS([e]), `${e.summary || '日程'}.ics`); this.detailEvent = null },
-    exportSelected() {
-      const items = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid))
-      downloadIcs(toICS(items), `日程_${Date.now()}.ics`); this.ctxMenu.show = false
+    async exportDay() {
+      const uids = this.dayEvents.map(e => e.uid).filter(Boolean)
+      if (!uids.length) return
+      await api.exportEventsIcs({ uids: uids.join(',') })
+    },
+    async exportSingle(e) {
+      this.detailEvent = null
+      await api.exportEventsIcs({ uids: e.uid })
+    },
+    async exportSelected() {
+      const uids = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid)).map(e => e.uid).filter(Boolean)
+      if (!uids.length) return
+      this.ctxMenu.show = false
+      await api.exportEventsIcs({ uids: uids.join(',') })
     },
     onEventSaved() {
       this.editModal = null

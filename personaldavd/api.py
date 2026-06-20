@@ -461,6 +461,36 @@ async def create_event(body: EventCreate, token: str = Depends(get_current_token
     return {"uid": uid, "operation": op}
 
 
+@api_router.get("/events/export", summary="导出事件为 .ics 文件")
+async def export_events(
+    uids: str = Query("", description="UID列表，逗号分隔；为空时使用 date_from/date_to"),
+    date_from: str = Query("", description="起始日期 YYYYMMDD"),
+    date_to: str = Query("", description="结束日期 YYYYMMDD"),
+    token: str = Depends(get_current_token),
+):
+    """根据 UID 列表或日期范围导出事件，返回 .ics 文件。"""
+    svc = EventService()
+    raw_list = []
+    if uids:
+        uid_list = [u.strip() for u in uids.split(",") if u.strip()]
+        for uid in uid_list:
+            r = svc.get_by_uid(uid)
+            if r:
+                raw_list.append(r)
+    elif date_from and date_to:
+        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
+    else:
+        # fallback: last 365 days
+        raw_list, _ = svc.get_all_raw_paginated(0, 1000)
+    vevents = "\r\n".join(r.ical for r in raw_list if r and r.ical)
+    ics = f"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n{vevents}\r\nEND:VCALENDAR"
+    return Response(
+        content=ics,
+        media_type="text/calendar;charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="events.ics"'},
+    )
+
+
 @api_router.post("/events/import", response_model=dict, summary="从 iCalendar 导入事件")
 async def import_event(body: dict, token: str = Depends(get_current_token)):
     """传入完整的 iCalendar 文本创建事件（用于 .ics 文件导入）。"""

@@ -59,6 +59,19 @@ export default {
   updateEvent(uid, data) { return request('PUT', `/events/${uid}`, { body: data }) },
   deleteEvent(uid) { return request('DELETE', `/events/${uid}`) },
   importEventIcs(icalData) { return request('POST', '/events/import', { body: { ical_data: icalData } }) },
+  async exportEventsIcs(params = {}) {
+    const t = token()
+    const qs = Object.entries(params).filter(([_, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
+    const url = `${BASE}/events/export${qs ? '?' + qs : ''}`
+    const headers = t ? { Authorization: `Bearer ${t}` } : {}
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error('导出失败')
+    const blob = await res.blob()
+    const dlUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = dlUrl; a.download = 'events.ics'; a.click()
+    URL.revokeObjectURL(dlUrl)
+  },
   searchEvents(q, dateFrom = '', dateTo = '', offset = 0, limit = 200) {
     return request('GET', '/events/search', { params: qs({ q, date_from: dateFrom, date_to: dateTo, offset, limit }) })
   },

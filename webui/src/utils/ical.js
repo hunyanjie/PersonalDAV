@@ -1,7 +1,5 @@
 import { pad } from './format.js'
 
-export const PRODID = 'PRODID:-//PersonalDAV//CN'
-
 export function icalDateToObj(s) {
   if (!s) return null
   if (s.length <= 8) {
@@ -56,27 +54,6 @@ export function parseAttachments(ical) {
     }
   }
   return results
-}
-
-export function toICS(events) {
-  const vevents = events.map(e => [
-    'BEGIN:VEVENT', `UID:${e.uid || ''}`,
-    `DTSTART:${(e.dtstart || '').replace(/[-:]/g, '')}`,
-    `DTEND:${(e.dtend || '').replace(/[-:]/g, '')}`,
-    `SUMMARY:${e.summary || ''}`,
-    e.description ? `DESCRIPTION:${e.description}` : '',
-    e.location ? `LOCATION:${e.location}` : '',
-    e.categories ? `CATEGORIES:${e.categories}` : '',
-    'END:VEVENT',
-  ].filter(Boolean).join('\r\n')).join('\r\n')
-  return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${PRODID}\r\n${vevents}\r\nEND:VCALENDAR`
-}
-
-export function downloadIcs(content, name) {
-  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url)
 }
 
 export const REPEAT_OPTIONS = ['不重复', '每日', '每周', '每月', '每年']
