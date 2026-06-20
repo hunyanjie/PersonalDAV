@@ -88,14 +88,23 @@ export default {
     Users, CalendarDays, FileText, HardDrive, 
     Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, serverConfig: null, loading: true }),
+  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, serverConfig: null, loading: true, _refreshTimer: null }),
   async mounted() {
-    try {
-      [this.stats, this.health, this.serverConfig] = await Promise.all([api.stats(), api.health(), api.serverConfig()])
-    } catch (e) {
-      console.error('Failed to load dashboard data:', e)
-    }
-    this.loading = false
+    this.loadData()
+    this._refreshTimer = setInterval(() => this.loadData(), 60000)
+  },
+  beforeUnmount() {
+    if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null }
+  },
+  methods: {
+    async loadData() {
+      try {
+        [this.stats, this.health, this.serverConfig] = await Promise.all([api.stats(), api.health(), api.serverConfig()])
+      } catch (e) {
+        console.error('Failed to load dashboard data:', e)
+      }
+      this.loading = false
+    },
   },
   computed: {
     healthStatus() {

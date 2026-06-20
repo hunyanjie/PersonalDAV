@@ -261,7 +261,8 @@ export default {
             repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
             repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '',
             attachments: (e.attachments || []).map(a => ({
-              name: a.name || a.filename || '附件', url: a.url || a.raw || ''
+              name: a.name || a.filename || '附件', url: a.url || a.raw || '',
+              ...(a.filepath ? { filepath: a.filepath, fmttype: a.fmttype } : {})
             })),
           }
           if (e.rrule) {
@@ -322,7 +323,11 @@ export default {
             trigger_value: r.triggerValue,
             trigger_unit: r.triggerUnit,
           })),
-          attachments: this.form.attachments.map(a => ({ name: a.name, url: a.url })),
+          attachments: this.form.attachments.map(a => {
+            const o = { name: a.name, url: a.url }
+            if (a.filepath) { o.filepath = a.filepath; o.fmttype = a.fmttype }
+            return o
+          }),
         }
         if (this.isNew) {
           await api.createEvent(data)
