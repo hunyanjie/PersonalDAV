@@ -219,10 +219,7 @@ export default {
       if (!file) return
       try {
         const text = await file.text()
-        const blocks = text.split(/(?=BEGIN:VCARD)/).filter(Boolean)
-        for (const block of blocks) {
-          try { await api.importContactVcf(block.trim()) } catch(e) {}
-        }
+        await api.importContactVcf(text)
         this.load()
       } catch(e) { window.showToast('导入失败', 'error') }
       e.target.value = ''

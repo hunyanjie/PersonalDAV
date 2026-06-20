@@ -1,6 +1,6 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time, os, shutil, uuid, logging
+import time, os, shutil, uuid, logging, re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -16,6 +16,7 @@ from .models import (
 )
 from .auth import get_current_token
 from .logging import LOG_QUEUE
+import vobject
 
 api_router = APIRouter(tags=["API 接口"])
 _start_time = time.time()
@@ -357,15 +358,25 @@ async def create_contact(body: ContactCreate, token: str = Depends(get_current_t
 
 @api_router.post("/contacts/import", response_model=dict, summary="从 vCard 导入联系人")
 async def import_contact(body: dict, token: str = Depends(get_current_token)):
-    """传入完整的 vCard 文本创建联系人（用于 .vcf 文件导入）。"""
+    """传入完整的 vCard 文本创建联系人（用于 .vcf 文件导入）。支持多联系人 VCF。"""
     vcard_data = body.get("vcard_data", "")
     if not vcard_data:
         raise HTTPException(400, "缺少 vcard_data")
     svc = ContactService()
+    # 支持多联系人 VCF
+    vcards = re.split(r'(?=BEGIN:VCARD)', vcard_data)
+    vcards = [v.strip() for v in vcards if v.strip()]
+    if len(vcards) > 1:
+        results = []
+        for v in vcards:
+            uid, op = svc.add_contact(v)
+            if uid:
+                results.append({"uid": uid, "operation": op})
+        return {"results": results, "count": len(results)}
     uid, op = svc.add_contact(vcard_data)
     if uid is None:
         raise HTTPException(400, f"导入联系人失败: {op}")
-    return {"uid": uid, "operation": op}
+    return {"uid": uid, "operation": op, "count": 1}
 
 
 @api_router.put("/contacts/{uid}", response_model=dict, summary="更新联系人")
@@ -493,15 +504,34 @@ async def export_events(
 
 @api_router.post("/events/import", response_model=dict, summary="从 iCalendar 导入事件")
 async def import_event(body: dict, token: str = Depends(get_current_token)):
-    """传入完整的 iCalendar 文本创建事件（用于 .ics 文件导入）。"""
+    """传入完整的 iCalendar 文本创建事件（用于 .ics 文件导入）。支持多事件 VCALENDAR。"""
     ical_data = body.get("ical_data", "")
     if not ical_data:
         raise HTTPException(400, "缺少 ical_data")
     svc = EventService()
-    uid, op = svc.add_event(ical_data)
-    if uid is None:
-        raise HTTPException(400, f"导入事件失败: {op}")
-    return {"uid": uid, "operation": op}
+    try:
+        comp = vobject.readOne(ical_data)
+        if comp.name == 'VCALENDAR':
+            vevents = comp.contents.get('vevent', [])
+            if len(vevents) > 1:
+                results = []
+                for ev in vevents:
+                    single = vobject.iCalendar()
+                    single.add(ev)
+                    uid, op = svc.add_event(single.serialize())
+                    if uid:
+                        results.append({"uid": uid, "operation": op})
+                return {"results": results, "count": len(results)}
+        uid, op = svc.add_event(ical_data)
+        if uid is None:
+            raise HTTPException(400, f"导入事件失败: {op}")
+        return {"uid": uid, "operation": op, "count": 1}
+    except Exception as e:
+        _logger.error("import_event 解析失败: %s", e)
+        uid, op = svc.add_event(ical_data)
+        if uid is None:
+            raise HTTPException(400, f"导入事件失败: {op}")
+        return {"uid": uid, "operation": op}
 
 
 @api_router.put("/events/{uid}", response_model=dict, summary="更新事件")

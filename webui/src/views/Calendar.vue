@@ -438,11 +438,8 @@ export default {
     async doImportICS(e) {
       const file = e.target.files[0]; if (!file) return
       try {
-        const text = await file.text(); const blocks = text.split(/(?=BEGIN:VEVENT)/).filter(Boolean)
-        for (const block of blocks) {
-          const ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${block.trim()}\r\nEND:VCALENDAR`
-          await api.importEventIcs(ical)
-        }
+        const text = await file.text()
+        await api.importEventIcs(text)
         this.load()
       } catch(e) { window.showToast('导入失败', 'error') }
       e.target.value = ''
