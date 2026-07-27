@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 from contextlib import asynccontextmanager
+from logging import getLogger
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles

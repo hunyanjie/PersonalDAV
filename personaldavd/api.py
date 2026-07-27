@@ -117,7 +117,7 @@ def _ical_to_event_out(raw: str) -> EventOut | None:
                         elif k.upper() == "FMTTYPE":
                             fmttype = v
                         elif k.upper() == "X-FILEPATH":
-                            filepath = v
+                            filepath = v.split(":")[0] if ":" in v else v
                     attachments.append({"name": name, "fmttype": fmttype, "filepath": filepath})
         if not uid:
             _logger.error("_ical_to_event_out: iCal 缺少 UID 行:\n%s", raw[:300])
@@ -209,7 +209,7 @@ def _event_fields_to_ical(fields: EventCreate | EventUpdate, uid: str = "") -> s
         name = a.get("name", "attachment.bin")
         if filepath:
             fmttype = a.get("fmttype", "application/octet-stream")
-            ical += f"X-PERSONALDAV-ATTACH:REF;FMTTYPE={fmttype};FILENAME={_escape_ical_val(name)};X-FILEPATH={filepath}\r\n"
+            ical += f"X-PERSONALDAV-ATTACH;FMTTYPE={fmttype};FILENAME={_escape_ical_val(name)};X-FILEPATH={filepath}:REF\r\n"
         elif url.startswith("data:"):
             _, b64 = url.split(",", 1)
             mime = "application/octet-stream"
