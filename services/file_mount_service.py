@@ -45,16 +45,18 @@ class FileMountService:
         with self._instance_lock:
             if self._migrated:
                 return
-            self._migrated = True
             if self._mounts:
+                self._migrated = True
                 return
             loaded = self._load()
             if loaded:
                 self._mounts = loaded
+                self._migrated = True
                 return
             from services.settings_service import SettingsService
             dav_root = SettingsService().get_setting("dav_root", "")
             if not dav_root:
+                self._migrated = True
                 return
             root = os.path.abspath(dav_root)
             if not os.path.isdir(root):
@@ -62,6 +64,7 @@ class FileMountService:
             name = os.path.basename(root) or "DAVStorage"
             self._mounts.append({"name": name, "path": root})
             self._save()
+            self._migrated = True
             logger.info(f"Migrated dav_root -> mount '{name}' ({root})")
 
     def get_mounts(self) -> list[dict[str, Any]]:
@@ -185,9 +188,12 @@ class FileMountService:
             if not self._mounts:
                 return []
             if self.is_single_mount:
-                m = self._mounts[0]
-                return self._list_fs(m["path"], "/" + m["name"])
-            return self._list_mounts()
+                m = dict(self._mounts[0])
+                virtual_base = "/" + m["name"]
+                mount_path = m["path"]
+            else:
+                return self._list_mounts()
+        return self._list_fs(mount_path, virtual_base)
 
     def list_directory(self, mount_name: str, rel_path: str) -> list[dict[str, Any]]:
         """List files in a specific mount's subdirectory."""
@@ -199,9 +205,8 @@ class FileMountService:
             dir_path = os.path.normpath(os.path.join(m["path"], rel_path))
             if not dir_path.startswith(os.path.normpath(m["path"])):
                 raise ValueError("Path traversal")
-
             virtual_base = "/" + mount_name + "/" + rel_path.strip("/")
-            return self._list_fs(dir_path, virtual_base.rstrip("/"))
+        return self._list_fs(dir_path, virtual_base.rstrip("/"))
 
     # ── helpers ──
 

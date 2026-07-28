@@ -1,5 +1,6 @@
 """REST API — file management (multi-mount aware)."""
 
+import asyncio
 import os
 import shutil
 import mimetypes
@@ -27,7 +28,7 @@ def _mount_svc():
 @files_router.get("/files/mounts", summary="列出所有挂载点")
 async def list_mounts(token: str = Depends(get_current_token)):
     from services.file_mount_service import FileMountService
-    return FileMountService().get_mounts()
+    return await asyncio.to_thread(FileMountService().get_mounts)
 
 
 @files_router.post("/files/mounts", summary="添加挂载点")
@@ -38,7 +39,7 @@ async def add_mount(
     from services.file_mount_service import FileMountService
     svc = FileMountService()
     try:
-        entry = svc.add_mount(body["name"], body["path"])
+        entry = await asyncio.to_thread(svc.add_mount, body["name"], body["path"])
         return entry
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -53,7 +54,7 @@ async def update_mount(
     from services.file_mount_service import FileMountService
     svc = FileMountService()
     try:
-        entry = svc.update_mount(name, body.get("name", name), body.get("path", ""))
+        entry = await asyncio.to_thread(svc.update_mount, name, body.get("name", name), body.get("path", ""))
         return entry
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -65,7 +66,8 @@ async def delete_mount(
     token: str = Depends(get_current_token),
 ):
     from services.file_mount_service import FileMountService
-    if FileMountService().remove_mount(name):
+    ok = await asyncio.to_thread(FileMountService().remove_mount, name)
+    if ok:
         return {"deleted": True}
     raise HTTPException(404, f"Mount '{name}' not found")
 
@@ -75,43 +77,43 @@ async def list_files(
     path: str = Query("/", description="目录路径"),
     token: str = Depends(get_current_token),
 ):
-    svc = _mount_svc()
     from .daemon import logger
 
     if path == "/" or path == "":
-        items = svc.get_root_entries()
+        items = await asyncio.to_thread(_mount_svc().get_root_entries)
         if logger:
             logger.debug(f"Root entries: {len(items)} items")
         return items
 
-    try:
-        mount_name, abs_path = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
+    def _list():
+        svc = _mount_svc()
+        try:
+            mount_name, abs_path = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        if not os.path.isdir(abs_path):
+            os.makedirs(abs_path, exist_ok=True)
+        items = []
+        try:
+            for name in sorted(os.listdir(abs_path)):
+                full = os.path.join(abs_path, name)
+                try:
+                    st = os.stat(full)
+                    item_path = (path.rstrip("/") + "/" + name).replace("//", "/")
+                    items.append({
+                        "name": name,
+                        "path": item_path,
+                        "is_dir": os.path.isdir(full),
+                        "size": st.st_size if os.path.isfile(full) else 0,
+                        "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+                    })
+                except Exception:
+                    pass
+        except Exception as e:
+            raise HTTPException(500, f"读取目录失败: {e}")
+        return items
 
-    if not os.path.isdir(abs_path):
-        os.makedirs(abs_path, exist_ok=True)
-
-    items = []
-    try:
-        for name in sorted(os.listdir(abs_path)):
-            full = os.path.join(abs_path, name)
-            try:
-                st = os.stat(full)
-                # Ensure path is properly joined and uses forward slashes
-                item_path = (path.rstrip("/") + "/" + name).replace("//", "/")
-                items.append({
-                    "name": name,
-                    "path": item_path,
-                    "is_dir": os.path.isdir(full),
-                    "size": st.st_size if os.path.isfile(full) else 0,
-                    "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
-                })
-            except Exception:
-                pass
-    except Exception as e:
-        raise HTTPException(500, f"读取目录失败: {e}")
-    return items
+    return await asyncio.to_thread(_list)
 
 
 @files_router.get("/files/download", summary="下载文件")
@@ -119,13 +121,16 @@ async def download_file(
     path: str = Query(..., description="文件路径"),
     token: str = Depends(get_current_token),
 ):
-    svc = _mount_svc()
-    try:
-        _, abs_path = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
-    if not os.path.isfile(abs_path):
-        raise HTTPException(404, "文件不存在")
+    def _resolve():
+        svc = _mount_svc()
+        try:
+            _, abs_path = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        if not os.path.isfile(abs_path):
+            raise HTTPException(404, "文件不存在")
+        return abs_path
+    abs_path = await asyncio.to_thread(_resolve)
     from fastapi.responses import FileResponse
     filename = os.path.basename(abs_path)
     return FileResponse(abs_path, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -152,13 +157,18 @@ async def preview_file(
     path: str = Query(..., description="文件路径"),
     request: Request = None,
 ):
-    svc = _mount_svc()
-    try:
-        _, abs_path = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
-    if not os.path.isfile(abs_path):
-        raise HTTPException(404, "文件不存在")
+    def _preview():
+        from services.settings_service import SettingsService as _SS
+        svc = _mount_svc()
+        try:
+            _, abs_path = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        if not os.path.isfile(abs_path):
+            raise HTTPException(404, "文件不存在")
+        return (abs_path, _SS().get_setting("office_preview_mode", "off"))
+
+    abs_path, office_mode = await asyncio.to_thread(_preview)
     _, ext = os.path.splitext(abs_path)
     ctype = mimetypes.guess_type(abs_path)[0] or _MIME_OVERRIDES.get(ext.lower())
     if ctype and ctype.startswith(("text/", "image/", "application/pdf")):
@@ -166,20 +176,18 @@ async def preview_file(
 
     # Office document preview
     if ext.lower() in _OFFICE_EXTS:
-        from services.settings_service import SettingsService
-        office_mode = SettingsService().get_setting("office_preview_mode", "off")
-
         if office_mode == "libreoffice":
             if not shutil.which("soffice"):
                 raise HTTPException(415, "需要 LibreOffice: soffice 未安装")
-            pdf_path = _convert_office_to_pdf(abs_path)
+            pdf_path = await asyncio.to_thread(_convert_office_to_pdf, abs_path)
             if not pdf_path:
                 raise HTTPException(500, "文档转换失败")
             return FileResponse(pdf_path, media_type="application/pdf",
                                 filename=os.path.basename(abs_path).rsplit('.', 1)[0] + '.pdf')
 
         elif office_mode == "onlyoffice":
-            onlyoffice_host = SettingsService().get_setting("onlyoffice_host", "")
+            from services.settings_service import SettingsService
+            onlyoffice_host = await asyncio.to_thread(SettingsService().get_setting, "onlyoffice_host", "")
             if not onlyoffice_host:
                 raise HTTPException(415, "未配置 ONLYOFFICE 服务器地址")
             file_url = _build_public_url(request, path)
@@ -235,33 +243,36 @@ async def upload_file(
     overwrite: bool = Form(False, description="存在时是否覆盖"),
     token: str = Depends(get_current_token),
 ):
-    svc = _mount_svc()
-    try:
-        mount_name, target_dir = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
-    os.makedirs(target_dir, exist_ok=True)
+    content = await file.read()
 
-    # Handle duplicate name
-    dest = os.path.join(target_dir, file.filename)
-    if os.path.exists(dest):
-        if overwrite:
-            os.remove(dest)
-        else:
-            base, ext = os.path.splitext(file.filename)
-            counter = 1
-            while os.path.exists(os.path.join(target_dir, f"{base}({counter}){ext}")):
-                counter += 1
-            dest = os.path.join(target_dir, f"{base}({counter}){ext}")
+    def _upload():
+        svc = _mount_svc()
+        try:
+            mount_name, target_dir = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        os.makedirs(target_dir, exist_ok=True)
 
-    try:
-        content = await file.read()
-        with open(dest, "wb") as f:
-            f.write(content)
-    except Exception as e:
-        raise HTTPException(500, f"上传失败: {e}")
-    rel = mount_name + "/" + os.path.basename(dest)
-    return {"path": "/" + rel, "size": len(content)}
+        dest = os.path.join(target_dir, file.filename)
+        if os.path.exists(dest):
+            if overwrite:
+                os.remove(dest)
+            else:
+                base, ext = os.path.splitext(file.filename)
+                counter = 1
+                while os.path.exists(os.path.join(target_dir, f"{base}({counter}){ext}")):
+                    counter += 1
+                dest = os.path.join(target_dir, f"{base}({counter}){ext}")
+
+        try:
+            with open(dest, "wb") as f:
+                f.write(content)
+        except Exception as e:
+            raise HTTPException(500, f"上传失败: {e}")
+        rel = mount_name + "/" + os.path.basename(dest)
+        return {"path": "/" + rel, "size": len(content)}
+
+    return await asyncio.to_thread(_upload)
 
 
 @files_router.post("/files/mkdir", summary="创建目录")
@@ -269,21 +280,25 @@ async def mkdir(
     path: str = Query(..., description="目录路径"),
     token: str = Depends(get_current_token),
 ):
-    svc = _mount_svc()
-    try:
-        _, abs_path = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
-    if os.path.exists(abs_path):
-        base = os.path.basename(path.rstrip("/\\"))
-        parent = os.path.dirname(abs_path)
-        counter = 1
-        while os.path.exists(os.path.join(parent, f"{base}({counter})")):
-            counter += 1
-        abs_path = os.path.join(parent, f"{base}({counter})")
-        path = os.path.join(os.path.dirname(path.rstrip("/\\")), f"{base}({counter})")
-    os.makedirs(abs_path, exist_ok=True)
-    return {"path": path, "created": True}
+    def _mkdir():
+        svc = _mount_svc()
+        try:
+            _, abs_path = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        if os.path.exists(abs_path):
+            base = os.path.basename(path.rstrip("/\\"))
+            parent = os.path.dirname(abs_path)
+            counter = 1
+            while os.path.exists(os.path.join(parent, f"{base}({counter})")):
+                counter += 1
+            abs_path = os.path.join(parent, f"{base}({counter})")
+            new_path = os.path.join(os.path.dirname(path.rstrip("/\\")), f"{base}({counter})")
+        else:
+            new_path = path
+        os.makedirs(abs_path, exist_ok=True)
+        return {"path": new_path, "created": True}
+    return await asyncio.to_thread(_mkdir)
 
 
 @files_router.put("/files/rename", summary="重命名文件或目录")
@@ -292,19 +307,21 @@ async def rename(
     new_name: str = Query(..., description="新名称"),
     token: str = Depends(get_current_token),
 ):
-    svc = _mount_svc()
-    try:
-        _, old_abs = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
-    if not os.path.exists(old_abs):
-        raise HTTPException(404, "路径不存在")
-    parent = os.path.dirname(old_abs)
-    new_abs = os.path.join(parent, new_name)
-    if os.path.exists(new_abs):
-        raise HTTPException(400, "目标名称已存在")
-    os.rename(old_abs, new_abs)
-    return {"path": path}
+    def _rename():
+        svc = _mount_svc()
+        try:
+            _, old_abs = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        if not os.path.exists(old_abs):
+            raise HTTPException(404, "路径不存在")
+        parent = os.path.dirname(old_abs)
+        new_abs = os.path.join(parent, new_name)
+        if os.path.exists(new_abs):
+            raise HTTPException(400, "目标名称已存在")
+        os.rename(old_abs, new_abs)
+        return {"path": path}
+    return await asyncio.to_thread(_rename)
 
 
 @files_router.delete("/files", summary="删除文件或目录")
@@ -312,13 +329,15 @@ async def delete(
     path: str = Query(..., description="要删除的路径"),
     token: str = Depends(get_current_token),
 ):
-    svc = _mount_svc()
-    try:
-        _, abs_path = svc.resolve(path)
-    except ValueError as e:
-        raise HTTPException(403, str(e))
-    if not os.path.exists(abs_path):
-        raise HTTPException(404, "路径不存在")
-    from services.trash_service import TrashService
-    TrashService.delete(abs_path, path)
-    return {"deleted": True, "trashed": True}
+    def _delete():
+        svc = _mount_svc()
+        try:
+            _, abs_path = svc.resolve(path)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
+        if not os.path.exists(abs_path):
+            raise HTTPException(404, "路径不存在")
+        from services.trash_service import TrashService
+        TrashService.delete(abs_path, path)
+        return {"deleted": True, "trashed": True}
+    return await asyncio.to_thread(_delete)
