@@ -1,6 +1,6 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import time, os, shutil, uuid, logging, re
+import asyncio, time, os, shutil, uuid, logging, re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -230,14 +230,17 @@ def _event_fields_to_ical(fields: EventCreate | EventUpdate, uid: str = "") -> s
 @api_router.get("/health", response_model=HealthOut, summary="服务器健康检查")
 async def health():
     """返回服务器运行状态、版本号、运行时长、联系人/事件数量。"""
-    svc = SettingsService()
     cs = ContactService()
     es = EventService()
+    contacts_count, events_count = await asyncio.gather(
+        asyncio.to_thread(cs.count),
+        asyncio.to_thread(es.count),
+    )
     return HealthOut(
         status="ok", version=SOFTWARE_VERSION,
         uptime=time.time() - _start_time,
-        contacts_count=cs.count(),
-        events_count=es.count(),
+        contacts_count=contacts_count,
+        events_count=events_count,
     )
 
 
@@ -252,24 +255,29 @@ async def get_token(body: AuthTokenRequest, request: Request):
     fp = body.fingerprint
 
     # 浏览器指纹检查
-    if fp and not svc.check_fingerprint(fp):
-        svc.log_auth(False, client_ip, "WebUI", "浏览器指纹被拒绝", user_agent=ua, fingerprint=fp)
-        raise HTTPException(403, "浏览器指纹被拒绝")
+    if fp:
+        fp_allowed = await asyncio.to_thread(svc.check_fingerprint, fp)
+        if not fp_allowed:
+            await asyncio.to_thread(svc.log_auth, False, client_ip, "WebUI", "浏览器指纹被拒绝", user_agent=ua, fingerprint=fp)
+            raise HTTPException(403, "浏览器指纹被拒绝")
 
     # IP 本机免密或未设密码时直接放行
-    if svc.ip_bypasses_auth(client_ip) or not svc.is_password_required():
+    bypass = await asyncio.to_thread(svc.ip_bypasses_auth, client_ip)
+    pw_not_required = await asyncio.to_thread(svc.is_password_required)
+    if bypass or not pw_not_required:
         token = svc.get_mcp_token()
-        svc.log_auth(True, client_ip, "WebUI", "IP 免密放行", user_agent=ua, fingerprint=fp)
+        await asyncio.to_thread(svc.log_auth, True, client_ip, "WebUI", "IP 免密放行", user_agent=ua, fingerprint=fp)
         return AuthTokenOut(token=token, scopes=body.scopes)
 
-    if not svc.verify_password(body.password):
-        svc.log_auth(False, client_ip, "WebUI", "密码错误", user_agent=ua, fingerprint=fp)
+    pw_ok = await asyncio.to_thread(svc.verify_password, body.password)
+    if not pw_ok:
+        await asyncio.to_thread(svc.log_auth, False, client_ip, "WebUI", "密码错误", user_agent=ua, fingerprint=fp)
         raise HTTPException(401, "密码错误")
     token = svc.get_mcp_token()
     if not token:
-        svc.log_auth(False, client_ip, "WebUI", "未设置密码无法生成令牌", user_agent=ua, fingerprint=fp)
+        await asyncio.to_thread(svc.log_auth, False, client_ip, "WebUI", "未设置密码无法生成令牌", user_agent=ua, fingerprint=fp)
         raise HTTPException(403, "未设置密码，无法生成令牌")
-    svc.log_auth(True, client_ip, "WebUI", "密码登录成功", user_agent=ua, fingerprint=fp)
+    await asyncio.to_thread(svc.log_auth, True, client_ip, "WebUI", "密码登录成功", user_agent=ua, fingerprint=fp)
     return AuthTokenOut(token=token, scopes=body.scopes)
 
 
@@ -311,7 +319,7 @@ async def list_contacts(
 ):
     """返回联系人的摘要列表（姓名、邮箱、电话、分组），支持分页。"""
     svc = ContactService()
-    raw_list, total = svc.get_all_raw_paginated(offset, limit)
+    raw_list, total = await asyncio.to_thread(svc.get_all_raw_paginated, offset, limit)
     items = [o for r in raw_list if (o := _vcard_to_contact_out(r))]
     return {"items": items, "total": total}
 
@@ -326,7 +334,7 @@ async def search_contacts(
     token: str = Depends(get_current_token),
 ):
     svc = EmbeddingService()
-    all_results = svc.search_contacts(q, top_k=100000)
+    all_results = await asyncio.to_thread(svc.search_contacts, q, 100000)
     total = len(all_results)
     items = all_results[offset:offset + limit]
     return {"items": items, "total": total}
@@ -344,7 +352,7 @@ async def search_events(
     token: str = Depends(get_current_token),
 ):
     svc = EmbeddingService()
-    all_results = svc.search_events(q, date_from=date_from, date_to=date_to, top_k=100000)
+    all_results = await asyncio.to_thread(svc.search_events, q, date_from=date_from, date_to=date_to, top_k=100000)
     total = len(all_results)
     items = all_results[offset:offset + limit]
     return {"items": items, "total": total}
@@ -354,7 +362,7 @@ async def search_events(
 async def get_contact(uid: str, token: str = Depends(get_current_token)):
     """根据 UID 获取联系人的完整 vCard 数据。"""
     svc = ContactService()
-    raw = svc.get_by_uid(uid)
+    raw = await asyncio.to_thread(svc.get_by_uid, uid)
     if not raw:
         _logger.warning("get_contact: UID=%s 不存在", uid)
         raise HTTPException(404, "联系人不存在")
@@ -370,7 +378,7 @@ async def create_contact(body: ContactCreate, token: str = Depends(get_current_t
     """通过结构化字段创建联系人，后端自动构建 vCard。"""
     vcard = _contact_fields_to_vcard(body)
     svc = ContactService()
-    uid, op = svc.add_contact(vcard)
+    uid, op = await asyncio.to_thread(svc.add_contact, vcard)
     if uid is None:
         raise HTTPException(400, f"创建联系人失败: {op}")
     return {"uid": uid, "operation": op}
@@ -389,11 +397,11 @@ async def import_contact(body: dict, token: str = Depends(get_current_token)):
     if len(vcards) > 1:
         results = []
         for v in vcards:
-            uid, op = svc.add_contact(v)
+            uid, op = await asyncio.to_thread(svc.add_contact, v)
             if uid:
                 results.append({"uid": uid, "operation": op})
         return {"results": results, "count": len(results)}
-    uid, op = svc.add_contact(vcard_data)
+    uid, op = await asyncio.to_thread(svc.add_contact, vcard_data)
     if uid is None:
         raise HTTPException(400, f"导入联系人失败: {op}")
     return {"uid": uid, "operation": op, "count": 1}
@@ -404,7 +412,7 @@ async def update_contact(uid: str, body: ContactUpdate, token: str = Depends(get
     """通过结构化字段更新联系人，后端自动构建 vCard。"""
     svc = ContactService()
     try:
-        existing = svc.get_by_uid(uid)
+        existing = await asyncio.to_thread(svc.get_by_uid, uid)
         if not existing:
             raise HTTPException(404, "联系人不存在")
         out = _vcard_to_contact_out(existing)
@@ -419,7 +427,7 @@ async def update_contact(uid: str, body: ContactUpdate, token: str = Depends(get
             photo=body.photo if _is_contact_field_set(body.photo) else (out.photo if out else ""),
         )
         vcard = _contact_fields_to_vcard(merged, uid=uid)
-        new_uid, op = svc.add_contact(vcard, force=True)
+        new_uid, op = await asyncio.to_thread(svc.add_contact, vcard, True)
         if new_uid is None:
             _logger.error("update_contact uid=%s 失败: %s", uid, op)
             raise HTTPException(400, f"更新联系人失败: {op}")
@@ -435,9 +443,10 @@ async def update_contact(uid: str, body: ContactUpdate, token: str = Depends(get
 async def delete_contact(uid: str, token: str = Depends(get_current_token)):
     """删除指定 UID 的联系人。"""
     svc = ContactService()
-    if not svc.get_by_uid(uid):
+    existing = await asyncio.to_thread(svc.get_by_uid, uid)
+    if not existing:
         raise HTTPException(404, "联系人不存在")
-    ok = svc.delete(uid)
+    ok = await asyncio.to_thread(svc.delete, uid)
     return {"deleted": ok}
 
 
@@ -454,10 +463,10 @@ async def list_events(
     """返回日历事件的摘要列表（标题、起止时间），支持分页和日期范围筛选。"""
     svc = EventService()
     if date_from and date_to:
-        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
+        raw_list = await asyncio.to_thread(svc.get_raw_by_dtstart_range, date_from, date_to)
         items = [o for r in raw_list if (o := _ical_to_event_out(r))]
         return {"items": items, "total": len(items)}
-    raw_list, total = svc.get_all_raw_paginated(offset, limit)
+    raw_list, total = await asyncio.to_thread(svc.get_all_raw_paginated, offset, limit)
     items = [o for r in raw_list if (o := _ical_to_event_out(r))]
     return {"items": items, "total": total}
 
@@ -466,7 +475,7 @@ async def list_events(
 async def get_event(uid: str, token: str = Depends(get_current_token)):
     """根据 UID 获取事件的完整 iCalendar 数据。"""
     svc = EventService()
-    raw = svc.get_by_uid(uid)
+    raw = await asyncio.to_thread(svc.get_by_uid, uid)
     if not raw:
         _logger.warning("get_event: UID=%s 不存在", uid)
         raise HTTPException(404, "事件不存在")
@@ -486,7 +495,7 @@ async def create_event(body: EventCreate, token: str = Depends(get_current_token
     """通过结构化字段创建事件，后端自动构建 iCalendar。"""
     ical = _event_fields_to_ical(body)
     svc = EventService()
-    uid, op = svc.add_event(ical)
+    uid, op = await asyncio.to_thread(svc.add_event, ical)
     if uid is None:
         raise HTTPException(400, f"创建事件失败: {op}")
     return {"uid": uid, "operation": op}
@@ -501,18 +510,22 @@ async def export_events(
 ):
     """根据 UID 列表或日期范围导出事件，返回 .ics 文件。"""
     svc = EventService()
-    raw_list = []
-    if uids:
-        uid_list = [u.strip() for u in uids.split(",") if u.strip()]
-        for uid in uid_list:
-            r = svc.get_by_uid(uid)
-            if r:
-                raw_list.append(r)
-    elif date_from and date_to:
-        raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
-    else:
-        # fallback: last 365 days
-        raw_list, _ = svc.get_all_raw_paginated(0, 1000)
+
+    def _fetch():
+        raw_list = []
+        if uids:
+            uid_list = [u.strip() for u in uids.split(",") if u.strip()]
+            for uid in uid_list:
+                r = svc.get_by_uid(uid)
+                if r:
+                    raw_list.append(r)
+        elif date_from and date_to:
+            raw_list = svc.get_raw_by_dtstart_range(date_from, date_to)
+        else:
+            raw_list, _ = svc.get_all_raw_paginated(0, 1000)
+        return raw_list
+
+    raw_list = await asyncio.to_thread(_fetch)
     vevents = "\r\n".join(r for r in raw_list if r)
     ics = f"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n{vevents}\r\nEND:VCALENDAR"
     return Response(
@@ -538,17 +551,17 @@ async def import_event(body: dict, token: str = Depends(get_current_token)):
                 for ev in vevents:
                     single = vobject.iCalendar()
                     single.add(ev)
-                    uid, op = svc.add_event(single.serialize())
+                    uid, op = await asyncio.to_thread(svc.add_event, single.serialize())
                     if uid:
                         results.append({"uid": uid, "operation": op})
                 return {"results": results, "count": len(results)}
-        uid, op = svc.add_event(ical_data)
+        uid, op = await asyncio.to_thread(svc.add_event, ical_data)
         if uid is None:
             raise HTTPException(400, f"导入事件失败: {op}")
         return {"uid": uid, "operation": op, "count": 1}
     except Exception as e:
         _logger.error("import_event 解析失败: %s", e)
-        uid, op = svc.add_event(ical_data)
+        uid, op = await asyncio.to_thread(svc.add_event, ical_data)
         if uid is None:
             raise HTTPException(400, f"导入事件失败: {op}")
         return {"uid": uid, "operation": op}
@@ -559,7 +572,7 @@ async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_cur
     """通过结构化字段更新事件，后端自动构建 iCalendar。"""
     svc = EventService()
     try:
-        existing = svc.get_by_uid(uid)
+        existing = await asyncio.to_thread(svc.get_by_uid, uid)
         if not existing:
             raise HTTPException(404, "事件不存在")
         out = _ical_to_event_out(existing)
@@ -576,7 +589,7 @@ async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_cur
             attachments=body.attachments if body.attachments is not None else (out.attachments if out else []),
         )
         ical = _event_fields_to_ical(merged, uid=uid)
-        new_uid, op = svc.add_event(ical, force=True)
+        new_uid, op = await asyncio.to_thread(svc.add_event, ical, True)
         if new_uid is None:
             _logger.error("update_event uid=%s 失败: %s", uid, op)
             raise HTTPException(400, f"更新事件失败: {op}")
@@ -592,9 +605,10 @@ async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_cur
 async def delete_event(uid: str, token: str = Depends(get_current_token)):
     """删除指定 UID 的事件。"""
     svc = EventService()
-    if not svc.get_by_uid(uid):
+    existing = await asyncio.to_thread(svc.get_by_uid, uid)
+    if not existing:
         raise HTTPException(404, "事件不存在")
-    ok = svc.delete(uid)
+    ok = await asyncio.to_thread(svc.delete, uid)
     return {"deleted": ok}
 
 
@@ -668,22 +682,31 @@ async def stats(token: str = Depends(get_current_token)):
     es = EventService()
     s = SettingsService()
     dav_root = s.get_setting("dav_root", "./dav_root")
-    total_size = 0
-    file_count = 0
-    if os.path.isdir(dav_root):
-        for dirpath, _, filenames in os.walk(dav_root):
-            for fn in filenames:
-                fp = os.path.join(dirpath, fn)
-                try:
-                    total_size += os.path.getsize(fp)
-                    file_count += 1
-                except Exception:
-                    pass
-    try: disk_total = shutil.disk_usage(dav_root).total / (1024 * 1024)
-    except: disk_total = 0
+
+    def _compute_stats():
+        total_size = 0
+        file_count = 0
+        if os.path.isdir(dav_root):
+            for dirpath, _, filenames in os.walk(dav_root):
+                for fn in filenames:
+                    fp = os.path.join(dirpath, fn)
+                    try:
+                        total_size += os.path.getsize(fp)
+                        file_count += 1
+                    except Exception:
+                        pass
+        try:
+            disk_total = shutil.disk_usage(dav_root).total / (1024 * 1024)
+        except Exception:
+            disk_total = 0
+        return file_count, total_size, disk_total
+
+    file_count, total_size, disk_total = await asyncio.to_thread(_compute_stats)
+    contacts_count = await asyncio.to_thread(cs.count)
+    events_count = await asyncio.to_thread(es.count)
     return StatsOut(
-        contacts_count=cs.count(),
-        events_count=es.count(),
+        contacts_count=contacts_count,
+        events_count=events_count,
         files_count=file_count,
         disk_used_mb=round(total_size / (1024 * 1024), 2),
         disk_total_mb=round(disk_total, 2),

@@ -324,7 +324,10 @@ REST API 文档:
     def stop_server(self):
         if self.server_instance:
             self.server_instance.stop()
+            if self.server_thread and self.server_thread.is_alive():
+                self.server_thread.join(timeout=10)
             self.server_instance = None
+            self.server_thread = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.port_entry.config(state=tk.NORMAL)

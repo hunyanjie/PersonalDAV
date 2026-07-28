@@ -1,5 +1,7 @@
 """Unified auth middleware + token scope support for ASGI."""
 
+import asyncio
+
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -73,36 +75,42 @@ class AuthMiddleware(BaseHTTPMiddleware):
             path == "/api/auth/token"):
             return await call_next(request)
 
-        svc = AuthService()
         client_ip = request.client.host if request.client else "127.0.0.1"
         ua = request.headers.get("user-agent", "")
         referer = request.headers.get("referer", "")
 
+        svc = AuthService()
+
+        # ── All blocking checks offloaded to thread pool ──
+
         # IP check
-        if not svc.check_ip(client_ip):
+        if not await asyncio.to_thread(svc.check_ip, client_ip):
             return Response("IP denied", status_code=403)
 
-        # Referer check (FastAPI 中间件中补充)
-        if svc.is_referer_enabled():
+        # Referer check
+        referer_enabled = await asyncio.to_thread(svc.is_referer_enabled)
+        if referer_enabled:
             if not referer:
                 return Response("Referer required", status_code=403)
-            if not svc.check_referer_advanced(referer):
+            if not await asyncio.to_thread(svc.check_referer_advanced, referer):
                 return Response("Referer denied", status_code=403)
 
         # User-Agent check
-        if ua and not svc.check_user_agent(ua):
-            return Response("User-Agent denied", status_code=403)
+        if ua:
+            ua_allowed = await asyncio.to_thread(svc.check_user_agent, ua)
+            if not ua_allowed:
+                return Response("User-Agent denied", status_code=403)
 
         # Rate limit
-        if not svc.check_rate_limit(client_ip):
+        if not await asyncio.to_thread(svc.check_rate_limit, client_ip):
             return Response("Too Many Requests", status_code=429)
 
         # IP bypass (no password needed)
-        if svc.ip_bypasses_auth(client_ip):
+        if await asyncio.to_thread(svc.ip_bypasses_auth, client_ip):
             return await call_next(request)
 
         # Password not required
-        if not svc.is_password_required():
+        if not await asyncio.to_thread(svc.is_password_required):
             return await call_next(request)
 
         # Try Bearer token (for REST API / MCP)
@@ -115,21 +123,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if token:
             scope = _required_scope(request.method, request.url.path)
             # Full MCP token
-            if svc.verify_mcp_token(token):
-                svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
+            if await asyncio.to_thread(svc.verify_mcp_token, token):
+                await asyncio.to_thread(svc.log_auth, True, client_ip, "ASGI", "Bearer token OK")
                 if scope and not _mcp_token_has_scope(scope):
-                    svc.log_auth(False, client_ip, "ASGI", f"MCP scope denied: {scope}")
+                    await asyncio.to_thread(svc.log_auth, False, client_ip, "ASGI", f"MCP scope denied: {scope}")
                     return Response("Insufficient permissions", status_code=403)
                 return await call_next(request)
             # API 令牌 (v3.4)
             from services.api_token_service import ApiTokenService
             ats = ApiTokenService()
-            tok_data = ats.verify_token(token)
+            tok_data = await asyncio.to_thread(ats.verify_token, token)
             if tok_data:
                 if scope and not any(s == scope for s in tok_data['scopes']):
-                    svc.log_auth(False, client_ip, "ASGI", f"Token scope denied: {scope}")
+                    await asyncio.to_thread(svc.log_auth, False, client_ip, "ASGI", f"Token scope denied: {scope}")
                     return Response("Insufficient permissions", status_code=403)
-                svc.log_auth(True, client_ip, "ASGI", f"API token OK: {tok_data['note'] or tok_data['id']}")
+                await asyncio.to_thread(svc.log_auth, True, client_ip, "ASGI", f"API token OK: {tok_data['note'] or tok_data['id']}")
                 return await call_next(request)
 
         # Try Basic Auth (for DAV clients)
@@ -139,16 +147,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
                 _, password = decoded.split(":", 1)
             except Exception:
-                svc.log_auth(False, client_ip, "ASGI", "Bad Basic Auth format")
+                await asyncio.to_thread(svc.log_auth, False, client_ip, "ASGI", "Bad Basic Auth format")
                 return Response("Bad auth format", status_code=401)
-            if svc.verify_password(password):
-                svc.log_auth(True, client_ip, "ASGI", "Basic Auth OK")
+            # PBKDF2 — offload to thread pool (100-500ms)
+            pw_ok = await asyncio.to_thread(svc.verify_password, password)
+            if pw_ok:
+                await asyncio.to_thread(svc.log_auth, True, client_ip, "ASGI", "Basic Auth OK")
                 return await call_next(request)
-            svc.log_auth(False, client_ip, "ASGI", "Basic Auth wrong password")
+            await asyncio.to_thread(svc.log_auth, False, client_ip, "ASGI", "Basic Auth wrong password")
             return Response("Invalid password", status_code=401)
 
         # No auth
-        svc.log_auth(False, client_ip, "ASGI", "No credentials")
+        await asyncio.to_thread(svc.log_auth, False, client_ip, "ASGI", "No credentials")
         resp = Response("Authorization required", status_code=401)
         from config import SOFTWARE_NAME
         resp.headers["WWW-Authenticate"] = f'Basic realm="{SOFTWARE_NAME}"'

@@ -173,7 +173,6 @@ class DaemonServer:
         can_https = self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile
 
         if protocol != 'https_only':
-            # Each server needs its own app instance to avoid lifespan/logger conflicts
             app_http = create_app(self.config)
             uv_config_http = uvicorn.Config(
                 app_http,
@@ -227,10 +226,9 @@ class DaemonServer:
                 _logging.warning("HTTPS 仅模式但 SSL 未正确配置，无法启动任何服务")
             # Run HTTPS thread blocking if no HTTP
             if self._servers:
-                self._servers[0].run()
+                self._run_with_retry(lambda: self._servers[0])
         else:
-            # Block on HTTP (headless mode), or just run (GUI background thread)
-            server_http.run()
+            self._run_with_retry(lambda: server_http)
 
     def stop(self):
         for srv in self._servers:
@@ -238,6 +236,24 @@ class DaemonServer:
         self._servers.clear()
         self._secondary_threads.clear()
         self.ssl_port = None
+
+    @staticmethod
+    def _run_with_retry(server_factory, max_retries: int = 5):
+        import time as _time
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                srv = server_factory()
+                srv.run()
+                return
+            except OSError as e:
+                if "address already in use" in str(e).lower() and attempt < max_retries - 1:
+                    _time.sleep(0.3 * (2 ** attempt))
+                    last_exc = e
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
 
 
 def run_daemon(config: DaemonConfig | None = None):
