@@ -8,6 +8,7 @@ from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
+from services.api_token_service import ApiTokenService
 from services.embeddings import EmbeddingService
 from .models import (
     ContactOut, ContactCreate, ContactUpdate,
@@ -158,7 +159,7 @@ def _event_fields_to_ical(fields: EventCreate | EventUpdate, uid: str = "") -> s
     if uid:
         ical += f"UID:{uid}\r\n"
     else:
-        ical += f"UID:{int(__import__('time').time() * 1000)}@personaldav\r\n"
+        ical += f"UID:{int(__import__('time').time() * 1000)}-{__import__('secrets').token_hex(4)}@personaldav\r\n"
         ical += "STATUS:CONFIRMED\r\n"
 
     all_day = getattr(fields, 'all_day', False)
@@ -512,7 +513,7 @@ async def export_events(
     else:
         # fallback: last 365 days
         raw_list, _ = svc.get_all_raw_paginated(0, 1000)
-    vevents = "\r\n".join(r.ical for r in raw_list if r and r.ical)
+    vevents = "\r\n".join(r for r in raw_list if r)
     ics = f"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n{vevents}\r\nEND:VCALENDAR"
     return Response(
         content=ics,
@@ -728,7 +729,6 @@ async def trash_purge(days: int = Query(30), token: str = Depends(get_current_to
     from services.trash_service import TrashService
     TrashService.purge(days)
     return {"purged": True}
-from services.api_token_service import ApiTokenService
 
 @api_router.get("/auth/tokens", summary="列出 API 令牌（不含原始令牌）")
 async def list_api_tokens(token: str = Depends(get_current_token)):

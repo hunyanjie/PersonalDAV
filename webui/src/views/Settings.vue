@@ -206,7 +206,7 @@
                             <option value="custom">自定义</option>
                           </select>
                           <div v-if="tokenFormExpires==='custom'" style="display:flex; align-items:center; gap:4px;">
-                             <input v-model="tokenFormCustomDays" type="number" min="1" style="width:60px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                             <input v-model="tokenFormCustomDate" type="number" min="1" style="width:60px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
                              <span style="font-size:12px; color:var(--text-muted);">天</span>
                           </div>
                         </div>
@@ -505,6 +505,7 @@ export default {
         const processed = { ...raw }
         this.editableDefs.forEach(d => {
           if (d.type === 'check') processed[d.key] = raw[d.key] === 'True'
+          else if (d.type === 'number') processed[d.key] = parseInt(raw[d.key]) || 0
         })
         this.settings = processed
       } catch(e) {}

@@ -142,7 +142,7 @@ export default {
         { key: 'contacts_count', label: '联系人', icon: 'Users', bg: 'bg-blue', unit: '', trend: '' },
         { key: 'events_count', label: '日程事件', icon: 'CalendarDays', bg: 'bg-green', unit: '', trend: '' },
         { key: 'files_count', label: '存储文件', icon: 'FileText', bg: 'bg-orange', unit: '', trend: '' },
-        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: '+2%' },
+        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: '' },
       ]
     },
   },

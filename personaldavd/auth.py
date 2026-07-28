@@ -37,6 +37,16 @@ def _required_scope(method: str, path: str) -> str | None:
     return None
 
 
+# MCP tokens get all scopes (same as a full-access API token)
+_MCP_SCOPES = {"contacts:read", "contacts:create", "contacts:update", "contacts:delete",
+               "events:read", "events:create", "events:update", "events:delete",
+               "files:read", "files:upload", "files:delete", "files:rename",
+               "dav:read", "dav:write", "settings:read", "settings:write"}
+
+def _mcp_token_has_scope(required: str) -> bool:
+    return required in _MCP_SCOPES
+
+
 async def get_current_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
@@ -107,6 +117,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Full MCP token
             if svc.verify_mcp_token(token):
                 svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
+                if scope and not _mcp_token_has_scope(scope):
+                    svc.log_auth(False, client_ip, "ASGI", f"MCP scope denied: {scope}")
+                    return Response("Insufficient permissions", status_code=403)
                 return await call_next(request)
             # API 令牌 (v3.4)
             from services.api_token_service import ApiTokenService

@@ -128,7 +128,7 @@
             <div v-else class="preview-error">{{ previewError || '不支持预览该文件类型' }}</div>
           </div>
           <div class="preview-footer">
-            <a :href="api().downloadUrl(previewItem.path)" class="btn-sm btn-primary">下载</a>
+              <button class="btn-sm btn-primary" @click="api().downloadFile(previewItem.path)">下载</button>
             <button class="btn-sm" @click="previewItem = null">关闭</button>
           </div>
         </div>
@@ -197,14 +197,14 @@
                 </button>
                 <div class="row-actions-main" :style="swipeStyle(item.path)">
                   <button v-if="!item.is_dir && canPreview(item.name)" class="btn-icon" @touchstart.stop @click.stop="doPreview(item)" title="预览"><Eye :size="16" /></button>
-                  <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="btn-icon" @touchstart.stop @click.stop title="下载"><Download :size="16" /></a>
+                  <button v-if="!item.is_dir" class="btn-icon" @touchstart.stop @click.stop="api().downloadFile(item.path)" title="下载"><Download :size="16" /></button>
                   <button class="btn-icon" @touchstart.stop @click.stop="startRename(item)" title="重命名"><Pencil :size="16" /></button>
                   <button class="btn-icon btn-danger" @touchstart.stop @click.stop="doDelete(item)" title="删除"><Trash2 :size="16" /></button>
                 </div>
                 <transition name="pop">
                   <div v-if="_menuPath === item.path" class="ctx-menu-popover glass" @click.stop>
                     <div v-if="!item.is_dir && canPreview(item.name)" class="ctx-item" @click="doPreview(item); _menuPath = null"><Eye :size="16" /> 预览文件</div>
-                    <a v-if="!item.is_dir" :href="api().downloadUrl(item.path)" class="ctx-item" @click="_menuPath = null"><Download :size="16" /> 下载文件</a>
+                    <div v-if="!item.is_dir" class="ctx-item" @click="api().downloadFile(item.path); _menuPath = null"><Download :size="16" /> 下载文件</div>
                     <div class="ctx-item" @click="startRename(item); _menuPath = null"><Pencil :size="16" /> 重命名</div>
                     <div class="ctx-divider" />
                     <div class="ctx-item danger" @click="doDelete(item); _menuPath = null"><Trash2 :size="16" /> 删除项</div>
@@ -369,6 +369,9 @@ export default {
     },
     async restoreFromTrash(item) {
       this.doTrashOp(item.uuid, 'restore', item.absolute_path || item.original_path.replace(/^\/+/, ''))
+    },
+    deleteFromTrash(item) {
+      this.doTrashOp(item.uuid, 'delete', item.absolute_path || item.original_path.replace(/^\/+/, ''))
     },
     async doTrashOp(uuid, op, targetPath = null, conflictStrategy = 'error') {
       try {
@@ -568,7 +571,6 @@ export default {
       this.breadcrumbs = crumbs
     },
     async doUpload(e) {
-      await this.load() // 确保获取最新文件列表
       const files = e.target.files
       if (!files.length) return
       this.uploadProgress = 0
@@ -732,7 +734,9 @@ export default {
 
     // Drag & Drop
     onDragEnter(e) {
-      this.dragOver = true
+      if (e.dataTransfer.types?.includes('Files')) {
+        this.dragOver = true
+      }
     },
     async onDrop(e) {
       this.dragOver = false
@@ -740,8 +744,46 @@ export default {
       if (!files.length) return
       this.uploadProgress = 0
       for (const file of files) {
+        let uploadFile = file
+        let newFilename = null
+        let overwrite = false
+
+        if (this.items.some(i => i.name === file.name)) {
+          const action = await window.showConfirm({ 
+            message: `"${file.name}" 已存在`, 
+            type: 'warning',
+            confirmText: '覆盖',
+            cancelText: '取消',
+            extraText: '重命名',
+            showCancel: true
+          })
+
+          if (action === 'confirm') {
+            overwrite = true
+          } else if (action === 'extra') {
+            let name = file.name
+            let ext = ''
+            const lastDot = name.lastIndexOf('.')
+            if (lastDot > 0) {
+              ext = name.substring(lastDot)
+              name = name.substring(0, lastDot)
+            }
+            let counter = 1
+            let newName = `${name}(${counter})${ext}`
+            while (this.items.some(i => i.name === newName)) {
+              counter++
+              newName = `${name}(${counter})${ext}`
+            }
+            newFilename = newName
+          } else {
+            window.showToast(`已取消上传: ${file.name}`, 'info')
+            continue
+          }
+        }
+
         try {
-          await api.uploadFileWithProgress(file, this.currentPath, pct => { this.uploadProgress = pct })
+          await api.uploadFileWithProgress(uploadFile, this.currentPath, pct => { this.uploadProgress = pct }, overwrite, newFilename)
+          window.showToast(`上传成功: ${newFilename || file.name}`, 'success')
         } catch(e) {
           window.showToast(`上传失败(${file.name}): ${e.message || e}`, 'error')
         }

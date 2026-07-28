@@ -133,11 +133,27 @@ export default {
   },
   downloadUrl(path) {
     const t = token()
-    return `${BASE}/files/download?path=${encodeURIComponent(path)}${t ? `&token=${t}` : ''}`
+    return `${BASE}/files/download?path=${encodeURIComponent(path)}`
   },
   previewUrl(path) {
     const t = token()
-    return `${BASE}/files/preview?path=${encodeURIComponent(path)}${t ? `&token=${t}` : ''}`
+    return `${BASE}/files/preview?path=${encodeURIComponent(path)}`
+  },
+  async downloadFile(path) {
+    const t = token()
+    const url = `${BASE}/files/download?path=${encodeURIComponent(path)}`
+    const headers = t ? { Authorization: `Bearer ${t}` } : {}
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error('下载失败')
+    const blob = await res.blob()
+    const dlUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = dlUrl
+    a.download = path.split('/').pop() || 'download'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(dlUrl), 1000)
   },
   async previewFile(path) {
     const t = token()

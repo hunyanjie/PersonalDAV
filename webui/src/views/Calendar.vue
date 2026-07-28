@@ -429,11 +429,17 @@ export default {
     },
     async deleteSelected() {
       if (!await window.showConfirm({ message: `确认删除选中的 ${this.ctxMenu.uids.length} 个日程？`, type: 'danger' })) return
-      Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid))).then(() => { this.ctxMenu.show = false; this.load() })
+      try {
+        await Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid)))
+        this.ctxMenu.show = false; this.load()
+      } catch(e) { window.showToast('删除失败', 'error') }
     },
     async deleteSingle(e) {
       if (!await window.showConfirm({ message: '确认删除此日程？', type: 'danger' })) return
-      api.deleteEvent(e.uid).then(() => { this.detailEvent = null; this.load() })
+      try {
+        await api.deleteEvent(e.uid)
+        this.detailEvent = null; this.load()
+      } catch(e) { window.showToast('删除失败', 'error') }
     },
     async doImportICS(e) {
       const file = e.target.files[0]; if (!file) return

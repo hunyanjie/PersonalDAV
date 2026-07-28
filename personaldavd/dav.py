@@ -18,6 +18,16 @@ dav_router = APIRouter(tags=["DAV 协议"])
 def _etag(raw: str) -> str:
     return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
 
+def _file_etag(fs_path: str) -> str:
+    h = hashlib.md5()
+    with open(fs_path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return f'"{h.hexdigest()}"'
+
 
 def _ctag(service) -> str:
     tags = []
@@ -110,7 +120,7 @@ async def contacts_handler(request: Request, rest: str = ""):
 
     if method == "PROPFIND":
         depth = request.headers.get("Depth", "0")
-        is_collection = path.endswith("/contacts") or path.endswith("/contacts/") or (not path.endswith(".vcf"))
+        is_collection = path.endswith("/contacts") or path.endswith("/contacts/")
         if is_collection:
             responses = [(path + "/", "", "", "httpd/unix-directory", 0)]
             if depth != "0":
@@ -202,7 +212,7 @@ async def events_handler(request: Request, rest: str = ""):
 
     if method == "PROPFIND":
         depth = request.headers.get("Depth", "0")
-        is_collection = path.endswith("/events") or path.endswith("/events/") or (not path.endswith(".ics"))
+        is_collection = path.endswith("/events") or path.endswith("/events/")
         if is_collection:
             responses = [(path + "/", "", "", "httpd/unix-directory", 0)]
             if depth != "0":
@@ -383,8 +393,7 @@ async def webdav_handler(request: Request, rest: str = ""):
         depth = request.headers.get("Depth", "0")
         responses = []
         if os.path.isfile(fs_path):
-            with open(fs_path, "rb") as f:
-                etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
+            etag_v = _file_etag(fs_path)
             s = os.stat(fs_path)
             responses.append((href_base, "", etag_v, "application/octet-stream", s.st_size))
         else:
@@ -397,8 +406,7 @@ async def webdav_handler(request: Request, rest: str = ""):
                     if os.path.isdir(child):
                         responses.append((href, "", "", "httpd/unix-directory", 0))
                     else:
-                        with open(child, "rb") as f:
-                            etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
+                        etag_v = _file_etag(child)
                         responses.append((href, "", etag_v, "application/octet-stream", s.st_size))
         xml = _multistatus_xml(responses)
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)

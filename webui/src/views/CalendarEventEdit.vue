@@ -286,6 +286,10 @@ export default {
           reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
           repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '', attachments: [] }
       }
+      document.removeEventListener('dragenter', this._onGlobalDragEnter)
+      document.removeEventListener('dragover', this._onGlobalDragOver)
+      document.removeEventListener('dragleave', this._onGlobalDragLeave)
+      document.removeEventListener('drop', this._onGlobalDrop)
       document.addEventListener('dragenter', this._onGlobalDragEnter)
       document.addEventListener('dragover', this._onGlobalDragOver)
       document.addEventListener('dragleave', this._onGlobalDragLeave)
