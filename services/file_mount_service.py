@@ -53,19 +53,21 @@ class FileMountService:
                 self._mounts = loaded
                 self._migrated = True
                 return
-            from services.settings_service import SettingsService
-            dav_root = SettingsService().get_setting("dav_root", "")
-            if not dav_root:
-                self._migrated = True
-                return
-            root = os.path.abspath(dav_root)
-            if not os.path.isdir(root):
-                os.makedirs(root, exist_ok=True)
-            name = os.path.basename(root) or "DAVStorage"
-            self._mounts.append({"name": name, "path": root})
-            self._save()
+            # Don't do file I/O inside the lock — it might hang on slow drives
             self._migrated = True
-            logger.info(f"Migrated dav_root -> mount '{name}' ({root})")
+        from services.settings_service import SettingsService
+        dav_root = SettingsService().get_setting("dav_root", "")
+        if not dav_root:
+            return
+        root = os.path.abspath(dav_root)
+        if not os.path.isdir(root):
+            os.makedirs(root, exist_ok=True)
+        name = os.path.basename(root) or "DAVStorage"
+        with self._instance_lock:
+            if not self._mounts:
+                self._mounts.append({"name": name, "path": root})
+                self._save()
+                logger.info(f"Migrated dav_root -> mount '{name}' ({root})")
 
     def get_mounts(self) -> list[dict[str, Any]]:
         self._ensure_migrated()
@@ -82,13 +84,13 @@ class FileMountService:
 
     def add_mount(self, name: str, path: str) -> dict[str, Any]:
         self._ensure_migrated()
+        abspath = os.path.abspath(path)
+        if not os.path.isdir(abspath):
+            os.makedirs(abspath, exist_ok=True)
         with self._instance_lock:
             for m in self._mounts:
                 if m["name"] == name:
                     raise ValueError(f"Mount name '{name}' already exists")
-            abspath = os.path.abspath(path)
-            if not os.path.isdir(abspath):
-                os.makedirs(abspath, exist_ok=True)
             entry = {"name": name, "path": abspath}
             self._mounts.append(entry)
             self._save()
@@ -109,6 +111,8 @@ class FileMountService:
     def update_mount(self, old_name: str, new_name: str, new_path: str) -> dict[str, Any]:
         self._ensure_migrated()
         abspath = os.path.abspath(new_path)
+        if not os.path.isdir(abspath):
+            os.makedirs(abspath, exist_ok=True)
         with self._instance_lock:
             idx = -1
             for i, m in enumerate(self._mounts):
@@ -118,8 +122,6 @@ class FileMountService:
                     raise ValueError(f"Mount name '{new_name}' already exists")
             if idx < 0:
                 raise ValueError(f"Mount '{old_name}' not found")
-            if not os.path.isdir(abspath):
-                os.makedirs(abspath, exist_ok=True)
             self._mounts[idx] = {"name": new_name, "path": abspath}
             self._save()
         logger.info(f"Mount updated: {old_name} -> {new_name} ({abspath})")
