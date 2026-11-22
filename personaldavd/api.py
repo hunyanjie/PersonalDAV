@@ -9,13 +9,14 @@ from services.event_service import EventService
 from services.settings_service import SettingsService
 from services.auth_service import AuthService
 from services.api_token_service import ApiTokenService
+from services.api_scopes import ALL_SCOPES, PROTECTED_SETTING_KEYS, mask_setting
 from services.embeddings import EmbeddingService
 from .models import (
     ContactOut, ContactCreate, ContactUpdate,
     EventOut, EventCreate, EventUpdate, HealthOut, AuthTokenOut, AuthTokenRequest,
     ServerConfigOut, AuthLogOut, StatsOut, ErrorOut, SystemLogOut,
 )
-from .auth import get_current_token
+from .auth import get_auth_context, get_current_token
 from .logging import LOG_QUEUE
 import vobject
 
@@ -267,7 +268,7 @@ async def get_token(body: AuthTokenRequest, request: Request):
     if bypass or not pw_not_required:
         token = svc.get_mcp_token()
         await asyncio.to_thread(svc.log_auth, True, client_ip, "WebUI", "IP 免密放行", user_agent=ua, fingerprint=fp)
-        return AuthTokenOut(token=token, scopes=body.scopes)
+        return AuthTokenOut(token=token, scopes=sorted(ALL_SCOPES))
 
     pw_ok = await asyncio.to_thread(svc.verify_password, body.password)
     if not pw_ok:
@@ -278,7 +279,7 @@ async def get_token(body: AuthTokenRequest, request: Request):
         await asyncio.to_thread(svc.log_auth, False, client_ip, "WebUI", "未设置密码无法生成令牌", user_agent=ua, fingerprint=fp)
         raise HTTPException(403, "未设置密码，无法生成令牌")
     await asyncio.to_thread(svc.log_auth, True, client_ip, "WebUI", "密码登录成功", user_agent=ua, fingerprint=fp)
-    return AuthTokenOut(token=token, scopes=body.scopes)
+    return AuthTokenOut(token=token, scopes=sorted(ALL_SCOPES))
 
 
 # ── Contacts ────────────────────────────────────────────────────
@@ -617,7 +618,8 @@ async def delete_event(uid: str, token: str = Depends(get_current_token)):
 @api_router.get("/settings", summary="获取所有设置")
 async def list_settings(token: str = Depends(get_current_token)):
     s = SettingsService()
-    return s.get_all_settings()
+    settings = s.get_all_settings()
+    return {key: mask_setting(key, value) for key, value in settings.items()}
 
 
 @api_router.get("/settings/{key}", summary="获取单个设置")
@@ -626,11 +628,13 @@ async def get_setting(key: str, token: str = Depends(get_current_token)):
     val = s.get_setting(key, None)
     if val is None:
         raise HTTPException(404, "设置不存在")
-    return {"key": key, "value": val}
+    return {"key": key, "value": mask_setting(key, val)}
 
 
 @api_router.put("/settings/{key}", summary="更新设置")
 async def update_setting(key: str, body: dict, token: str = Depends(get_current_token)):
+    if key in PROTECTED_SETTING_KEYS:
+        raise HTTPException(403, "该设置不支持通过 API 修改")
     s = SettingsService()
     s.set_setting(key, body.get("value", ""))
     return {"key": key, "updated": True}
@@ -758,10 +762,27 @@ async def list_api_tokens(token: str = Depends(get_current_token)):
     return ApiTokenService().list_tokens()
 
 @api_router.post("/auth/tokens", summary="创建 API 令牌")
-async def create_api_token(body: dict, token: str = Depends(get_current_token)):
-    scopes = body.get("scopes", [])
+async def create_api_token(body: dict, request: Request, token: str = Depends(get_current_token)):
+    raw_scopes = body.get("scopes", [])
+    if not isinstance(raw_scopes, list):
+        raise HTTPException(400, "scopes 必须是数组")
+    scopes = [s for s in raw_scopes if isinstance(s, str)]
     if not scopes:
         raise HTTPException(400, "至少需要选择一个权限")
+
+    unknown = sorted(set(scopes) - ALL_SCOPES)
+    if unknown:
+        raise HTTPException(400, f"未知权限: {', '.join(unknown)}")
+
+    ctx = get_auth_context(request)
+    if ctx is None:
+        raise HTTPException(401, "Authorization required")
+    if ctx.scopes is not None:
+        forbidden = sorted(set(scopes) - ctx.scopes)
+        if forbidden:
+            raise HTTPException(403, f"不能授予当前令牌没有的权限: {', '.join(forbidden)}")
+
+    scopes = list(dict.fromkeys(scopes))
     note = body.get("note", "")
     expires_at = body.get("expires_at", "")
     result = ApiTokenService().create_token(scopes, note, expires_at)

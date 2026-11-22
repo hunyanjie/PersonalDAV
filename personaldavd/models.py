@@ -102,7 +102,7 @@ class AuthTokenOut(BaseModel):
 class AuthTokenRequest(BaseModel):
     password: str
     fingerprint: str = ""
-    scopes: list[str] = ["contacts:read", "contacts:write", "events:read", "events:write", "dav:read", "dav:write"]
+    scopes: list[str] = []
 
 
 class ErrorOut(BaseModel):
