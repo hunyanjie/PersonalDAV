@@ -1,8 +1,6 @@
 import os
 import uuid
 import base64
-import shutil
-from typing import BinaryIO
 from utils.logger import logger
 
 

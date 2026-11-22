@@ -145,15 +145,18 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
             content={"detail": f"{type(exc).__name__}: {exc}", "path": request.url.path}
         )
 
-    if cfg.webui_enabled:
-        app.include_router(api_router, prefix="/api")
-        app.include_router(files_router, prefix="/api")
-        app.mount("/mcp", create_mcp_app(), name="mcp")
+    # REST API 与 MCP 独立于 Web 面板开关；关闭 WebUI 只影响 SPA 静态页面。
+    app.include_router(api_router, prefix="/api")
+    app.include_router(files_router, prefix="/api")
+    app.mount("/mcp", create_mcp_app(), name="mcp")
 
+    if cfg.webui_enabled:
         webui_dist = os.path.join(os.path.dirname(__file__), "..", "webui", "dist")
         if os.path.isdir(webui_dist):
             from fastapi.responses import FileResponse
-            app.mount("/assets", StaticFiles(directory=os.path.join(webui_dist, "assets")), name="spa_assets")
+            assets_dir = os.path.join(webui_dist, "assets")
+            if os.path.isdir(assets_dir):
+                app.mount("/assets", StaticFiles(directory=assets_dir), name="spa_assets")
             icons_dir = os.path.join(webui_dist, "icons")
             if os.path.isdir(icons_dir):
                 app.mount("/icons", StaticFiles(directory=icons_dir), name="spa_icons")

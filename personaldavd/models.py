@@ -151,4 +151,4 @@ class StatsOut(BaseModel):
     disk_total_mb: float = 0.0
     uptime: float = 0.0
     version: str = ""
-    trends: dict[str, str] = {}
+    trends: dict[str, str] = Field(default_factory=dict)
