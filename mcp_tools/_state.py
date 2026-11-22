@@ -1,5 +1,5 @@
 from services.smb_service import SMBService
-from network.dav_server import DAVServer
+from utils.server_registry import server_instance
 
 _CONTACT_SVC = None
 _EVENT_SVC = None
@@ -26,4 +26,4 @@ def get_ftp_svc():
         _FTP_SVC = FTPService()
     return _FTP_SVC
 
-server_instance: list[DAVServer | None] = [None]
+__all__ = ["get_contact_svc", "get_event_svc", "get_ftp_svc", "server_instance"]

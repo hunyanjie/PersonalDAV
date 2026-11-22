@@ -18,6 +18,7 @@ from .files import files_router
 from .auth import AuthMiddleware
 from .logging import StructuredLogger
 from .mcp import create_mcp_app
+from utils.server_registry import server_instance
 
 
 def _unique_id(route: APIRoute) -> str:
@@ -191,6 +192,7 @@ class DaemonServer:
         import time as _time
         import uvicorn
         import logging as _logging
+        server_instance[0] = self
         self.start_time = _time.time()
         self._servers.clear()
         self._secondary_threads.clear()
@@ -262,6 +264,8 @@ class DaemonServer:
         self._servers.clear()
         self._secondary_threads.clear()
         self.ssl_port = None
+        if server_instance[0] is self:
+            server_instance[0] = None
 
 
 def run_daemon(config: DaemonConfig | None = None):
