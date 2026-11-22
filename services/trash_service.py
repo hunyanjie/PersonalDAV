@@ -205,13 +205,22 @@ class TrashService:
                 logger.info(f"回收站自动清理: 已清除 {purged} 个超期条目 (>{retention_days}天)")
 
     @classmethod
-    def _purge_expired(cls):
+    def _retention_days(cls) -> int:
+        """解析回收站保留天数，支持 WebUI 的“自定义”选项。"""
         try:
             from services.settings_service import SettingsService
-            days = int(SettingsService().get_setting("trash_retention_days", "30"))
-        except Exception:
+            svc = SettingsService()
+            raw = svc.get_setting("trash_retention_days", "30")
+            if raw == "custom":
+                raw = svc.get_setting("trash_retention_custom", "30")
+            days = int(raw)
+        except (ValueError, TypeError):
             days = 30
-        cls.purge(days)
+        return max(1, days)
+
+    @classmethod
+    def _purge_expired(cls):
+        cls.purge(cls._retention_days())
 
 def _get_mount_service():
     from services.file_mount_service import FileMountService

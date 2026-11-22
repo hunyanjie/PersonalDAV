@@ -87,7 +87,10 @@ SIMPLE_SETTINGS = [
 
     # ========== 回收站 ==========
     SettingDef("trash_retention_days", "回收站保留天数:", "combo", "服务器控制",
-               default="30", options=["1", "3", "5", "7", "14", "30"], width=10),
+               default="30", options=["1", "3", "5", "7", "14", "30", "custom"], width=10,
+               display_map={"1": "1", "3": "3", "5": "5", "7": "7", "14": "14", "30": "30", "custom": "自定义"}),
+    SettingDef("trash_retention_custom", "自定义保留天数:", "entry", "服务器控制",
+               default="30", width=10),
 ]
 
 
