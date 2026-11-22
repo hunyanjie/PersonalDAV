@@ -139,10 +139,10 @@ export default {
     },
     statDefs() {
       return [
-        { key: 'contacts_count', label: '联系人', icon: 'Users', bg: 'bg-blue', unit: '', trend: '' },
-        { key: 'events_count', label: '日程事件', icon: 'CalendarDays', bg: 'bg-green', unit: '', trend: '' },
-        { key: 'files_count', label: '存储文件', icon: 'FileText', bg: 'bg-orange', unit: '', trend: '' },
-        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: '' },
+        { key: 'contacts_count', label: '联系人', icon: 'Users', bg: 'bg-blue', unit: '', trend: this.stats.trends?.contacts_count || '' },
+        { key: 'events_count', label: '日程事件', icon: 'CalendarDays', bg: 'bg-green', unit: '', trend: this.stats.trends?.events_count || '' },
+        { key: 'files_count', label: '存储文件', icon: 'FileText', bg: 'bg-orange', unit: '', trend: this.stats.trends?.files_count || '' },
+        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: this.stats.trends?.disk_used_mb || '' },
       ]
     },
   },

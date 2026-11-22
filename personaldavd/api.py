@@ -1,6 +1,6 @@
 """REST API router — CRUD for contacts, events, system."""
 
-import asyncio, time, os, shutil, uuid, logging, re
+import asyncio, time, uuid, logging, re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -682,38 +682,10 @@ async def system_logs(token: str = Depends(get_current_token)):
 
 @api_router.get("/stats", response_model=StatsOut, summary="服务器统计信息")
 async def stats(token: str = Depends(get_current_token)):
-    cs = ContactService()
-    es = EventService()
-    s = SettingsService()
-    dav_root = s.get_setting("dav_root", "./dav_root")
-
-    def _compute_stats():
-        total_size = 0
-        file_count = 0
-        if os.path.isdir(dav_root):
-            for dirpath, _, filenames in os.walk(dav_root):
-                for fn in filenames:
-                    fp = os.path.join(dirpath, fn)
-                    try:
-                        total_size += os.path.getsize(fp)
-                        file_count += 1
-                    except Exception:
-                        pass
-        try:
-            disk_total = shutil.disk_usage(dav_root).total / (1024 * 1024)
-        except Exception:
-            disk_total = 0
-        return file_count, total_size, disk_total
-
-    file_count, total_size, disk_total = await asyncio.to_thread(_compute_stats)
-    contacts_count = await asyncio.to_thread(cs.count)
-    events_count = await asyncio.to_thread(es.count)
+    from services.stats_service import StatsService
+    data = await asyncio.to_thread(StatsService().collect)
     return StatsOut(
-        contacts_count=contacts_count,
-        events_count=events_count,
-        files_count=file_count,
-        disk_used_mb=round(total_size / (1024 * 1024), 2),
-        disk_total_mb=round(disk_total, 2),
+        **data,
         uptime=time.time() - _start_time,
         version=SOFTWARE_VERSION,
     )
