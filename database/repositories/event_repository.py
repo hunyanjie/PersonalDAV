@@ -3,7 +3,8 @@ from database.repositories.base import BaseRepository
 from models.event import EventModel
 
 class EventRepository(BaseRepository[EventModel]):
-    SEARCH_COLUMNS = ['summary', 'description', 'location']
+    # 必须与 events_fts 的索引列保持一致；description/location 包含在 ical 原文中。
+    SEARCH_COLUMNS = ['summary', 'ical']
 
     def search_by_keyword(self, keyword: str, limit: int = 20) -> list[EventModel]:
         return self.search(self.SEARCH_COLUMNS, keyword, limit)

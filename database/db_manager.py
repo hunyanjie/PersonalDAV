@@ -131,6 +131,10 @@ class Database:
                 prev = h
             logger.info(f"已回填 {missing} 条审计日志的哈希链")
 
+        # 迁移: 联系人分组（必须在 FTS5 建表之前，FTS 会引用 groups 列）
+        try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
+        except Exception: pass
+
         # FTS5 全文索引（v3.4）
         try:
             c.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS contacts_fts USING fts5(
@@ -205,10 +209,6 @@ class Database:
                       expires_at TEXT,
                       created_at TEXT NOT NULL,
                       last_used_at TEXT DEFAULT '')''')
-
-        # 迁移: 联系人分组
-        try: c.execute("ALTER TABLE contacts ADD COLUMN groups TEXT")
-        except Exception: pass
 
         # 初始数据填充 (仅在表为空时)
         c.execute("SELECT COUNT(*) FROM settings")
