@@ -10,7 +10,13 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 
 ## 功能特性
 
-- 🌐 **Web 管理界面** — 打开浏览器就能管理所有数据！无需安装任何软件。支持离线访问、日程桌面通知、拖拽上传文件、导入 .vcf/.ics 联系人/日程、图片预览放大缩小（支持触摸拖拽和缩放）、农历显示、主题色自定义、侧栏收缩、骨架屏加载动画、列表 FLIP 动画（v3.2 新增，v3.3 大幅增强）
+- 🌐 **Web 管理界面** — 打开浏览器就能管理所有数据！无需安装任何软件。支持离线访问、日程桌面通知、拖拽上传文件、导入 .vcf/.ics 联系人/日程、图片预览放大缩小（支持触摸拖拽和缩放）、农历显示、主题色自定义、侧栏收缩、骨架屏加载动画、列表 FLIP 动画（v3.2 新增，v3.3 大幅增强，v3.4 增加头像、双击编辑、回收站与全局搜索）
+- 🗑️ **文件回收站** — 删除的文件先放进回收站，可随时还原；支持设置保留天数，避免误删造成永久损失（v3.4 新增）
+- 🔍 **全局搜索** — 联系人和日程支持快速关键词搜索，输入即出结果（v3.4 新增）
+- 🔑 **应用专用密码** — 可以为不同程序单独生成访问密码，并限定只能读联系人、只能看日程等权限，还能设置有效期（v3.4 新增）
+- 🍎 **Apple 设备一键配置** — 生成一个配置文件，iPhone/iPad/Mac 导入后自动填好联系人和日历服务器地址（v3.4 新增）
+- 📄 **Office 文档预览** — 在文件管理中直接预览 Word、Excel、PPT 等文档，无需先下载（v3.4 新增）
+- 💽 **多磁盘/多目录管理** — 可以把多个磁盘或文件夹挂载到文件管理里，统一浏览和上传（v3.4 完善）
 - 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
 - 📎 **事件附件** — 为日历事件添加文件或链接附件，支持 base64 内联存储
 - 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式，支持重复事件
@@ -46,7 +52,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 
 ### 前提条件
 
-- Python 3.10+
+- Python 3.12+
 
 ### 安装步骤
 
@@ -88,8 +94,9 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
    | `--port`, `-p` | 8000 | 监听端口 |
    | `--log-level` | INFO | 日志级别 (DEBUG/INFO/WARNING/ERROR/CRITICAL) |
    | `--log-json` | — | JSON 结构化日志输出 |
-   | `--db-path` | data/dav_data.db | 数据库路径 |
-   | `--dav-root` | ./dav_root | WebDAV 根目录 |
+   | `--db-path` | data/dav_data.db | 数据库路径（优先级最高） |
+   | `--data-dir` | — | 数据目录（数据库、日志、附件、回收站都放在这里） |
+   | `--dav-root` | — | 把这个目录注册为 WebDAV 挂载点（不填则不自动挂载） |
 
 5. 远程连接（GUI 连到远程服务器）：
    ```bash
@@ -102,7 +109,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试（23 项）→ MCP 内部工具测试（32 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）。
+依次执行：pytest 单元测试（28 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
 
 ## 使用指南
 
@@ -171,8 +178,11 @@ python tests/run_all.py
 | `GET /api/contacts` / `POST /api/contacts` | 联系人列表 / 创建 |
 | `GET /api/events` / `POST /api/events` | 事件列表 / 创建 |
 | `GET /api/files` / `POST /api/files/upload` | 文件浏览 / 上传（v3.2） |
-| `GET /api/settings` / `PUT /api/settings/:key` | 设置读取 / 修改（v3.2） |
-| `GET /api/stats` | 服务器统计数据（v3.2） |
+| `GET /api/settings` / `PUT /api/settings/:key` | 设置读取 / 修改（v3.2，密码等敏感项已脱敏） |
+| `GET /api/stats` | 服务器统计数据与较昨日趋势（v3.4） |
+| `GET /api/trash` / `POST /api/trash/restore` | 回收站列表 / 还原（v3.4） |
+| `GET/POST /api/auth/tokens` | 应用专用密码的查看与创建（v3.4） |
+| `GET /api/apple/config` | 生成 Apple 设备配置文件（v3.4） |
 | `GET /api/auth/logs` | 鉴权日志查询（v3.2） |
 
 详细文档访问服务器后打开 `http://localhost:8000/api/docs`。
@@ -251,7 +261,7 @@ PersonalDAV/
 ├── data/                    # 运行产物（自动创建）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
-│   ├── attachments/         # 附件独立文件存储
+│   ├── calendar_attachments/# 日历附件独立文件存储
 │   └── log/                 # 日志文件
 ├── mcp_tools/               # MCP 工具模块（41 个工具，分文件管理）
 ├── models/                  # 数据模型层（dataclass）
@@ -387,7 +397,7 @@ python tests/run_all.py   # pytest 23 项 + MCP 测试 + 鉴权测试
 
 ### 代码规范
 
-- Python 3.10+，使用类型注解
+- Python 3.12+，使用类型注解
 - 新代码须通过 `mypy --strict` 检查
 - 导入顺序：标准库 → 第三方 → 本地模块
 - 类名 `PascalCase`，函数/变量 `snake_case`

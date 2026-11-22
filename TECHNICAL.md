@@ -37,6 +37,8 @@
 
 > v3.3 变动：WebUI 全端企业级交互升级（Toast/Modal/骨架屏/FLIP/Skeleton/EmptyState/Micro-interactions/圆环图/右滑操作）。新增 `utils/cert_helper.py`（SSL 一键证书生成）。新增 `webui/src/components/Toast.vue` / `ModalConfirm.vue` / `EmptyState.vue` / `SkeletonCard.vue`。`personaldavd/daemon.py` 支持双端口 HTTPS+HTTP。FTP 配置从服务器页迁移至设置页并使用 SettingDef。asyncio 日志噪音两处抑制。
 
+> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。
+
 ---
 
 ## 启动流程
@@ -89,9 +91,11 @@ main.py --headless
         │     ├── app.include_router(api_router, prefix="/api")
         │     ├── app.include_router(dav_router)        # DAV + 附件
         │     └── app.mount("/mcp", create_mcp_app())   # MCP SSE
-        ├── _init_environment()
-        │     ├── os.makedirs(db_dir / dav_root)
-        │     └── sqlite3.connect(db_path).close()
+        ├── lifespan → _init_environment()
+        │     ├── Database(db_path=...)          # 必须先固定数据库
+        │     ├── SettingsService(data_dir=...)  # 附件/回收站/日志跟随
+        │     ├── FileMountService.add_mount(dav_root)
+        │     └── TrashService.startup_init()
         ├── lifespan 开始
         └── uvicorn.run(app, host, port)
               └── 同步 I/O 循环，阻塞至 Ctrl+C / SIGTERM
@@ -108,6 +112,58 @@ main.py --headless
 - **后台线程**：MCP 工具注册 + uvicorn 启动、更新检查、证书续期、定时同步均在后台线程执行，主线程只处理 GUI 事件
 
 ---
+
+## v3.4 — 搜索、回收站、应用专用密码、多挂载与无头模式修复
+
+### 功能实现索引
+
+| 功能 | 主要文件 | 说明 |
+|------|----------|------|
+| 全局搜索 | `database/db_manager.py`、`database/repositories/*` | SQLite FTS5，`contacts_fts` / `events_fts` 由触发器同步；`groups` 列迁移必须早于 FTS 建表 |
+| 事件搜索 | `database/repositories/event_repository.py` | `SEARCH_COLUMNS = ['summary', 'ical']`，与 `events_fts` 索引列一致 |
+| 文件回收站 | `services/trash_service.py`、`personaldavd/api.py` | manifest 记录原路径/大小/删除时间；`resolve_data_path("trash")` 跟随数据目录 |
+| 回收站 UI | `webui/src/views/Files.vue`、`ui/tabs/files_tab.py` | 列表、还原、永久删除、清空、保留天数 |
+| 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希 |
+| 作用域鉴权 | `personaldavd/auth.py` | 中间件写入 `AuthContext`；API 令牌按 `required_scope()` 校验；未分类 API 默认要求 `tokens:manage` |
+| 敏感设置脱敏 | `personaldavd/api.py`、`services/api_scopes.py` | 密码/密钥/盐等返回 `********`；`PROTECTED_SETTING_KEYS` 禁止通用接口写入 |
+| Apple 配置 | `personaldavd/api.py` | 生成 `.mobileconfig`，根据协议与 SSL 设置选择 http/https |
+| Office 预览 | `personaldavd/files.py`、`webui/src/views/Files.vue` | 支持 LibreOffice / ONLYOFFICE / Microsoft Office Online |
+| 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算 |
+| 无头数据目录 | `personaldavd/daemon.py`、`main.py`、`personaldavd/__main__.py` | 先初始化 Database，再写 `data_dir`，再注册 dav_root，最后同步回收站 |
+| MCP 服务器工具 | `mcp_tools/server_tools.py`、`utils/server_registry.py` | GUI/无头/MCP 共享同一个 `DaemonServer` 实例，状态返回 `http_port` / `ssl_port` |
+| 测试隔离 | `tests/_test_db.py`、`tests/conftest.py` | 所有测试使用临时数据库，不再读写用户真实 `data/dav_data.db` |
+
+### 作用域模型
+
+`services/api_scopes.py` 是唯一规则来源，`personaldavd/auth.py` 与 `personaldavd/api.py` 都从这里读取：
+
+| 作用域 | 覆盖范围 |
+|--------|----------|
+| `contacts:read/create/update/delete` | 联系人 CRUD |
+| `events:read/create/update/delete` | 日程 CRUD |
+| `files:read/upload/rename/delete` | 文件浏览、上传、重命名、删除 |
+| `files:manage` | 挂载点增删改 |
+| `dav:read/write` | 原始 DAV 路径 |
+| `settings:read/write` | 设置、服务器信息、Apple 配置 |
+| `trash:read/write` | 回收站查看、还原、清空 |
+| `logs:read` | 鉴权日志与系统日志 |
+| `stats:read` | 概览统计 |
+| `tokens:manage` | 应用专用密码管理；未分类 API 的默认门槛 |
+
+创建令牌时，调用者只能授予自己拥有的作用域；MCP 主令牌和密码登录拥有全部作用域。
+
+### 测试
+
+`tests/run_all.py` 现在依次执行：
+
+1. pytest 单元测试（28 项）
+2. MCP 内部工具检查（41 个工具）
+3. MCP HTTP/SSE 端到端检查
+4. MCP 鉴权检查（401/403/200 + 审计日志）
+5. DAV 协议检查
+6. 无头环境与 FTS5 检查（临时数据库、`--data-dir`、`--dav-root`、搜索）
+
+所有脚本启动前调用 `tests/_test_db.py:init_temp_db()`，避免测试修改真实数据。
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -457,7 +513,7 @@ PersonalDAV/
 │   ├── smb_service.py         # SMBService（SMB 客户端）
 │   └── mcp_server.py          # MCPServer（MCP SSE）
 ├── network/                   # 网络层
-│   ├── dav_server.py          # DAVHandler（已废弃，v3.2 移除）
+│   ├── dav_server.py          # 旧版 http.server DAVHandler（仅兼容旧测试/工具，不再承载新功能）
 │   ├── dav_client.py          # WebDAV 客户端导入
 │   └── webdav_helper.py       # WebDAV XML 响应构建
 ├── utils/                     # 工具层
@@ -610,7 +666,26 @@ python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 | `--remote-url` | | daemon 地址，默认 `http://127.0.0.1:8000` (v3.0) |
 | `--remote-token` | | Bearer token（可选）(v3.0) |
 
-`--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
+`--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。`--data-dir` 会同时写入 `data_dir` 设置，日历附件、回收站、日志都跟随该目录；同时指定 `--db-path` 时仅数据库使用 `--db-path`。
+
+### 无头模式
+
+```bash
+python main.py --headless --port 8000 --data-dir D:\PDavData --dav-root D:\Files
+python -m personaldavd --port 8000 --data-dir D:\PDavData --dav-root D:\Files
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--host` | `127.0.0.1` | 监听地址 |
+| `--port` | `8000` | 监听端口 |
+| `--db-path` | 由 `--data-dir` 推导，否则 `data/dav_data.db` | 数据库路径（优先级最高） |
+| `--data-dir` | 空 | 数据库、日志、附件、回收站的根目录 |
+| `--dav-root` | 空 | 注册为 WebDAV 挂载点；不填则不自动挂载 |
+| `--log-level` | `INFO` | 日志级别 |
+| `--log-json` | 关闭 | JSON 结构化日志 |
+
+无头模式在 `lifespan` 中按「Database → data_dir → dav_root → 回收站」顺序初始化，确保 `--db-path` 不会被任何服务的默认单例抢先占用。
 
 ---
 
@@ -1224,6 +1299,8 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 ## DAV 服务器（dav_server.py）
 
+> v3.2 起生产环境统一走 `personaldavd/dav.py` 的 ASGI 路由。`network/dav_server.py` 仅保留给旧版兼容与 `tests/test_dav_protocol.py` 使用；MCP 的服务器启停已改用 `DaemonServer`，不再启动该旧服务。
+
 ### 端点路由 (v2.1)
 
 | 路径前缀 | 服务 | 资源类型 |
@@ -1493,9 +1570,9 @@ class MCPServer:
 
 | 工具 | 类别 | 说明 |
 |------|------|------|
-| `server_start(port)` | 服务端管理 | 后台启动 DAV 服务器 |
-| `server_stop()` | 服务端管理 | 停止 DAV 服务器 |
-| `server_status()` | 服务端管理 | 查询运行状态 + 端口 |
+| `server_start(port)` | 服务端管理 | 后台启动统一 `DaemonServer`（HTTP/WebUI/REST/MCP）；port=0 时使用设置中的端口 |
+| `server_stop()` | 服务端管理 | 停止统一服务器 |
+| `server_status()` | 服务端管理 | 查询运行状态，返回真实 `http_port` / `ssl_port` |
 | `list_contacts()` | 联系人 | 列出所有联系人摘要 |
 | `get_contact(uid)` | 联系人 | 获取联系人完整 vCard |
 | `create_contact(vcard_data)` | 联系人 | 从 vCard 创建联系人 |
@@ -1664,7 +1741,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 23 项，325 个子测试）
+### 测试结构（共 28 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
@@ -1676,6 +1753,8 @@ pytest tests/ -v -q
 | `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.1创建16个，v2.2增加到33个，v2.5增加到32个，v3.2增加到41个)         |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
+| `test_api_scopes.py` | 令牌作用域映射、未分类 API fail-closed、敏感设置脱敏 (v3.4)                                   |
+| `_run_headless_check.py` | 无头模式 `--db-path/--data-dir/--dav-root`、回收站/附件目录、FTS5 新建与搜索 (v3.4)                |
 
 ### 运行全部测试
 
@@ -1683,12 +1762,13 @@ pytest tests/ -v -q
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试 → MCP 内部工具检查 → MCP HTTP 工具检查 → MCP 鉴权测试。
+依次执行：pytest 单元测试 → MCP 内部工具检查 → MCP HTTP 工具检查 → MCP 鉴权测试 → DAV 协议检查 → 无头环境与 FTS5 检查。
 
 ### 测试隔离
 
-- `Database.reset()` 在 `setUpClass` 中重置单例，使用 `:memory:` 数据库
-- 每个 `setUp` 清空表数据，测试之间互不干扰
+- `tests/conftest.py:pytest_sessionstart` 统一初始化临时数据库
+- 独立脚本启动时调用 `tests/_test_db.py:init_temp_db()`，绝不读写用户真实 `data/dav_data.db`
+- `test_base_service.py` / `test_fuzzing.py` 仍在 `setUpClass` 使用 `:memory:`，测试之间互不干扰
 - 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
 - HTTP 测试使用独立端口（8101、8102），互不冲突
 
@@ -2041,7 +2121,7 @@ canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.wid
 3. 在 `services/` 下创建继承 `BaseService` 的单例子类
 4. 在 `ui/tabs/` 或 `ui/dialogs/` 中创建对应的 UI
 5. 在 `database/db_manager.py` 中 `create_tables()` 添加建表/迁移代码
-6. 在 `network/dav_server.py` 中 DAVHandler 添加 HTTP 端点
+6. 在 `personaldavd/dav.py` 或 `personaldavd/api.py` 添加 HTTP 端点；若新增 REST API，必须在 `services/api_scopes.py` 中补充作用域映射（未分类 API 默认要求 `tokens:manage`）
 
 ### 添加新 tab
 
