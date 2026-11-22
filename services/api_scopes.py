@@ -122,6 +122,11 @@ _SCOPE_RULES: Final[tuple[tuple[str, str, str], ...]] = (
 )
 
 
+def is_mcp_path(path: str) -> bool:
+    """MCP 端点只接受 MCP 主令牌或密码登录，不接受普通 API 令牌。"""
+    return path == "/mcp" or path.startswith("/mcp/")
+
+
 def required_scope(method: str, path: str) -> str | None:
     """返回请求所需作用域；返回 ``tokens:manage`` 表示未分类的 API 路径。
 

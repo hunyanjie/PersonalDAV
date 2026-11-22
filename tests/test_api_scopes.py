@@ -2,7 +2,7 @@
 
 import unittest
 
-from services.api_scopes import ALL_SCOPES, mask_setting, required_scope
+from services.api_scopes import ALL_SCOPES, is_mcp_path, mask_setting, required_scope
 
 
 class TestRequiredScope(unittest.TestCase):
@@ -25,6 +25,13 @@ class TestRequiredScope(unittest.TestCase):
         self.assertIsNone(required_scope("GET", "/api/health"))
         # 未分类 API 默认要求令牌管理权限（fail closed）
         self.assertEqual(required_scope("GET", "/api/future-admin"), "tokens:manage")
+
+    def test_mcp_paths(self):
+        self.assertTrue(is_mcp_path("/mcp"))
+        self.assertTrue(is_mcp_path("/mcp/sse"))
+        self.assertTrue(is_mcp_path("/mcp/messages/"))
+        self.assertFalse(is_mcp_path("/api/mcp"))
+        self.assertFalse(is_mcp_path("/mcpfake"))
 
 
 class TestSensitiveSettings(unittest.TestCase):

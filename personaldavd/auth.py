@@ -7,7 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from services.api_scopes import required_scope
+from services.api_scopes import is_mcp_path, required_scope
 from services.auth_service import AuthService
 
 # Token-based auth for REST API
@@ -116,6 +116,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             ats = ApiTokenService()
             tok_data = ats.verify_token(token)
             if tok_data:
+                if is_mcp_path(path):
+                    svc.log_auth(False, client_ip, "ASGI", "API token denied on MCP endpoint")
+                    return Response("MCP requires the MCP token", status_code=403)
                 token_scopes = frozenset(tok_data["scopes"])
                 if scope and scope not in token_scopes:
                     svc.log_auth(False, client_ip, "ASGI", f"Token scope denied: {scope}")
