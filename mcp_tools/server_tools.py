@@ -30,12 +30,14 @@ def register(mcp):
 
             from personaldavd.config import DaemonConfig
             from personaldavd.daemon import DaemonServer
+            from database.db_manager import Database
             from services.settings_service import SettingsService
             s = SettingsService()
+            db_path = Database._instance.db_path if Database._instance else s.get_setting("db_path", "data/dav_data.db")
             cfg = DaemonConfig(
                 host=s.get_setting("default_host", "127.0.0.1"),
                 port=port or int(s.get_setting("default_port", "8000")),
-                db_path=s.get_setting("db_path", "data/dav_data.db"),
+                db_path=db_path,
                 data_dir=s.get_setting("data_dir", ""),
                 dav_root=s.get_setting("dav_root", ""),
                 ssl_enabled=s.get_setting("ssl_enabled", "False") == "True",
