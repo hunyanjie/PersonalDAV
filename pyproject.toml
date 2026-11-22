@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PersonalDAV"
-version = "0.0.0"
+dynamic = ["version"]
 description = "全能 DAV 服务 (CardDAV + CalDAV + WebDAV)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -18,17 +18,17 @@ dependencies = [
     "requests>=2.28.0",
     "python-dateutil>=2.8.2",
     "tzlocal>=5.0",
-    "Babel>=2.12.0",
+    "Babel>=2.18.0",
     "tkcalendar>=1.6.1",
     "tkinterdnd2>=0.4.3",
     "webdavclient3>=3.14.6",
     "cryptography>=41.0.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
     "Pillow>=10.0.0",
     "pystray>=0.19.0",
     "pyftpdlib>=1.5.10",
     "pyOpenSSL>=24.0.0",
-    "paramiko>=3.5.0",
+
     "tftpy>=0.8.2",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.38.0",
@@ -39,8 +39,7 @@ dependencies = [
     "starlette>=1.2.1",
     "numpy>=2.4.6",
     "paramiko>=5.0.0",
-    "pysmb>=1.2.14",
-    "babel>=2.18.0"
+    "pysmb>=1.2.14"
 ]
 
 [project.optional-dependencies]
@@ -72,6 +71,9 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "9.0"
+
+[tool.setuptools.dynamic]
+version = {attr = "config.SOFTWARE_VERSION"}
 
 [tool.setuptools.packages.find]
 include = ["models*", "database*", "services*", "network*", "ui*", "utils*", "mcp_tools*", "tests*", "personaldavd*"]
