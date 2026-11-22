@@ -242,11 +242,11 @@ class EmbeddingService:
             cls._instance._subscribe_events()
         return cls._instance
 
-    def _on_data_changed(self, event: str):
+    def _on_data_changed(self, *args):
         """Clear embedding cache when contacts or events change."""
         if self._provider.is_semantic:
             self._cache.clear()
-            logger.debug("Embedding cache cleared on %s", event)
+            logger.debug("Embedding cache cleared")
 
     def _subscribe_events(self):
         """Subscribe to data change events for automatic cache invalidation."""
