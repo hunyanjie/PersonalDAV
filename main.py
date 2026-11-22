@@ -2,7 +2,16 @@ import argparse
 import logging
 import os
 import shutil
+import sys
 import base64
+
+# PyInstaller -w（无控制台）打包后 sys.stdout/stderr 为 None，
+# 直接交给 logging/uvicorn 会抛异常并让程序以退出码 1 结束。
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
 
 def _migrate_old_files(target_dir: str = "data"):
     os.makedirs(os.path.join(target_dir, "log"), exist_ok=True)
