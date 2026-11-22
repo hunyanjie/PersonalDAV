@@ -1,6 +1,8 @@
 """Test all MCP tools (v3.1: new search + analysis + safety tools)"""
 import sys, json, asyncio, time
 sys.path.insert(0, '.')
+from tests._test_db import init_temp_db
+init_temp_db("pdav-mcp-tools-")
 from services.mcp_server import MCPServer
 from utils.logger import logger
 import logging

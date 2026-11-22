@@ -41,6 +41,10 @@ if __name__ == "__main__":
     if ret != 0:
         exit_code = ret
 
+    ret = run("_run_headless_check.py", "无头环境与 FTS5 检查")
+    if ret != 0:
+        exit_code = ret
+
     if exit_code == 0:
         print("\n所有测试通过")
     else:

@@ -1,6 +1,8 @@
 """MCP 工具 HTTP 端到端测试 — 走 SSE 协议调用，验证中间件链路"""
 import sys, json, asyncio
 sys.path.insert(0, '.')
+from tests._test_db import init_temp_db
+init_temp_db("pdav-mcp-http-")
 from services.mcp_server import MCPServer
 from utils.logger import logger
 import logging
