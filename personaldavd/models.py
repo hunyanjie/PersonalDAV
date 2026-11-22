@@ -53,6 +53,7 @@ class EventOut(BaseModel):
     location: str = ""
     categories: str = ""
     rrule: str = ""
+    exdates: list[str] = []
     reminders: list[dict] = []
     attachments: list[dict] = []
     ical: str = ""
@@ -69,6 +70,7 @@ class EventCreate(BaseModel):
     location: str = ""
     categories: str = ""
     rrule: str = ""
+    exdates: list[str] = []
     reminders: list[dict] = []
     attachments: list[dict] = []
 
@@ -82,6 +84,7 @@ class EventUpdate(BaseModel):
     location: str | None = None
     categories: str | None = None
     rrule: str | None = None
+    exdates: list[str] | None = None
     reminders: list[dict] | None = None
     attachments: list[dict] | None = None
 

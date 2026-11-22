@@ -1,6 +1,7 @@
 """REST API router — CRUD for contacts, events, system."""
 
 import asyncio, time, uuid, logging, re
+from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from config import SOFTWARE_VERSION, SOFTWARE_NAME
@@ -52,6 +53,7 @@ def _vcard_to_contact_out(raw: str) -> ContactOut | None:
         if not uid:
             _logger.error("_vcard_to_contact_out: vCard 缺少 UID 行，无法解析:\n%s", raw[:300])
             return None
+        groups = groups.replace("\\;", ";").replace("\\,", ",")
         return ContactOut(uid=uid, full_name=full_name, email=email, phone=phone,
                           groups=groups, address=address, org=org, note=note, photo=photo, vcard=raw)
     except Exception as e:
@@ -64,6 +66,7 @@ def _ical_to_event_out(raw: str) -> EventOut | None:
     try:
         uid = summary = dtstart = dtend = description = location = categories = rrule = ""
         all_day = False
+        exdates = []
         reminders = []
         attachments = []
         in_valarm = False
@@ -103,6 +106,14 @@ def _ical_to_event_out(raw: str) -> EventOut | None:
                 categories = line.split(":", 1)[-1].strip() if ":" in line else ""
             elif ul.startswith("RRULE"):
                 rrule = line.split(":", 1)[-1].strip() if ":" in line else ""
+            elif ul.startswith("EXDATE"):
+                rest = line.split(":", 1)[-1].strip() if ":" in line else ""
+                for value in rest.split(","):
+                    value = value.strip()
+                    if len(value) >= 8 and value[:8].isdigit():
+                        date = f"{value[:4]}-{value[4:6]}-{value[6:8]}"
+                        if date not in exdates:
+                            exdates.append(date)
             elif ul.startswith("ATTACH"):
                 rest = line.split(":", 1)[-1].strip() if ":" in line else ""
                 attachments.append({"raw": rest})
@@ -126,8 +137,8 @@ def _ical_to_event_out(raw: str) -> EventOut | None:
             return None
         return EventOut(uid=uid, summary=summary, dtstart=dtstart, dtend=dtend,
                         all_day=all_day, description=description, location=location,
-                        categories=categories, rrule=rrule, reminders=reminders,
-                        attachments=attachments, ical=raw)
+                        categories=categories, rrule=rrule, exdates=exdates,
+                        reminders=reminders, attachments=attachments, ical=raw)
     except Exception as e:
         _logger.error("_ical_to_event_out 异常: %s\n原始数据(前300字符): %s", e, raw[:300])
         return None
@@ -152,6 +163,18 @@ def _format_ical_dt(v: str, all_day: bool = False) -> str:
         elif len(s) == 14 and not s[8:9] == "T":
             s = s[:8] + "T" + s[8:14]
     return s
+
+
+def _format_exdate(value: str, all_day: bool, dtstart: str) -> str:
+    raw = str(value or "").replace("-", "").replace(":", "").replace("T", "")
+    date_part = raw[:8] if len(raw) >= 8 else ""
+    if not date_part:
+        return ""
+    if all_day:
+        return date_part
+    start = _format_ical_dt(dtstart, False)
+    time_part = start[9:15] if len(start) >= 15 else "000000"
+    return f"{date_part}T{time_part}"
 
 
 def _event_fields_to_ical(fields: EventCreate | EventUpdate, uid: str = "") -> str:
@@ -185,6 +208,10 @@ def _event_fields_to_ical(fields: EventCreate | EventUpdate, uid: str = "") -> s
         ical += f"CATEGORIES:{_escape_ical_val(fields.categories)}\r\n"
     if fields.rrule:
         ical += f"RRULE:{fields.rrule}\r\n"
+    for exdate in (fields.exdates or []):
+        formatted = _format_exdate(exdate, all_day, ds)
+        if formatted:
+            ical += f"EXDATE:{formatted}\r\n"
     for r in (fields.reminders or []):
         action = r.get("ACTION") or r.get("action") or "DISPLAY"
         trigger = r.get("TRIGGER") or r.get("trigger") or ""
@@ -312,15 +339,26 @@ def _is_contact_field_set(v: str | None) -> bool:
     return v is not None and v != ""
 
 
+def _split_groups(value: str) -> list[str]:
+    value = str(value or "").replace("\\;", ";").replace("\\,", ",")
+    return [g.strip() for g in re.split(r"[;,；，]", value) if g.strip()]
+
+
 @api_router.get("/contacts", summary="列出所有联系人")
 async def list_contacts(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    group: str = Query("", description="按分组精确筛选"),
     token: str = Depends(get_current_token),
 ):
-    """返回联系人的摘要列表（姓名、邮箱、电话、分组），支持分页。"""
+    """返回联系人的摘要列表（姓名、邮箱、电话、分组），支持分页和分组筛选。"""
     svc = ContactService()
-    raw_list, total = await asyncio.to_thread(svc.get_all_raw_paginated, offset, limit)
+    if group:
+        raw_list, total = await asyncio.to_thread(
+            svc.get_all_raw_paginated_by_group, group, offset, limit
+        )
+    else:
+        raw_list, total = await asyncio.to_thread(svc.get_all_raw_paginated, offset, limit)
     items = [o for r in raw_list if (o := _vcard_to_contact_out(r))]
     return {"items": items, "total": total}
 
@@ -332,13 +370,26 @@ async def search_contacts(
     q: str = Query("", description="关键词"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    group: str = Query("", description="按分组精确筛选"),
     token: str = Depends(get_current_token),
 ):
     svc = EmbeddingService()
     all_results = await asyncio.to_thread(svc.search_contacts, q, 100000)
+    if group:
+        all_results = [
+            item for item in all_results
+            if group in _split_groups(item.get("groups", ""))
+        ]
     total = len(all_results)
     items = all_results[offset:offset + limit]
     return {"items": items, "total": total}
+
+
+@api_router.get("/contacts/groups", summary="列出联系人分组")
+async def list_contact_groups(token: str = Depends(get_current_token)):
+    svc = ContactService()
+    groups = await asyncio.to_thread(svc.get_groups)
+    return {"groups": groups}
 
 
 # ── Events Search (MUST be before {uid} routes) ─────────────
@@ -586,6 +637,7 @@ async def update_event(uid: str, body: EventUpdate, token: str = Depends(get_cur
             location=body.location if _is_event_field_set(body.location) else (out.location if out else ""),
             categories=body.categories if _is_event_field_set(body.categories) else (out.categories if out else ""),
             rrule=body.rrule if _is_event_field_set(body.rrule) else (out.rrule if out else ""),
+            exdates=body.exdates if body.exdates is not None else (out.exdates if out else []),
             reminders=body.reminders if body.reminders is not None else (out.reminders if out else []),
             attachments=body.attachments if body.attachments is not None else (out.attachments if out else []),
         )
@@ -771,15 +823,27 @@ async def update_api_token_note(token_id: str, body: dict, token: str = Depends(
     ApiTokenService().update_token_note(token_id, note)
     return {"updated": True}
 
+def _apple_request_origin(request: Request) -> tuple[str, str, int]:
+    """返回 (scheme, host, port)，优先使用当前请求的真实协议与端口。"""
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme or "http").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.url.hostname or "localhost").split(",")[0].strip()
+    port = request.url.port or (443 if scheme == "https" else 80)
+    return scheme, host, port
+
+
 @api_router.get("/apple/config", summary="生成 Apple 设备配置 (.mobileconfig)")
-async def apple_config(request_host: str = Query(None, alias="host"), token: str = Depends(get_current_token)):
-    ss = SettingsService()
-    host = request_host or ss.get_setting("apple_config_host", "localhost")
-    port = ss.get_setting("default_port", "8000")
-    proto = ss.get_setting("server_protocol", "http_https")
-    use_ssl = ss.get_setting("ssl_enabled", "False") == "True"
-    scheme = "https" if (proto == "https_only" or (proto == "http_https" and use_ssl)) else "http"
-    url_suffix = "" if (use_ssl and port == "443") or (not use_ssl and port == "80") else f":{port}"
+async def apple_config(
+    request: Request,
+    request_host: str = Query(None, alias="host"),
+):
+    scheme, request_hostname, port = _apple_request_origin(request)
+    host = (request_host or request_hostname or "localhost").strip()
+    if ":" in host and not host.startswith("["):
+        host, _, port_text = host.rpartition(":")
+        if port_text.isdigit():
+            port = int(port_text)
+    use_ssl = scheme == "https"
+    url_suffix = "" if (use_ssl and port == 443) or (not use_ssl and port == 80) else f":{port}"
 
     payload_uuid = str(uuid.uuid4())
     carddav_uuid = str(uuid.uuid4())
@@ -865,4 +929,44 @@ async def apple_config(request_host: str = Query(None, alias="host"), token: str
         headers={
             "Content-Disposition": 'attachment; filename="personaldav.mobileconfig"'
         }
+    )
+
+
+@api_router.get("/apple/qr", summary="生成 Apple 配置下载二维码")
+async def apple_config_qr(
+    request: Request,
+    request_host: str = Query(None, alias="host"),
+    token: str = Depends(get_current_token),
+):
+    scheme, request_hostname, port = _apple_request_origin(request)
+    host = (request_host or request_hostname or "localhost").strip()
+    if ":" in host and not host.startswith("["):
+        host, _, port_text = host.rpartition(":")
+        if port_text.isdigit():
+            port = int(port_text)
+    url_suffix = "" if (scheme == "https" and port == 443) or (scheme == "http" and port == 80) else f":{port}"
+
+    path = "/api/apple/config"
+    url_token, ts, nonce = AuthService().generate_url_token(path)
+    query = urlencode({
+        "host": host,
+        "token": url_token,
+        "ts": ts,
+        "nonce": nonce,
+    })
+    download_url = f"{scheme}://{host}{url_suffix}{path}?{query}"
+
+    import io
+    import qrcode
+    import qrcode.image.svg
+    qr = qrcode.QRCode(box_size=10, border=2)
+    qr.add_data(download_url)
+    qr.make(fit=True)
+    img = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
     )

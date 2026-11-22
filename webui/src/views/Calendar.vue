@@ -16,6 +16,10 @@
           <Search :size="16" class="search-icon" />
           <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
         </div>
+        <select v-model="categoryFilter" class="cat-select" title="按分类筛选">
+          <option value="">全部分类</option>
+          <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+        </select>
       </div>
       
       <div class="toolbar-right">
@@ -173,6 +177,10 @@ function eventSpansDate(e, dateStr) {
   return dateStr >= start && dateStr <= end
 }
 
+function splitCategories(value) {
+  return String(value || '').split(/[;,；，]/).map(s => s.trim()).filter(Boolean)
+}
+
 function toHours(d) {
   if (!d) return 0
   return d.getHours() + d.getMinutes() / 60
@@ -185,7 +193,8 @@ export default {
     MapPin, Layers, FileText, X, CalendarIcon, ScheduleEditModal, EventDetailModal
   },
   data: () => ({
-    events: [],
+    allEvents: [],
+    categoryFilter: '',
     monthOffset: 0,
     selectedDay: null,
     searchQuery: '',
@@ -209,6 +218,15 @@ export default {
     monthOffset() { this.selectedDay = null; this.load() },
   },
   computed: {
+    events() {
+      if (!this.categoryFilter) return this.allEvents
+      return this.allEvents.filter(e => splitCategories(e.categories).includes(this.categoryFilter))
+    },
+    categories() {
+      const values = new Set()
+      this.allEvents.forEach(e => splitCategories(e.categories).forEach(c => values.add(c)))
+      return [...values].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    },
     now() { return this.currentTime },
     todayStr() {
       const d = this.currentTime
@@ -227,7 +245,7 @@ export default {
     },
     selectedEvent() {
       if (this.selectedUids.length !== 1) return null
-      const e = this.eventsMap[this.selectedUids[0]]
+      const e = this.events.find(x => x.uid === this.selectedUids[0])
       if (!e) return null
       return { ...e, attachments: parseAttachments(e.ical) }
     },
@@ -282,9 +300,9 @@ export default {
       const { from, to } = this.monthRange()
       try {
         const res = await api.listEvents(0, 500, from, to)
-        this.events = Array.isArray(res) ? res : (res.items || [])
+        this.allEvents = Array.isArray(res) ? res : (res.items || [])
       } catch (e) {
-        this.events = []
+        this.allEvents = []
         this.errorMsg = '加载日程失败'
       }
       this.selectToday()
@@ -329,7 +347,7 @@ export default {
       this._searchTimer = setTimeout(() => {
         if (this.searchQuery.trim()) {
           api.searchEvents(this.searchQuery, '', '', 0, 500).then(results => {
-            this.events = Array.isArray(results) ? results : (results.items || [])
+            this.allEvents = Array.isArray(results) ? results : (results.items || [])
             this.selectedDay = null
           }).catch(() => { this.errorMsg = '搜索失败' })
         } else {
@@ -476,7 +494,7 @@ export default {
 
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 12px; }
 .action-group { display: flex; flex: 1; gap: 8px; }
-.toolbar-center { flex: 1; display: flex; justify-content: center; min-width: 240px; }
+.toolbar-center { flex: 1; display: flex; justify-content: center; align-items: center; gap: 10px; min-width: 240px; }
 
 .nav-controls { display: flex; align-items: center; gap: 8px; }
 .btn-nav, .btn-icon, .btn-tool { 
@@ -507,6 +525,7 @@ export default {
 .search-shell {
   display: flex;
   align-items: center;
+  flex: 1;
   width: 100%;
   max-width: 400px;
   position: relative;
@@ -515,6 +534,17 @@ export default {
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 14px; outline: none; background: #fafafa; transition: all .2s; }
 .search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
+.cat-select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  background: #fafafa;
+  color: var(--text-primary);
+  font-size: 14px;
+  max-width: 160px;
+  cursor: pointer;
+}
+.cat-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
 .date-input { padding: 9px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 13px; outline: none; background: #fafafa; }
 
 .calendar-grid-wrapper { 

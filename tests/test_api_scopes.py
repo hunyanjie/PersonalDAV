@@ -17,6 +17,7 @@ class TestRequiredScope(unittest.TestCase):
         self.assertEqual(required_scope("PUT", "/api/settings/theme_color"), "settings:write")
         self.assertEqual(required_scope("GET", "/api/auth/tokens"), "tokens:manage")
         self.assertEqual(required_scope("POST", "/api/auth/tokens"), "tokens:manage")
+        self.assertEqual(required_scope("GET", "/api/apple/qr"), "settings:read")
         self.assertEqual(required_scope("GET", "/api/trash"), "trash:read")
         self.assertEqual(required_scope("DELETE", "/api/trash"), "trash:write")
         self.assertEqual(required_scope("POST", "/api/files/mounts"), "files:manage")

@@ -66,6 +66,77 @@
                 </button>
               </div>
             </div>
+
+            <div class="apple-qr-card">
+              <div class="apple-qr-head">
+                <h4>手机扫码安装</h4>
+                <p>用 iPhone 或 iPad 的相机扫描下方二维码，然后在 Safari 中打开并安装描述文件。</p>
+              </div>
+              <div class="apple-qr-body">
+                <img v-if="appleConfigQr" :src="appleConfigQr" class="apple-qr-img" alt="Apple 配置二维码" />
+                <div v-else class="apple-qr-empty">点击“生成二维码”后显示</div>
+                <button class="btn-sm" @click="loadAppleConfigQr" :disabled="appleQrLoading">
+                  <RotateCw :size="14" :class="{ spinning: appleQrLoading }" /> {{ appleConfigQr ? '刷新二维码' : '生成二维码' }}
+                </button>
+              </div>
+              <p class="apple-qr-tip">二维码包含临时下载凭证，默认 5 分钟内有效。安装前请确保手机能访问上方服务器地址。</p>
+            </div>
+
+            <div class="apple-guide">
+              <h4>安装与信任步骤</h4>
+              <ol>
+                <li><strong>iPhone / iPad：</strong>扫描二维码 → 在 Safari 中打开 → 点击“允许”下载描述文件。</li>
+                <li>打开“设置 → 通用 → VPN 与设备管理”，找到 PersonalDAV 描述文件并点击安装。</li>
+                <li>如果使用 HTTPS 自签名证书：先在“设置 → 通用 → 关于本机 → 证书信任设置”中开启 PersonalDAV 证书信任。</li>
+                <li><strong>macOS：</strong>下载后用“系统设置 → 隐私与安全性”允许安装；自签名证书需在“钥匙串访问”中设为“始终信任”。</li>
+              </ol>
+            </div>
+          </section>
+
+          <!-- Reminder Presets -->
+          <section v-if="activeSection === 'reminders'" class="config-section">
+            <h3><Bell :size="20" /> 提醒设置</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>这里维护新建日程时可快速选择的提醒预设。修改后请点击底部“保存提醒设置”。</span>
+            </div>
+
+            <div class="reminder-grid">
+              <div class="reminder-card">
+                <h4>常规事件预设</h4>
+                <div v-for="(p, i) in reminderPresets" :key="'p'+i" class="reminder-edit-row">
+                  <input v-model="reminderPresets[i]" placeholder="例如: 15分钟前" />
+                  <button class="btn-icon-danger" @click="reminderPresets.splice(i, 1)" title="删除">×</button>
+                </div>
+                <button class="btn-sm" @click="reminderPresets.push('15分钟前')"><Plus :size="14" /> 添加预设</button>
+              </div>
+
+              <div class="reminder-card">
+                <h4>全天事件预设</h4>
+                <div v-for="(p, i) in reminderAlldayPresets" :key="'ap'+i" class="reminder-edit-row">
+                  <input v-model="reminderAlldayPresets[i]" placeholder="例如: 当天上午9点" />
+                  <button class="btn-icon-danger" @click="reminderAlldayPresets.splice(i, 1)" title="删除">×</button>
+                </div>
+                <button class="btn-sm" @click="reminderAlldayPresets.push('当天上午9点')"><Plus :size="14" /> 添加预设</button>
+              </div>
+            </div>
+
+            <div class="reminder-grid" style="margin-top: 20px;">
+              <div class="reminder-card">
+                <h4>新建日程时自动勾选（常规）</h4>
+                <label v-for="opt in defaultReminderOptions" :key="opt" class="reminder-check-row">
+                  <input type="checkbox" :value="opt" v-model="defaultReminders" /> {{ opt }}
+                </label>
+              </div>
+              <div class="reminder-card">
+                <h4>新建日程时自动勾选（全天）</h4>
+                <label v-for="opt in defaultAlldayOptions" :key="opt" class="reminder-check-row">
+                  <input type="checkbox" :value="opt" v-model="defaultAlldayReminders" /> {{ opt }}
+                </label>
+              </div>
+            </div>
+
+            <button class="btn-sm btn-primary" style="margin-top: 24px;" @click="saveReminderSettings">保存提醒设置</button>
           </section>
 
           <!-- Mount Settings -->
@@ -373,7 +444,7 @@
 import { 
   Server, Sliders, FolderTree, Bot, ShieldCheck, 
   Terminal, Palette, Info, Pencil, Trash2, Plus, 
-  RotateCw, RotateCcw, Download, Smartphone
+  RotateCw, RotateCcw, Download, Smartphone, Bell
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -425,6 +496,7 @@ export default {
       { id: 'server', label: '核心配置', iconComp: 'Server' },
       { id: 'app', label: '通用选项', iconComp: 'Sliders' },
       { id: 'mounts', label: '文件挂载', iconComp: 'FolderTree' },
+      { id: 'reminders', label: '提醒设置', iconComp: 'Bell' },
       { id: 'apple-config', label: 'Apple 配置', iconComp: 'Smartphone' },
       { id: 'mcp', label: 'AI 服务', iconComp: 'Bot' },
       { id: 'logs', label: '安全审计', iconComp: 'ShieldCheck' },
@@ -464,6 +536,14 @@ export default {
     editingMount: null,
     mountForm: { name: '', path: '' },
     appleConfigHost: window.location.hostname || 'localhost',
+    appleConfigQr: '',
+    appleQrLoading: false,
+    reminderPresets: [],
+    reminderAlldayPresets: [],
+    defaultReminders: [],
+    defaultAlldayReminders: [],
+    defaultReminderOptions: ["日程发生时", "5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"],
+    defaultAlldayOptions: ["当天上午9点", "1天前上午9点", "2天前上午9点", "3天前上午9点", "5天前上午9点", "7天前上午9点"],
     presets: PRESETS,
     themeH: 210,
     themeS: 88,
@@ -513,10 +593,28 @@ export default {
           else if (d.type === 'number') processed[d.key] = parseInt(raw[d.key]) || 0
         })
         this.settings = processed
+        this.loadReminderSettings(raw)
       } catch(e) {}
       await this.loadLogs()
       await this.loadSystemLogs()
       this.loading = false
+    },
+    loadReminderSettings(raw) {
+      const parse = v => String(v || '').split(';').map(s => s.trim()).filter(Boolean)
+      this.reminderPresets = parse(raw.preset_reminders)
+      this.reminderAlldayPresets = parse(raw.preset_allday_reminders)
+      this.defaultReminders = parse(raw.default_reminders)
+      this.defaultAlldayReminders = parse(raw.default_allday_reminders)
+    },
+    async saveReminderSettings() {
+      const join = arr => arr.map(s => String(s || '').trim()).filter(Boolean).join(';')
+      try {
+        await api.updateSetting('preset_reminders', join(this.reminderPresets))
+        await api.updateSetting('preset_allday_reminders', join(this.reminderAlldayPresets))
+        await api.updateSetting('default_reminders', join(this.defaultReminders))
+        await api.updateSetting('default_allday_reminders', join(this.defaultAlldayReminders))
+        window.showToast('提醒设置已保存', 'success')
+      } catch(e) { window.showToast('保存失败：' + (e.message || e), 'error') }
     },
     async loadLogs() {
       try { this.authLogs = await api.authLogs(30) } catch(e) {}
@@ -715,6 +813,18 @@ export default {
         window.showToast('配置已下载，在 iPhone/iPad 上用 Safari 打开', 'success')
       } catch(e) { window.showToast('下载失败：' + (e.message || e), 'error') }
     },
+    async loadAppleConfigQr() {
+      this.appleQrLoading = true
+      try {
+        const host = this.appleConfigHost || window.location.hostname || 'localhost'
+        if (this.appleConfigQr) URL.revokeObjectURL(this.appleConfigQr)
+        this.appleConfigQr = await api.appleConfigQr(host)
+      } catch(e) {
+        window.showToast('二维码生成失败：' + (e.message || e), 'error')
+      } finally {
+        this.appleQrLoading = false
+      }
+    },
   },
 }
 </script>
@@ -880,4 +990,29 @@ export default {
 .modal-enter-from .modal-dialog { opacity: 0; transform: scale(0.95) }
 .modal-leave-to .modal-overlay { opacity: 0; }
 .modal-leave-to .modal-dialog { opacity: 0; transform: scale(0.95); }
+
+/* Reminder presets */
+.reminder-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.reminder-card { background: #fafafa; border: 1px solid var(--border-base); border-radius: var(--radius-md); padding: 18px; }
+.reminder-card h4 { margin: 0 0 14px; font-size: 15px; color: var(--text-primary); }
+.reminder-edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.reminder-edit-row input { flex: 1; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); font-size: 14px; background: white; }
+.btn-icon-danger { width: 30px; height: 30px; border: 1px solid var(--border-input); background: white; border-radius: var(--radius-sm); color: var(--danger, #d33); cursor: pointer; font-size: 18px; line-height: 1; }
+.btn-icon-danger:hover { background: #fff1f0; border-color: var(--danger, #d33); }
+.reminder-check-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; color: var(--text-primary); cursor: pointer; }
+
+/* Apple config QR and guide */
+.apple-qr-card { margin-top: 28px; padding: 20px; border: 1px solid var(--border-base); border-radius: var(--radius-md); background: #fafafa; }
+.apple-qr-head h4, .apple-guide h4 { margin: 0 0 6px; font-size: 15px; color: var(--text-primary); }
+.apple-qr-head p { margin: 0 0 16px; font-size: 13px; color: var(--text-secondary); }
+.apple-qr-body { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.apple-qr-img { width: 180px; height: 180px; background: white; border-radius: 8px; padding: 8px; border: 1px solid var(--border-base); }
+.apple-qr-empty { width: 180px; height: 180px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-tertiary); font-size: 13px; background: white; border: 1px dashed var(--border-input); border-radius: 8px; }
+.apple-qr-tip { margin: 14px 0 0; font-size: 12px; color: var(--text-tertiary); }
+.apple-guide { margin-top: 20px; padding: 20px; border: 1px solid var(--border-base); border-radius: var(--radius-md); }
+.apple-guide ol { margin: 10px 0 0; padding-left: 22px; color: var(--text-secondary); font-size: 13px; line-height: 1.9; }
+
+@media (max-width: 768px) {
+  .reminder-grid { grid-template-columns: 1fr; }
+}
 </style>

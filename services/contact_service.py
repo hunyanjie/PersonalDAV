@@ -24,6 +24,13 @@ class ContactService(BaseService):
             )
         return cls._instance
 
+    def get_all_raw_paginated_by_group(self, group: str, offset: int = 0, limit: int = 50) -> tuple[list[str], int]:
+        items = [getattr(c, self._raw_field) for c in self.repo.get_by_group_paginated(group, offset, limit)]
+        return items, self.repo.count_by_group(group)
+
+    def get_groups(self) -> list[str]:
+        return self.repo.get_groups()
+
     def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True):
         """添加或更新联系人。force=True 时即使内容相同也覆盖更新。"""
         try:
@@ -43,7 +50,7 @@ class ContactService(BaseService):
                     "full_name": self._extract_full_name(vcard),
                     "email": ";".join(self._extract_emails(vcard)),
                     "phone": ";".join(self._extract_phones(vcard)),
-                    "groups": self._extract_categories(vcard),
+                    "groups": self._extract_categories(vcard),  # 分组以分号分隔
                     "vcard": vcard_data
                 }
             except Exception as e:

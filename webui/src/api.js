@@ -44,13 +44,14 @@ export default {
   },
 
   // Contacts
-  listContacts(offset = 0, limit = 50) { return request('GET', '/contacts', { params: { offset, limit } }) },
+  listContacts(offset = 0, limit = 50, group = '') { return request('GET', '/contacts', { params: qs({ offset, limit, group }) }) },
+  contactGroups() { return request('GET', '/contacts/groups') },
   getContact(uid) { return request('GET', `/contacts/${uid}`) },
   createContact(data) { return request('POST', '/contacts', { body: data }) },
   updateContact(uid, data) { return request('PUT', `/contacts/${uid}`, { body: data }) },
   deleteContact(uid) { return request('DELETE', `/contacts/${uid}`) },
   importContactVcf(vcardData) { return request('POST', '/contacts/import', { body: { vcard_data: vcardData } }) },
-  searchContacts(q, offset = 0, limit = 50) { return request('GET', '/contacts/search', { params: qs({ q, offset, limit }) }) },
+  searchContacts(q, offset = 0, limit = 50, group = '') { return request('GET', '/contacts/search', { params: qs({ q, offset, limit, group }) }) },
 
   // Events
   listEvents(offset = 0, limit = 50, dateFrom = '', dateTo = '') { return request('GET', '/events', { params: qs({ offset, limit, date_from: dateFrom, date_to: dateTo }) }) },
@@ -200,6 +201,14 @@ export default {
     const a = document.createElement('a')
     a.href = dlUrl; a.download = 'personaldav.mobileconfig'; a.click()
     URL.revokeObjectURL(dlUrl)
+  },
+  async appleConfigQr(host) {
+    const t = token()
+    const url = `${BASE}/apple/qr?host=${encodeURIComponent(host)}`
+    const headers = t ? { Authorization: `Bearer ${t}` } : {}
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error('二维码生成失败')
+    return URL.createObjectURL(await res.blob())
   },
   get(path) { return request('GET', path) },
   post(path, body) { return request('POST', path, { body }) },

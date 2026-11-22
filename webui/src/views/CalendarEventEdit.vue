@@ -80,7 +80,13 @@
               <button type="button" class="btn-sm btn-primary" @click="confirmReminder">{{ editingReminderIdx>=0 ? '修改' : '添加' }}</button>
             </div>
           </div>
-          <button v-else type="button" class="btn-sm" @click="addReminder" style="margin-top:8px;">+ 添加提醒</button>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
+            <button v-if="!reminderForm" type="button" class="btn-sm" @click="addReminder">+ 添加提醒</button>
+            <select v-if="!reminderForm && availablePresets.length" v-model="presetChoice" @change="applyPreset" class="preset-select">
+              <option value="">从预设添加...</option>
+              <option v-for="p in availablePresets" :key="p" :value="p">{{ p }}</option>
+            </select>
+          </div>
         </div>
 
         <!-- Repeat -->
@@ -110,6 +116,19 @@
               <label style="margin-left:4px;">次后</label>
             </template>
             <input v-if="form.repeatEnd==='日期'" v-model="form.repeatUntil" type="date" style="margin-left:8px; width:140px;" />
+          </div>
+          <div v-if="form.repeatType !== '不重复'" class="exdate-row" style="margin-top:10px;">
+            <label style="font-size:13px; color:var(--text-secondary);">例外日期（跳过这些天）</label>
+            <div class="exdate-list">
+              <span v-for="(d, i) in form.exdates" :key="d" class="reminder-chip">
+                {{ d }}
+                <button type="button" class="chip-btn" @click="form.exdates.splice(i,1)"><X :size="14" /></button>
+              </span>
+            </div>
+            <div class="exdate-add">
+              <input v-model="exdateInput" type="date" />
+              <button type="button" class="btn-sm" @click="addExdate">添加例外日期</button>
+            </div>
           </div>
         </div>
 
@@ -170,16 +189,36 @@ export default {
   data: () => ({
     form: { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
       reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
-      repeatEnd: '永不结束', repeatCount: 5, attachments: [] },
+      repeatEnd: '永不结束', repeatCount: 5, exdates: [], attachments: [] },
     saving: false, isNew: true, loadedUid: '',
     focusedField: null,
     reminderForm: null,
     editingReminderIdx: -1,
+    exdateInput: '',
+    presetReminders: [],
+    presetAlldayReminders: [],
+    presetChoice: '',
     showUrlDialog: false,
     urlInput: '',
     dragging: false,
     _dragCount: 0,
   }),
+  computed: {
+    availablePresets() {
+      return this.form.allDay ? this.presetAlldayReminders : this.presetReminders
+    },
+  },
+  async created() {
+    try {
+      const [normal, allday] = await Promise.all([
+        api.getSetting('preset_reminders'),
+        api.getSetting('preset_allday_reminders'),
+      ])
+      const parse = v => String(v || '').split(';').map(s => s.trim()).filter(Boolean)
+      this.presetReminders = parse(normal?.value)
+      this.presetAlldayReminders = parse(allday?.value)
+    } catch(e) { /* 使用预设失败不影响手动添加 */ }
+  },
   watch: {
     'form.allDay'(newVal) {
       if (newVal) {
@@ -259,7 +298,7 @@ export default {
                 triggerDesc: (triggerType === 'before' ? '提前' : '延后') + triggerValue + '分钟' }
             }),
             repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
-            repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '',
+            repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '', exdates: e.exdates || [],
             attachments: (e.attachments || []).map(a => ({
               name: a.name || a.filename || '附件', url: a.url || a.raw || '',
               ...(a.filepath ? { filepath: a.filepath, fmttype: a.fmttype } : {})
@@ -284,7 +323,7 @@ export default {
         this.isNew = true; this.loadedUid = '';
         this.form = { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
           reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
-          repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '', attachments: [] }
+          repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '', exdates: [], attachments: [] }
       }
       document.removeEventListener('dragenter', this._onGlobalDragEnter)
       document.removeEventListener('dragover', this._onGlobalDragOver)
@@ -321,6 +360,7 @@ export default {
           location: this.form.location,
           categories: this.form.categories,
           rrule,
+          exdates: this.form.exdates,
           reminders: this.form.reminders.map(r => ({
             action: r.action,
             trigger_type: r.triggerType,
@@ -370,7 +410,33 @@ export default {
     onRepeatChange() {
       if (this.form.repeatType === '不重复') {
         this.form.repeatInterval = 1
+        this.form.exdates = []
       }
+    },
+    applyPreset() {
+      const label = this.presetChoice
+      this.presetChoice = ''
+      if (!label) return
+      let minutes = 0
+      let after = false
+      if (label === '日程发生时') {
+        minutes = 0
+      } else if (label === '当天上午9点') {
+        minutes = 540; after = true
+      } else {
+        const m = label.match(/(?:(\d+)天)?(?:(\d+)小时)?(?:(\d+)分钟)?/)
+        if (!m) return
+        minutes = parseInt(m[1] || '0') * 1440 + parseInt(m[2] || '0') * 60 + parseInt(m[3] || '0')
+      }
+      this.form.reminders.push({
+        action: 'DISPLAY', triggerType: after ? 'after' : 'before',
+        triggerValue: minutes, triggerUnit: 'M', triggerDesc: label,
+      })
+    },
+    addExdate() {
+      if (!this.exdateInput) return window.showToast('请选择例外日期', 'warning')
+      if (!this.form.exdates.includes(this.exdateInput)) this.form.exdates.push(this.exdateInput)
+      this.exdateInput = ''
     },
     addAttachment(type) {
       if (type === 'file') {
@@ -576,4 +642,9 @@ input:focus, textarea:focus {
 .btn-primary { padding:8px 24px; background:var(--brand); color:white; border:none; border-radius:var(--radius-md); font-size:14px; font-weight:600; cursor:pointer; transition:all .2s; }
 .btn-primary:hover { filter:brightness(1.1); }
 .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+.exdate-row { display:flex; flex-direction:column; gap:8px; }
+.exdate-list { display:flex; flex-wrap:wrap; gap:6px; }
+.exdate-add { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.exdate-add input { padding:8px 10px; border:1px solid var(--border-input); border-radius:var(--radius-sm); font-size:13px; background:#fafafa; }
+.preset-select { padding:8px 10px; border:1px solid var(--border-input); border-radius:var(--radius-sm); font-size:13px; background:#fafafa; color:var(--text-primary); max-width:180px; }
 </style>

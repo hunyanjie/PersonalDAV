@@ -68,6 +68,7 @@ _SCOPE_RULES: Final[tuple[tuple[str, str, str], ...]] = (
     ("PUT", "/api/settings", "settings:write"),
     ("GET", "/api/server/config", "settings:read"),
     ("GET", "/api/apple/config", "settings:read"),
+    ("GET", "/api/apple/qr", "settings:read"),
     # 日志与统计
     ("GET", "/api/auth/logs", "logs:read"),
     ("GET", "/api/logs", "logs:read"),

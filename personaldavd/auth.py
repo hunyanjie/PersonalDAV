@@ -79,6 +79,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not svc.check_ip(client_ip):
             return Response("IP denied", status_code=403)
 
+        if not svc.check_rate_limit(client_ip):
+            return Response("Too Many Requests", status_code=429)
+
+        # Apple 描述文件二维码：用短时签名 URL 让手机浏览器直接下载，不需要 Bearer 令牌。
+        # 手机扫码请求通常没有 Referer，也不一定符合 DAV 的 User-Agent 白名单，因此这两项检查不适用于签名 URL。
+        if path == "/api/apple/config":
+            qp = request.query_params
+            url_token = qp.get("token", "")
+            url_ts = qp.get("ts", "")
+            url_nonce = qp.get("nonce", "")
+            if url_token and url_ts and url_nonce and svc.verify_url_token(path, url_token, url_ts, url_nonce):
+                svc.log_auth(True, client_ip, "Apple-Config", "signed URL OK")
+                request.state.auth_context = AuthContext("url_token")
+                return await call_next(request)
+
         if svc.is_referer_enabled():
             if not referer:
                 return Response("Referer required", status_code=403)
@@ -87,9 +102,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if ua and not svc.check_user_agent(ua):
             return Response("User-Agent denied", status_code=403)
-
-        if not svc.check_rate_limit(client_ip):
-            return Response("Too Many Requests", status_code=429)
 
         if svc.ip_bypasses_auth(client_ip):
             request.state.auth_context = AuthContext("bypass")

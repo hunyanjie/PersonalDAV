@@ -5,6 +5,10 @@
         <Search :size="18" class="search-icon" />
         <input v-model="query" placeholder="搜索姓名、邮箱或电话..." @input="debounceSearch" class="search-input" />
       </div>
+      <select v-model="groupFilter" class="group-select" @change="onGroupChange" title="按分组筛选">
+        <option value="">全部分组</option>
+        <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
+      </select>
       <div class="toolbar-actions">
         <label class="btn-tool btn-import">
           <Upload :size="18" /> <span class="hide-mobile">导入 .vcf</span>
@@ -121,7 +125,7 @@ export default {
     ChevronLeft, ChevronRight, MoreHorizontal
   },
   data: () => ({ 
-    items: [], query: '', page: 0, pageSize: 50, total: 0, 
+    items: [], query: '', groupFilter: '', groups: [], page: 0, pageSize: 50, total: 0, 
     loading: false, _timer: null, pageInput: 1, localPageSize: 50,
     _swipeUid: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
     _menuUid: null, _isDragging: false,
@@ -134,6 +138,7 @@ export default {
   },
   async mounted() { 
     this.load()
+    this.loadGroups()
     document.addEventListener('click', this._closeMenu)
   },
   beforeUnmount() { 
@@ -148,14 +153,21 @@ export default {
       this.loading = true
       try {
         if (this.query.trim()) {
-          const res = await api.searchContacts(this.query, this.page * this.pageSize, this.pageSize)
+          const res = await api.searchContacts(this.query, this.page * this.pageSize, this.pageSize, this.groupFilter)
           this.items = res.items; this.total = res.total
         } else {
-          const res = await api.listContacts(this.page * this.pageSize, this.pageSize)
+          const res = await api.listContacts(this.page * this.pageSize, this.pageSize, this.groupFilter)
           this.items = res.items; this.total = res.total
         }
       } catch(e) { this.items = []; this.total = 0 }
       finally { this.loading = false }
+    },
+    async loadGroups() {
+      try { this.groups = (await api.contactGroups()).groups || [] } catch(e) { this.groups = [] }
+    },
+    onGroupChange() {
+      this.page = 0
+      this.load()
     },
     debounceSearch() {
       clearTimeout(this._timer)
@@ -273,6 +285,17 @@ export default {
   box-sizing: border-box;
 }
 .search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
+.group-select {
+  padding: 11px 14px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  background: #fafafa;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  max-width: 180px;
+}
+.group-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
 
 .toolbar-actions { display: flex; gap: 10px; flex-shrink: 0; }
 .btn-tool { 
