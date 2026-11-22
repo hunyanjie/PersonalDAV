@@ -197,6 +197,8 @@ export default {
     exdateInput: '',
     presetReminders: [],
     presetAlldayReminders: [],
+    defaultReminders: [],
+    defaultAlldayReminders: [],
     presetChoice: '',
     showUrlDialog: false,
     urlInput: '',
@@ -210,13 +212,18 @@ export default {
   },
   async created() {
     try {
-      const [normal, allday] = await Promise.all([
+      const [normal, allday, defaults, alldayDefaults] = await Promise.all([
         api.getSetting('preset_reminders'),
         api.getSetting('preset_allday_reminders'),
+        api.getSetting('default_reminders'),
+        api.getSetting('default_allday_reminders'),
       ])
       const parse = v => String(v || '').split(';').map(s => s.trim()).filter(Boolean)
       this.presetReminders = parse(normal?.value)
       this.presetAlldayReminders = parse(allday?.value)
+      this.defaultReminders = parse(defaults?.value)
+      this.defaultAlldayReminders = parse(alldayDefaults?.value)
+      if (this.isNew) this.$nextTick(() => this.applyDefaultReminders())
     } catch(e) { /* 使用预设失败不影响手动添加 */ }
   },
   watch: {
@@ -228,6 +235,7 @@ export default {
         if (this.form.dtstart && !this.form.dtstart.includes('T')) this.form.dtstart = this.form.dtstart + 'T08:00'
         if (this.form.dtend && !this.form.dtend.includes('T')) this.form.dtend = this.form.dtend + 'T08:00'
       }
+      if (this.isNew && !this.form.reminders.length) this.applyDefaultReminders()
     },
     visible: {
       immediate: true,
@@ -324,6 +332,7 @@ export default {
         this.form = { summary: '', description: '', categories: '', location: '', dtstart: '', dtend: '', allDay: false,
           reminders: [], repeatType: '不重复', repeatInterval: 1, repeatByDay: 'MO', repeatByMonthDay: 1,
           repeatEnd: '永不结束', repeatCount: 5, repeatUntil: '', exdates: [], attachments: [] }
+        this.applyDefaultReminders()
       }
       document.removeEventListener('dragenter', this._onGlobalDragEnter)
       document.removeEventListener('dragover', this._onGlobalDragOver)
@@ -413,24 +422,41 @@ export default {
         this.form.exdates = []
       }
     },
+    labelToReminder(label) {
+      if (label === '日程发生时') return { minutes: 0, after: false }
+      const allday = label.match(/^(?:(\d+)天前)?上午9点$/)
+      if (allday) {
+        const days = parseInt(allday[1] || '0')
+        return days === 0 ? { minutes: 540, after: true } : { minutes: days * 1440 - 540, after: false }
+      }
+      const m = label.match(/(?:(\d+)天)?(?:(\d+)小时)?(?:(\d+)分钟)?/)
+      if (!m) return null
+      return {
+        minutes: parseInt(m[1] || '0') * 1440 + parseInt(m[2] || '0') * 60 + parseInt(m[3] || '0'),
+        after: false,
+      }
+    },
+    applyDefaultReminders() {
+      if (this.form.reminders.length) return
+      const labels = this.form.allDay ? this.defaultAlldayReminders : this.defaultReminders
+      labels.forEach(label => {
+        const parsed = this.labelToReminder(label)
+        if (parsed) {
+          this.form.reminders.push({
+            action: 'DISPLAY', triggerType: parsed.after ? 'after' : 'before',
+            triggerValue: parsed.minutes, triggerUnit: 'M', triggerDesc: label,
+          })
+        }
+      })
+    },
     applyPreset() {
       const label = this.presetChoice
       this.presetChoice = ''
-      if (!label) return
-      let minutes = 0
-      let after = false
-      if (label === '日程发生时') {
-        minutes = 0
-      } else if (label === '当天上午9点') {
-        minutes = 540; after = true
-      } else {
-        const m = label.match(/(?:(\d+)天)?(?:(\d+)小时)?(?:(\d+)分钟)?/)
-        if (!m) return
-        minutes = parseInt(m[1] || '0') * 1440 + parseInt(m[2] || '0') * 60 + parseInt(m[3] || '0')
-      }
+      const parsed = this.labelToReminder(label)
+      if (!parsed) return
       this.form.reminders.push({
-        action: 'DISPLAY', triggerType: after ? 'after' : 'before',
-        triggerValue: minutes, triggerUnit: 'M', triggerDesc: label,
+        action: 'DISPLAY', triggerType: parsed.after ? 'after' : 'before',
+        triggerValue: parsed.minutes, triggerUnit: 'M', triggerDesc: label,
       })
     },
     addExdate() {
