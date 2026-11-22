@@ -18,7 +18,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 - 📄 **Office 文档预览** — 在文件管理中直接预览 Word、Excel、PPT 等文档，无需先下载（v3.4 新增）
 - 💽 **多磁盘/多目录管理** — 可以把多个磁盘或文件夹挂载到文件管理里，统一浏览和上传（v3.4 完善）
 - 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
-- 📎 **事件附件** — 为日历事件添加文件或链接附件，支持 base64 内联存储
+- 📎 **事件附件** — 为日历事件添加文件或链接附件，附件独立存储，移动数据目录后也能正常打开
 - 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式，支持重复事件
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
@@ -30,13 +30,14 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 - 🔗 **远程连接** — GUI 可通过 `--remote` 参数连接到远程服务器，管理远端数据
 - 🔒 **SSL/TLS 支持** — 一键生成自签名证书，HTTP + HTTPS 双端口同时运行，兼容苹果设备同步
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
+- 🔑 **应用专用密码** — 为不同程序生成独立密码，可限定只读、只写某类数据，并设置有效期；这类密码不能连接 MCP
 - 🗜️ **数据库压缩** — 删除数据后空闲空间不浪费，可在设置页手动压缩或启动时自动整理
 - 🛡️ **IP 访问控制** — 白名单/黑名单/CIDR/通配符，支持本机免密码
 - 🔑 **URL 鉴权** — 附件下载链接带防伪签名，防止盗链和滥用
 - 🌐 **Referer 防盗链** — 只允许指定来源的请求访问，防止外部引用
 - 📡 **远程鉴权** — 将请求转发到外部服务验证，可对接自定义认证系统
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
-- 📂 **FTP / FTFS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
+- 📂 **FTP / FTPS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
 - 🌐 **SMB / CIFS 网络共享** — 连接远程 SMB 服务器，浏览目录、挂载共享
 - 🌐 **WebDAV 文件服务 `/dav/`** — 通过 WebDAV 协议远程管理文件，支持 PROPFIND/GET/PUT/DELETE/MKCOL，新增多挂载点支持
 - 🗂️ **远程文件浏览器** — 图形化浏览 FTP/FTPS/SFTP/SMB 远程文件，支持上传下载删除重命名
@@ -109,7 +110,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试（28 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
+依次执行：pytest 单元测试（29 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
 
 ## 使用指南
 
@@ -139,6 +140,7 @@ python tests/run_all.py
 1. 在"设置 → 安全设置"中：
     - 设置统一访问密码（PBKDF2 加密）
     - 复制 MCP 令牌供 AI 连接
+    - 生成应用专用密码：可限定权限和有效期，适合手机客户端、脚本或临时使用；这类密码不能连接 MCP
     - 配置 IP 黑白名单
     - 开启/关闭本机免密码
     - 配置指定 IP 免密码访问
@@ -163,6 +165,9 @@ python tests/run_all.py
     ```
 
 3. 如果设置了密码，还需要添加 `Authorization: Bearer <令牌>`（令牌从安全设置页复制）
+
+> [!IMPORTANT]
+> MCP 只接受安全设置页的 **MCP 主令牌**或密码登录。为其他程序生成的应用专用密码不能连接 MCP，避免低权限密码绕过权限限制。
 
 > [!NOTE]
 > 如果使用无界面模式（`main.py --headless` / `python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
@@ -258,10 +263,11 @@ PersonalDAV/
 │   │   │   └── reminder.js  # 日程桌面通知轮询（v3.3）
 │   │   └── views/           # 登录/概览/联系人/日历/文件/设置
 │   └── package.json
-├── data/                    # 运行产物（自动创建）
+├── data/                    # 运行产物（自动创建，可随 --data-dir 移动）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
 │   ├── calendar_attachments/# 日历附件独立文件存储
+│   ├── trash/               # 文件回收站（v3.4）
 │   └── log/                 # 日志文件
 ├── mcp_tools/               # MCP 工具模块（41 个工具，分文件管理）
 ├── models/                  # 数据模型层（dataclass）
@@ -272,12 +278,16 @@ PersonalDAV/
 │   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP 访问控制）
 │   ├── file_mount_service.py# 多挂载点管理服务（v3.2 新增）
 │   ├── dav_client_service.py# WebDAV 客户端（远程挂载，v3.2 新增）
+│   ├── api_scopes.py        # 令牌作用域与路由权限映射（v3.4 新增）
+│   ├── api_token_service.py # 应用专用密码（v3.4 新增）
+│   ├── stats_service.py     # 多挂载统计与趋势（v3.4 新增）
+│   ├── trash_service.py     # 文件回收站（v3.4 新增）
 │   ├── mcp_server.py        # MCP SSE 服务器
 │   ├── ftp_service.py       # FTP/FTPS/SFTP/TFTP 服务器
 │   ├── sync_service.py      # Nextcloud 定时同步
 │   └── ...
 ├── network/                 # 网络层
-│   ├── dav_server.py        # CardDAV + CalDAV + WebDAV HTTP 服务
+│   ├── dav_server.py        # 旧版 DAV 服务（仅兼容旧测试/工具）
 │   ├── dav_client.py        # WebDAV 客户端（远程导入）
 │   └── webdav_helper.py     # XML 响应构建
 ├── ui/                      # 视图层（Tkinter）
@@ -288,9 +298,11 @@ PersonalDAV/
 ├── utils/                   # 工具层
 │   ├── validators.py        # 端口/IP/密码强度校验
 │   ├── attachment_store.py  # 附件文件存储管理
+│   ├── path_helper.py       # 数据目录路径解析（v3.4）
+│   ├── server_registry.py   # GUI/无头/MCP 共享服务器实例（v3.4）
 │   ├── crypto.py            # Fernet 加密
 │   └── ...
-└── tests/                   # 测试（pytest + MCP 集成 + 鉴权测试）
+└── tests/                   # 测试（pytest + MCP + 鉴权 + 无头环境）
 ```
 
 ```mermaid
@@ -334,7 +346,7 @@ graph TB
 
     subgraph Data["数据层"]
         DB[("SQLite (WAL)")]
-        FS[("文件系统<br/>attachments/")]
+        FS[("文件系统<br/>calendar_attachments/ + trash/")]
     end
 
     WebUI -->|HTTP| REST
@@ -392,7 +404,7 @@ graph TB
 
 ```bash
 pip install -e ".[dev]"
-python tests/run_all.py   # pytest 23 项 + MCP 测试 + 鉴权测试
+python tests/run_all.py   # pytest 29 项 + MCP 测试 + 鉴权测试 + 无头检查
 ```
 
 ### 代码规范

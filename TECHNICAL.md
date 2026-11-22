@@ -11,7 +11,7 @@
 | 数据库 | SQLite3（内置） | 本地存储，WAL 模式，单文件 |
 | 服务器框架 | FastAPI + Uvicorn (v3.0) | 统一 ASGI 运行时，替代 http.server |
 | REST API | FastAPI + Pydantic (v3.0) | 联系人/事件 CRUD，自动 OpenAPI 文档 |
-| DAuth | Starlette BaseHTTPMiddleware (v3.0) | 统一鉴权中间件（Basic + Bearer + IP） |
+| 鉴权 | Starlette BaseHTTPMiddleware (v3.0) | 统一鉴权中间件（Basic + Bearer + IP + 作用域） |
 | DAV 协议 | FastAPI/Starlette ASGI 路由 (v3.0) | CardDAV/CalDAV/WebDAV，替代 http.server |
 | MCP 服务 | FastMCP + Starlette (v3.0) | 集成到主服务器，挂载 `/mcp/` 路径 |
 | iCalendar | vobject / python-dateutil | iCalendar 解析/生成 |
@@ -125,6 +125,7 @@ main.py --headless
 | 回收站 UI | `webui/src/views/Files.vue`、`ui/tabs/files_tab.py` | 列表、还原、永久删除、清空、保留天数 |
 | 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希 |
 | 作用域鉴权 | `personaldavd/auth.py` | 中间件写入 `AuthContext`；API 令牌按 `required_scope()` 校验；未分类 API 默认要求 `tokens:manage` |
+| MCP 端点隔离 | `services/api_scopes.py`、`personaldavd/auth.py` | `is_mcp_path()` 拦截普通 API 令牌；`/mcp/*` 只接受 MCP 主令牌或密码登录 |
 | 敏感设置脱敏 | `personaldavd/api.py`、`services/api_scopes.py` | 密码/密钥/盐等返回 `********`；`PROTECTED_SETTING_KEYS` 禁止通用接口写入 |
 | Apple 配置 | `personaldavd/api.py` | 生成 `.mobileconfig`，根据协议与 SSL 设置选择 http/https |
 | Office 预览 | `personaldavd/files.py`、`webui/src/views/Files.vue` | 支持 LibreOffice / ONLYOFFICE / Microsoft Office Online |
@@ -148,15 +149,17 @@ main.py --headless
 | `trash:read/write` | 回收站查看、还原、清空 |
 | `logs:read` | 鉴权日志与系统日志 |
 | `stats:read` | 概览统计 |
-| `tokens:manage` | 应用专用密码管理；未分类 API 的默认门槛 |
+| `tokens:manage` | 应用专用密码管理；未分类 API 的默认门槛；不包含 MCP 访问权 |
 
 创建令牌时，调用者只能授予自己拥有的作用域；MCP 主令牌和密码登录拥有全部作用域。
+
+`/mcp` 与 `/mcp/*` 不参与普通 API 令牌校验：即使令牌拥有全部 API 作用域，也只能使用 MCP 主令牌或密码登录访问，避免应用专用密码绕过 MCP 工具自身的权限边界。
 
 ### 测试
 
 `tests/run_all.py` 现在依次执行：
 
-1. pytest 单元测试（28 项）
+1. pytest 单元测试（29 项）
 2. MCP 内部工具检查（41 个工具）
 3. MCP HTTP/SSE 端到端检查
 4. MCP 鉴权检查（401/403/200 + 审计日志）
@@ -164,6 +167,37 @@ main.py --headless
 6. 无头环境与 FTS5 检查（临时数据库、`--data-dir`、`--dav-root`、搜索）
 
 所有脚本启动前调用 `tests/_test_db.py:init_temp_db()`，避免测试修改真实数据。
+
+### 打包与启动
+
+PyInstaller 打包必须把 WebUI 构建产物一起带上，否则 EXE 只有 API/DAV，没有网页界面：
+
+```powershell
+pyinstaller --onefile --clean -w --name PersonalDAV `
+  --add-data "webui/dist;webui/dist" `
+  --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" `
+  --hidden-import tkinterdnd2 main.py
+```
+
+运行时 `personaldavd/daemon.py` 通过 `__file__/../webui/dist` 定位静态资源，在 onefile 模式下对应 `_MEIPASS/webui/dist`。
+
+无控制台（`-w`）打包时 `sys.stdout` / `sys.stderr` 为 `None`，`main.py` 启动时会把它们重定向到 `os.devnull`，避免 logging/uvicorn 写入空流导致进程以退出码 1 结束。
+
+关闭 Web 面板（`webui_enabled=False`）只影响 SPA 静态页面，REST API、MCP 与 DAV 仍正常挂载。
+
+### v3.4 修复清单
+
+| 问题 | 修复 |
+|------|------|
+| 新克隆缺少 `webui/dist/assets` | 提交构建产物；`daemon.py` 在 assets 目录缺失时跳过挂载而不是崩溃 |
+| 新库 FTS5 建表失败 | `groups` 列迁移移到 FTS 建表之前 |
+| 事件搜索列不存在 | `SEARCH_COLUMNS` 改为 `['summary', 'ical']` |
+| 无头模式路径参数不生效 | `_init_environment` 固定 Database → data_dir → dav_root → 回收站顺序 |
+| 回收站/附件写死 `data/` | 统一走 `resolve_data_path()` |
+| 普通 API 令牌可访问 MCP | `is_mcp_path()` 在鉴权中间件直接返回 403 |
+| API 令牌可越权访问管理接口 | `required_scope()` 覆盖设置/令牌/回收站/日志/统计，未分类 API fail closed |
+| 无控制台 EXE 启动即退出 | `main.py` 重定向空 stdout/stderr |
+| MCP 启停旧版服务 | 共享 `DaemonServer` + `server_registry.py` |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -469,10 +503,12 @@ PersonalDAV/
 │           ├── Login.vue / Dashboard.vue / ContactsList.vue
 │           ├── ContactEdit.vue / Calendar.vue / Schedule.vue
 │           ├── CalendarEventEdit.vue / Files.vue / Settings.vue
-├── data/                      # 运行产物（启动时自动创建）
+├── data/                      # 运行产物（启动时自动创建，可随 --data-dir 移动）
 │   ├── dav_data.db            # SQLite 数据库
 │   ├── dav_data.db.bak        # 自动备份
 │   ├── remote_connections.key # Fernet 加密密钥
+│   ├── calendar_attachments/  # 日历附件独立存储（v3.4 跟随 data_dir）
+│   ├── trash/                 # 文件回收站（v3.4）
 │   └── log/
 │       ├── dav_server.log     # 日志文件（轮转）
 │       └── personaldavd.log   # 守护进程日志（v3.2 轮转）
@@ -508,6 +544,10 @@ PersonalDAV/
 │   ├── auth_service.py        # AuthService（密码/IP/Referer/UA/Fingerprint）
 │   ├── file_mount_service.py  # 多挂载点管理（v3.2）
 │   ├── dav_client_service.py  # WebDAV 客户端（远程挂载，v3.2）
+│   ├── api_scopes.py          # 令牌作用域 / 路由权限 / 敏感设置（v3.4）
+│   ├── api_token_service.py   # 应用专用密码（v3.4）
+│   ├── stats_service.py       # 多挂载 + 回收站统计（v3.4）
+│   ├── trash_service.py       # 文件回收站（v3.4）
 │   ├── ftp_service.py         # FTPService（FTP/FTPS/SFTP/TFTP）
 │   ├── ftp_client_service.py  # FTP/FTPS/SFTP 客户端
 │   ├── smb_service.py         # SMBService（SMB 客户端）
@@ -523,7 +563,9 @@ PersonalDAV/
 │   ├── vcard_parser.py        # RobustVCardParser
 │   ├── window_utils.py        # center_window()
 │   ├── validators.py          # 端口/IP/密码强度验证
-│   ├── attachment_store.py    # 附件文件存储管理
+│   ├── attachment_store.py    # 附件文件存储管理（跟随 data_dir，v3.4）
+│   ├── path_helper.py         # 数据目录路径解析（v3.4）
+│   ├── server_registry.py     # GUI/无头/MCP 共享服务器实例（v3.4）
 │   ├── cert_helper.py         # SSL 自签名证书生成（v3.3）
 │   └── logger.py              # 日志系统（RotatingFile + GUI）
 ├── tests/                     # 单元测试
@@ -1741,7 +1783,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 28 项，325 个子测试）
+### 测试结构（共 29 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
@@ -1753,7 +1795,7 @@ pytest tests/ -v -q
 | `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.1创建16个，v2.2增加到33个，v2.5增加到32个，v3.2增加到41个)         |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
-| `test_api_scopes.py` | 令牌作用域映射、未分类 API fail-closed、敏感设置脱敏 (v3.4)                                   |
+| `test_api_scopes.py` | 令牌作用域映射、未分类 API fail-closed、MCP 路径隔离、敏感设置脱敏 (v3.4)                        |
 | `_run_headless_check.py` | 无头模式 `--db-path/--data-dir/--dav-root`、回收站/附件目录、FTS5 新建与搜索 (v3.4)                |
 
 ### 运行全部测试
