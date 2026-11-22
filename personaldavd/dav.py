@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request, Response
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
-from utils.attachment_store import ATTACHMENTS_DIR
+from utils.attachment_store import get_attachments_dir
 
 dav_router = APIRouter(tags=["DAV 协议"])
 
@@ -255,8 +255,9 @@ async def events_handler(request: Request, rest: str = ""):
 @dav_router.api_route("/attachments/{filename}", methods=["GET", "HEAD"], include_in_schema=False)
 async def attachment_asgi(request: Request, filename: str):
     """附件下载 — 返回日历事件中引用的附件文件。"""
-    safe_path = os.path.normpath(os.path.join(ATTACHMENTS_DIR, os.path.basename(filename)))
-    if not safe_path.startswith(os.path.normpath(ATTACHMENTS_DIR)):
+    attachments_dir = get_attachments_dir()
+    safe_path = os.path.normpath(os.path.join(attachments_dir, os.path.basename(filename)))
+    if not safe_path.startswith(os.path.normpath(attachments_dir)):
         return Response("Forbidden", status_code=403)
     if not os.path.isfile(safe_path):
         return Response("Not found", status_code=404)

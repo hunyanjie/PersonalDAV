@@ -1,6 +1,6 @@
 import os
 import mimetypes
-from utils.attachment_store import ATTACHMENTS_DIR
+from utils.attachment_store import get_attachments_dir
 
 
 class AttachmentHandler:
@@ -12,8 +12,9 @@ class AttachmentHandler:
         if not filename:
             handler._send_error(400, "Missing filename")
             return
-        safe_path = os.path.normpath(os.path.join(ATTACHMENTS_DIR, filename))
-        if not safe_path.startswith(os.path.normpath(ATTACHMENTS_DIR)):
+        attachments_dir = get_attachments_dir()
+        safe_path = os.path.normpath(os.path.join(attachments_dir, filename))
+        if not safe_path.startswith(os.path.normpath(attachments_dir)):
             handler._send_error(403, "Forbidden")
             return
         if not os.path.isfile(safe_path):

@@ -3,17 +3,20 @@ from datetime import datetime, timedelta
 from typing import Optional
 from utils.logger import logger
 
-TRASH_DIR = "data/trash"
-MANIFEST_FILE = os.path.join(TRASH_DIR, "manifest.json")
-
 class TrashService:
     _manifest: list[dict] | None = None
     _lock = threading.Lock()
 
     @classmethod
     def _get_trash_dir(cls) -> str:
-        os.makedirs(TRASH_DIR, exist_ok=True)
-        return TRASH_DIR
+        from utils.path_helper import resolve_data_path
+        path = resolve_data_path("trash")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    @classmethod
+    def _manifest_path(cls) -> str:
+        return os.path.join(cls._get_trash_dir(), "manifest.json")
 
     @classmethod
     def _load_manifest(cls) -> list[dict]:
@@ -21,7 +24,7 @@ class TrashService:
         if cls._manifest is not None:
             return cls._manifest
         try:
-            with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
+            with open(cls._manifest_path(), "r", encoding="utf-8") as f:
                 cls._manifest = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             cls._manifest = []
@@ -30,7 +33,7 @@ class TrashService:
     @classmethod
     def _write_manifest(cls):
         """Write manifest to file. Caller must hold _lock."""
-        with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
+        with open(cls._manifest_path(), "w", encoding="utf-8") as f:
             json.dump(cls._manifest, f, ensure_ascii=False, indent=2)
 
     @classmethod
@@ -88,7 +91,7 @@ class TrashService:
             if not entry:
                 return False
 
-            trash_item = os.path.join(TRASH_DIR, uuid_)
+            trash_item = os.path.join(cls._get_trash_dir(), uuid_)
             if not os.path.exists(trash_item):
                 manifest.remove(entry)
                 cls._write_manifest()
@@ -139,7 +142,7 @@ class TrashService:
             entry = next((e for e in manifest if e["uuid"] == uuid_), None)
             if not entry:
                 return False
-            trash_item = os.path.join(TRASH_DIR, uuid_)
+            trash_item = os.path.join(cls._get_trash_dir(), uuid_)
             if os.path.exists(trash_item):
                 shutil.rmtree(trash_item)
             manifest.remove(entry)
@@ -153,7 +156,7 @@ class TrashService:
         with cls._lock:
             manifest = cls._load_manifest()
             for entry in manifest:
-                trash_item = os.path.join(TRASH_DIR, entry["uuid"])
+                trash_item = os.path.join(cls._get_trash_dir(), entry["uuid"])
                 if os.path.exists(trash_item):
                     shutil.rmtree(trash_item)
             cls._manifest = []
@@ -163,13 +166,14 @@ class TrashService:
     @classmethod
     def startup_init(cls):
         """启动时同步 manifest 与实际磁盘文件"""
-        if not os.path.exists(TRASH_DIR):
+        trash_dir = cls._get_trash_dir()
+        if not os.path.exists(trash_dir):
             return
         with cls._lock:
             manifest = cls._load_manifest()
             new_manifest = []
             for entry in manifest:
-                if os.path.exists(os.path.join(TRASH_DIR, entry["uuid"])):
+                if os.path.exists(os.path.join(trash_dir, entry["uuid"])):
                     new_manifest.append(entry)
             if len(new_manifest) != len(manifest):
                 cls._manifest = new_manifest
@@ -187,7 +191,7 @@ class TrashService:
                 try:
                     dt = datetime.fromisoformat(entry["deleted_at"])
                     if dt < cutoff:
-                        trash_item = os.path.join(TRASH_DIR, entry["uuid"])
+                        trash_item = os.path.join(cls._get_trash_dir(), entry["uuid"])
                         if os.path.exists(trash_item):
                             shutil.rmtree(trash_item)
                         continue

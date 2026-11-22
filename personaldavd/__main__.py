@@ -6,8 +6,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from .daemon import create_app, run_daemon
-from .config import DaemonConfig
+from .daemon import run_daemon
+from .config import DaemonConfig, DEFAULT_DAEMON_DB
 
 
 def main():
@@ -18,24 +18,26 @@ def main():
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                         help="Log level (default: INFO)")
     parser.add_argument("--log-json", action="store_true", help="JSON structured logging")
-    parser.add_argument("--db-path", default="data/dav_data.db", help="Database path")
+    parser.add_argument("--db-path", default="", help="Database path (priority over --data-dir)")
+    parser.add_argument("--data-dir", default="", help="Data directory (database, logs, attachments, trash)")
     parser.add_argument("--dav-root", default="", help="Create a mount point for this directory (default: none)")
     args = parser.parse_args()
 
-    if args.dav_root:
-        from services.file_mount_service import FileMountService
-        name = os.path.basename(os.path.abspath(args.dav_root)) or "DAVStorage"
-        try:
-            FileMountService().add_mount(name, args.dav_root)
-        except ValueError:
-            pass  # mount already exists
+    # --db-path 优先；否则由 --data-dir 推导；两者都没有时使用默认路径。
+    if args.db_path:
+        db_path = args.db_path
+    elif args.data_dir:
+        db_path = os.path.join(args.data_dir, "dav_data.db")
+    else:
+        db_path = DEFAULT_DAEMON_DB
 
     config = DaemonConfig(
         host=args.host,
         port=args.port,
         log_level=args.log_level,
         log_json=args.log_json,
-        db_path=args.db_path,
+        db_path=db_path,
+        data_dir=args.data_dir,
         dav_root=args.dav_root,
     )
     run_daemon(config)

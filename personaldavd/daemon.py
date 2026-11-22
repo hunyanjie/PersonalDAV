@@ -64,19 +64,46 @@ UVICORN_LOG_CONFIG = {
 }
 
 
+def _resolve_db_path(cfg: "DaemonConfig") -> str:
+    """--data-dir 未显式指定 --db-path 时，把数据库放到数据目录下。"""
+    from .config import DEFAULT_DAEMON_DB
+    if cfg.data_dir and cfg.db_path == DEFAULT_DAEMON_DB:
+        return os.path.join(cfg.data_dir, "dav_data.db")
+    return cfg.db_path
+
+
 # Ensure database & WebDAV root exist before first request
 def _init_environment(cfg: "DaemonConfig"):
-    import sqlite3
-    os.makedirs(os.path.dirname(cfg.db_path) or ".", exist_ok=True)
+    db_path = _resolve_db_path(cfg)
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+
+    # 必须先固定数据库路径，再让任何服务/设置访问数据库。
+    from database.db_manager import Database
+    existing = Database._instance
+    if existing is None:
+        Database(db_path=db_path)
+    elif os.path.abspath(existing.db_path) != os.path.abspath(db_path):
+        getLogger("personaldavd").warning(
+            "数据库已初始化于 %s，忽略本次指定的 %s", existing.db_path, db_path
+        )
+
+    if cfg.data_dir:
+        os.makedirs(cfg.data_dir, exist_ok=True)
+        from services.settings_service import SettingsService
+        SettingsService().set_setting("data_dir", cfg.data_dir)
+
     if cfg.dav_root:
         os.makedirs(cfg.dav_root, exist_ok=True)
-    
-    # 同步回收站索引
+        from services.file_mount_service import FileMountService
+        name = os.path.basename(os.path.abspath(cfg.dav_root)) or "DAVStorage"
+        try:
+            FileMountService().add_mount(name, cfg.dav_root)
+        except ValueError:
+            pass  # 同名挂载已存在
+
+    # 同步回收站索引（此时 data_dir 已确定）
     from services.trash_service import TrashService
     TrashService.startup_init()
-    
-    conn = sqlite3.connect(cfg.db_path)
-    conn.close()
 
 
 @asynccontextmanager
