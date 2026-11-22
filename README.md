@@ -14,12 +14,12 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 - 🗑️ **文件回收站** — 删除的文件先放进回收站，可随时还原；支持设置保留天数，避免误删造成永久损失（v3.4 新增）
 - 🔍 **全局搜索** — 联系人和日程支持快速关键词搜索，输入即出结果（v3.4 新增）
 - 🔑 **应用专用密码** — 可以为不同程序单独生成访问密码，并限定只能读联系人、只能看日程等权限，还能设置有效期（v3.4 新增）
-- 🍎 **Apple 设备一键配置** — 生成一个配置文件，iPhone/iPad/Mac 导入后自动填好联系人和日历服务器地址（v3.4 新增）
+- 🍎 **Apple 设备一键配置** — 生成配置文件并显示二维码，手机扫码即可安装；附 iPhone/iPad/Mac 安装与证书信任步骤（v3.4 新增）
 - 📄 **Office 文档预览** — 在文件管理中直接预览 Word、Excel、PPT 等文档，无需先下载（v3.4 新增）
 - 💽 **多磁盘/多目录管理** — 可以把多个磁盘或文件夹挂载到文件管理里，统一浏览和上传（v3.4 完善）
-- 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
+- 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式、头像照片和按分组筛选
 - 📎 **事件附件** — 为日历事件添加文件或链接附件，附件独立存储，移动数据目录后也能正常打开
-- 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式，支持重复事件
+- 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式、重复事件、例外日期和按分类筛选
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
@@ -110,7 +110,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试（29 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
+依次执行：pytest 单元测试（38 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
 
 ## 使用指南
 
@@ -180,7 +180,8 @@ python tests/run_all.py
 |------|------|
 | `GET /api/health` | 服务器健康检查 |
 | `POST /api/auth/token` | 获取访问令牌 |
-| `GET /api/contacts` / `POST /api/contacts` | 联系人列表 / 创建 |
+| `GET /api/contacts` / `POST /api/contacts` | 联系人列表 / 创建（列表支持 `group` 分组筛选） |
+| `GET /api/contacts/groups` | 联系人分组列表（v3.4） |
 | `GET /api/events` / `POST /api/events` | 事件列表 / 创建 |
 | `GET /api/files` / `POST /api/files/upload` | 文件浏览 / 上传（v3.2） |
 | `GET /api/settings` / `PUT /api/settings/:key` | 设置读取 / 修改（v3.2，密码等敏感项已脱敏） |
@@ -188,6 +189,7 @@ python tests/run_all.py
 | `GET /api/trash` / `POST /api/trash/restore` | 回收站列表 / 还原（v3.4） |
 | `GET/POST /api/auth/tokens` | 应用专用密码的查看与创建（v3.4） |
 | `GET /api/apple/config` | 生成 Apple 设备配置文件（v3.4） |
+| `GET /api/apple/qr` | 生成 Apple 配置下载二维码（v3.4） |
 | `GET /api/auth/logs` | 鉴权日志查询（v3.2） |
 
 详细文档访问服务器后打开 `http://localhost:8000/api/docs`。
@@ -404,7 +406,7 @@ graph TB
 
 ```bash
 pip install -e ".[dev]"
-python tests/run_all.py   # pytest 29 项 + MCP 测试 + 鉴权测试 + 无头检查
+python tests/run_all.py   # pytest 38 项 + MCP 测试 + 鉴权测试 + 无头检查
 ```
 
 ### 代码规范

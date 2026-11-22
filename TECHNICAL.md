@@ -124,6 +124,10 @@ main.py --headless
 | 文件回收站 | `services/trash_service.py`、`personaldavd/api.py` | manifest 记录原路径/大小/删除时间；`resolve_data_path("trash")` 跟随数据目录 |
 | 回收站 UI | `webui/src/views/Files.vue`、`ui/tabs/files_tab.py` | 列表、还原、永久删除、清空、保留天数 |
 | 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希 |
+| Web 高级筛选 | `webui/src/views/ContactsList.vue`、`Calendar.vue`、`personaldavd/api.py` | 联系人按分组精确筛选（分号边界，避免 Work 命中 Workshop）；日程按分类筛选 |
+| 提醒预设 | `webui/src/views/Settings.vue`、`CalendarEventEdit.vue` | 维护常规/全天预设与默认勾选；日程编辑页可从预设快速添加 |
+| Apple 扫码安装 | `personaldavd/api.py`、`personaldavd/auth.py` | `/api/apple/qr` 生成二维码；短时签名 URL 允许手机直接下载，不暴露 Bearer 令牌；使用请求实际协议/端口 |
+| 重复日程例外日期 | `personaldavd/models.py`、`personaldavd/api.py`、`CalendarEventEdit.vue` | `EXDATE` 解析与生成；全天/定时事件分别匹配日期值 |
 | 作用域鉴权 | `personaldavd/auth.py` | 中间件写入 `AuthContext`；API 令牌按 `required_scope()` 校验；未分类 API 默认要求 `tokens:manage` |
 | MCP 端点隔离 | `services/api_scopes.py`、`personaldavd/auth.py` | `is_mcp_path()` 拦截普通 API 令牌；`/mcp/*` 只接受 MCP 主令牌或密码登录 |
 | 敏感设置脱敏 | `personaldavd/api.py`、`services/api_scopes.py` | 密码/密钥/盐等返回 `********`；`PROTECTED_SETTING_KEYS` 禁止通用接口写入 |
@@ -145,7 +149,7 @@ main.py --headless
 | `files:read/upload/rename/delete` | 文件浏览、上传、重命名、删除 |
 | `files:manage` | 挂载点增删改 |
 | `dav:read/write` | 原始 DAV 路径 |
-| `settings:read/write` | 设置、服务器信息、Apple 配置 |
+| `settings:read/write` | 设置、服务器信息、Apple 配置与二维码 |
 | `trash:read/write` | 回收站查看、还原、清空 |
 | `logs:read` | 鉴权日志与系统日志 |
 | `stats:read` | 概览统计 |
@@ -155,11 +159,13 @@ main.py --headless
 
 `/mcp` 与 `/mcp/*` 不参与普通 API 令牌校验：即使令牌拥有全部 API 作用域，也只能使用 MCP 主令牌或密码登录访问，避免应用专用密码绕过 MCP 工具自身的权限边界。
 
+Apple 配置二维码使用与附件 URL 鉴权相同的短时签名：`/api/apple/qr` 需要 `settings:read`，生成的二维码包含有效期默认 300 秒的 `/api/apple/config` 签名 URL。手机扫码时只需签名参数，不需要在 URL 中携带 Bearer 令牌；签名 URL 不受 Referer/UA 白名单限制，但仍受 IP 限制和频率限制。
+
 ### 测试
 
 `tests/run_all.py` 现在依次执行：
 
-1. pytest 单元测试（29 项）
+1. pytest 单元测试（38 项）
 2. MCP 内部工具检查（41 个工具）
 3. MCP HTTP/SSE 端到端检查
 4. MCP 鉴权检查（401/403/200 + 审计日志）
@@ -176,7 +182,7 @@ PyInstaller 打包必须把 WebUI 构建产物一起带上，否则 EXE 只有 A
 pyinstaller --onefile --clean -w --name PersonalDAV `
   --add-data "webui/dist;webui/dist" `
   --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" `
-  --hidden-import tkinterdnd2 main.py
+  --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg main.py
 ```
 
 运行时 `personaldavd/daemon.py` 通过 `__file__/../webui/dist` 定位静态资源，在 onefile 模式下对应 `_MEIPASS/webui/dist`。
@@ -198,6 +204,9 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 | API 令牌可越权访问管理接口 | `required_scope()` 覆盖设置/令牌/回收站/日志/统计，未分类 API fail closed |
 | 无控制台 EXE 启动即退出 | `main.py` 重定向空 stdout/stderr |
 | MCP 启停旧版服务 | 共享 `DaemonServer` + `server_registry.py` |
+| 回收站自定义保留天数不生效 | `_retention_days()` 读取 `trash_retention_custom`，非法值回退 30 天 |
+| Web 端缺少分组/分类筛选 | 联系人按分号边界精确匹配分组；日程在已加载范围内按分类筛选 |
+| Apple 配置端口写死 | 使用当前请求的 scheme/port，CLI 改端口后配置仍正确 |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -1783,7 +1792,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 29 项，325 个子测试）
+### 测试结构（共 38 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
@@ -1796,6 +1805,8 @@ pytest tests/ -v -q
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
 | `test_api_scopes.py` | 令牌作用域映射、未分类 API fail-closed、MCP 路径隔离、敏感设置脱敏 (v3.4)                        |
+| `test_trash_retention.py` | 回收站固定/自定义保留天数、非法值回退、按自定义天数清理 (v3.4)                                |
+| `test_webui_parity.py` | 联系人分组筛选、重复日程 `EXDATE` 往返、Apple 配置实际端口与二维码生成 (v3.4)                        |
 | `_run_headless_check.py` | 无头模式 `--db-path/--data-dir/--dav-root`、回收站/附件目录、FTS5 新建与搜索 (v3.4)                |
 
 ### 运行全部测试
