@@ -162,8 +162,8 @@ class FilesTab(ttk.Frame):
             self.new_action_btn.config(text="新建文件夹", state=tk.NORMAL)
             self.new_action_btn.configure(command=self.new_folder)
             
+        # 只刷新布局，不处理其它待处理事件，避免在标签切换回调里重入事件循环。
         self.update_idletasks()
-        self.update()
 
     def refresh(self) -> None:
         mounts = self._mount().get_mounts()

@@ -10,7 +10,7 @@ from utils.logger import logger
 
 class FileMountService:
     _instance: "FileMountService | None" = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
     _mounts: list[dict[str, Any]]
     _migrated: bool
 
@@ -21,7 +21,9 @@ class FileMountService:
                     cls._instance = super().__new__(cls)
                     cls._instance._mounts = []
                     cls._instance._migrated = False
-                    cls._instance._instance_lock = threading.Lock()
+                    # RLock: get_root_entries()/resolve() 在持锁时会调用
+                    # is_single_mount（再次取同一把锁），普通 Lock 会自锁死。
+                    cls._instance._instance_lock = threading.RLock()
         return cls._instance
 
     # ── persistence ──
