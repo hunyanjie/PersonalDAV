@@ -37,7 +37,7 @@
 
 > v3.3 变动：WebUI 全端企业级交互升级（Toast/Modal/骨架屏/FLIP/Skeleton/EmptyState/Micro-interactions/圆环图/右滑操作）。新增 `utils/cert_helper.py`（SSL 一键证书生成）。新增 `webui/src/components/Toast.vue` / `ModalConfirm.vue` / `EmptyState.vue` / `SkeletonCard.vue`。`personaldavd/daemon.py` 支持双端口 HTTPS+HTTP。FTP 配置从服务器页迁移至设置页并使用 SettingDef。asyncio 日志噪音两处抑制。
 
-> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。
+> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。WebUI 增加联系人分组筛选、日历分类筛选、提醒预设与默认提醒、重复日程例外日期；Apple 配置增加扫码安装与安装引导，并使用真实协议/端口；回收站支持自定义保留天数。
 
 ---
 
@@ -113,7 +113,7 @@ main.py --headless
 
 ---
 
-## v3.4 — 搜索、回收站、应用专用密码、多挂载与无头模式修复
+## v3.4 — 搜索、回收站、应用专用密码、WebUI 功能补齐与无头模式修复
 
 ### 功能实现索引
 
@@ -125,7 +125,7 @@ main.py --headless
 | 回收站 UI | `webui/src/views/Files.vue`、`ui/tabs/files_tab.py` | 列表、还原、永久删除、清空、保留天数 |
 | 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希 |
 | Web 高级筛选 | `webui/src/views/ContactsList.vue`、`Calendar.vue`、`personaldavd/api.py` | 联系人按分组精确筛选（分号边界，避免 Work 命中 Workshop）；日程按分类筛选 |
-| 提醒预设 | `webui/src/views/Settings.vue`、`CalendarEventEdit.vue` | 维护常规/全天预设与默认勾选；日程编辑页可从预设快速添加 |
+| 提醒预设与默认提醒 | `webui/src/views/Settings.vue`、`CalendarEventEdit.vue` | 维护常规/全天预设与默认勾选；新建日程自动应用默认提醒，编辑页可从预设快速添加 |
 | Apple 扫码安装 | `personaldavd/api.py`、`personaldavd/auth.py` | `/api/apple/qr` 生成二维码；短时签名 URL 允许手机直接下载，不暴露 Bearer 令牌；使用请求实际协议/端口 |
 | 重复日程例外日期 | `personaldavd/models.py`、`personaldavd/api.py`、`CalendarEventEdit.vue` | `EXDATE` 解析与生成；全天/定时事件分别匹配日期值 |
 | 作用域鉴权 | `personaldavd/auth.py` | 中间件写入 `AuthContext`；API 令牌按 `required_scope()` 校验；未分类 API 默认要求 `tokens:manage` |
@@ -206,7 +206,9 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 | MCP 启停旧版服务 | 共享 `DaemonServer` + `server_registry.py` |
 | 回收站自定义保留天数不生效 | `_retention_days()` 读取 `trash_retention_custom`，非法值回退 30 天 |
 | Web 端缺少分组/分类筛选 | 联系人按分号边界精确匹配分组；日程在已加载范围内按分类筛选 |
+| 联系人分组显示多余转义符 | 解析 vCard `CATEGORIES` 时还原 `\;` / `\,` |
 | Apple 配置端口写死 | 使用当前请求的 scheme/port，CLI 改端口后配置仍正确 |
+| 新建日程不应用默认提醒 | 加载 `default_reminders` / `default_allday_reminders` 并在新建表单初始化后应用 |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
