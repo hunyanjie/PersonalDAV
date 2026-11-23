@@ -123,7 +123,8 @@ main.py --headless
 | 事件搜索 | `database/repositories/event_repository.py` | `SEARCH_COLUMNS = ['summary', 'ical']`，与 `events_fts` 索引列一致 |
 | 文件回收站 | `services/trash_service.py`、`personaldavd/api.py` | manifest 记录原路径/大小/删除时间；`resolve_data_path("trash")` 跟随数据目录 |
 | 回收站 UI | `webui/src/views/Files.vue`、`ui/tabs/files_tab.py` | 列表、还原、永久删除、清空、保留天数 |
-| 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希 |
+| 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希；桌面端支持双击/按钮编辑权限、备注、有效期和删除 |
+| SSL 证书路径 | `utils/cert_helper.py`、`ui/dialogs/settings_dialog.py`、`ui/app.py` | `normalize_cert_path()` 转绝对路径；保存时校验证书/密钥；先关设置窗口再执行保存回调，避免确认框被 grab 挡住 |
 | Web 高级筛选 | `webui/src/views/ContactsList.vue`、`Calendar.vue`、`personaldavd/api.py` | 联系人按分组精确筛选（分号边界，避免 Work 命中 Workshop）；日程按分类筛选 |
 | 提醒预设与默认提醒 | `webui/src/views/Settings.vue`、`CalendarEventEdit.vue` | 维护常规/全天预设与默认勾选；新建日程自动应用默认提醒，编辑页可从预设快速添加 |
 | Apple 扫码安装 | `personaldavd/api.py`、`personaldavd/auth.py` | `/api/apple/qr` 生成二维码；短时签名 URL 允许手机直接下载，不暴露 Bearer 令牌；使用请求实际协议/端口 |
@@ -165,7 +166,7 @@ Apple 配置二维码使用与附件 URL 鉴权相同的短时签名：`/api/app
 
 `tests/run_all.py` 现在依次执行：
 
-1. pytest 单元测试（38 项）
+1. pytest 单元测试（41 项）
 2. MCP 内部工具检查（41 个工具）
 3. MCP HTTP/SSE 端到端检查
 4. MCP 鉴权检查（401/403/200 + 审计日志）
@@ -209,6 +210,10 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 | 联系人分组显示多余转义符 | 解析 vCard `CATEGORIES` 时还原 `\;` / `\,` |
 | Apple 配置端口写死 | 使用当前请求的 scheme/port，CLI 改端口后配置仍正确 |
 | 新建日程不应用默认提醒 | 加载 `default_reminders` / `default_allday_reminders` 并在新建表单初始化后应用 |
+| 桌面设置列表不能双击编辑 | 挂载点、API 令牌绑定 `<Double-1>`；API 令牌增加编辑/删除按钮 |
+| API 令牌不能修改权限和有效期 | `ApiTokenService.update_token()` 更新 scopes/note/expires_at，原始令牌哈希不变 |
+| SSL 相对路径启动报错 | `normalize_cert_path()` 统一转绝对路径；仅在 HTTPS 启用时自动续期 |
+| SSL 设置保存后像卡死 | 先销毁设置窗口再执行保存回调，避免确认框被 `grab_set` 挡住 |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -1794,7 +1799,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 38 项，325 个子测试）
+### 测试结构（共 41 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
