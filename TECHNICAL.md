@@ -37,7 +37,7 @@
 
 > v3.3 变动：WebUI 全端企业级交互升级（Toast/Modal/骨架屏/FLIP/Skeleton/EmptyState/Micro-interactions/圆环图/右滑操作）。新增 `utils/cert_helper.py`（SSL 一键证书生成）。新增 `webui/src/components/Toast.vue` / `ModalConfirm.vue` / `EmptyState.vue` / `SkeletonCard.vue`。`personaldavd/daemon.py` 支持双端口 HTTPS+HTTP。FTP 配置从服务器页迁移至设置页并使用 SettingDef。asyncio 日志噪音两处抑制。
 
-> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。WebUI 增加联系人分组筛选、日历分类筛选、提醒预设与默认提醒、重复日程例外日期；Apple 配置增加扫码安装与安装引导，并使用真实协议/端口；回收站支持自定义保留天数。
+> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。WebUI 增加联系人分组筛选、日历分类筛选、提醒预设与默认提醒、重复日程例外日期；Apple 配置增加扫码安装与安装引导，并使用真实协议/端口；回收站支持自定义保留天数。WebUI 文件管理增加文本高亮编辑、压缩包浏览/密码缓存、联系人/日程卡片编辑；挂载点支持空间上限，概览圆环区分数据/其他/剩余空间。
 
 ---
 
@@ -134,7 +134,11 @@ main.py --headless
 | 敏感设置脱敏 | `personaldavd/api.py`、`services/api_scopes.py` | 密码/密钥/盐等返回 `********`；`PROTECTED_SETTING_KEYS` 禁止通用接口写入 |
 | Apple 配置 | `personaldavd/api.py` | 生成 `.mobileconfig`，根据协议与 SSL 设置选择 http/https |
 | Office 预览 | `personaldavd/files.py`、`webui/src/views/Files.vue` | 支持 LibreOffice / ONLYOFFICE / Microsoft Office Online |
-| 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算；磁盘容量取第一个真实存在的挂载点所在卷 |
+| 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算；磁盘容量按挂载点上限或真实卷容量计算 |
+| 挂载空间上限 | `services/file_mount_service.py`、`StatsService` | 挂载点可设置 `quota_mb`；概览圆环分主题色（数据）、灰色（卷上其他占用）、浅色（剩余），超过上限时显示提示 |
+| 文本预览编辑 | `personaldavd/files.py`、`Files.vue` | `/api/files/text` 读取/保存；UTF-8/GB18030 等编码识别；前端使用 highlight.js 高亮、自动换行和 textarea 编辑 |
+| 压缩包预览 | `personaldavd/files.py`、`Files.vue` | zip/tar 直接浏览；7z/rar 依赖可选库；加密结构/内容分步提示密码，密码缓存在 sessionStorage |
+| 联系人/日程文件卡片 | `personaldavd/files.py`、`Files.vue` | `.vcf`/`.ics` 解析为卡片并支持结构化保存，也保留原始文本编辑入口 |
 | 无头数据目录 | `personaldavd/daemon.py`、`main.py`、`personaldavd/__main__.py` | 先初始化 Database，再写 `data_dir`，再注册 dav_root，最后同步回收站 |
 | MCP 服务器工具 | `mcp_tools/server_tools.py`、`utils/server_registry.py` | GUI/无头/MCP 共享同一个 `DaemonServer` 实例，状态返回 `http_port` / `ssl_port` |
 | 测试隔离 | `tests/_test_db.py`、`tests/conftest.py` | 所有测试使用临时数据库，不再读写用户真实 `data/dav_data.db` |
@@ -166,7 +170,7 @@ Apple 配置二维码使用与附件 URL 鉴权相同的短时签名：`/api/app
 
 `tests/run_all.py` 现在依次执行：
 
-1. pytest 单元测试（47 项）
+1. pytest 单元测试（52 项）
 2. MCP 内部工具检查（41 个工具）
 3. MCP HTTP/SSE 端到端检查
 4. MCP 鉴权检查（401/403/200 + 审计日志）
@@ -1802,7 +1806,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 47 项，325 个子测试）
+### 测试结构（共 52 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
