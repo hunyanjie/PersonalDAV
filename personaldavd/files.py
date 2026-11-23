@@ -140,7 +140,9 @@ def _list_archive(abs_path: str, password: str = "") -> dict:
             try:
                 with py7zr.SevenZipFile(abs_path, mode="r", password=password or None) as zf:
                     names_encrypted = False
-                    for name, info in zf.list().items():
+                    infos = zf.list()
+                    items = infos.items() if hasattr(infos, "items") else [(i.filename, i) for i in infos]
+                    for name, info in items:
                         entries.append({
                             "name": name.replace("\\", "/"),
                             "size": 0 if info.is_directory else (info.uncompressed or 0),
@@ -163,7 +165,17 @@ def _list_archive(abs_path: str, password: str = "") -> dict:
                 import rarfile
             except ImportError:
                 raise HTTPException(415, "预览 rar 需要安装 rarfile，并配置 unrar")
-            with rarfile.RarFile(abs_path) as rf:
+            try:
+                rf = rarfile.RarFile(abs_path)
+            except rarfile.PasswordRequired:
+                return {
+                    "entries": [],
+                    "encrypted": True,
+                    "names_encrypted": True,
+                    "password_required": True,
+                    "format": fmt,
+                }
+            with rf:
                 encrypted = bool(rf.needs_password())
                 for info in rf.infolist():
                     entries.append({
@@ -227,7 +239,7 @@ def _read_archive_entry(abs_path: str, entry: str, password: str = "") -> tuple[
                 with rarfile.RarFile(abs_path) as rf:
                     try:
                         rf.extract(entry, tmp_dir, pwd=password or None)
-                    except RuntimeError:
+                    except (RuntimeError, rarfile.PasswordRequired, rarfile.RarWrongPassword):
                         raise HTTPException(423, "压缩文件需要密码，或密码错误")
             target = os.path.join(tmp_dir, entry)
             if not os.path.isfile(target):
