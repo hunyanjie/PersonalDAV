@@ -166,7 +166,7 @@ Apple 配置二维码使用与附件 URL 鉴权相同的短时签名：`/api/app
 
 `tests/run_all.py` 现在依次执行：
 
-1. pytest 单元测试（41 项）
+1. pytest 单元测试（44 项）
 2. MCP 内部工具检查（41 个工具）
 3. MCP HTTP/SSE 端到端检查
 4. MCP 鉴权检查（401/403/200 + 审计日志）
@@ -214,6 +214,8 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 | API 令牌不能修改权限和有效期 | `ApiTokenService.update_token()` 更新 scopes/note/expires_at，原始令牌哈希不变 |
 | SSL 相对路径启动报错 | `normalize_cert_path()` 统一转绝对路径；仅在 HTTPS 启用时自动续期 |
 | SSL 设置保存后像卡死 | 先销毁设置窗口再执行保存回调，避免确认框被 `grab_set` 挡住 |
+| 多挂载点打开文件管理卡死 | `FileMountService` 实例锁改为 `RLock`；`get_root_entries()` / `resolve()` 在持锁时调用 `is_single_mount` 不再自锁 |
+| 标签切换期间重入事件循环 | `FilesTab.update_ui_state()` 不再调用 `self.update()`，只刷新布局 |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -1799,7 +1801,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 41 项，325 个子测试）
+### 测试结构（共 44 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|

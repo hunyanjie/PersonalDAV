@@ -112,7 +112,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试（41 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
+依次执行：pytest 单元测试（44 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
 
 ## 使用指南
 
@@ -408,7 +408,7 @@ graph TB
 
 ```bash
 pip install -e ".[dev]"
-python tests/run_all.py   # pytest 41 项 + MCP 测试 + 鉴权测试 + 无头检查
+python tests/run_all.py   # pytest 44 项 + MCP 测试 + 鉴权测试 + 无头检查
 ```
 
 ### 代码规范
