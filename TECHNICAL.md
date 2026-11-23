@@ -137,7 +137,7 @@ main.py --headless
 | 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算；磁盘容量按挂载点上限或真实卷容量计算 |
 | 挂载空间上限 | `services/file_mount_service.py`、`StatsService` | 挂载点可设置 `quota_mb`；概览圆环分主题色（数据）、灰色（卷上其他占用）、浅色（剩余），超过上限时显示提示 |
 | 文本预览编辑 | `personaldavd/files.py`、`Files.vue` | `/api/files/text` 读取/保存；UTF-8/GB18030 等编码识别；前端使用 highlight.js 高亮、自动换行和 textarea 编辑 |
-| 压缩包预览 | `personaldavd/files.py`、`Files.vue` | zip/tar 直接浏览；7z/rar 依赖可选库；加密结构/内容分步提示密码，密码缓存在 sessionStorage |
+| 压缩包预览 | `personaldavd/files.py`、`Files.vue` | zip/tar/7z 直接浏览；rar 依赖 rarfile（单文件提取需 unrar）；加密结构/内容分步提示密码，密码缓存在 sessionStorage |
 | 联系人/日程文件卡片 | `personaldavd/files.py`、`Files.vue` | `.vcf`/`.ics` 解析为卡片并支持结构化保存，也保留原始文本编辑入口 |
 | 无头数据目录 | `personaldavd/daemon.py`、`main.py`、`personaldavd/__main__.py` | 先初始化 Database，再写 `data_dir`，再注册 dav_root，最后同步回收站 |
 | MCP 服务器工具 | `mcp_tools/server_tools.py`、`utils/server_registry.py` | GUI/无头/MCP 共享同一个 `DaemonServer` 实例，状态返回 `http_port` / `ssl_port` |
