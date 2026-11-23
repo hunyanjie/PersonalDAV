@@ -23,8 +23,9 @@ class ServerTab(ttk.Frame):
         self.server_instance = None
 
         self.ssl_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ssl_enabled", "False") == "True")
-        self.ssl_cert_var = tk.StringVar(value=self.settings_service.get_setting("ssl_certfile", ""))
-        self.ssl_key_var = tk.StringVar(value=self.settings_service.get_setting("ssl_keyfile", ""))
+        from utils.cert_helper import normalize_cert_path
+        self.ssl_cert_var = tk.StringVar(value=normalize_cert_path(self.settings_service.get_setting("ssl_certfile", "")))
+        self.ssl_key_var = tk.StringVar(value=normalize_cert_path(self.settings_service.get_setting("ssl_keyfile", "")))
         self.webui_enabled = tk.BooleanVar(value=self.settings_service.get_setting("webui_enabled", "True") == "True")
 
         self.ftp_service = FTPService()
@@ -37,8 +38,9 @@ class ServerTab(ttk.Frame):
             self.port_entry.delete(0, tk.END)
             self.port_entry.insert(0, new_port)
         self.ssl_enabled.set(self.settings_service.get_setting("ssl_enabled", "False") == "True")
-        self.ssl_cert_var.set(self.settings_service.get_setting("ssl_certfile", ""))
-        self.ssl_key_var.set(self.settings_service.get_setting("ssl_keyfile", ""))
+        from utils.cert_helper import normalize_cert_path
+        self.ssl_cert_var.set(normalize_cert_path(self.settings_service.get_setting("ssl_certfile", "")))
+        self.ssl_key_var.set(normalize_cert_path(self.settings_service.get_setting("ssl_keyfile", "")))
         self.webui_enabled.set(self.settings_service.get_setting("webui_enabled", "True") == "True")
         self._update_info()
 
@@ -277,8 +279,9 @@ REST API 文档:
             self.settings_service.set_setting("default_port", self.port_entry.get())
 
         ssl_enabled = self.ssl_enabled.get()
-        ssl_cert = self.ssl_cert_var.get().strip()
-        ssl_key = self.ssl_key_var.get().strip()
+        from utils.cert_helper import normalize_cert_path
+        ssl_cert = normalize_cert_path(self.ssl_cert_var.get())
+        ssl_key = normalize_cert_path(self.ssl_key_var.get())
         protocol = self.settings_service.get_setting("server_protocol", "http_https")
 
         self.settings_service.set_setting("ssl_enabled", str(ssl_enabled))

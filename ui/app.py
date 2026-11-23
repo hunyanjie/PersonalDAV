@@ -196,20 +196,31 @@ class DAVServerApp:
             logger.info(f"定时同步已启动，间隔 {interval} 分钟")
 
     def _check_cert_renew(self):
+        # 只有启用 HTTPS 时才需要处理证书；避免 HTTPS 关闭时因历史相对路径报错。
+        if self.settings_service.get_setting("ssl_enabled", "False") != "True":
+            return
         if self.settings_service.get_setting("ssl_auto_renew", "True") != "True":
             return
-        cert_path = self.settings_service.get_setting("ssl_certfile", "")
-        if not cert_path:
+        from utils.cert_helper import normalize_cert_path
+        cert_path = normalize_cert_path(self.settings_service.get_setting("ssl_certfile", ""))
+        key_path = normalize_cert_path(self.settings_service.get_setting("ssl_keyfile", ""))
+        if not cert_path or not key_path:
             return
+        # 证书检查/生成放到后台线程，避免证书目录在慢速磁盘或网络路径上时卡住界面。
+        import threading
+        threading.Thread(target=self._renew_cert_worker,
+                         args=(cert_path, key_path), daemon=True).start()
+
+    @staticmethod
+    def _renew_cert_worker(cert_path, key_path):
         from utils.cert_helper import should_renew, generate_self_signed_cert
-        if should_renew(cert_path):
-            key_path = self.settings_service.get_setting("ssl_keyfile", "")
-            if key_path:
-                try:
-                    generate_self_signed_cert(cert_path, key_path)
-                    logger.info("SSL证书已自动续期")
-                except Exception as e:
-                    logger.error(f"SSL证书自动续期失败: {e}")
+        if not should_renew(cert_path):
+            return
+        try:
+            generate_self_signed_cert(cert_path, key_path)
+            logger.info("SSL证书已自动续期")
+        except Exception as e:
+            logger.error(f"SSL证书自动续期失败: {e}")
 
     def show_settings(self):
         from ui.dialogs.settings_dialog import SettingsDialog

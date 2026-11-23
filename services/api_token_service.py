@@ -84,5 +84,16 @@ class ApiTokenService:
         logger.info(f"更新 API 令牌备注: {token_id} note={note}")
         return True
 
+    def update_token(self, token_id: str, scopes: list[str], note: str = '',
+                     expires_at: str = '') -> bool:
+        """更新令牌权限、备注和有效期；原始令牌和哈希保持不变。"""
+        db = Database()
+        db.execute(
+            'UPDATE api_tokens SET scopes=?, note=?, expires_at=? WHERE id=?',
+            (json.dumps(scopes), note, expires_at, token_id)
+        )
+        logger.info(f"更新 API 令牌: {token_id} scopes={scopes} note={note} expires_at={expires_at}")
+        return True
+
     def has_scope(self, token_scopes: list[str], required_scope: str) -> bool:
         return required_scope in token_scopes

@@ -1,8 +1,13 @@
 """API 令牌作用域与敏感设置脱敏的单元测试。"""
 
+import os
+import shutil
+import tempfile
 import unittest
 
 from services.api_scopes import ALL_SCOPES, is_mcp_path, mask_setting, required_scope
+from services.api_token_service import ApiTokenService
+from utils.cert_helper import generate_self_signed_cert, get_cert_info, normalize_cert_path
 
 
 class TestRequiredScope(unittest.TestCase):
@@ -45,6 +50,39 @@ class TestSensitiveSettings(unittest.TestCase):
     def test_all_scopes_have_labels(self):
         self.assertIn("tokens:manage", ALL_SCOPES)
         self.assertIn("files:manage", ALL_SCOPES)
+
+
+class TestTokenUpdate(unittest.TestCase):
+    def test_update_scopes_note_and_expiry(self):
+        svc = ApiTokenService()
+        created = svc.create_token(["contacts:read"], "old", "")
+        svc.update_token(created["id"], ["contacts:read", "events:read"], "new", "2030-01-01T00:00:00")
+        token = next(t for t in svc.list_tokens() if t["id"] == created["id"])
+        self.assertEqual(token["note"], "new")
+        self.assertEqual(set(token["scopes"]), {"contacts:read", "events:read"})
+        self.assertEqual(token["expires_at"], "2030-01-01T00:00:00")
+        svc.delete_token(created["id"])
+
+
+class TestCertPaths(unittest.TestCase):
+    def test_relative_path_is_absolutized(self):
+        path = normalize_cert_path(r"./docs/cert.pem")
+        self.assertTrue(os.path.isabs(path))
+        self.assertTrue(path.endswith(os.path.join("docs", "cert.pem")))
+
+    def test_generate_and_read(self):
+        tmp = tempfile.mkdtemp(prefix="pdav-cert-test-")
+        try:
+            cert = os.path.join(tmp, "nested", "cert.pem")
+            key = os.path.join(tmp, "nested", "key.pem")
+            cert_out, key_out = generate_self_signed_cert(cert, key)
+            self.assertTrue(os.path.isfile(cert_out))
+            self.assertTrue(os.path.isfile(key_out))
+            info = get_cert_info(cert_out)
+            self.assertIsNotNone(info)
+            self.assertGreater(info["remaining_days"], 300)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

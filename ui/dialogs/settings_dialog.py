@@ -7,7 +7,7 @@ from utils.event_bus import event_bus, EVENT_SETTINGS_CHANGED
 from ui.dialogs.settings_security import SecuritySettingsSection
 from ui.dialogs.settings_reminders import ReminderPresetSection
 from utils.timezone_helper import TimezoneHelper
-from utils.cert_helper import generate_self_signed_cert, get_cert_info
+from utils.cert_helper import generate_self_signed_cert, get_cert_info, normalize_cert_path
 from models.setting_defs import SettingDef
 from models.constants import STATUS_MAPPING, TRANSPARENCY_MAPPING, REPEAT_OPTIONS, END_CONDITIONS
 from services.auth_service import AuthService
@@ -494,7 +494,11 @@ class SettingsDialog(tk.Toplevel):
         self._tok_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         
-        ttk.Button(tok_f, text="新建令牌", command=self._show_create_token).pack(anchor="w", padx=10, pady=5)
+        tok_btn_frame = ttk.Frame(tok_f)
+        tok_btn_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Button(tok_btn_frame, text="新建令牌", command=self._show_create_token).pack(side=tk.LEFT, padx=2)
+        ttk.Button(tok_btn_frame, text="编辑", command=self._edit_selected_api_token).pack(side=tk.LEFT, padx=2)
+        ttk.Button(tok_btn_frame, text="删除", command=self._delete_selected_api_token).pack(side=tk.LEFT, padx=2)
 
         def _copy_token(event=None):
             sel = self._tok_tree.selection()
@@ -514,11 +518,18 @@ class SettingsDialog(tk.Toplevel):
             menu = tk.Menu(self, tearoff=0)
             if tok_data.get("_raw"):
                 menu.add_command(label="复制令牌", command=_copy_token)
+            menu.add_command(label="编辑令牌", command=lambda: self._edit_api_token(item))
             menu.add_command(label="修改备注", command=lambda: self._update_api_token_note(item))
             menu.add_command(label="删除", command=lambda: self._delete_api_token(item))
             menu.post(event.x_root, event.y_root)
 
+        def _tok_double_click(event):
+            item = self._tok_tree.identify_row(event.y)
+            if item:
+                self._edit_api_token(item)
+
         self._tok_tree.bind("<Button-3>", _tok_right_click)
+        self._tok_tree.bind("<Double-1>", _tok_double_click)
         self._tok_tree.bind("<Control-c>", _copy_token)
         self._refresh_api_tokens()
 
@@ -862,7 +873,7 @@ class SettingsDialog(tk.Toplevel):
     def _browse_ssl(self, target):
         path = filedialog.askopenfilename(title="选择文件", parent=self)
         if path:
-            path = os.path.normpath(path)
+            path = normalize_cert_path(path)
             if target == "cert":
                 self.ssl_cert_var.set(path)
             else:
@@ -878,12 +889,12 @@ class SettingsDialog(tk.Toplevel):
         dir_path = filedialog.askdirectory(title="选择证书保存目录", parent=self)
         if not dir_path:
             return
-        cert_path = os.path.normpath(os.path.join(dir_path, "cert.pem"))
-        key_path = os.path.normpath(os.path.join(dir_path, "key.pem"))
+        cert_path = normalize_cert_path(os.path.join(dir_path, "cert.pem"))
+        key_path = normalize_cert_path(os.path.join(dir_path, "key.pem"))
         try:
             generate_self_signed_cert(cert_path, key_path)
-            self.ssl_cert_var.set(os.path.normpath(cert_path))
-            self.ssl_key_var.set(os.path.normpath(key_path))
+            self.ssl_cert_var.set(cert_path)
+            self.ssl_key_var.set(key_path)
             self.ssl_enabled_var.set(True)
             self._update_cert_info()
             messagebox.showinfo("成功", f"自签名证书已生成：\n{cert_path}\n\n请将此证书添加到系统的信任列表中。\n\nmacOS: 双击 cert.pem → 钥匙串 → 信任 → 始终信任\niOS: 通过 Safari 下载安装描述文件", parent=self)
@@ -958,7 +969,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         text.config(state=tk.DISABLED)
 
     def _update_cert_info(self):
-        cert_path = self.ssl_cert_var.get().strip()
+        cert_path = normalize_cert_path(self.ssl_cert_var.get())
         info = get_cert_info(cert_path) if cert_path else None
         if info:
             color = "red" if info["remaining_days"] <= 30 else ("orange" if info["remaining_days"] <= 90 else "green")
@@ -993,12 +1004,35 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                 self._tok_tree.delete(i)
             self._tok_tree.insert("", tk.END, values=("加载失败", str(e), "", ""))
 
-    def _show_create_token(self) -> None:
+    def _edit_selected_api_token(self) -> None:
+        sel = self._tok_tree.selection()
+        if not sel:
+            messagebox.showwarning("提示", "请先选择要编辑的令牌", parent=self)
+            return
+        self._edit_api_token(sel[0])
+
+    def _edit_api_token(self, item_id: str) -> None:
+        tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(item_id, {})
+        if tok_data:
+            self._show_create_token(tok_data)
+
+    def _delete_selected_api_token(self) -> None:
+        sel = self._tok_tree.selection()
+        if not sel:
+            messagebox.showwarning("提示", "请先选择要删除的令牌", parent=self)
+            return
+        self._delete_api_token(sel[0])
+
+    def _show_create_token(self, token_data: dict | None = None) -> None:
         from services.api_token_service import SCOPE_LABELS
         from utils.window_utils import center_window
-        import tkinter.simpledialog
+        import datetime
+        is_edit = token_data is not None
+        selected_scopes = set(token_data.get("scopes", [])) if is_edit else set()
+        existing_expires = (token_data.get("expires_at", "") if is_edit else "")
+
         win = tk.Toplevel(self)
-        win.title("创建 API 令牌")
+        win.title("编辑 API 令牌" if is_edit else "创建 API 令牌")
         win.transient(self)
         win.grab_set()
         center_window(win, self)
@@ -1007,32 +1041,33 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         cb_frame = ttk.Frame(win)
         cb_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")
         for i, (scope, label) in enumerate(sorted(SCOPE_LABELS.items())):
-            var = tk.BooleanVar()
+            var = tk.BooleanVar(value=scope in selected_scopes)
             scopes[scope] = var
             cb = ttk.Checkbutton(cb_frame, text=label, variable=var)
             cb.grid(row=i // 2, column=i % 2, sticky="w", padx=5, pady=2)
         ttk.Label(win, text="备注:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
-        note_var = tk.StringVar()
+        note_var = tk.StringVar(value=token_data.get("note", "") if is_edit else "")
         ttk.Entry(win, textvariable=note_var, width=40).grid(row=2, column=1, padx=10, pady=5, sticky="w")
         ttk.Label(win, text="过期:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
-        expires_var = tk.StringVar(value="永不过期")
-        expire_combo = ttk.Combobox(win, textvariable=expires_var, values=["永不过期", "7天", "30天", "90天", "1年", "自定义"], state="readonly", width=15)
+        expires_var = tk.StringVar(value="保持不变" if is_edit else "永不过期")
+        expire_values = (["保持不变"] if is_edit else []) + ["永不过期", "7天", "30天", "90天", "1年", "自定义"]
+        expire_combo = ttk.Combobox(win, textvariable=expires_var, values=expire_values, state="readonly", width=15)
         expire_combo.grid(row=3, column=1, padx=10, pady=5, sticky="w")
 
         custom_frame = ttk.Frame(win)
         custom_days_var = tk.StringVar(value="30")
         ttk.Label(custom_frame, text="自定义天数:").pack(side=tk.LEFT, padx=(10, 5))
         ttk.Entry(custom_frame, textvariable=custom_days_var, width=10).pack(side=tk.LEFT, padx=5)
-        
+
         def toggle_custom(*_):
             if expires_var.get() == "自定义":
                 custom_frame.grid(row=4, column=0, columnspan=2, padx=10, pady=5, sticky="w")
             else:
                 custom_frame.grid_remove()
-        
+
         expire_combo.bind("<<ComboboxSelected>>", toggle_custom)
 
-        def do_create():
+        def do_save():
             selected = [s for s, v in scopes.items() if v.get()]
             if not selected:
                 from ui.widgets.toast import Toast
@@ -1040,22 +1075,31 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                 return
             expires_at = None
             val = expires_var.get()
-            if val == "永不过期":
+            if is_edit and val == "保持不变":
+                expires_at = existing_expires or ""
+            elif val == "永不过期":
                 expires_at = None
             elif val == "自定义":
                 try:
                     days = int(custom_days_var.get())
-                    import datetime
                     expires_at = (datetime.datetime.now() + datetime.timedelta(days=days)).isoformat()
                 except ValueError:
                     from ui.widgets.toast import Toast
                     Toast.show(win, "请输入有效的天数", duration=2000)
                     return
             else:
-                import datetime
                 days = {"7天": 7, "30天": 30, "90天": 90, "1年": 365}[val]
                 expires_at = (datetime.datetime.now() + datetime.timedelta(days=days)).isoformat()
+
             from services.api_token_service import ApiTokenService
+            if is_edit:
+                ApiTokenService().update_token(token_data["id"], selected, note_var.get(), expires_at or "")
+                win.destroy()
+                self._refresh_api_tokens()
+                from ui.widgets.toast import Toast
+                Toast.success(self, "令牌已更新")
+                return
+
             result = ApiTokenService().create_token(selected, note_var.get(), expires_at)
             for c in win.winfo_children():
                 c.destroy()
@@ -1064,7 +1108,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             entry.pack(padx=10, pady=5)
             entry.insert(0, result["token"])
             entry.config(state="readonly")
-            
+
             def copy_raw():
                 win.clipboard_clear()
                 win.clipboard_append(result["token"])
@@ -1076,7 +1120,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                 ttk.Label(win, text="到期: 永不过期", font=("", 9)).pack()
             ttk.Button(win, text="关闭", command=lambda: (win.destroy(), self._refresh_api_tokens())).pack(pady=10)
             win.update_idletasks()
-        ttk.Button(win, text="生成令牌", command=do_create).grid(row=5, column=0, columnspan=2, pady=10)
+        ttk.Button(win, text="保存修改" if is_edit else "生成令牌", command=do_save).grid(row=5, column=0, columnspan=2, pady=10)
 
     def _delete_api_token(self, item_id: str) -> None:
         tok_data = getattr(self._tok_tree, "_tok_id_map", {}).get(item_id, {})
@@ -1215,6 +1259,7 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.mount_tree.heading("path", text="文件系统路径")
         self.mount_tree.column("name", width=160)
         self.mount_tree.column("path", width=400)
+        self.mount_tree.bind("<Double-1>", self._mount_double_click)
         self.mount_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.mount_tree.yview)
@@ -1239,6 +1284,10 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             self.mount_tree.delete(item)
         for m in self._mount_svc.get_mounts():
             self.mount_tree.insert("", tk.END, values=(m["name"], m["path"]))
+
+    def _mount_double_click(self, event):
+        if self.mount_tree.identify_row(event.y):
+            self._mount_edit()
 
     def _mount_add(self):
         from ui.dialogs.mount_dialog import MountDialog
@@ -1416,8 +1465,8 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         total_min = int(s.get_setting("default_duration", "60"))
 
         self.ssl_enabled_var.set(s.get_setting("ssl_enabled", "False") == "True")
-        self.ssl_cert_var.set(s.get_setting("ssl_certfile", ""))
-        self.ssl_key_var.set(s.get_setting("ssl_keyfile", ""))
+        self.ssl_cert_var.set(normalize_cert_path(s.get_setting("ssl_certfile", "")))
+        self.ssl_key_var.set(normalize_cert_path(s.get_setting("ssl_keyfile", "")))
         self._auto_renew_var.set(s.get_setting("ssl_auto_renew", "True") == "True")
         proto_map = {"http_https": "HTTP + HTTPS（默认）", "https_only": "仅 HTTPS", "http_only": "仅 HTTP"}
         self._protocol_var.set(proto_map.get(s.get_setting("server_protocol", "http_https"), "HTTP + HTTPS（默认）"))
@@ -1667,9 +1716,27 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         new_ssl = self.ssl_enabled_var.get()
         ssl_toggled = (prev_ssl != new_ssl)
 
+        # 统一转成绝对路径，避免启动目录变化导致相对路径找不到而卡住/报错。
+        cert_path = normalize_cert_path(self.ssl_cert_var.get())
+        key_path = normalize_cert_path(self.ssl_key_var.get())
+        self.ssl_cert_var.set(cert_path)
+        self.ssl_key_var.set(key_path)
+        if new_ssl:
+            if not cert_path or not key_path:
+                messagebox.showerror("SSL 证书错误", "启用 HTTPS 前请先选择证书文件和密钥文件。", parent=self)
+                return
+            if not os.path.isfile(cert_path) or not os.path.isfile(key_path):
+                messagebox.showerror("SSL 证书错误",
+                                     "证书或密钥文件不存在，请重新选择，或点击「一键生成自签名证书」。",
+                                     parent=self)
+                return
+            if get_cert_info(cert_path) is None:
+                messagebox.showerror("SSL 证书错误", "无法读取证书文件，请选择有效的 PEM 证书。", parent=self)
+                return
+
         s.set_setting("ssl_enabled", str(new_ssl))
-        s.set_setting("ssl_certfile", self.ssl_cert_var.get())
-        s.set_setting("ssl_keyfile", self.ssl_key_var.get())
+        s.set_setting("ssl_certfile", cert_path)
+        s.set_setting("ssl_keyfile", key_path)
         s.set_setting("ssl_auto_renew", str(self._auto_renew_var.get()))
         proto_rev = {"HTTP + HTTPS（默认）": "http_https", "仅 HTTPS": "https_only", "仅 HTTP": "http_only"}
         s.set_setting("server_protocol", proto_rev.get(self._protocol_var.get(), "http_https"))
@@ -1721,6 +1788,10 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
                 parent=self)
 
         event_bus.publish(EVENT_SETTINGS_CHANGED)
-        if self.on_save_callback:
-            self.on_save_callback(ssl_toggled)
+        # 先关闭设置窗口，再执行保存回调。否则 SSL 切换时弹出的确认框会被
+        # 仍然持有 grab 的设置窗口挡在下面，看起来像程序卡死。
+        callback = self.on_save_callback
+        parent = self.master
         self.destroy()
+        if callback:
+            parent.after(10, lambda: callback(ssl_toggled))
