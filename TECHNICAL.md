@@ -135,6 +135,7 @@ main.py --headless
 | Apple 配置 | `personaldavd/api.py` | 生成 `.mobileconfig`，根据协议与 SSL 设置选择 http/https |
 | Office 预览 | `personaldavd/files.py`、`webui/src/views/Files.vue` | 支持 LibreOffice / ONLYOFFICE / Microsoft Office Online |
 | 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算；磁盘容量按挂载点上限或真实卷容量计算 |
+| 概览圆环口径 | `webui/src/views/Dashboard.vue` | 圆环中心显示 PersonalDAV 数据 / 总容量；灰色弧表示同卷其他占用，浅色弧表示剩余空间，三者分开显示避免磁盘快满时误判为数据占满 |
 | 挂载空间上限 | `services/file_mount_service.py`、`StatsService` | 挂载点可设置 `quota_mb`；概览圆环分主题色（数据）、灰色（卷上其他占用）、浅色（剩余），超过上限时显示提示 |
 | 文本预览编辑 | `personaldavd/files.py`、`Files.vue` | `/api/files/text` 读取/保存；UTF-8/GB18030 等编码识别；前端使用 highlight.js 高亮、自动换行和 textarea 编辑 |
 | 压缩包预览 | `personaldavd/files.py`、`Files.vue` | zip/tar/7z 直接浏览；rar 依赖 rarfile（单文件提取需 unrar）；加密结构/内容分步提示密码，密码缓存在 sessionStorage |
