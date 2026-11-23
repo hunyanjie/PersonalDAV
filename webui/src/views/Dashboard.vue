@@ -26,6 +26,7 @@
               <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
               <div class="stat-label">{{ s.label }}</div>
               <div class="stat-detail">{{ diskDetail }}</div>
+              <div class="stat-detail">{{ diskBreakdown }}</div>
               <div class="disk-legend">
                 <span><i class="disk-dot dot-used"></i>数据</span>
                 <span><i class="disk-dot dot-other"></i>其他</span>
@@ -137,19 +138,28 @@ export default {
       return Math.min(1 - this.diskUsedRatio, other / total)
     },
     diskPercent() {
-      return this.diskUsedRatio + this.diskOtherRatio
+      // 圆环中心表示 PersonalDAV 数据占分配空间/设备容量的比例，
+      // 不把同磁盘上其他文件算进“空间占用”，避免磁盘快满时显示 100%。
+      return this.diskUsedRatio
     },
     diskPercentLabel() {
       const total = Number(this.stats.disk_total_mb) || 0
       if (total <= 0) return '—'
       if (this.stats.disk_over_quota) return '>100%'
-      return `${Math.round(this.diskPercent * 100)}%`
+      const percent = this.diskPercent * 100
+      if (percent > 0 && percent < 1) return '<1%'
+      return `${Math.round(percent)}%`
     },
     diskDetail() {
       const used = Number(this.stats.disk_used_mb) || 0
       const total = Number(this.stats.disk_total_mb) || 0
       if (!total) return used.toFixed(1) + ' MB'
-      return used.toFixed(1) + ' / ' + total.toFixed(1) + ' MB'
+      return `数据 ${used.toFixed(1)} / 容量 ${total.toFixed(1)} MB`
+    },
+    diskBreakdown() {
+      const other = Number(this.stats.disk_other_mb) || 0
+      const free = Number(this.stats.disk_free_mb) || 0
+      return `其他 ${other.toFixed(1)} MB · 剩余 ${free.toFixed(1)} MB`
     },
     welcomeMessage() {
       const proto = this.serverConfig?.server_protocol || 'http_https'
