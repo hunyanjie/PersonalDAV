@@ -152,6 +152,10 @@ class StatsOut(BaseModel):
     files_count: int = 0
     disk_used_mb: float = 0.0
     disk_total_mb: float = 0.0
+    disk_other_mb: float = 0.0
+    disk_free_mb: float = 0.0
+    disk_over_quota: bool = False
+    mount_stats: list[dict] = Field(default_factory=list)
     uptime: float = 0.0
     version: str = ""
     trends: dict[str, str] = Field(default_factory=dict)

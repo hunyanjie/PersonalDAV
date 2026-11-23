@@ -8,6 +8,20 @@ from typing import Any
 from utils.logger import logger
 
 
+_QUOTA_UNSET = object()
+
+
+def _clean_quota(value: Any) -> float | None:
+    """把用户输入的空间上限转成正数 MB；空值/非法值表示不限制。"""
+    if value is None or value == "":
+        return None
+    try:
+        quota = float(value)
+    except (TypeError, ValueError):
+        return None
+    return quota if quota > 0 else None
+
+
 class FileMountService:
     _instance: "FileMountService | None" = None
     _lock = threading.RLock()
@@ -84,19 +98,22 @@ class FileMountService:
                     return dict(m)
             return None
 
-    def add_mount(self, name: str, path: str) -> dict[str, Any]:
+    def add_mount(self, name: str, path: str, quota_mb: Any = None) -> dict[str, Any]:
         self._ensure_migrated()
         abspath = os.path.abspath(path)
         if not os.path.isdir(abspath):
             os.makedirs(abspath, exist_ok=True)
+        quota = _clean_quota(quota_mb)
         with self._instance_lock:
             for m in self._mounts:
                 if m["name"] == name:
                     raise ValueError(f"Mount name '{name}' already exists")
-            entry = {"name": name, "path": abspath}
+            entry: dict[str, Any] = {"name": name, "path": abspath}
+            if quota is not None:
+                entry["quota_mb"] = quota
             self._mounts.append(entry)
             self._save()
-        logger.info(f"Mount added: {name} -> {abspath}")
+        logger.info(f"Mount added: {name} -> {abspath}" + (f" (quota {quota} MB)" if quota else ""))
         return dict(entry)
 
     def remove_mount(self, name: str) -> bool:
@@ -110,7 +127,13 @@ class FileMountService:
                     return True
         return False
 
-    def update_mount(self, old_name: str, new_name: str, new_path: str) -> dict[str, Any]:
+    def update_mount(
+        self,
+        old_name: str,
+        new_name: str,
+        new_path: str,
+        quota_mb: Any = _QUOTA_UNSET,
+    ) -> dict[str, Any]:
         self._ensure_migrated()
         abspath = os.path.abspath(new_path)
         if not os.path.isdir(abspath):
@@ -124,7 +147,16 @@ class FileMountService:
                     raise ValueError(f"Mount name '{new_name}' already exists")
             if idx < 0:
                 raise ValueError(f"Mount '{old_name}' not found")
-            self._mounts[idx] = {"name": new_name, "path": abspath}
+            old = self._mounts[idx]
+            entry: dict[str, Any] = {"name": new_name, "path": abspath}
+            if quota_mb is _QUOTA_UNSET:
+                if old.get("quota_mb") is not None:
+                    entry["quota_mb"] = old["quota_mb"]
+            else:
+                quota = _clean_quota(quota_mb)
+                if quota is not None:
+                    entry["quota_mb"] = quota
+            self._mounts[idx] = entry
             self._save()
         logger.info(f"Mount updated: {old_name} -> {new_name} ({abspath})")
         return dict(self._mounts[idx])

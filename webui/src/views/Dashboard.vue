@@ -10,9 +10,14 @@
           <template v-if="s.key === 'disk_used_mb'">
             <div class="disk-ring-wrap">
               <svg class="disk-ring" viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" fill="none" stroke="#f0f0f0" stroke-width="4" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#eef1f5" stroke-width="4" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#b9c0ca" stroke-width="4"
+                  :stroke-dasharray="`${113.1 * diskOtherRatio} 113.1`"
+                  :stroke-dashoffset="-113.1 * diskUsedRatio"
+                  transform="rotate(-90 22 22)" class="ring-fill" />
                 <circle cx="22" cy="22" r="18" fill="none" stroke="var(--brand)" stroke-width="4"
-                  stroke-dasharray="113.1" :stroke-dashoffset="113.1 * (1 - diskPercent)" transform="rotate(-90 22 22)"
+                  :stroke-dasharray="`${113.1 * diskUsedRatio} 113.1`"
+                  stroke-dashoffset="0" transform="rotate(-90 22 22)"
                   class="ring-fill" />
               </svg>
               <span class="disk-ring-text">{{ diskPercentLabel }}</span>
@@ -21,6 +26,12 @@
               <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
               <div class="stat-label">{{ s.label }}</div>
               <div class="stat-detail">{{ diskDetail }}</div>
+              <div class="disk-legend">
+                <span><i class="disk-dot dot-used"></i>数据</span>
+                <span><i class="disk-dot dot-other"></i>其他</span>
+                <span><i class="disk-dot dot-free"></i>剩余</span>
+              </div>
+              <div v-if="stats.disk_over_quota" class="stat-trend trend-down">已超过分配空间</div>
               <div v-if="s.trend" class="stat-trend" :class="s.trend[0] === '+' ? 'trend-up' : 'trend-down'">{{ s.trend }}</div>
             </div>
           </template>
@@ -114,19 +125,29 @@ export default {
       if (this.health.status === 'ok') return { text: '正常运行', class: 'status-ok' }
       return { text: '服务器异常', class: 'status-fail' }
     },
-    diskPercent() {
+    diskUsedRatio() {
       const total = Number(this.stats.disk_total_mb) || 0
       if (total <= 0) return 0
-      const used = Number(this.stats.disk_used_mb) || 0
-      return Math.min(1, used / total)
+      return Math.min(1, (Number(this.stats.disk_used_mb) || 0) / total)
+    },
+    diskOtherRatio() {
+      const total = Number(this.stats.disk_total_mb) || 0
+      if (total <= 0) return 0
+      const other = Number(this.stats.disk_other_mb) || 0
+      return Math.min(1 - this.diskUsedRatio, other / total)
+    },
+    diskPercent() {
+      return this.diskUsedRatio + this.diskOtherRatio
     },
     diskPercentLabel() {
       const total = Number(this.stats.disk_total_mb) || 0
-      return total > 0 ? `${Math.round(this.diskPercent * 100)}%` : '—'
+      if (total <= 0) return '—'
+      if (this.stats.disk_over_quota) return '>100%'
+      return `${Math.round(this.diskPercent * 100)}%`
     },
     diskDetail() {
-      const used = this.stats.disk_used_mb || 0
-      const total = this.stats.disk_total_mb || 0
+      const used = Number(this.stats.disk_used_mb) || 0
+      const total = Number(this.stats.disk_total_mb) || 0
       if (!total) return used.toFixed(1) + ' MB'
       return used.toFixed(1) + ' / ' + total.toFixed(1) + ' MB'
     },
@@ -201,6 +222,12 @@ export default {
 .ring-fill { transition: stroke-dashoffset 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .disk-ring-text { position: absolute; font-size: 12px; font-weight: 800; color: var(--text-primary); }
 .stat-detail { font-size: 11px; color: var(--text-quaternary); margin-top: 2px; }
+.disk-legend { display: flex; gap: 10px; margin-top: 5px; font-size: 10px; color: var(--text-tertiary); flex-wrap: wrap; }
+.disk-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.disk-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot-used { background: var(--brand); }
+.dot-other { background: #b9c0ca; }
+.dot-free { background: #eef1f5; border: 1px solid #d5dae2; }
 
 .stat-num { font-size: 32px; font-weight: 800; color: var(--text-primary); line-height: 1.1; letter-spacing: -1px; }
 .stat-label { color: var(--text-secondary); font-size: 14px; margin-top: 4px; font-weight: 600; }

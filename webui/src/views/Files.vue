@@ -101,6 +101,144 @@
       </div>
     </transition>
 
+    <!-- Text / code editor -->
+    <transition name="modal">
+      <div v-if="textItem" class="preview-overlay" @click.self="closeText">
+        <div class="preview-dialog glass no-transition editor-dialog">
+          <div class="preview-header">
+            <h3><Code2 :size="18" /> {{ textItem.name }}</h3>
+            <div class="editor-header-actions">
+              <button class="btn-icon-soft" :class="{ active: textWrap }" @click="textWrap = !textWrap" title="自动换行"><WrapText :size="17" /></button>
+              <button v-if="!textEditing" class="btn-icon-soft" @click="textEditing = true" title="编辑"><Pencil :size="17" /></button>
+              <button class="btn-icon-soft" @click="closeText" title="关闭"><X :size="18" /></button>
+            </div>
+          </div>
+          <div class="editor-body" :class="{ 'wrap-lines': textWrap }">
+            <div v-if="textLoading" class="preview-error">正在读取文件...</div>
+            <div v-else-if="textError" class="preview-error">{{ textError }}</div>
+            <textarea v-else-if="textEditing" v-model="textContent" class="code-textarea" spellcheck="false"
+              @keydown.ctrl.s.prevent="saveText" @keydown.esc="closeText"></textarea>
+            <pre v-else class="code-view" v-html="highlightedText"></pre>
+          </div>
+          <div class="preview-footer editor-footer">
+            <span class="editor-meta">{{ textEncoding }} · {{ formatSize(textContent.length) }}</span>
+            <button v-if="textEditing" class="btn-sm btn-primary" @click="saveText" :disabled="textSaving">
+              <Save :size="14" /> {{ textSaving ? '保存中...' : '保存' }}
+            </button>
+            <button v-if="textEditing" class="btn-sm" @click="textEditing = false">取消编辑</button>
+            <button v-else class="btn-sm" @click="textEditing = true"><Pencil :size="14" /> 编辑</button>
+            <button class="btn-sm" @click="closeText">关闭</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Archive browser -->
+    <transition name="modal">
+      <div v-if="archiveItem" class="preview-overlay" @click.self="closeArchive">
+        <div class="preview-dialog glass no-transition archive-dialog">
+          <div class="preview-header">
+            <h3><Archive :size="18" /> {{ archiveItem.name }}</h3>
+            <button class="btn-icon-soft" @click="closeArchive" title="关闭"><X :size="18" /></button>
+          </div>
+          <div class="archive-toolbar">
+            <input v-model="archiveFilter" class="archive-filter" placeholder="筛选压缩包内文件..." />
+            <span class="archive-count">{{ archiveEntries.length }} 项</span>
+            <span v-if="archiveNeedsPassword" class="archive-lock"><Lock :size="13" /> 已加密</span>
+          </div>
+          <div class="archive-body">
+            <div class="archive-list">
+              <div v-if="archiveLoading" class="preview-error">正在读取压缩包...</div>
+              <div v-else-if="archiveError" class="preview-error">{{ archiveError }}</div>
+              <div v-else-if="!filteredArchiveEntries.length" class="preview-error">压缩包为空</div>
+              <div v-for="entry in filteredArchiveEntries" :key="entry.name"
+                class="archive-entry" :class="{ selected: archiveEntry?.name === entry.name, dir: entry.is_dir }"
+                @click="previewArchiveEntry(entry)">
+                <component :is="entry.is_dir ? 'Folder' : 'File'" :size="15" />
+                <span class="archive-name" :title="entry.name">{{ entry.name }}</span>
+                <Lock v-if="entry.encrypted" :size="12" class="entry-lock" />
+                <span v-if="!entry.is_dir" class="archive-size">{{ formatArchiveSize(entry.size) }}</span>
+              </div>
+            </div>
+            <div class="archive-preview">
+              <div v-if="archivePreviewLoading" class="preview-error">正在读取文件内容...</div>
+              <div v-else-if="!archiveEntry" class="archive-placeholder">选择一个文件查看内容</div>
+              <div v-else-if="archiveEntry.is_dir" class="archive-placeholder">这是一个目录</div>
+              <div v-else-if="archivePreview?.error" class="preview-error">{{ archivePreview.error }}</div>
+              <img v-else-if="archivePreview?.data_url" :src="archivePreview.data_url" class="archive-image" />
+              <pre v-else-if="archivePreview?.is_text" class="archive-text">{{ archivePreview.content }}</pre>
+              <div v-else-if="archivePreview" class="archive-placeholder">此文件类型不支持直接预览，可提取后打开。</div>
+              <div v-else class="archive-placeholder">选择一个文件查看内容</div>
+            </div>
+          </div>
+          <div class="preview-footer">
+            <button v-if="archiveEntry && !archiveEntry.is_dir" class="btn-sm btn-primary" @click="extractArchiveEntry(archiveEntry)">
+              提取到当前目录
+            </button>
+            <button class="btn-sm" @click="closeArchive">关闭</button>
+          </div>
+          <div v-if="archivePrompt" class="archive-password-overlay">
+            <div class="archive-password-box glass">
+              <h4><Lock :size="16" /> 需要解压密码</h4>
+              <p>该压缩包已加密，请输入密码。密码会保留到当前标签页关闭。</p>
+              <input v-model="archivePrompt.value" class="archive-password-input" type="password"
+                placeholder="压缩包密码" @keyup.enter="confirmArchivePassword" />
+              <div class="dialog-actions">
+                <button class="btn-sm" @click="archivePrompt = null">取消</button>
+                <button class="btn-sm btn-primary" @click="confirmArchivePassword">确定</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Contact / calendar card -->
+    <transition name="modal">
+      <div v-if="cardItem" class="preview-overlay" @click.self="closeCard">
+        <div class="preview-dialog glass no-transition card-dialog">
+          <div class="preview-header">
+            <h3>
+              <component :is="cardKind === 'contact' ? 'Contact' : 'CalendarClock'" :size="18" />
+              {{ cardItem.name }}
+            </h3>
+            <button class="btn-icon-soft" @click="closeCard" title="关闭"><X :size="18" /></button>
+          </div>
+          <div class="preview-body card-body">
+            <div v-if="cardLoading" class="preview-error">正在解析卡片...</div>
+            <div v-else-if="cardError" class="preview-error">{{ cardError }}</div>
+            <div v-else-if="cardData" class="card-form">
+              <template v-if="cardKind === 'contact'">
+                <label>姓名<input v-model="cardData.full_name" /></label>
+                <label>邮箱<input v-model="cardData.email" /></label>
+                <label>电话<input v-model="cardData.phone" /></label>
+                <label>分组<input v-model="cardData.groups" /></label>
+                <label>公司<input v-model="cardData.org" /></label>
+                <label>地址<input v-model="cardData.address" /></label>
+                <label class="full">备注<textarea v-model="cardData.note" rows="4"></textarea></label>
+              </template>
+              <template v-else>
+                <label class="full">标题<input v-model="cardData.summary" /></label>
+                <label>开始<input v-model="cardData.dtstart" placeholder="2026-11-24T10:00" /></label>
+                <label>结束<input v-model="cardData.dtend" placeholder="2026-11-24T11:00" /></label>
+                <label>地点<input v-model="cardData.location" /></label>
+                <label>分类<input v-model="cardData.categories" /></label>
+                <label class="full">备注<textarea v-model="cardData.description" rows="4"></textarea></label>
+                <label class="full">重复规则<input v-model="cardData.rrule" placeholder="例如 FREQ=WEEKLY;BYDAY=MO" /></label>
+              </template>
+            </div>
+          </div>
+          <div class="preview-footer">
+            <button v-if="cardData" class="btn-sm btn-primary" @click="saveCard" :disabled="cardSaving">
+              <Save :size="14" /> {{ cardSaving ? '保存中...' : '保存' }}
+            </button>
+            <button v-if="cardData" class="btn-sm" @click="editCardRaw">原始文本编辑</button>
+            <button class="btn-sm" @click="closeCard">关闭</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- Preview Modal (FIXED CSS) -->
     <transition name="modal">
       <div v-if="previewItem" class="preview-overlay" @click.self="previewItem = null">
@@ -272,12 +410,48 @@ import {
   RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
   File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
   FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal,
-  ExternalLink
+  ExternalLink, Lock, Save, WrapText, Code2, Archive, Contact, CalendarClock
 } from 'lucide-vue-next'
 import api from '../api.js'
+import 'highlight.js/styles/github.css'
+import hljs from 'highlight.js/lib/core'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import java from 'highlight.js/lib/languages/java'
+import markdown from 'highlight.js/lib/languages/markdown'
+import json from 'highlight.js/lib/languages/json'
+import xml from 'highlight.js/lib/languages/xml'
+import css from 'highlight.js/lib/languages/css'
+import sql from 'highlight.js/lib/languages/sql'
+import bash from 'highlight.js/lib/languages/bash'
+import yaml from 'highlight.js/lib/languages/yaml'
+import ini from 'highlight.js/lib/languages/ini'
+import cpp from 'highlight.js/lib/languages/cpp'
+import csharp from 'highlight.js/lib/languages/csharp'
+import go from 'highlight.js/lib/languages/go'
+import rust from 'highlight.js/lib/languages/rust'
+import php from 'highlight.js/lib/languages/php'
 
-const PREVIEW_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'pdf', 'txt', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+for (const [name, lang] of Object.entries({
+  javascript, typescript, python, java, markdown, json, xml, css, sql,
+  bash, yaml, ini, cpp, csharp, go, rust, php,
+})) hljs.registerLanguage(name, lang)
+
+const TEXT_EXTS = ['txt', 'md', 'markdown', 'json', 'xml', 'yaml', 'yml', 'csv', 'log', 'ini', 'conf', 'cfg', 'py', 'java', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'vue', 'html', 'htm', 'css', 'scss', 'less', 'sql', 'sh', 'ps1', 'bat', 'cmd', 'c', 'h', 'cpp', 'hpp', 'cs', 'go', 'rs', 'php', 'rb', 'toml', 'properties', 'gitignore', 'env', 'text']
+const ARCHIVE_EXTS = ['zip', 'tar', 'gz', 'tgz', 'bz2', 'tbz2', 'xz', 'txz', '7z', 'rar']
+const CARD_EXTS = ['vcf', 'vcs', 'ics', 'ical']
+const PREVIEW_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', ...TEXT_EXTS, ...ARCHIVE_EXTS, ...CARD_EXTS]
 const OFFICE_EXTS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+const LANG_MAP = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+  ts: 'typescript', tsx: 'typescript', vue: 'xml', html: 'xml', htm: 'xml',
+  py: 'python', java: 'java', md: 'markdown', markdown: 'markdown',
+  json: 'json', xml: 'xml', css: 'css', scss: 'css', less: 'css',
+  sql: 'sql', sh: 'bash', ps1: 'bash', bat: 'bash', cmd: 'bash',
+  yaml: 'yaml', yml: 'yaml', ini: 'ini', conf: 'ini', cfg: 'ini', toml: 'ini',
+  c: 'cpp', h: 'cpp', cpp: 'cpp', hpp: 'cpp', cs: 'csharp', go: 'go', rs: 'rust', php: 'php',
+}
 
 export default {
   components: { 
@@ -285,7 +459,7 @@ export default {
     RotateCw, AlertCircle, X, Eye, Download, Pencil, Trash2, 
     File, FileImage, FileText, FileArchive, FileMusic, FileVideo, 
     FileQuestion, Folder, FolderOpen, RefreshCw, MoreHorizontal,
-    ExternalLink
+    ExternalLink, Lock, Save, WrapText, Code2, Archive, Contact, CalendarClock
   },
   data: () => ({
     items: [], 
@@ -321,6 +495,18 @@ export default {
     _officeMode: 'off',
     showPreviewSelector: false,
     previewSelectorItem: null,
+    // Text editor
+    textItem: null, textContent: '', textEncoding: 'utf-8', textMtime: null,
+    textLoading: false, textSaving: false, textWrap: true, textEditing: false,
+    textError: '',
+    // Archive browser
+    archiveItem: null, archiveEntries: [], archiveLoading: false, archiveError: '',
+    archivePassword: '', archiveNeedsPassword: false, archiveNamesEncrypted: false,
+    archiveEntry: null, archivePreview: null, archivePreviewLoading: false,
+    archiveFilter: '', archivePrompt: null,
+    // Card viewer/editor
+    cardItem: null, cardKind: '', cardData: null, cardLoading: false,
+    cardSaving: false, cardError: '',
   }),
   mounted() { 
     this.updateBreadcrumbs()
@@ -353,6 +539,22 @@ export default {
     imgStyle() {
       if (!this._isImage) return {}
       return { transform: `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})` }
+    },
+    textLanguage() {
+      const ext = this.textItem?.name?.split('.').pop()?.toLowerCase() || ''
+      return LANG_MAP[ext] || null
+    },
+    highlightedText() {
+      const code = this.textContent || ''
+      try {
+        if (this.textLanguage) return hljs.highlight(code, { language: this.textLanguage }).value
+      } catch (e) { /* 回退到纯文本 */ }
+      return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    },
+    filteredArchiveEntries() {
+      const q = this.archiveFilter.trim().toLowerCase()
+      if (!q) return this.archiveEntries
+      return this.archiveEntries.filter((e) => e.name.toLowerCase().includes(q))
     },
   },
   methods: {
@@ -422,13 +624,17 @@ export default {
       else { this.sortField = field; this.sortDir = 'asc' }
     },
     canPreview(name) {
-      const ext = name.split('.').pop().toLowerCase()
-      return PREVIEW_EXTS.includes(ext)
+      const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
+      return PREVIEW_EXTS.includes(ext) || (!ext && name !== '.')
     },
     async doPreview(item) {
+      const ext = item.name.includes('.') ? item.name.split('.').pop().toLowerCase() : ''
+      if (ARCHIVE_EXTS.includes(ext)) return this.openArchive(item)
+      if (CARD_EXTS.includes(ext)) return this.openCard(item)
+      if (TEXT_EXTS.includes(ext) || !ext) return this.openText(item)
+
       this._previewSrc = null
       this._previewError = ''
-      const ext = item.name.split('.').pop().toLowerCase()
       this._isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext)
 
       // Office files
@@ -495,6 +701,190 @@ export default {
     async _loadOfficeMode() {
       try { const r = await api.getSetting('office_preview_mode'); this._officeMode = r.value || 'off'
       } catch(e) { this._officeMode = 'off' }
+    },
+
+    // ── Text editor ──
+    async openText(item) {
+      this.textItem = item
+      this.textContent = ''
+      this.textError = ''
+      this.textEditing = false
+      this.textWrap = true
+      this.textLoading = true
+      try {
+        const r = await api.readText(item.path)
+        this.textContent = r.content || ''
+        this.textEncoding = r.encoding || 'utf-8'
+        this.textMtime = r.mtime
+      } catch (e) {
+        this.textError = e.message || String(e)
+      } finally {
+        this.textLoading = false
+      }
+    },
+    async saveText() {
+      if (!this.textItem) return
+      this.textSaving = true
+      try {
+        const r = await api.saveText(this.textItem.path, this.textContent, this.textEncoding, this.textMtime)
+        if (r.mtime) this.textMtime = r.mtime
+        else {
+          try { const fresh = await api.readText(this.textItem.path); this.textMtime = fresh.mtime } catch (e) {}
+        }
+        this.textEditing = false
+        window.showToast('已保存', 'success')
+        this.load()
+      } catch (e) {
+        window.showToast('保存失败：' + (e.message || e), 'error')
+      } finally {
+        this.textSaving = false
+      }
+    },
+    closeText() { this.textItem = null; this.textContent = ''; this.textError = '' },
+
+    // ── Archive browser ──
+    _archivePasswordCache() {
+      try { return JSON.parse(sessionStorage.getItem('pdav-archive-passwords') || '{}') }
+      catch (e) { return {} }
+    },
+    archivePasswordFor(path) {
+      return this._archivePasswordCache()[path] || ''
+    },
+    rememberArchivePassword(path, password) {
+      if (!password) return
+      const cache = this._archivePasswordCache()
+      cache[path] = password
+      try { sessionStorage.setItem('pdav-archive-passwords', JSON.stringify(cache)) } catch (e) {}
+    },
+    async openArchive(item) {
+      this.archiveItem = item
+      this.archiveEntries = []
+      this.archiveEntry = null
+      this.archivePreview = null
+      this.archiveError = ''
+      this.archiveFilter = ''
+      this.archivePassword = this.archivePasswordFor(item.path)
+      await this.loadArchive()
+    },
+    async loadArchive(password = null) {
+      if (!this.archiveItem) return
+      this.archiveLoading = true
+      this.archiveError = ''
+      const pwd = password === null ? this.archivePassword : password
+      try {
+        const r = await api.archiveList(this.archiveItem.path, pwd)
+        this.archiveEntries = r.entries || []
+        this.archiveNamesEncrypted = !!r.names_encrypted
+        this.archiveNeedsPassword = !!r.password_required
+        if (pwd) this.rememberArchivePassword(this.archiveItem.path, pwd)
+        this.archivePassword = pwd
+        if (r.names_encrypted && !this.archiveEntries.length) {
+          this.askArchivePassword('list', null)
+        }
+      } catch (e) {
+        this.archiveError = e.message || String(e)
+        if (e.status === 401 || e.status === 403 || e.status === 423) this.askArchivePassword('list', null)
+      } finally {
+        this.archiveLoading = false
+      }
+    },
+    askArchivePassword(action, entry) {
+      this.archivePrompt = { action, entry, value: '' }
+      this.$nextTick(() => {
+        const el = this.$el?.querySelector('.archive-password-input')
+        if (el) el.focus()
+      })
+    },
+    confirmArchivePassword() {
+      const prompt = this.archivePrompt
+      if (!prompt) return
+      const pwd = (prompt.value || '').trim()
+      this.archivePrompt = null
+      if (!pwd) return
+      this.rememberArchivePassword(this.archiveItem.path, pwd)
+      this.archivePassword = pwd
+      if (prompt.action === 'list') this.loadArchive(pwd)
+      else if (prompt.action === 'preview') this.previewArchiveEntry(prompt.entry, pwd)
+      else if (prompt.action === 'extract') this.extractArchiveEntry(prompt.entry, pwd)
+    },
+    async previewArchiveEntry(entry, password = null) {
+      this.archiveEntry = entry
+      this.archivePreview = null
+      if (entry.is_dir) return
+      this.archivePreviewLoading = true
+      const pwd = password === null ? this.archivePassword : password
+      try {
+        this.archivePreview = await api.archivePreview(this.archiveItem.path, entry.name, pwd)
+        if (pwd) this.rememberArchivePassword(this.archiveItem.path, pwd)
+      } catch (e) {
+        if (e.status === 401 || e.status === 403 || e.status === 423) this.askArchivePassword('preview', entry)
+        else this.archivePreview = { error: e.message || String(e) }
+      } finally {
+        this.archivePreviewLoading = false
+      }
+    },
+    async extractArchiveEntry(entry, password = null) {
+      if (!entry || entry.is_dir) return
+      const target = this.archiveItem.path.includes('/')
+        ? this.archiveItem.path.slice(0, this.archiveItem.path.lastIndexOf('/')) || '/'
+        : '/'
+      const pwd = password === null ? this.archivePassword : password
+      try {
+        const r = await api.archiveExtract(this.archiveItem.path, entry.name, target, pwd, false)
+        if (pwd) this.rememberArchivePassword(this.archiveItem.path, pwd)
+        window.showToast(`已提取：${r.name}`, 'success')
+        this.load()
+      } catch (e) {
+        if (e.status === 401 || e.status === 403 || e.status === 423) this.askArchivePassword('extract', entry)
+        else window.showToast('提取失败：' + (e.message || e), 'error')
+      }
+    },
+    closeArchive() {
+      this.archiveItem = null; this.archiveEntries = []; this.archiveEntry = null
+      this.archivePreview = null; this.archivePrompt = null; this.archiveError = ''
+    },
+    archivePreviewText() {
+      return this.archivePreview?.is_text ? this.archivePreview.content : ''
+    },
+    formatArchiveSize(size) { return this.formatSize(size) },
+
+    // ── Contact / calendar card ──
+    async openCard(item) {
+      this.cardItem = item
+      this.cardData = null
+      this.cardKind = ''
+      this.cardError = ''
+      this.cardLoading = true
+      try {
+        const r = await api.readCard(item.path)
+        this.cardKind = r.kind
+        this.cardData = { ...(r.data || {}) }
+      } catch (e) {
+        this.cardError = e.message || String(e)
+      } finally {
+        this.cardLoading = false
+      }
+    },
+    async saveCard() {
+      if (!this.cardItem || !this.cardData) return
+      this.cardSaving = true
+      try {
+        const r = await api.saveCard(this.cardItem.path, this.cardKind, this.cardData, this.cardData.uid || '')
+        window.showToast('卡片已保存', 'success')
+        this.cardData = { ...this.cardData }
+        this.load()
+        if (r.raw) this.closeCard()
+      } catch (e) {
+        window.showToast('保存失败：' + (e.message || e), 'error')
+      } finally {
+        this.cardSaving = false
+      }
+    },
+    closeCard() { this.cardItem = null; this.cardData = null; this.cardKind = ''; this.cardError = '' },
+    async editCardRaw() {
+      const item = this.cardItem
+      this.closeCard()
+      if (item) await this.openText(item)
     },
     zoomIn() { this._zoom = Math.min(4, +(this._zoom * 1.5).toFixed(2)) },
     zoomOut() { this._zoom = Math.max(0.25, +(this._zoom / 1.5).toFixed(2)) },
@@ -724,6 +1114,10 @@ export default {
         zip: 'FileArchive',
         rar: 'FileArchive',
         '7z': 'FileArchive',
+        vcf: 'Contact',
+        vcs: 'Contact',
+        ics: 'CalendarClock',
+        ical: 'CalendarClock',
         mp3: 'FileMusic',
         wav: 'FileMusic',
         mp4: 'FileVideo',
@@ -981,6 +1375,53 @@ export default {
 .zoom-btn:hover { background: rgba(255,255,255,0.2); }
 .zoom-label { color: #fff; font-size: 13px; min-width: 50px; text-align: center; font-weight: 500; }
 .preview-footer { padding: 16px 24px; border-top: 1px solid var(--border-base); background: #fafafa; display: flex; justify-content: flex-end; gap: 12px; }
+
+/* Text editor */
+.editor-dialog { max-width: 1200px; }
+.editor-header-actions { display: flex; align-items: center; gap: 6px; }
+.btn-icon-soft { border: 1px solid transparent; background: transparent; color: var(--text-secondary); width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.btn-icon-soft:hover, .btn-icon-soft.active { background: var(--bg-info); color: var(--brand); border-color: var(--border-base); }
+.editor-body { flex: 1; min-height: 0; background: #fff; overflow: auto; }
+.editor-body.wrap-lines { overflow-x: hidden; }
+.code-view, .code-textarea { margin: 0; padding: 20px 24px; font: 13px/1.7 Consolas, "Cascadia Code", monospace; tab-size: 4; white-space: pre; overflow: auto; min-height: 100%; box-sizing: border-box; }
+.editor-body.wrap-lines .code-view, .editor-body.wrap-lines .code-textarea { white-space: pre-wrap; overflow-wrap: anywhere; }
+.code-textarea { width: 100%; height: 100%; border: 0; outline: none; resize: none; background: #fff; color: var(--text-primary); }
+.editor-footer { align-items: center; }
+.editor-meta { margin-right: auto; color: var(--text-tertiary); font-size: 12px; }
+.code-view .hljs { background: transparent; padding: 0; }
+
+/* Archive browser */
+.archive-dialog { max-width: 1200px; }
+.archive-toolbar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border-base); background: #fafafa; }
+.archive-filter { flex: 1; min-width: 120px; padding: 8px 12px; border: 1px solid var(--border-base); border-radius: 8px; outline: none; }
+.archive-count, .archive-lock { color: var(--text-tertiary); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.archive-body { flex: 1; min-height: 0; display: flex; background: #fff; }
+.archive-list { width: 42%; max-width: 460px; overflow: auto; border-right: 1px solid var(--border-base); background: #fafafa; }
+.archive-entry { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.archive-entry:hover { background: #f0f7ff; }
+.archive-entry.selected { background: var(--bg-info); color: var(--brand); }
+.archive-entry.dir { font-weight: 600; }
+.archive-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archive-size { color: var(--text-tertiary); font-size: 11px; flex-shrink: 0; }
+.entry-lock { color: var(--warning); flex-shrink: 0; }
+.archive-preview { flex: 1; overflow: auto; min-width: 0; }
+.archive-text { margin: 0; padding: 16px 20px; font: 13px/1.65 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.archive-image { max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: auto; }
+.archive-placeholder { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); font-size: 14px; }
+.archive-password-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 2; }
+.archive-password-box { width: 380px; max-width: 90%; padding: 22px; border-radius: var(--radius-lg); background: var(--bg-card); }
+.archive-password-box h4 { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.archive-password-box p { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
+.archive-password-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-base); border-radius: 8px; box-sizing: border-box; }
+
+/* Contact / calendar card */
+.card-dialog { max-width: 640px; height: auto; max-height: 88vh; }
+.card-body { display: block; background: #fff; overflow: auto; }
+.card-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 22px 26px; }
+.card-form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.card-form label.full { grid-column: 1 / -1; }
+.card-form input, .card-form textarea { padding: 9px 11px; border: 1px solid var(--border-base); border-radius: 8px; font-size: 13px; font-family: inherit; box-sizing: border-box; resize: vertical; }
+.card-form input:focus, .card-form textarea:focus { outline: none; border-color: var(--brand); }
 
 .pop-enter-active, .pop-leave-active { transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(-50%) scale(0.9) translateX(10px); }

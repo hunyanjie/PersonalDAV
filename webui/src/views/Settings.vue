@@ -150,11 +150,13 @@
               <div class="mount-header">
                 <span class="mh-name">挂载名称</span>
                 <span class="mh-path hide-mobile">文件系统路径</span>
+                <span class="mh-quota hide-mobile">空间上限</span>
                 <span class="mh-actions">操作</span>
               </div>
               <div v-for="m in mounts" :key="m.name" class="mount-row" :class="{ editing: editingMount === m.name }">
                 <span class="mh-name">{{ m.name }}</span>
                 <span class="mh-path hide-mobile">{{ m.path }}</span>
+                <span class="mh-quota hide-mobile">{{ m.quota_mb ? m.quota_mb + ' MB' : '设备容量' }}</span>
                 <span class="mh-actions">
                   <button class="btn-edit-sm" @click="startEditMount(m)"><Pencil :size="12" /> <span class="hide-mobile">编辑</span></button>
                   <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)"><Trash2 :size="12" /> <span class="hide-mobile">删除</span></button>
@@ -175,6 +177,11 @@
                   <div class="form-item full">
                     <label>文件系统路径</label>
                     <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
+                  </div>
+                  <div class="form-item full">
+                    <label>空间上限（MB，留空表示使用设备容量）</label>
+                    <input v-model="mountForm.quota_mb" type="number" min="1" placeholder="例如: 10240，留空不限制" />
+                    <span class="form-hint">实际文件可以超过该上限，概览页会提示已超出分配空间。</span>
                   </div>
                 </div>
                 <div class="dialog-actions" style="display:flex; margin-top:16px; gap: 12px;">
@@ -534,7 +541,7 @@ export default {
     mounts: [],
     showMountForm: false,
     editingMount: null,
-    mountForm: { name: '', path: '' },
+    mountForm: { name: '', path: '', quota_mb: '' },
     appleConfigHost: window.location.hostname || 'localhost',
     appleConfigQr: '',
     appleQrLoading: false,
@@ -718,22 +725,23 @@ export default {
     },
     showAddMountForm() {
       this.editingMount = null
-      this.mountForm = { name: '', path: '' }
+      this.mountForm = { name: '', path: '', quota_mb: '' }
       this.showMountForm = true
     },
     startEditMount(m) {
       this.editingMount = m.name
-      this.mountForm = { name: m.name, path: m.path }
+      this.mountForm = { name: m.name, path: m.path, quota_mb: m.quota_mb || '' }
       this.showMountForm = true
     },
     async saveMount() {
-      const { name, path } = this.mountForm
+      const { name, path, quota_mb } = this.mountForm
       if (!name || !path) return
+      const quota = quota_mb === '' || quota_mb === null ? null : Number(quota_mb)
       try {
         if (this.editingMount) {
-          await api.updateMount(this.editingMount, name, path)
+          await api.updateMount(this.editingMount, name, path, quota)
         } else {
-          await api.addMount(name, path)
+          await api.addMount(name, path, quota)
         }
         this.showMountForm = false
         this.editingMount = null
@@ -899,7 +907,9 @@ export default {
 .mount-row.editing { background: var(--bg-info); }
 .mh-name { width: 30%; font-weight: 600; color: var(--text-primary); }
 .mh-path { flex: 1; color: var(--text-secondary); font-family: monospace; font-size: 13px; opacity: 0.8; }
+.mh-quota { width: 110px; text-align: right; color: var(--text-secondary); font-size: 13px; padding-right: 16px; }
 .mh-actions { width: 160px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
+.form-hint { display: block; margin-top: 6px; color: var(--text-tertiary); font-size: 12px; }
 
 .mount-form { margin-top: 24px; padding: 28px; background: #fafafa; border-radius: var(--radius-lg); border: 1px solid var(--border-base); }
 .mount-form h4 { margin: 0 0 20px; font-size: 16px; }

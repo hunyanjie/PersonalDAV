@@ -82,6 +82,14 @@ _SCOPE_RULES: Final[tuple[tuple[str, str, str], ...]] = (
     ("POST", "/api/files/mounts", "files:manage"),
     ("PUT", "/api/files/mounts", "files:manage"),
     ("DELETE", "/api/files/mounts", "files:manage"),
+    # 文件内容 / 压缩包 / 卡片
+    ("GET", "/api/files/text", "files:read"),
+    ("PUT", "/api/files/text", "files:upload"),
+    ("POST", "/api/files/archive/list", "files:read"),
+    ("POST", "/api/files/archive/preview", "files:read"),
+    ("POST", "/api/files/archive/extract", "files:upload"),
+    ("GET", "/api/files/card", "files:read"),
+    ("PUT", "/api/files/card", "files:upload"),
     # 文件操作
     ("GET", "/api/files", "files:read"),
     ("HEAD", "/api/files", "files:read"),

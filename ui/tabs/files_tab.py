@@ -278,7 +278,11 @@ class FilesTab(ttk.Frame):
         self.wait_window(dialog)
         if dialog.result:
             try:
-                self._mount().add_mount(dialog.result["name"], dialog.result["path"])
+                self._mount().add_mount(
+                    dialog.result["name"],
+                    dialog.result["path"],
+                    dialog.result.get("quota_mb"),
+                )
                 self.refresh()
                 event_bus.publish(EVENT_SETTINGS_CHANGED)
             except ValueError as e:

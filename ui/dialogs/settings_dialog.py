@@ -1253,12 +1253,14 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         tree_frame = ttk.Frame(f)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        columns = ("name", "path")
+        columns = ("name", "path", "quota")
         self.mount_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=8)
         self.mount_tree.heading("name", text="挂载名称")
         self.mount_tree.heading("path", text="文件系统路径")
+        self.mount_tree.heading("quota", text="空间上限")
         self.mount_tree.column("name", width=160)
         self.mount_tree.column("path", width=400)
+        self.mount_tree.column("quota", width=120)
         self.mount_tree.bind("<Double-1>", self._mount_double_click)
         self.mount_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -1283,7 +1285,9 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         for item in self.mount_tree.get_children():
             self.mount_tree.delete(item)
         for m in self._mount_svc.get_mounts():
-            self.mount_tree.insert("", tk.END, values=(m["name"], m["path"]))
+            quota = m.get("quota_mb")
+            quota_text = f"{float(quota):g} MB" if quota else "设备容量"
+            self.mount_tree.insert("", tk.END, values=(m["name"], m["path"], quota_text))
 
     def _mount_double_click(self, event):
         if self.mount_tree.identify_row(event.y):
@@ -1295,7 +1299,11 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
         self.wait_window(dialog)
         if dialog.result:
             try:
-                self._mount_svc.add_mount(dialog.result["name"], dialog.result["path"])
+                self._mount_svc.add_mount(
+                    dialog.result["name"],
+                    dialog.result["path"],
+                    dialog.result.get("quota_mb"),
+                )
                 self._mount_refresh()
             except ValueError as e:
                 messagebox.showerror("错误", str(e), parent=self)
@@ -1307,13 +1315,23 @@ X509v3 Subject Alternative Name: DNS:localhost 是否正确。"""
             return
         values = self.mount_tree.item(sel[0], "values")
         old_name, old_path = values[0], values[1]
+        old_mount = self._mount_svc.get_mount(old_name) or {}
+        old_quota = old_mount.get("quota_mb")
 
         from ui.dialogs.mount_dialog import MountDialog
-        dialog = MountDialog(self, initial_name=old_name, initial_path=old_path)
+        dialog = MountDialog(
+            self, initial_name=old_name, initial_path=old_path,
+            initial_quota=old_quota,
+        )
         self.wait_window(dialog)
         if dialog.result:
             try:
-                self._mount_svc.update_mount(old_name, dialog.result["name"], dialog.result["path"])
+                self._mount_svc.update_mount(
+                    old_name,
+                    dialog.result["name"],
+                    dialog.result["path"],
+                    dialog.result.get("quota_mb"),
+                )
                 self._mount_refresh()
             except ValueError as e:
                 messagebox.showerror("错误", str(e), parent=self)

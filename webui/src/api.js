@@ -156,6 +156,17 @@ export default {
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(dlUrl), 1000)
   },
+  readText(path) { return request('GET', '/files/text', { params: { path } }) },
+  saveText(path, content, encoding = 'utf-8', expectedMtime = null) {
+    return request('PUT', '/files/text', { body: { path, content, encoding, expected_mtime: expectedMtime } })
+  },
+  archiveList(path, password = '') { return request('POST', '/files/archive/list', { body: { path, password } }) },
+  archivePreview(path, entry, password = '') { return request('POST', '/files/archive/preview', { body: { path, entry, password } }) },
+  archiveExtract(path, entry, targetDir = '', password = '', overwrite = false) {
+    return request('POST', '/files/archive/extract', { body: { path, entry, target_dir: targetDir, password, overwrite } })
+  },
+  readCard(path) { return request('GET', '/files/card', { params: { path } }) },
+  saveCard(path, kind, data, uid = '') { return request('PUT', '/files/card', { body: { path, kind, data, uid } }) },
   async previewFile(path) {
     const t = token()
     const url = `${BASE}/files/preview?path=${encodeURIComponent(path)}`
@@ -173,8 +184,8 @@ export default {
 
   // Mounts
   listMounts() { return request('GET', '/files/mounts') },
-  addMount(name, path) { return request('POST', '/files/mounts', { body: { name, path } }) },
-  updateMount(name, newName, newPath) { return request('PUT', `/files/mounts/${encodeURIComponent(name)}`, { body: { name: newName, path: newPath } }) },
+  addMount(name, path, quotaMb = null) { return request('POST', '/files/mounts', { body: { name, path, quota_mb: quotaMb } }) },
+  updateMount(name, newName, newPath, quotaMb = null) { return request('PUT', `/files/mounts/${encodeURIComponent(name)}`, { body: { name: newName, path: newPath, quota_mb: quotaMb } }) },
   deleteMount(name) { return request('DELETE', `/files/mounts/${encodeURIComponent(name)}`) },
 
   // Settings
