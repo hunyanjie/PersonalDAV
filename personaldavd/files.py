@@ -92,6 +92,15 @@ def _write_text_file(abs_path: str, content: str, encoding: str = "utf-8") -> No
                 pass
 
 
+def _zip_class():
+    """优先使用 pyzipper，兼容 WinRAR/7-Zip 生成的 AES 加密 ZIP。"""
+    try:
+        import pyzipper
+        return pyzipper.AESZipFile
+    except ImportError:
+        return zipfile.ZipFile
+
+
 def _archive_format(abs_path: str) -> str:
     ext = os.path.splitext(abs_path)[1].lower()
     if ext == ".zip":
@@ -112,7 +121,7 @@ def _list_archive(abs_path: str, password: str = "") -> dict:
     names_encrypted = False
     try:
         if fmt == "zip":
-            with zipfile.ZipFile(abs_path) as zf:
+            with _zip_class()(abs_path) as zf:
                 for info in zf.infolist():
                     is_dir = info.is_dir() or info.filename.endswith("/")
                     item_encrypted = bool(info.flag_bits & 0x1)
@@ -151,7 +160,10 @@ def _list_archive(abs_path: str, password: str = "") -> dict:
                         })
                     encrypted = any(e["encrypted"] for e in entries)
             except Exception as e:
-                if "password" in str(e).lower() or "encrypted" in str(e).lower():
+                message = str(e).lower()
+                if "password" in message or "encrypted" in message:
+                    if password:
+                        raise HTTPException(423, "压缩文件需要密码，或密码错误")
                     return {
                         "entries": [],
                         "encrypted": True,
@@ -159,6 +171,8 @@ def _list_archive(abs_path: str, password: str = "") -> dict:
                         "password_required": True,
                         "format": fmt,
                     }
+                if password and isinstance(e, TypeError):
+                    raise HTTPException(423, "压缩文件需要密码，或密码错误")
                 raise
         elif fmt == "rar":
             try:
@@ -186,7 +200,7 @@ def _list_archive(abs_path: str, password: str = "") -> dict:
                     })
     except HTTPException:
         raise
-    except (zipfile.BadZipFile, tarfile.TarError) as e:
+    except (zipfile.BadZipFile, tarfile.TarError, NotImplementedError) as e:
         raise HTTPException(415, f"无法读取压缩文件: {e}")
     return {
         "entries": entries,
@@ -202,7 +216,7 @@ def _read_archive_entry(abs_path: str, entry: str, password: str = "") -> tuple[
     if fmt == "zip":
         pwd = password.encode() if password else None
         try:
-            with zipfile.ZipFile(abs_path) as zf:
+            with _zip_class()(abs_path) as zf:
                 info = None
                 for candidate in zf.infolist():
                     if candidate.filename == entry or candidate.filename.replace("\\", "/") == entry:
@@ -213,6 +227,10 @@ def _read_archive_entry(abs_path: str, entry: str, password: str = "") -> tuple[
                 if info.is_dir():
                     return b"", "inode/directory"
                 return zf.read(info, pwd=pwd), mimetypes.guess_type(entry)[0] or "application/octet-stream"
+        except HTTPException:
+            raise
+        except NotImplementedError:
+            raise HTTPException(415, "该压缩包使用了暂不支持的压缩或加密方式")
         except RuntimeError:
             raise HTTPException(423, "压缩文件需要密码，或密码错误")
     if fmt == "tar":
@@ -231,8 +249,13 @@ def _read_archive_entry(abs_path: str, entry: str, password: str = "") -> tuple[
                     with py7zr.SevenZipFile(abs_path, mode="r", password=password or None) as zf:
                         zf.extract(path=tmp_dir, targets=[entry])
                 except Exception as e:
-                    if "password" in str(e).lower():
+                    message = str(e).lower()
+                    if "password" in message or "encrypted" in message:
                         raise HTTPException(423, "压缩文件需要密码，或密码错误")
+                    if password and isinstance(e, TypeError):
+                        raise HTTPException(423, "压缩文件需要密码，或密码错误")
+                    if isinstance(e, NotImplementedError):
+                        raise HTTPException(415, "该压缩包使用了暂不支持的压缩方式")
                     raise
             else:
                 import rarfile
@@ -523,6 +546,13 @@ async def archive_preview(
         ):
             content, encoding = _decode_text_bytes(raw)
             return {"is_text": True, "content": content, "encoding": encoding, "content_type": ctype, "size": len(raw)}
+        # 没有扩展名的 LICENSE / README 等文件，在确认不是二进制后按文本预览。
+        if ctype == "application/octet-stream" and "." not in os.path.basename(entry):
+            try:
+                content, encoding = _decode_text_bytes(raw)
+                return {"is_text": True, "content": content, "encoding": encoding, "content_type": ctype, "size": len(raw)}
+            except HTTPException:
+                pass
         if ctype.startswith("image/"):
             return {
                 "is_text": False,

@@ -61,7 +61,7 @@ jobs:
       shell: pwsh
       run: |
         $tkdnd = & python -c "import tkinterdnd2,os;print(os.path.join(os.path.dirname(tkinterdnd2.__file__),'tkdnd','win-x64'))"
-        & pyinstaller --onefile --clean -w --name "PersonalDAV-v$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --add-data "webui/dist;webui/dist" --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg --hidden-import py7zr --hidden-import rarfile main.py
+        & pyinstaller --onefile --clean -w --name "PersonalDAV-v$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --add-data "webui/dist;webui/dist" --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg --hidden-import py7zr --hidden-import rarfile --hidden-import pyzipper main.py
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:

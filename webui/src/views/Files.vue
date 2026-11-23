@@ -145,6 +145,7 @@
             <input v-model="archiveFilter" class="archive-filter" placeholder="筛选压缩包内文件..." />
             <span class="archive-count">{{ archiveEntries.length }} 项</span>
             <span v-if="archiveNeedsPassword" class="archive-lock"><Lock :size="13" /> 已加密</span>
+            <button v-if="archiveNeedsPassword || archivePasswordTried" class="btn-sm" @click="askArchivePassword('list', null)">输入密码</button>
           </div>
           <div class="archive-body">
             <div class="archive-list">
@@ -181,6 +182,7 @@
             <div class="archive-password-box glass">
               <h4><Lock :size="16" /> 需要解压密码</h4>
               <p>该压缩包已加密，请输入密码。密码会保留到当前标签页关闭。</p>
+              <p v-if="archivePrompt.message" class="archive-prompt-error">{{ archivePrompt.message }}</p>
               <input v-model="archivePrompt.value" class="archive-password-input" type="password"
                 placeholder="压缩包密码" @keyup.enter="confirmArchivePassword" />
               <div class="dialog-actions">
@@ -503,7 +505,7 @@ export default {
     archiveItem: null, archiveEntries: [], archiveLoading: false, archiveError: '',
     archivePassword: '', archiveNeedsPassword: false, archiveNamesEncrypted: false,
     archiveEntry: null, archivePreview: null, archivePreviewLoading: false,
-    archiveFilter: '', archivePrompt: null,
+    archiveFilter: '', archivePrompt: null, archivePasswordTried: false,
     // Card viewer/editor
     cardItem: null, cardKind: '', cardData: null, cardLoading: false,
     cardSaving: false, cardError: '',
@@ -764,6 +766,7 @@ export default {
       this.archiveError = ''
       this.archiveFilter = ''
       this.archivePassword = this.archivePasswordFor(item.path)
+      this.archivePasswordTried = false
       await this.loadArchive()
     },
     async loadArchive(password = null) {
@@ -779,17 +782,29 @@ export default {
         if (pwd) this.rememberArchivePassword(this.archiveItem.path, pwd)
         this.archivePassword = pwd
         if (r.names_encrypted && !this.archiveEntries.length) {
-          this.askArchivePassword('list', null)
+          if (pwd) {
+            this.archivePasswordTried = true
+            this.archiveError = '密码错误，或压缩包无法读取'
+          } else {
+            this.askArchivePassword('list', null)
+          }
         }
       } catch (e) {
         this.archiveError = e.message || String(e)
-        if (e.status === 401 || e.status === 403 || e.status === 423) this.askArchivePassword('list', null)
+        if (e.status === 401 || e.status === 403 || e.status === 423) {
+          if (pwd) {
+            this.archivePasswordTried = true
+            this.archiveError = '密码错误，或压缩包无法读取'
+          } else {
+            this.askArchivePassword('list', null)
+          }
+        }
       } finally {
         this.archiveLoading = false
       }
     },
-    askArchivePassword(action, entry) {
-      this.archivePrompt = { action, entry, value: '' }
+    askArchivePassword(action, entry, message = '') {
+      this.archivePrompt = { action, entry, value: '', message }
       this.$nextTick(() => {
         const el = this.$el?.querySelector('.archive-password-input')
         if (el) el.focus()
@@ -817,8 +832,11 @@ export default {
         this.archivePreview = await api.archivePreview(this.archiveItem.path, entry.name, pwd)
         if (pwd) this.rememberArchivePassword(this.archiveItem.path, pwd)
       } catch (e) {
-        if (e.status === 401 || e.status === 403 || e.status === 423) this.askArchivePassword('preview', entry)
-        else this.archivePreview = { error: e.message || String(e) }
+        if (e.status === 401 || e.status === 403 || e.status === 423) {
+          this.askArchivePassword('preview', entry, pwd ? '密码错误，请重试' : '')
+        } else {
+          this.archivePreview = { error: e.message || String(e) }
+        }
       } finally {
         this.archivePreviewLoading = false
       }
@@ -835,8 +853,11 @@ export default {
         window.showToast(`已提取：${r.name}`, 'success')
         this.load()
       } catch (e) {
-        if (e.status === 401 || e.status === 403 || e.status === 423) this.askArchivePassword('extract', entry)
-        else window.showToast('提取失败：' + (e.message || e), 'error')
+        if (e.status === 401 || e.status === 403 || e.status === 423) {
+          this.askArchivePassword('extract', entry, pwd ? '密码错误，请重试' : '')
+        } else {
+          window.showToast('提取失败：' + (e.message || e), 'error')
+        }
       }
     },
     closeArchive() {
@@ -1409,10 +1430,12 @@ export default {
 .archive-image { max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: auto; }
 .archive-placeholder { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); font-size: 14px; }
 .archive-password-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 2; }
-.archive-password-box { width: 380px; max-width: 90%; padding: 22px; border-radius: var(--radius-lg); background: var(--bg-card); }
+.archive-password-box { width: 380px; max-width: 90%; padding: 22px; border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-xl); }
 .archive-password-box h4 { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
 .archive-password-box p { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
-.archive-password-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-base); border-radius: 8px; box-sizing: border-box; }
+.archive-password-box .archive-prompt-error { color: var(--danger); margin-top: -4px; }
+.archive-password-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-base); border-radius: 8px; box-sizing: border-box; margin-bottom: 14px; }
+.archive-password-box .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; width: 100%; }
 
 /* Contact / calendar card */
 .card-dialog { max-width: 640px; height: auto; max-height: 88vh; }
