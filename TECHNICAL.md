@@ -134,7 +134,7 @@ main.py --headless
 | 敏感设置脱敏 | `personaldavd/api.py`、`services/api_scopes.py` | 密码/密钥/盐等返回 `********`；`PROTECTED_SETTING_KEYS` 禁止通用接口写入 |
 | Apple 配置 | `personaldavd/api.py` | 生成 `.mobileconfig`，根据协议与 SSL 设置选择 http/https |
 | Office 预览 | `personaldavd/files.py`、`webui/src/views/Files.vue` | 支持 LibreOffice / ONLYOFFICE / Microsoft Office Online |
-| 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算 |
+| 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算；磁盘容量取第一个真实存在的挂载点所在卷 |
 | 无头数据目录 | `personaldavd/daemon.py`、`main.py`、`personaldavd/__main__.py` | 先初始化 Database，再写 `data_dir`，再注册 dav_root，最后同步回收站 |
 | MCP 服务器工具 | `mcp_tools/server_tools.py`、`utils/server_registry.py` | GUI/无头/MCP 共享同一个 `DaemonServer` 实例，状态返回 `http_port` / `ssl_port` |
 | 测试隔离 | `tests/_test_db.py`、`tests/conftest.py` | 所有测试使用临时数据库，不再读写用户真实 `data/dav_data.db` |
@@ -166,7 +166,7 @@ Apple 配置二维码使用与附件 URL 鉴权相同的短时签名：`/api/app
 
 `tests/run_all.py` 现在依次执行：
 
-1. pytest 单元测试（44 项）
+1. pytest 单元测试（47 项）
 2. MCP 内部工具检查（41 个工具）
 3. MCP HTTP/SSE 端到端检查
 4. MCP 鉴权检查（401/403/200 + 审计日志）
@@ -216,6 +216,7 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 | SSL 设置保存后像卡死 | 先销毁设置窗口再执行保存回调，避免确认框被 `grab_set` 挡住 |
 | 多挂载点打开文件管理卡死 | `FileMountService` 实例锁改为 `RLock`；`get_root_entries()` / `resolve()` 在持锁时调用 `is_single_mount` 不再自锁 |
 | 标签切换期间重入事件循环 | `FilesTab.update_ui_state()` 不再调用 `self.update()`，只刷新布局 |
+| 概览空间占用显示 100% | `StatsService._disk_total_mb()` 跳过已删除的挂载点；前端移除 `disk_total_mb` 缺失时按 500 MB 计算的兜底，容量未知时显示 `—` |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -1801,7 +1802,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 44 项，325 个子测试）
+### 测试结构（共 47 项，325 个子测试）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
