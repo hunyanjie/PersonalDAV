@@ -246,6 +246,7 @@ v3.3 对 WebUI 进行了系统性交互升级，覆盖 5 个阶段共计 ~465 �
 | Skeleton 骨架屏 | `webui/src/components/SkeletonCard.vue` | 5 变体（card/row/circle/timeline/bar），灰色脉冲动画，Dashboard 和列表页使用 |
 | FLIP 列表动画 | `ContactsList.vue` / `Files.vue` / `Calendar.vue` | Vue `<TransitionGroup>` 实现列表增删/过滤/翻页时的位移过渡动画 |
 | 搜索防抖 | `ContactsList.vue` / `Calendar.vue` | `300ms debounce`，减少冗余 API 调用 |
+| 回到今天 | `Calendar.vue` | 月视图“今天”按钮把 `monthOffset` 归零、清空搜索并选中当天 |
 
 #### Phase 3 — Micro-interactions
 
