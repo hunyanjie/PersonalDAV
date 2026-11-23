@@ -6,6 +6,9 @@
           <button class="btn-icon" @click="monthOffset-=12" title="上一年"><ChevronsLeft :size="18" /></button>
           <button class="btn-nav" @click="monthOffset--"><ChevronLeft :size="18" /> <span class="hide-mobile">上月</span></button>
           <span class="month-label">{{ year }} 年 {{ month }} 月</span>
+          <button class="btn-nav btn-today" @click="goToday" title="回到今天">
+            <CalendarDays :size="18" /> <span>今天</span>
+          </button>
           <button class="btn-nav" @click="monthOffset++"><span class="hide-mobile">下月</span> <ChevronRight :size="18" /></button>
           <button class="btn-icon" @click="monthOffset+=12" title="下一年"><ChevronsRight :size="18" /></button>
         </div>
@@ -362,6 +365,17 @@ export default {
       const target = { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() }
       this.monthOffset = (target.year - new Date().getFullYear()) * 12 + (target.month - 1 - new Date().getMonth())
       this.$nextTick(() => { this.selectedDay = target })
+    },
+    goToday() {
+      const now = new Date()
+      const target = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }
+      const changedMonth = this.monthOffset !== 0
+      this.searchQuery = ''
+      this.jumpDate = ''
+      this.monthOffset = 0
+      this.selectedDay = target
+      this.selectedUids = []
+      if (!changedMonth) this.load()
     },
     eventLeft(e) {
       const st = icalDateToObj(e.dtstart)
