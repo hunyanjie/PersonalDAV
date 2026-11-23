@@ -55,11 +55,7 @@ class StatsService:
         trash_size = sum(int(item.get("size") or 0) for item in TrashService.list_items())
         total_size += trash_size
 
-        primary_root = roots[0] if roots else "."
-        try:
-            disk_total = shutil.disk_usage(primary_root).total / _MB
-        except OSError:
-            disk_total = 0.0
+        disk_total = self._disk_total_mb(roots)
 
         return {
             "contacts_count": contacts_count,
@@ -74,6 +70,26 @@ class StatsService:
                 "disk_used_mb": "",
             },
         }
+
+    @staticmethod
+    def _disk_total_mb(roots: list[str]) -> float:
+        """返回主挂载点所在磁盘的总容量。
+
+        第一个挂载点可能已经从磁盘上移除（例如项目从 D: 搬到 C:），
+        此时继续用它会让容量变成 0，前端就会把占用率误显示成 100%。
+        因此按顺序找第一个真实存在的目录。
+        """
+        for root in roots:
+            if not root or not os.path.isdir(root):
+                continue
+            try:
+                return shutil.disk_usage(root).total / _MB
+            except OSError:
+                continue
+        try:
+            return shutil.disk_usage(os.getcwd()).total / _MB
+        except OSError:
+            return 0.0
 
     @staticmethod
     def _trend(db: Database, table: str, today: date, yesterday: date) -> str:

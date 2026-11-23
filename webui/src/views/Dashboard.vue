@@ -15,7 +15,7 @@
                   stroke-dasharray="113.1" :stroke-dashoffset="113.1 * (1 - diskPercent)" transform="rotate(-90 22 22)"
                   class="ring-fill" />
               </svg>
-              <span class="disk-ring-text">{{ Math.round(diskPercent * 100) }}%</span>
+              <span class="disk-ring-text">{{ diskPercentLabel }}</span>
             </div>
             <div class="stat-info">
               <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
@@ -115,8 +115,14 @@ export default {
       return { text: '服务器异常', class: 'status-fail' }
     },
     diskPercent() {
-      const total = this.stats.disk_total_mb || 500
-      return Math.min(1, (this.stats.disk_used_mb || 0) / total)
+      const total = Number(this.stats.disk_total_mb) || 0
+      if (total <= 0) return 0
+      const used = Number(this.stats.disk_used_mb) || 0
+      return Math.min(1, used / total)
+    },
+    diskPercentLabel() {
+      const total = Number(this.stats.disk_total_mb) || 0
+      return total > 0 ? `${Math.round(this.diskPercent * 100)}%` : '—'
     },
     diskDetail() {
       const used = this.stats.disk_used_mb || 0
