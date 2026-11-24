@@ -417,6 +417,13 @@ pip install -e ".[dev]"
 python tests/run_all.py   # pytest 52 项 + MCP 测试 + 鉴权测试 + 无头检查
 ```
 
+### 发布流程
+
+1. 推送开发分支，等待 GitHub Actions 测试通过
+2. 在 Actions 页面手动运行 CI，勾选 `package`，下载构建出的 EXE 验收
+3. 验收通过后再打 `v*` 标签，由 Actions 生成 Draft Release
+4. 确认 Release 内容后手动发布；如果发布后发现问题，用补丁版本（如 `v3.4.1`）修复，不移动旧标签
+
 ### 代码规范
 
 - Python 3.12+，使用类型注解

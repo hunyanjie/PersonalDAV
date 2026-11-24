@@ -188,7 +188,8 @@ PyInstaller 打包必须把 WebUI 构建产物一起带上，否则 EXE 只有 A
 pyinstaller --onefile --clean -w --name PersonalDAV `
   --add-data "webui/dist;webui/dist" `
   --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" `
-  --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg main.py
+  --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg `
+  --hidden-import py7zr --hidden-import rarfile --hidden-import pyzipper main.py
 ```
 
 运行时 `personaldavd/daemon.py` 通过 `__file__/../webui/dist` 定位静态资源，在 onefile 模式下对应 `_MEIPASS/webui/dist`。
@@ -196,6 +197,16 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 无控制台（`-w`）打包时 `sys.stdout` / `sys.stderr` 为 `None`，`main.py` 启动时会把它们重定向到 `os.devnull`，避免 logging/uvicorn 写入空流导致进程以退出码 1 结束。
 
 关闭 Web 面板（`webui_enabled=False`）只影响 SPA 静态页面，REST API、MCP 与 DAV 仍正常挂载。
+
+#### CI 与发版流程
+
+`.github/workflows/packaging.yml` 把“测试、构建、发布”分成三个阶段：
+
+1. **测试**：推送 `master`、`3.4`、`release/**` 或提交 PR 时运行 `tests/run_all.py`，不依赖标签。
+2. **构建验收包**：手动触发 workflow 并勾选 `package`，或推送 `v*` 标签。构建出的 EXE 上传为 artifact；标签构建还会校验 `config.py` 的 `SOFTWARE_VERSION` 与标签一致，并启动 EXE 做 `/api/health`、WebUI 首页和 JS 资源的冒烟测试。
+3. **发布**：只有 `v*` 标签才创建 Draft Release，发布前可下载 artifact 再验收；发现问题不要移动已发布标签，修复后发布补丁版本。
+
+日常发版顺序：功能完成 → 推送分支跑测试 → 手动构建 EXE 并下载验收 → 打最终标签 → 确认 Draft Release 后发布。`v3.4.1` 这类补丁版本也已支持从 CHANGELOG 提取发布说明。
 
 ### v3.4 修复清单
 
