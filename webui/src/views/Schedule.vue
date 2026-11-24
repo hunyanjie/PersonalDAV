@@ -275,8 +275,8 @@ export default {
       const daySeconds = 86400
       let top = 0
       for (const g of this.grouped) {
-        const dt = icalDateToObj(g.date + 'T00:00:00')
-        const wd = dt ? WEEKDAY_NAMES[dt.getDay()] : ''
+        const dt = new Date(g.date + 'T00:00:00')
+        const wd = !isNaN(dt.getTime()) ? WEEKDAY_NAMES[dt.getDay()] : ''
         const label = `${parseInt(g.date.split('-')[1])}月${parseInt(g.date.split('-')[2])}日`
         items.push({ type: 'header', key: 'h-' + g.date, top, height: HEADER_HEIGHT, dateStr: g.date, label, weekday: '周' + wd, lunar: getLunar(g.date) })
         top += HEADER_HEIGHT
@@ -328,12 +328,12 @@ export default {
       return current
     },
     currentYearMonth() {
-      const d = this.floatingDateItem ? icalDateToObj(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
-      return d ? `${d.getFullYear()}年${d.getMonth() + 1}月` : ''
+      const d = this.floatingDateItem ? new Date(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
+      return !isNaN(d.getTime()) ? `${d.getFullYear()}年${d.getMonth() + 1}月` : ''
     },
     currentWeek() {
-      const d = this.floatingDateItem ? icalDateToObj(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
-      return d ? weekNumber(d) : ''
+      const d = this.floatingDateItem ? new Date(this.floatingDateItem.dateStr + 'T00:00:00') : this.currentTime
+      return !isNaN(d.getTime()) ? weekNumber(d) : ''
     },
     selectedEvent() {
       if (this.selectedUids.length !== 1) return null
