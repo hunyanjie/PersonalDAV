@@ -1,5 +1,6 @@
 import datetime
 import os
+import sys
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
@@ -8,8 +9,27 @@ from cryptography.hazmat.primitives import serialization
 
 
 
+def _app_base_dir() -> str:
+    """相对证书路径的基准目录：源码模式为项目根目录，打包后为 EXE 所在目录。"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def normalize_cert_path(path: str) -> str:
+    """展开环境变量/用户目录并把相对路径转成绝对路径，避免启动时受工作目录影响。"""
+    if not path:
+        return ""
+    path = os.path.expandvars(os.path.expanduser(str(path).strip()))
+    if not os.path.isabs(path):
+        path = os.path.join(_app_base_dir(), path)
+    return os.path.normpath(path)
+
+
 def generate_self_signed_cert(cert_path, key_path, common_name="localhost"):
     """生成自签名 SSL 证书和私钥，返回 (cert_path, key_path)"""
+    cert_path = normalize_cert_path(cert_path)
+    key_path = normalize_cert_path(key_path)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
     subject = issuer = x509.Name([
@@ -31,7 +51,8 @@ def generate_self_signed_cert(cert_path, key_path, common_name="localhost"):
         .sign(key, hashes.SHA256())
     )
 
-    os.makedirs(os.path.dirname(cert_path) or ".", exist_ok=True)
+    for path in (cert_path, key_path):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     with open(key_path, "wb") as f:
         f.write(key.private_bytes(
@@ -48,6 +69,7 @@ def generate_self_signed_cert(cert_path, key_path, common_name="localhost"):
 
 def get_cert_info(cert_path):
     """提取证书信息，返回 dict 或 None"""
+    cert_path = normalize_cert_path(cert_path)
     if not cert_path or not os.path.isfile(cert_path):
         return None
     try:

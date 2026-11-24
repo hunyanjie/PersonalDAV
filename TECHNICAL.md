@@ -11,7 +11,7 @@
 | 数据库 | SQLite3（内置） | 本地存储，WAL 模式，单文件 |
 | 服务器框架 | FastAPI + Uvicorn (v3.0) | 统一 ASGI 运行时，替代 http.server |
 | REST API | FastAPI + Pydantic (v3.0) | 联系人/事件 CRUD，自动 OpenAPI 文档 |
-| DAuth | Starlette BaseHTTPMiddleware (v3.0) | 统一鉴权中间件（Basic + Bearer + IP） |
+| 鉴权 | Starlette BaseHTTPMiddleware (v3.0) | 统一鉴权中间件（Basic + Bearer + IP + 作用域） |
 | DAV 协议 | FastAPI/Starlette ASGI 路由 (v3.0) | CardDAV/CalDAV/WebDAV，替代 http.server |
 | MCP 服务 | FastMCP + Starlette (v3.0) | 集成到主服务器，挂载 `/mcp/` 路径 |
 | iCalendar | vobject / python-dateutil | iCalendar 解析/生成 |
@@ -36,6 +36,8 @@
 > v3.2 变动：新增 `webui/` Vue 3 + Vite SPA 前端项目，FastAPI 挂载 SPA 构建产物。新增 `personaldavd/files.py` 文件管理 REST API。新增 `services/file_mount_service.py` 多挂载点管理（替代单 dav_root）。新增 `ui/tabs/files_tab.py` 桌面文件管理标签页。统一日志系统添加 `LogBufferHandler` 支持 WebUI 实时日志查看。GUI 模式统一使用 FastAPI 替代 `http.server`。
 
 > v3.3 变动：WebUI 全端企业级交互升级（Toast/Modal/骨架屏/FLIP/Skeleton/EmptyState/Micro-interactions/圆环图/右滑操作）。新增 `utils/cert_helper.py`（SSL 一键证书生成）。新增 `webui/src/components/Toast.vue` / `ModalConfirm.vue` / `EmptyState.vue` / `SkeletonCard.vue`。`personaldavd/daemon.py` 支持双端口 HTTPS+HTTP。FTP 配置从服务器页迁移至设置页并使用 SettingDef。asyncio 日志噪音两处抑制。
+
+> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。WebUI 增加联系人分组筛选、日历分类筛选、提醒预设与默认提醒、重复日程例外日期；Apple 配置增加扫码安装与安装引导，并使用真实协议/端口；回收站支持自定义保留天数。WebUI 文件管理增加文本高亮编辑、zip/tar/7z/rar 压缩包浏览（AES zip 使用 pyzipper，密码缓存在 sessionStorage）、联系人/日程卡片编辑；挂载点支持空间上限，概览圆环区分数据/其他/剩余空间，中心显示 PersonalDAV 数据占用率。日历增加回到今天和日期头 NaN 修复，CI 拆分为测试、手动验收包与标签发布三段。
 
 ---
 
@@ -89,9 +91,11 @@ main.py --headless
         │     ├── app.include_router(api_router, prefix="/api")
         │     ├── app.include_router(dav_router)        # DAV + 附件
         │     └── app.mount("/mcp", create_mcp_app())   # MCP SSE
-        ├── _init_environment()
-        │     ├── os.makedirs(db_dir / dav_root)
-        │     └── sqlite3.connect(db_path).close()
+        ├── lifespan → _init_environment()
+        │     ├── Database(db_path=...)          # 必须先固定数据库
+        │     ├── SettingsService(data_dir=...)  # 附件/回收站/日志跟随
+        │     ├── FileMountService.add_mount(dav_root)
+        │     └── TrashService.startup_init()
         ├── lifespan 开始
         └── uvicorn.run(app, host, port)
               └── 同步 I/O 循环，阻塞至 Ctrl+C / SIGTERM
@@ -108,6 +112,131 @@ main.py --headless
 - **后台线程**：MCP 工具注册 + uvicorn 启动、更新检查、证书续期、定时同步均在后台线程执行，主线程只处理 GUI 事件
 
 ---
+
+## v3.4 — 搜索、回收站、应用专用密码、WebUI 功能补齐与无头模式修复
+
+### 功能实现索引
+
+| 功能 | 主要文件 | 说明 |
+|------|----------|------|
+| 全局搜索 | `database/db_manager.py`、`database/repositories/*` | SQLite FTS5，`contacts_fts` / `events_fts` 由触发器同步；`groups` 列迁移必须早于 FTS 建表 |
+| 事件搜索 | `database/repositories/event_repository.py` | `SEARCH_COLUMNS = ['summary', 'ical']`，与 `events_fts` 索引列一致 |
+| 文件回收站 | `services/trash_service.py`、`personaldavd/api.py` | manifest 记录原路径/大小/删除时间；`resolve_data_path("trash")` 跟随数据目录 |
+| 回收站 UI | `webui/src/views/Files.vue`、`ui/tabs/files_tab.py` | 列表、还原、永久删除、清空、保留天数 |
+| 应用专用密码 | `services/api_token_service.py`、`services/api_scopes.py` | 作用域 + 有效期 + 备注；令牌只保存 SHA256 哈希；桌面端支持双击/按钮编辑权限、备注、有效期和删除 |
+| SSL 证书路径 | `utils/cert_helper.py`、`ui/dialogs/settings_dialog.py`、`ui/app.py` | `normalize_cert_path()` 转绝对路径；保存时校验证书/密钥；先关设置窗口再执行保存回调，避免确认框被 grab 挡住 |
+| Web 高级筛选 | `webui/src/views/ContactsList.vue`、`Calendar.vue`、`personaldavd/api.py` | 联系人按分组精确筛选（分号边界，避免 Work 命中 Workshop）；日程按分类筛选 |
+| 提醒预设与默认提醒 | `webui/src/views/Settings.vue`、`CalendarEventEdit.vue` | 维护常规/全天预设与默认勾选；新建日程自动应用默认提醒，编辑页可从预设快速添加 |
+| Apple 扫码安装 | `personaldavd/api.py`、`personaldavd/auth.py` | `/api/apple/qr` 生成二维码；短时签名 URL 允许手机直接下载，不暴露 Bearer 令牌；使用请求实际协议/端口 |
+| 重复日程例外日期 | `personaldavd/models.py`、`personaldavd/api.py`、`CalendarEventEdit.vue` | `EXDATE` 解析与生成；全天/定时事件分别匹配日期值 |
+| 作用域鉴权 | `personaldavd/auth.py` | 中间件写入 `AuthContext`；API 令牌按 `required_scope()` 校验；未分类 API 默认要求 `tokens:manage` |
+| MCP 端点隔离 | `services/api_scopes.py`、`personaldavd/auth.py` | `is_mcp_path()` 拦截普通 API 令牌；`/mcp/*` 只接受 MCP 主令牌或密码登录 |
+| 敏感设置脱敏 | `personaldavd/api.py`、`services/api_scopes.py` | 密码/密钥/盐等返回 `********`；`PROTECTED_SETTING_KEYS` 禁止通用接口写入 |
+| Apple 配置 | `personaldavd/api.py` | 生成 `.mobileconfig`，根据协议与 SSL 设置选择 http/https |
+| Office 预览 | `personaldavd/files.py`、`webui/src/views/Files.vue` | 支持 LibreOffice / ONLYOFFICE / Microsoft Office Online |
+| 多挂载统计 | `services/stats_service.py` | 遍历所有挂载点 + 回收站；趋势按今天/昨天新增数量计算；磁盘容量按挂载点上限或真实卷容量计算 |
+| 概览圆环口径 | `webui/src/views/Dashboard.vue` | 圆环中心显示 PersonalDAV 数据 / 总容量；灰色弧表示同卷其他占用，浅色弧表示剩余空间，三者分开显示避免磁盘快满时误判为数据占满 |
+| 挂载空间上限 | `services/file_mount_service.py`、`StatsService` | 挂载点可设置 `quota_mb`；概览圆环分主题色（数据）、灰色（卷上其他占用）、浅色（剩余），超过上限时显示提示 |
+| 文本预览编辑 | `personaldavd/files.py`、`Files.vue` | `/api/files/text` 读取/保存；UTF-8/GB18030 等编码识别；前端使用 highlight.js 高亮、自动换行和 textarea 编辑 |
+| 压缩包预览 | `personaldavd/files.py`、`Files.vue` | zip/tar/7z 直接浏览；rar 依赖 rarfile（单文件提取需 unrar）；加密结构/内容分步提示密码，密码缓存在 sessionStorage |
+| 联系人/日程文件卡片 | `personaldavd/files.py`、`Files.vue` | `.vcf`/`.ics` 解析为卡片并支持结构化保存，也保留原始文本编辑入口 |
+| 无头数据目录 | `personaldavd/daemon.py`、`main.py`、`personaldavd/__main__.py` | 先初始化 Database，再写 `data_dir`，再注册 dav_root，最后同步回收站 |
+| MCP 服务器工具 | `mcp_tools/server_tools.py`、`utils/server_registry.py` | GUI/无头/MCP 共享同一个 `DaemonServer` 实例，状态返回 `http_port` / `ssl_port` |
+| 测试隔离 | `tests/_test_db.py`、`tests/conftest.py` | 所有测试使用临时数据库，不再读写用户真实 `data/dav_data.db` |
+
+### 作用域模型
+
+`services/api_scopes.py` 是唯一规则来源，`personaldavd/auth.py` 与 `personaldavd/api.py` 都从这里读取：
+
+| 作用域 | 覆盖范围 |
+|--------|----------|
+| `contacts:read/create/update/delete` | 联系人 CRUD |
+| `events:read/create/update/delete` | 日程 CRUD |
+| `files:read/upload/rename/delete` | 文件浏览、上传、重命名、删除 |
+| `files:manage` | 挂载点增删改 |
+| `dav:read/write` | 原始 DAV 路径 |
+| `settings:read/write` | 设置、服务器信息、Apple 配置与二维码 |
+| `trash:read/write` | 回收站查看、还原、清空 |
+| `logs:read` | 鉴权日志与系统日志 |
+| `stats:read` | 概览统计 |
+| `tokens:manage` | 应用专用密码管理；未分类 API 的默认门槛；不包含 MCP 访问权 |
+
+创建令牌时，调用者只能授予自己拥有的作用域；MCP 主令牌和密码登录拥有全部作用域。
+
+`/mcp` 与 `/mcp/*` 不参与普通 API 令牌校验：即使令牌拥有全部 API 作用域，也只能使用 MCP 主令牌或密码登录访问，避免应用专用密码绕过 MCP 工具自身的权限边界。
+
+Apple 配置二维码使用与附件 URL 鉴权相同的短时签名：`/api/apple/qr` 需要 `settings:read`，生成的二维码包含有效期默认 300 秒的 `/api/apple/config` 签名 URL。手机扫码时只需签名参数，不需要在 URL 中携带 Bearer 令牌；签名 URL 不受 Referer/UA 白名单限制，但仍受 IP 限制和频率限制。
+
+### 测试
+
+`tests/run_all.py` 现在依次执行：
+
+1. pytest 单元测试（52 项）
+2. MCP 内部工具检查（41 个工具）
+3. MCP HTTP/SSE 端到端检查
+4. MCP 鉴权检查（401/403/200 + 审计日志）
+5. DAV 协议检查
+6. 无头环境与 FTS5 检查（临时数据库、`--data-dir`、`--dav-root`、搜索）
+
+所有脚本启动前调用 `tests/_test_db.py:init_temp_db()`，避免测试修改真实数据。
+
+### 打包与启动
+
+PyInstaller 打包必须把 WebUI 构建产物一起带上，否则 EXE 只有 API/DAV，没有网页界面：
+
+```powershell
+pyinstaller --onefile --clean -w --name PersonalDAV `
+  --add-data "webui/dist;webui/dist" `
+  --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" `
+  --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg `
+  --hidden-import py7zr --hidden-import rarfile --hidden-import pyzipper main.py
+```
+
+运行时 `personaldavd/daemon.py` 通过 `__file__/../webui/dist` 定位静态资源，在 onefile 模式下对应 `_MEIPASS/webui/dist`。
+
+无控制台（`-w`）打包时 `sys.stdout` / `sys.stderr` 为 `None`，`main.py` 启动时会把它们重定向到 `os.devnull`，避免 logging/uvicorn 写入空流导致进程以退出码 1 结束。
+
+关闭 Web 面板（`webui_enabled=False`）只影响 SPA 静态页面，REST API、MCP 与 DAV 仍正常挂载。
+
+压缩包能力依赖 `py7zr`（7z）、`rarfile`（rar 结构与预览）和 `pyzipper`（AES zip）；RAR 解压或提取还需要系统安装 `unrar`，打包 EXE 不内置该外部工具。Office 预览的 LibreOffice / ONLYOFFICE 模式同样依赖外部程序或服务。
+
+#### CI 与发版流程
+
+`.github/workflows/packaging.yml` 把“测试、构建、发布”分成三个阶段：
+
+1. **测试**：推送 `master`、`3.4`、`release/**` 或提交 PR 时运行 `tests/run_all.py`，不依赖标签。
+2. **构建验收包**：手动触发 workflow 并勾选 `package`，或推送 `v*` 标签。构建出的 EXE 上传为 artifact；标签构建还会校验 `config.py` 的 `SOFTWARE_VERSION` 与标签一致，并启动 EXE 做 `/api/health`、WebUI 首页和 JS 资源的冒烟测试。
+3. **发布**：只有 `v*` 标签才创建 Draft Release，发布前可下载 artifact 再验收；发现问题不要移动已发布标签，修复后发布补丁版本。
+
+日常发版顺序：功能完成 → 推送分支跑测试 → 手动构建 EXE 并下载验收 → 打最终标签 → 确认 Draft Release 后发布。`v3.4.1` 这类补丁版本也已支持从 CHANGELOG 提取发布说明。
+
+### v3.4 修复清单
+
+| 问题 | 修复 |
+|------|------|
+| 新克隆缺少 `webui/dist/assets` | 提交构建产物；`daemon.py` 在 assets 目录缺失时跳过挂载而不是崩溃 |
+| 新库 FTS5 建表失败 | `groups` 列迁移移到 FTS 建表之前 |
+| 事件搜索列不存在 | `SEARCH_COLUMNS` 改为 `['summary', 'ical']` |
+| 无头模式路径参数不生效 | `_init_environment` 固定 Database → data_dir → dav_root → 回收站顺序 |
+| 回收站/附件写死 `data/` | 统一走 `resolve_data_path()` |
+| 普通 API 令牌可访问 MCP | `is_mcp_path()` 在鉴权中间件直接返回 403 |
+| API 令牌可越权访问管理接口 | `required_scope()` 覆盖设置/令牌/回收站/日志/统计，未分类 API fail closed |
+| 无控制台 EXE 启动即退出 | `main.py` 重定向空 stdout/stderr |
+| MCP 启停旧版服务 | 共享 `DaemonServer` + `server_registry.py` |
+| 回收站自定义保留天数不生效 | `_retention_days()` 读取 `trash_retention_custom`，非法值回退 30 天 |
+| Web 端缺少分组/分类筛选 | 联系人按分号边界精确匹配分组；日程在已加载范围内按分类筛选 |
+| 联系人分组显示多余转义符 | 解析 vCard `CATEGORIES` 时还原 `\;` / `\,` |
+| Apple 配置端口写死 | 使用当前请求的 scheme/port，CLI 改端口后配置仍正确 |
+| 新建日程不应用默认提醒 | 加载 `default_reminders` / `default_allday_reminders` 并在新建表单初始化后应用 |
+| 桌面设置列表不能双击编辑 | 挂载点、API 令牌绑定 `<Double-1>`；API 令牌增加编辑/删除按钮 |
+| API 令牌不能修改权限和有效期 | `ApiTokenService.update_token()` 更新 scopes/note/expires_at，原始令牌哈希不变 |
+| SSL 相对路径启动报错 | `normalize_cert_path()` 统一转绝对路径；仅在 HTTPS 启用时自动续期 |
+| SSL 设置保存后像卡死 | 先销毁设置窗口再执行保存回调，避免确认框被 `grab_set` 挡住 |
+| 加密压缩包密码窗口反复弹出 | AES zip 改用 pyzipper 读取；错误密码只更新提示，不再自动重新弹窗；密码框按钮改为右对齐 |
+| 日程视图标题 NaN/周 undefined | 日期头把 ISO 日期误传给只接受 iCal 紧凑格式的 `icalDateToObj`，改用原生 `new Date(dateStr + 'T00:00:00')` 并校验有效性 |
+| 多挂载点打开文件管理卡死 | `FileMountService` 实例锁改为 `RLock`；`get_root_entries()` / `resolve()` 在持锁时调用 `is_single_mount` 不再自锁 |
+| 标签切换期间重入事件循环 | `FilesTab.update_ui_state()` 不再调用 `self.update()`，只刷新布局 |
+| 概览空间占用显示 100% | `StatsService._disk_total_mb()` 跳过已删除的挂载点；前端移除 `disk_total_mb` 缺失时按 500 MB 计算的兜底，容量未知时显示 `—` |
 
 ## v3.3 — Web UI 企业级交互升级 + HTTPS 双端口 + 移动端适配
 
@@ -131,6 +260,7 @@ v3.3 对 WebUI 进行了系统性交互升级，覆盖 5 个阶段共计 ~465 �
 | Skeleton 骨架屏 | `webui/src/components/SkeletonCard.vue` | 5 变体（card/row/circle/timeline/bar），灰色脉冲动画，Dashboard 和列表页使用 |
 | FLIP 列表动画 | `ContactsList.vue` / `Files.vue` / `Calendar.vue` | Vue `<TransitionGroup>` 实现列表增删/过滤/翻页时的位移过渡动画 |
 | 搜索防抖 | `ContactsList.vue` / `Calendar.vue` | `300ms debounce`，减少冗余 API 调用 |
+| 回到今天 | `Calendar.vue` | 月视图“今天”按钮把 `monthOffset` 归零、清空搜索并选中当天 |
 
 #### Phase 3 — Micro-interactions
 
@@ -413,10 +543,12 @@ PersonalDAV/
 │           ├── Login.vue / Dashboard.vue / ContactsList.vue
 │           ├── ContactEdit.vue / Calendar.vue / Schedule.vue
 │           ├── CalendarEventEdit.vue / Files.vue / Settings.vue
-├── data/                      # 运行产物（启动时自动创建）
+├── data/                      # 运行产物（启动时自动创建，可随 --data-dir 移动）
 │   ├── dav_data.db            # SQLite 数据库
 │   ├── dav_data.db.bak        # 自动备份
 │   ├── remote_connections.key # Fernet 加密密钥
+│   ├── calendar_attachments/  # 日历附件独立存储（v3.4 跟随 data_dir）
+│   ├── trash/                 # 文件回收站（v3.4）
 │   └── log/
 │       ├── dav_server.log     # 日志文件（轮转）
 │       └── personaldavd.log   # 守护进程日志（v3.2 轮转）
@@ -452,12 +584,16 @@ PersonalDAV/
 │   ├── auth_service.py        # AuthService（密码/IP/Referer/UA/Fingerprint）
 │   ├── file_mount_service.py  # 多挂载点管理（v3.2）
 │   ├── dav_client_service.py  # WebDAV 客户端（远程挂载，v3.2）
+│   ├── api_scopes.py          # 令牌作用域 / 路由权限 / 敏感设置（v3.4）
+│   ├── api_token_service.py   # 应用专用密码（v3.4）
+│   ├── stats_service.py       # 多挂载 + 回收站统计（v3.4）
+│   ├── trash_service.py       # 文件回收站（v3.4）
 │   ├── ftp_service.py         # FTPService（FTP/FTPS/SFTP/TFTP）
 │   ├── ftp_client_service.py  # FTP/FTPS/SFTP 客户端
 │   ├── smb_service.py         # SMBService（SMB 客户端）
 │   └── mcp_server.py          # MCPServer（MCP SSE）
 ├── network/                   # 网络层
-│   ├── dav_server.py          # DAVHandler（已废弃，v3.2 移除）
+│   ├── dav_server.py          # 旧版 http.server DAVHandler（仅兼容旧测试/工具，不再承载新功能）
 │   ├── dav_client.py          # WebDAV 客户端导入
 │   └── webdav_helper.py       # WebDAV XML 响应构建
 ├── utils/                     # 工具层
@@ -467,7 +603,9 @@ PersonalDAV/
 │   ├── vcard_parser.py        # RobustVCardParser
 │   ├── window_utils.py        # center_window()
 │   ├── validators.py          # 端口/IP/密码强度验证
-│   ├── attachment_store.py    # 附件文件存储管理
+│   ├── attachment_store.py    # 附件文件存储管理（跟随 data_dir，v3.4）
+│   ├── path_helper.py         # 数据目录路径解析（v3.4）
+│   ├── server_registry.py     # GUI/无头/MCP 共享服务器实例（v3.4）
 │   ├── cert_helper.py         # SSL 自签名证书生成（v3.3）
 │   └── logger.py              # 日志系统（RotatingFile + GUI）
 ├── tests/                     # 单元测试
@@ -610,7 +748,26 @@ python main.py --port 8080 --db-path my_data.db --log-level DEBUG
 | `--remote-url` | | daemon 地址，默认 `http://127.0.0.1:8000` (v3.0) |
 | `--remote-token` | | Bearer token（可选）(v3.0) |
 
-`--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。
+`--db-path` 通过提前初始化 `Database(db_path=...)` 单例实现，需在所有服务实例化之前调用。`--data-dir` 会同时写入 `data_dir` 设置，日历附件、回收站、日志都跟随该目录；同时指定 `--db-path` 时仅数据库使用 `--db-path`。
+
+### 无头模式
+
+```bash
+python main.py --headless --port 8000 --data-dir D:\PDavData --dav-root D:\Files
+python -m personaldavd --port 8000 --data-dir D:\PDavData --dav-root D:\Files
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--host` | `127.0.0.1` | 监听地址 |
+| `--port` | `8000` | 监听端口 |
+| `--db-path` | 由 `--data-dir` 推导，否则 `data/dav_data.db` | 数据库路径（优先级最高） |
+| `--data-dir` | 空 | 数据库、日志、附件、回收站的根目录 |
+| `--dav-root` | 空 | 注册为 WebDAV 挂载点；不填则不自动挂载 |
+| `--log-level` | `INFO` | 日志级别 |
+| `--log-json` | 关闭 | JSON 结构化日志 |
+
+无头模式在 `lifespan` 中按「Database → data_dir → dav_root → 回收站」顺序初始化，确保 `--db-path` 不会被任何服务的默认单例抢先占用。
 
 ---
 
@@ -1224,6 +1381,8 @@ def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True
 
 ## DAV 服务器（dav_server.py）
 
+> v3.2 起生产环境统一走 `personaldavd/dav.py` 的 ASGI 路由。`network/dav_server.py` 仅保留给旧版兼容与 `tests/test_dav_protocol.py` 使用；MCP 的服务器启停已改用 `DaemonServer`，不再启动该旧服务。
+
 ### 端点路由 (v2.1)
 
 | 路径前缀 | 服务 | 资源类型 |
@@ -1493,9 +1652,9 @@ class MCPServer:
 
 | 工具 | 类别 | 说明 |
 |------|------|------|
-| `server_start(port)` | 服务端管理 | 后台启动 DAV 服务器 |
-| `server_stop()` | 服务端管理 | 停止 DAV 服务器 |
-| `server_status()` | 服务端管理 | 查询运行状态 + 端口 |
+| `server_start(port)` | 服务端管理 | 后台启动统一 `DaemonServer`（HTTP/WebUI/REST/MCP）；port=0 时使用设置中的端口 |
+| `server_stop()` | 服务端管理 | 停止统一服务器 |
+| `server_status()` | 服务端管理 | 查询运行状态，返回真实 `http_port` / `ssl_port` |
 | `list_contacts()` | 联系人 | 列出所有联系人摘要 |
 | `get_contact(uid)` | 联系人 | 获取联系人完整 vCard |
 | `create_contact(vcard_data)` | 联系人 | 从 vCard 创建联系人 |
@@ -1664,7 +1823,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 23 项，325 个子测试）
+### 测试结构（共 52 项，325 个子测试；不含 MCP/DAV/无头脚本）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
@@ -1676,6 +1835,13 @@ pytest tests/ -v -q
 | `_run_mcp_tools_check.py` | MCP 全部 41 个工具的内部端到端测试 (v2.1创建16个，v2.2增加到33个，v2.5增加到32个，v3.2增加到41个)         |
 | `_run_mcp_http_check.py` | MCP 全部工具 HTTP/SSE 端到端测试（无密码 + 有密码两轮，走真实 SSE 协议）(v2.2)                      |
 | `test_mcp_auth_http.py` | MCP 鉴权中间件 HTTP 测试：401/403/200 状态码、黑白名单、免密 IP、日志落盘 (v2.3)                   |
+| `test_api_scopes.py` | 令牌作用域映射、未分类 API fail-closed、MCP 路径隔离、敏感设置脱敏 (v3.4)                        |
+| `test_trash_retention.py` | 回收站固定/自定义保留天数、非法值回退、按自定义天数清理 (v3.4)                                |
+| `test_webui_parity.py` | 联系人分组筛选、重复日程 `EXDATE` 往返、Apple 配置实际端口与二维码生成 (v3.4)                        |
+| `test_file_content.py` | 文本读写往返、二进制文件拒绝、zip 内部结构浏览与文本预览 (v3.4)                                |
+| `test_file_mount_service.py` | 多挂载点根目录解析、单挂载点判断、`RLock` 重入回归 (v3.4)                                      |
+| `test_stats_service.py` | 多挂载点统计、配额与超限标记、容量/其他/剩余字段 (v3.4)                                        |
+| `_run_headless_check.py` | 无头模式 `--db-path/--data-dir/--dav-root`、回收站/附件目录、FTS5 新建与搜索 (v3.4)                |
 
 ### 运行全部测试
 
@@ -1683,12 +1849,13 @@ pytest tests/ -v -q
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试 → MCP 内部工具检查 → MCP HTTP 工具检查 → MCP 鉴权测试。
+依次执行：pytest 单元测试 → MCP 内部工具检查 → MCP HTTP 工具检查 → MCP 鉴权测试 → DAV 协议检查 → 无头环境与 FTS5 检查。
 
 ### 测试隔离
 
-- `Database.reset()` 在 `setUpClass` 中重置单例，使用 `:memory:` 数据库
-- 每个 `setUp` 清空表数据，测试之间互不干扰
+- `tests/conftest.py:pytest_sessionstart` 统一初始化临时数据库
+- 独立脚本启动时调用 `tests/_test_db.py:init_temp_db()`，绝不读写用户真实 `data/dav_data.db`
+- `test_base_service.py` / `test_fuzzing.py` 仍在 `setUpClass` 使用 `:memory:`，测试之间互不干扰
 - 自定义 `_TestRepo` / `_Item` 避免对真实模型的依赖
 - HTTP 测试使用独立端口（8101、8102），互不冲突
 
@@ -2041,7 +2208,7 @@ canvas.bind("<Configure>", lambda e: canvas.itemconfig(inner_window, width=e.wid
 3. 在 `services/` 下创建继承 `BaseService` 的单例子类
 4. 在 `ui/tabs/` 或 `ui/dialogs/` 中创建对应的 UI
 5. 在 `database/db_manager.py` 中 `create_tables()` 添加建表/迁移代码
-6. 在 `network/dav_server.py` 中 DAVHandler 添加 HTTP 端点
+6. 在 `personaldavd/dav.py` 或 `personaldavd/api.py` 添加 HTTP 端点；若新增 REST API，必须在 `services/api_scopes.py` 中补充作用域映射（未分类 API 默认要求 `tokens:manage`）
 
 ### 添加新 tab
 

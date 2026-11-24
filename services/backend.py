@@ -154,7 +154,7 @@ class _RemoteContactService:
 
     def add_contact(self, vcard_data: str, force: bool = False):
         try:
-            r = self._client.post(f"{self._prefix}/contacts",
+            r = self._client.post(f"{self._prefix}/contacts/import",
                                   json={"vcard_data": vcard_data}, timeout=10)
             if r.status_code in (200, 201):
                 data = r.json()
@@ -222,7 +222,7 @@ class _RemoteEventService:
 
     def add_event(self, ical_data: str, force: bool = False):
         try:
-            r = self._client.post(f"{self._prefix}/events",
+            r = self._client.post(f"{self._prefix}/events/import",
                                   json={"ical_data": ical_data}, timeout=10)
             if r.status_code in (200, 201):
                 data = r.json()

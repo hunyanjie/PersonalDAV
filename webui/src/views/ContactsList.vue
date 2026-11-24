@@ -5,6 +5,10 @@
         <Search :size="18" class="search-icon" />
         <input v-model="query" placeholder="搜索姓名、邮箱或电话..." @input="debounceSearch" class="search-input" />
       </div>
+      <select v-model="groupFilter" class="group-select" @change="onGroupChange" title="按分组筛选">
+        <option value="">全部分组</option>
+        <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
+      </select>
       <div class="toolbar-actions">
         <label class="btn-tool btn-import">
           <Upload :size="18" /> <span class="hide-mobile">导入 .vcf</span>
@@ -33,12 +37,13 @@
               :class="{ 'swipe-open': _swipeUid === c.uid, 'menu-active': _menuUid === c.uid }"
               @touchstart="swipeStart(c.uid, $event)"
               @touchmove="swipeMove($event)"
-              @touchend="swipeEnd(c.uid)">
+              @touchend="swipeEnd(c.uid)"
+              @dblclick="$router.push(`/contacts/${c.uid}/edit`)">
               <td class="col-name">
                 <div class="name-info" @click="closeSwipe">
                   <span class="avatar">{{ (c.full_name || '?')[0].toUpperCase() }}</span>
                   <div class="name-text">
-                    <span class="full-name">{{ c.full_name }}</span>
+                    <span class="full-name">{{ c.full_name }}<span class="mobile-groups" v-if="c.groups"><span v-for="g in splitGroups(c.groups)" :key="g" class="group-tag">{{ g }}</span></span></span>
                     <span class="mobile-only-info">{{ c.phone || c.email }}</span>
                   </div>
                 </div>
@@ -120,7 +125,7 @@ export default {
     ChevronLeft, ChevronRight, MoreHorizontal
   },
   data: () => ({ 
-    items: [], query: '', page: 0, pageSize: 50, total: 0, 
+    items: [], query: '', groupFilter: '', groups: [], page: 0, pageSize: 50, total: 0, 
     loading: false, _timer: null, pageInput: 1, localPageSize: 50,
     _swipeUid: null, _swipeOffset: 0, _swipeStartX: 0, _swipeStartY: 0,
     _menuUid: null, _isDragging: false,
@@ -133,6 +138,7 @@ export default {
   },
   async mounted() { 
     this.load()
+    this.loadGroups()
     document.addEventListener('click', this._closeMenu)
   },
   beforeUnmount() { 
@@ -147,14 +153,21 @@ export default {
       this.loading = true
       try {
         if (this.query.trim()) {
-          const res = await api.searchContacts(this.query, this.page * this.pageSize, this.pageSize)
+          const res = await api.searchContacts(this.query, this.page * this.pageSize, this.pageSize, this.groupFilter)
           this.items = res.items; this.total = res.total
         } else {
-          const res = await api.listContacts(this.page * this.pageSize, this.pageSize)
+          const res = await api.listContacts(this.page * this.pageSize, this.pageSize, this.groupFilter)
           this.items = res.items; this.total = res.total
         }
       } catch(e) { this.items = []; this.total = 0 }
       finally { this.loading = false }
+    },
+    async loadGroups() {
+      try { this.groups = (await api.contactGroups()).groups || [] } catch(e) { this.groups = [] }
+    },
+    onGroupChange() {
+      this.page = 0
+      this.load()
     },
     debounceSearch() {
       clearTimeout(this._timer)
@@ -218,17 +231,16 @@ export default {
       if (!file) return
       try {
         const text = await file.text()
-        const blocks = text.split(/(?=BEGIN:VCARD)/).filter(Boolean)
-        for (const block of blocks) {
-          try { await api.createContact(block.trim()) } catch(e) {}
-        }
+        await api.importContactVcf(text)
         this.load()
       } catch(e) { window.showToast('导入失败', 'error') }
       e.target.value = ''
     },
     async doDelete(uid) {
       if (!await window.showConfirm({ message: '确认删除该联系人？', type: 'danger' })) return
-      try { await api.deleteContact(uid); this.load() } catch(e) {}
+      this.items = this.items.filter(i => i.uid !== uid)
+      this.total = Math.max(0, this.total - 1)
+      try { await api.deleteContact(uid) } catch(e) { this.load() }
     },
     async doExport(c) {
       try {
@@ -273,6 +285,17 @@ export default {
   box-sizing: border-box;
 }
 .search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
+.group-select {
+  padding: 11px 14px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  background: #fafafa;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  max-width: 180px;
+}
+.group-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
 
 .toolbar-actions { display: flex; gap: 10px; flex-shrink: 0; }
 .btn-tool { 
@@ -318,6 +341,7 @@ export default {
 .name-text { display: flex; flex-direction: column; min-width: 0; }
 .full-name { font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-only-info { display: none; font-size: 12px; color: var(--text-tertiary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-groups { display: none; }
 
 .groups-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .group-tag { 
@@ -396,6 +420,8 @@ export default {
 @media (max-width: 768px) {
   .hide-mobile { display: none !important; }
   .mobile-only-info { display: block; }
+  .mobile-groups { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 4px; }
+  .mobile-groups .group-tag { font-size: 10px; padding: 1px 7px; }
   .toolbar { padding: 12px; flex-direction: column; align-items: stretch; gap: 12px; }
   .search-box { width: 100%; min-width: 100%; order: 1; }
   .toolbar-actions { width: 100%; justify-content: space-between; order: 2; gap: 8px; }

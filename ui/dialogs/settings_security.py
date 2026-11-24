@@ -45,23 +45,6 @@ class SecuritySettingsSection:
         ttk.Checkbutton(parent, text="强制要求密码（未设密码时拒绝访问）",
                         variable=self.dialog.force_password_var).pack(anchor="w", padx=10, pady=5)
 
-        token_f = ttk.LabelFrame(parent, text="MCP 令牌（AI 连接用）")
-        token_f.pack(fill=tk.X, padx=5, pady=5)
-        self._mcp_token_var = tk.StringVar()
-        token_entry = ttk.Entry(token_f, textvariable=self._mcp_token_var, state="readonly", width=70)
-        token_entry.pack(fill=tk.X, padx=5, pady=5)
-        self._mcp_token_time_var = tk.StringVar()
-        ttk.Label(token_f, textvariable=self._mcp_token_time_var, foreground="gray", font=('', 8)).pack(anchor="w", padx=5)
-        btn_f = ttk.Frame(token_f)
-        btn_f.pack(fill=tk.X, padx=5, pady=5)
-        copy_btn = ttk.Button(btn_f, text="复制令牌", command=self._copy_mcp_token)
-        copy_btn.pack(side=tk.LEFT, padx=2)
-        self._mcp_tip = EnhancedTooltip(copy_btn, "请先设置密码以生成令牌")
-        self._rotate_token_btn = ttk.Button(btn_f, text="轮换令牌", command=self._rotate_mcp_token)
-        self._rotate_token_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Label(btn_f, text="  更改密码或轮换后旧令牌立即失效。",
-                  foreground="gray").pack(side=tk.LEFT)
-
     def _create_ip_ui(self, parent):
         ip_f = ttk.LabelFrame(parent, text="IP 访问控制（留空 = 不限制）")
         ip_f.pack(fill=tk.X, padx=5, pady=5)
@@ -171,16 +154,12 @@ class SecuritySettingsSection:
         self._auth_status_label.config(
             text=f"访问密码: {'已设置' if enabled else '未设置'}",
             foreground="green" if enabled else "orange")
-        state = tk.NORMAL if enabled else tk.DISABLED
-        self._change_pw_btn.config(state=state)
-        self._clear_pw_btn.config(state=state)
-        token = svc.get_mcp_token() if enabled else "(未设置密码)"
-        self._mcp_token_var.set(token)
-        rotated = svc.get_mcp_token_rotated_at()
-        self._mcp_token_time_var.set(f"上次轮换: {rotated}" if rotated else "")
-        self._rotate_token_btn.config(state=state)
-        if self._mcp_tip:
-            self._mcp_tip.text = "复制令牌到剪贴板" if enabled else "请先设置密码以生成令牌"
+        
+        # 如果未设置，启用设置密码，禁用更改/清除
+        # 如果已设置，禁用设置密码，启用更改/清除
+        self._set_pw_btn.config(state=tk.DISABLED if enabled else tk.NORMAL)
+        self._change_pw_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
+        self._clear_pw_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _set_password(self):
         self._password_dialog(change=False)
@@ -284,22 +263,6 @@ class SecuritySettingsSection:
         ttk.Button(btn_f, text="取消", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
         pw_entry.bind("<Return>", do_clear)
         pw_entry.focus()
-
-    def _rotate_mcp_token(self):
-        AuthService().rotate_mcp_token()
-        self._refresh()
-        from ui.widgets.toast import Toast
-        Toast.success(self._parent_frame, "MCP 令牌已轮换，旧令牌立即失效")
-
-    def _copy_mcp_token(self):
-        token = AuthService().get_mcp_token()
-        if not token:
-            messagebox.showinfo("提示", "请先设置密码", parent=self._parent_frame)
-            return
-        self._parent_frame.clipboard_clear()
-        self._parent_frame.clipboard_append(token)
-        from ui.widgets.toast import Toast
-        Toast.success(self._parent_frame, "MCP 令牌已复制到剪贴板")
 
     def load(self):
         s = self.dialog.db

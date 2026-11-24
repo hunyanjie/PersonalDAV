@@ -69,7 +69,7 @@ export default {
       try {
         const res = await api.login(this.password, this.browserFingerprint())
         localStorage.setItem('token', res.token)
-        this.$router.push('/')
+        this.$router.push(this.$route.query.redirect || '/')
       } catch (e) {
         this.error = e.message || '登录失败，请检查密码'
       } finally { this.loading = false }

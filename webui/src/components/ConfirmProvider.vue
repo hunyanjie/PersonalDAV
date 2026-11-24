@@ -6,9 +6,12 @@
     :type="state.type"
     :confirm-text="state.confirmText"
     :cancel-text="state.cancelText"
-    @confirm="resolveConfirm(true)"
-    @cancel="resolveConfirm(false)"
-    @update:visible="v => { if (!v) resolveConfirm(false) }"
+    :extra-text="state.extraText"
+    :show-cancel="state.showCancel"
+    @confirm="resolveConfirm('confirm')"
+    @cancel="resolveConfirm('cancel')"
+    @extra="resolveConfirm('extra')"
+    @update:visible="v => { if (!v) resolveConfirm(null) }"
   />
 </template>
 

@@ -24,6 +24,13 @@ class ContactService(BaseService):
             )
         return cls._instance
 
+    def get_all_raw_paginated_by_group(self, group: str, offset: int = 0, limit: int = 50) -> tuple[list[str], int]:
+        items = [getattr(c, self._raw_field) for c in self.repo.get_by_group_paginated(group, offset, limit)]
+        return items, self.repo.count_by_group(group)
+
+    def get_groups(self) -> list[str]:
+        return self.repo.get_groups()
+
     def add_contact(self, vcard_data: str, force: bool = False, publish: bool = True):
         """添加或更新联系人。force=True 时即使内容相同也覆盖更新。"""
         try:
@@ -31,13 +38,19 @@ class ContactService(BaseService):
             try:
                 vcard = vobject.readOne(vcard_data)
                 uid_node = getattr(vcard, 'uid', None)
-                uid = uid_node.value if uid_node else str(uuid.uuid4())
+                if uid_node:
+                    uid = uid_node.value
+                else:
+                    uid = str(uuid.uuid4())
+                    vcard.add('uid').value = uid
+                    vcard_data = vcard.serialize()
+
                 parsed_data = {
                     "uid": uid,
                     "full_name": self._extract_full_name(vcard),
                     "email": ";".join(self._extract_emails(vcard)),
                     "phone": ";".join(self._extract_phones(vcard)),
-                    "groups": self._extract_categories(vcard),
+                    "groups": self._extract_categories(vcard),  # 分组以分号分隔
                     "vcard": vcard_data
                 }
             except Exception as e:
@@ -50,6 +63,16 @@ class ContactService(BaseService):
                 parsed_data = RobustVCardParser.manual_parse(vcard_data)
                 if parsed_data:
                     parsed_data['groups'] = self._extract_categories_from_text(vcard_data)
+                    if not uid_raw:
+                        uid = parsed_data.get('uid', '')
+                        if uid:
+                            lines = vcard_data.splitlines()
+                            for i, line in enumerate(lines):
+                                if line.strip().upper() == "END:VCARD":
+                                    lines.insert(i, f"UID:{uid}")
+                                    break
+                            vcard_data = "\r\n".join(lines)
+                            parsed_data['vcard'] = vcard_data
 
             if not parsed_data:
                 return None, "Parse Error"

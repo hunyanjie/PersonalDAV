@@ -1,54 +1,60 @@
 """Unified auth middleware + token scope support for ASGI."""
 
+from dataclasses import dataclass
+
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from services.api_scopes import is_mcp_path, required_scope
 from services.auth_service import AuthService
 
 # Token-based auth for REST API
 _bearer = HTTPBearer(auto_error=False)
 
-SCOPE_MAP: dict[str, dict[str, str]] = {
-    "GET": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read"},
-    "HEAD": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read"},
-    "PUT": {"contacts": "contacts:write", "events": "events:write", "dav": "dav:write"},
-    "POST": {"contacts": "contacts:write", "events": "events:write", "dav": "dav:write"},
-    "DELETE": {"contacts": "contacts:write", "events": "events:write", "dav": "dav:write"},
-    "PROPFIND": {"contacts": "contacts:read", "events": "events:read", "dav": "dav:read"},
-    "MKCOL": {"dav": "dav:write"},
-    "COPY": {"dav": "dav:write"},
-    "MOVE": {"dav": "dav:write"},
-    "OPTIONS": {},
-    "REPORT": {"contacts": "contacts:read", "events": "events:read"},
-}
+
+@dataclass(frozen=True)
+class AuthContext:
+    """本次请求的鉴权结果。
+
+    ``scopes is None`` 表示完全权限（密码登录、本机免密、MCP 主令牌）。
+    ``auth_type == "api_token"`` 时 ``scopes`` 是该令牌被授予的作用域集合。
+    """
+
+    auth_type: str
+    scopes: frozenset[str] | None = None
+    token_id: str | None = None
+
+    @property
+    def is_full_access(self) -> bool:
+        return self.scopes is None
+
+    def has_scope(self, scope: str) -> bool:
+        return self.is_full_access or scope in self.scopes
 
 
-def _required_scope(method: str, path: str) -> str | None:
-    method_map = SCOPE_MAP.get(method, {})
-    if not method_map:
-        return None
-    for prefix, scope in method_map.items():
-        if path.startswith(f"/{prefix}") or path.startswith(f"/api/{prefix}"):
-            return scope
-    return None
+def get_auth_context(request: Request) -> AuthContext | None:
+    """读取中间件写入的鉴权上下文。"""
+    return getattr(request.state, "auth_context", None)
 
 
 async def get_current_token(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    svc = AuthService()
-    if not svc.is_password_required():
-        return "bypass"
-    if credentials is None:
+    """供业务路由声明“需要鉴权”，鉴权本身由 AuthMiddleware 完成。"""
+    ctx = get_auth_context(request)
+    if ctx is None:
+        # 理论上不会走到这里；保留兜底，避免绕过中间件时静默放行。
+        svc = AuthService()
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        if not svc.is_password_required() or svc.ip_bypasses_auth(client_ip):
+            return "bypass"
         raise HTTPException(401, "Authorization header required")
-    if not svc.verify_mcp_token(credentials.credentials):
-        raise HTTPException(403, "Invalid token")
-    scope = getattr(credentials, "_scope", None)
-    if scope and scope not in credentials.credentials:
-        raise HTTPException(403, f"Insufficient scope: {scope}")
-    return credentials.credentials
+    if ctx.auth_type == "bypass":
+        return "bypass"
+    return credentials.credentials if credentials is not None else "bypass"
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -57,54 +63,84 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip docs/openapi
-        if path.startswith("/api/docs") or path.startswith("/api/openapi"):
+        if (path.startswith("/api/docs") or path.startswith("/api/openapi") or
+            path.startswith("/assets") or path.startswith("/icons") or
+            path == "/" or path == "/index.html" or
+            path == "/manifest.json" or path == "/sw.js" or
+            path == "/api/auth/token"):
             return await call_next(request)
 
-        svc = AuthService()
         client_ip = request.client.host if request.client else "127.0.0.1"
         ua = request.headers.get("user-agent", "")
         referer = request.headers.get("referer", "")
 
-        # IP check
+        svc = AuthService()
+
         if not svc.check_ip(client_ip):
             return Response("IP denied", status_code=403)
 
-        # Referer check (FastAPI 中间件中补充)
+        if not svc.check_rate_limit(client_ip):
+            return Response("Too Many Requests", status_code=429)
+
+        # Apple 描述文件二维码：用短时签名 URL 让手机浏览器直接下载，不需要 Bearer 令牌。
+        # 手机扫码请求通常没有 Referer，也不一定符合 DAV 的 User-Agent 白名单，因此这两项检查不适用于签名 URL。
+        if path == "/api/apple/config":
+            qp = request.query_params
+            url_token = qp.get("token", "")
+            url_ts = qp.get("ts", "")
+            url_nonce = qp.get("nonce", "")
+            if url_token and url_ts and url_nonce and svc.verify_url_token(path, url_token, url_ts, url_nonce):
+                svc.log_auth(True, client_ip, "Apple-Config", "signed URL OK")
+                request.state.auth_context = AuthContext("url_token")
+                return await call_next(request)
+
         if svc.is_referer_enabled():
             if not referer:
                 return Response("Referer required", status_code=403)
             if not svc.check_referer_advanced(referer):
                 return Response("Referer denied", status_code=403)
 
-        # User-Agent check
         if ua and not svc.check_user_agent(ua):
             return Response("User-Agent denied", status_code=403)
 
-        # Rate limit
-        if not svc.check_rate_limit(client_ip):
-            return Response("Too Many Requests", status_code=429)
-
-        # IP bypass (no password needed)
         if svc.ip_bypasses_auth(client_ip):
+            request.state.auth_context = AuthContext("bypass")
             return await call_next(request)
 
-        # Password not required
         if not svc.is_password_required():
+            request.state.auth_context = AuthContext("bypass")
             return await call_next(request)
 
-        # Try Bearer token (for REST API / MCP)
         auth_header = request.headers.get("Authorization", "")
         token = ""
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
         elif request.method == "GET" and request.url.path.startswith("/api/files/"):
             token = request.query_params.get("token", "")
-        if token and svc.verify_mcp_token(token):
-            svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
-            return await call_next(request)
+        if token:
+            scope = required_scope(request.method, path)
+            if svc.verify_mcp_token(token):
+                svc.log_auth(True, client_ip, "ASGI", "Bearer token OK")
+                request.state.auth_context = AuthContext("mcp")
+                return await call_next(request)
 
-        # Try Basic Auth (for DAV clients)
+            from services.api_token_service import ApiTokenService
+            ats = ApiTokenService()
+            tok_data = ats.verify_token(token)
+            if tok_data:
+                if is_mcp_path(path):
+                    svc.log_auth(False, client_ip, "ASGI", "API token denied on MCP endpoint")
+                    return Response("MCP requires the MCP token", status_code=403)
+                token_scopes = frozenset(tok_data["scopes"])
+                if scope and scope not in token_scopes:
+                    svc.log_auth(False, client_ip, "ASGI", f"Token scope denied: {scope}")
+                    return Response("Insufficient permissions", status_code=403)
+                svc.log_auth(True, client_ip, "ASGI", f"API token OK: {tok_data['note'] or tok_data['id']}")
+                request.state.auth_context = AuthContext(
+                    "api_token", token_scopes, tok_data["id"]
+                )
+                return await call_next(request)
+
         if auth_header.startswith("Basic "):
             import base64
             try:
@@ -115,11 +151,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return Response("Bad auth format", status_code=401)
             if svc.verify_password(password):
                 svc.log_auth(True, client_ip, "ASGI", "Basic Auth OK")
+                request.state.auth_context = AuthContext("basic")
                 return await call_next(request)
             svc.log_auth(False, client_ip, "ASGI", "Basic Auth wrong password")
             return Response("Invalid password", status_code=401)
 
-        # No auth
         svc.log_auth(False, client_ip, "ASGI", "No credentials")
         resp = Response("Authorization required", status_code=401)
         from config import SOFTWARE_NAME

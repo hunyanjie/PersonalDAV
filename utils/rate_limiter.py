@@ -17,7 +17,8 @@ class RateLimiter:
             if len(timestamps) >= max_requests:
                 return False
             timestamps.append(now)
-            return True
+        self.cleanup(300)
+        return True
 
     def cleanup(self, max_age: int = 300):
         cutoff = time.time() - max_age

@@ -1,6 +1,8 @@
 """测试 DAV 协议端点 — PROPFIND / REPORT / 基本 CRUD"""
 import sys, time, json
 sys.path.insert(0, '.')
+from tests._test_db import init_temp_db
+init_temp_db("pdav-dav-proto-")
 import httpx
 from database.db_manager import Database
 from network.dav_server import DAVServer, DAVHandler

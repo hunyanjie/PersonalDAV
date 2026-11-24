@@ -10,17 +10,29 @@
           <template v-if="s.key === 'disk_used_mb'">
             <div class="disk-ring-wrap">
               <svg class="disk-ring" viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" fill="none" stroke="#f0f0f0" stroke-width="4" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#eef1f5" stroke-width="4" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#b9c0ca" stroke-width="4"
+                  :stroke-dasharray="`${113.1 * diskOtherRatio} 113.1`"
+                  :stroke-dashoffset="-113.1 * diskUsedRatio"
+                  transform="rotate(-90 22 22)" class="ring-fill" />
                 <circle cx="22" cy="22" r="18" fill="none" stroke="var(--brand)" stroke-width="4"
-                  stroke-dasharray="113.1" :stroke-dashoffset="113.1 * (1 - diskPercent)" transform="rotate(-90 22 22)"
+                  :stroke-dasharray="`${113.1 * diskUsedRatio} 113.1`"
+                  stroke-dashoffset="0" transform="rotate(-90 22 22)"
                   class="ring-fill" />
               </svg>
-              <span class="disk-ring-text">{{ Math.round(diskPercent * 100) }}%</span>
+              <span class="disk-ring-text">{{ diskPercentLabel }}</span>
             </div>
             <div class="stat-info">
               <div class="stat-num">{{ stats[s.key] }}{{ s.unit }}</div>
               <div class="stat-label">{{ s.label }}</div>
               <div class="stat-detail">{{ diskDetail }}</div>
+              <div class="stat-detail">{{ diskBreakdown }}</div>
+              <div class="disk-legend">
+                <span><i class="disk-dot dot-used"></i>数据</span>
+                <span><i class="disk-dot dot-other"></i>其他</span>
+                <span><i class="disk-dot dot-free"></i>剩余</span>
+              </div>
+              <div v-if="stats.disk_over_quota" class="stat-trend trend-down">已超过分配空间</div>
               <div v-if="s.trend" class="stat-trend" :class="s.trend[0] === '+' ? 'trend-up' : 'trend-down'">{{ s.trend }}</div>
             </div>
           </template>
@@ -50,8 +62,8 @@
           </div>
           <div class="info-item">
             <span class="info-label">健康状态</span>
-            <span class="info-val status-ok">
-              <ShieldCheck :size="14" /> 正常运行
+            <span class="info-val" :class="healthStatus.class">
+              <ShieldCheck :size="14" /> {{ healthStatus.text }}
             </span>
           </div>
         </div>
@@ -60,7 +72,7 @@
       <div class="info-section welcome-card">
         <div class="welcome-content">
           <h3>欢迎回来！</h3>
-          <p>PersonalDAV 为您的数字生活保驾护航。您的数据已通过加密连接安全同步。</p>
+          <p>{{ welcomeMessage }}</p>
           <div class="welcome-actions">
             <router-link to="/files" class="btn-welcome">
               立即开始管理 <ChevronRight :size="16" />
@@ -88,23 +100,73 @@ export default {
     Users, CalendarDays, FileText, HardDrive, 
     Server, ChevronRight, ShieldCheck, Zap, Skeleton
   },
-  data: () => ({ stats: { disk_total_mb: 0 }, loading: true }),
+  data: () => ({ stats: { disk_total_mb: 0 }, health: { status: 'unknown' }, serverConfig: null, loading: true, _refreshTimer: null, _failCount: 0 }),
   async mounted() {
-    try {
-      this.stats = await api.stats()
-    } catch (e) {}
-    this.loading = false
+    this.loadData()
+    this._refreshTimer = setInterval(() => this.loadData(), 15000)
+  },
+  beforeUnmount() {
+    if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null }
+  },
+  methods: {
+    async loadData() {
+      try {
+        [this.stats, this.health, this.serverConfig] = await Promise.all([api.stats(), api.health(), api.serverConfig()])
+        this._failCount = 0
+      } catch (e) {
+        this._failCount++
+        console.error('Failed to load dashboard data:', e)
+      }
+      this.loading = false
+    },
   },
   computed: {
+    healthStatus() {
+      if (this._failCount >= 2) return { text: '服务器掉线', class: 'status-fail' }
+      if (this.health.status === 'ok') return { text: '正常运行', class: 'status-ok' }
+      return { text: '服务器异常', class: 'status-fail' }
+    },
+    diskUsedRatio() {
+      const total = Number(this.stats.disk_total_mb) || 0
+      if (total <= 0) return 0
+      return Math.min(1, (Number(this.stats.disk_used_mb) || 0) / total)
+    },
+    diskOtherRatio() {
+      const total = Number(this.stats.disk_total_mb) || 0
+      if (total <= 0) return 0
+      const other = Number(this.stats.disk_other_mb) || 0
+      return Math.min(1 - this.diskUsedRatio, other / total)
+    },
     diskPercent() {
-      const total = this.stats.disk_total_mb || 500
-      return Math.min(1, (this.stats.disk_used_mb || 0) / total)
+      // 圆环中心表示 PersonalDAV 数据占分配空间/设备容量的比例，
+      // 不把同磁盘上其他文件算进“空间占用”，避免磁盘快满时显示 100%。
+      return this.diskUsedRatio
+    },
+    diskPercentLabel() {
+      const total = Number(this.stats.disk_total_mb) || 0
+      if (total <= 0) return '—'
+      if (this.stats.disk_over_quota) return '>100%'
+      const percent = this.diskPercent * 100
+      if (percent > 0 && percent < 1) return '<1%'
+      return `${Math.round(percent)}%`
     },
     diskDetail() {
-      const used = this.stats.disk_used_mb || 0
-      const total = this.stats.disk_total_mb || 0
+      const used = Number(this.stats.disk_used_mb) || 0
+      const total = Number(this.stats.disk_total_mb) || 0
       if (!total) return used.toFixed(1) + ' MB'
-      return used.toFixed(1) + ' / ' + total.toFixed(1) + ' MB'
+      return `数据 ${used.toFixed(1)} / 容量 ${total.toFixed(1)} MB`
+    },
+    diskBreakdown() {
+      const other = Number(this.stats.disk_other_mb) || 0
+      const free = Number(this.stats.disk_free_mb) || 0
+      return `其他 ${other.toFixed(1)} MB · 剩余 ${free.toFixed(1)} MB`
+    },
+    welcomeMessage() {
+      const proto = this.serverConfig?.server_protocol || 'http_https'
+      const ssl = this.serverConfig?.ssl_enabled || false
+      if (proto === 'https_only') return 'PersonalDAV 为您的数字生活保驾护航。您的数据已通过 HTTPS 加密连接安全同步。'
+      if (proto === 'http_https' && ssl) return 'PersonalDAV 为您的数字生活保驾护航。您的数据已通过加密连接安全同步。'
+      return 'PersonalDAV 为您的数字生活保驾护航。您的数据通过 HTTP 连接同步。'
     },
     uptime() {
       const s = Math.floor(this.stats.uptime || 0)
@@ -114,10 +176,10 @@ export default {
     },
     statDefs() {
       return [
-        { key: 'contacts_count', label: '联系人', icon: 'Users', bg: 'bg-blue', unit: '', trend: '' },
-        { key: 'events_count', label: '日程事件', icon: 'CalendarDays', bg: 'bg-green', unit: '', trend: '' },
-        { key: 'files_count', label: '存储文件', icon: 'FileText', bg: 'bg-orange', unit: '', trend: '' },
-        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: '+2%' },
+        { key: 'contacts_count', label: '联系人', icon: 'Users', bg: 'bg-blue', unit: '', trend: this.stats.trends?.contacts_count || '' },
+        { key: 'events_count', label: '日程事件', icon: 'CalendarDays', bg: 'bg-green', unit: '', trend: this.stats.trends?.events_count || '' },
+        { key: 'files_count', label: '存储文件', icon: 'FileText', bg: 'bg-orange', unit: '', trend: this.stats.trends?.files_count || '' },
+        { key: 'disk_used_mb', label: '空间占用', icon: 'HardDrive', bg: 'bg-purple', unit: ' MB', trend: this.stats.trends?.disk_used_mb || '' },
       ]
     },
   },
@@ -170,6 +232,12 @@ export default {
 .ring-fill { transition: stroke-dashoffset 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .disk-ring-text { position: absolute; font-size: 12px; font-weight: 800; color: var(--text-primary); }
 .stat-detail { font-size: 11px; color: var(--text-quaternary); margin-top: 2px; }
+.disk-legend { display: flex; gap: 10px; margin-top: 5px; font-size: 10px; color: var(--text-tertiary); flex-wrap: wrap; }
+.disk-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.disk-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot-used { background: var(--brand); }
+.dot-other { background: #b9c0ca; }
+.dot-free { background: #eef1f5; border: 1px solid #d5dae2; }
 
 .stat-num { font-size: 32px; font-weight: 800; color: var(--text-primary); line-height: 1.1; letter-spacing: -1px; }
 .stat-label { color: var(--text-secondary); font-size: 14px; margin-top: 4px; font-weight: 600; }
@@ -222,6 +290,7 @@ export default {
 }
 
 .status-ok { color: #52c41a; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.status-fail { color: var(--danger); display: flex; align-items: center; gap: 6px; font-weight: 700; }
 
 .welcome-card {
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-hover) 100%);

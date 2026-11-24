@@ -11,16 +11,16 @@ class ContactOut(BaseModel):
     email: str = ""
     phone: str = ""
     groups: str = ""
+    address: str = ""
+    org: str = ""
+    note: str = ""
+    photo: str = ""
     vcard: str = ""
     created_at: str = ""
     updated_at: str = ""
 
 
 class ContactCreate(BaseModel):
-    vcard_data: str
-
-
-class ContactStructuredCreate(BaseModel):
     full_name: str
     email: str = ""
     phone: str = ""
@@ -28,10 +28,18 @@ class ContactStructuredCreate(BaseModel):
     address: str = ""
     org: str = ""
     note: str = ""
+    photo: str = ""
 
 
 class ContactUpdate(BaseModel):
-    vcard_data: str
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    groups: str | None = None
+    address: str | None = None
+    org: str | None = None
+    note: str | None = None
+    photo: str | None = None
 
 
 class EventOut(BaseModel):
@@ -40,20 +48,45 @@ class EventOut(BaseModel):
     summary: str = ""
     dtstart: str = ""
     dtend: str = ""
+    all_day: bool = False
     description: str = ""
     location: str = ""
     categories: str = ""
+    rrule: str = ""
+    exdates: list[str] = []
+    reminders: list[dict] = []
+    attachments: list[dict] = []
     ical: str = ""
     created_at: str = ""
     updated_at: str = ""
 
 
 class EventCreate(BaseModel):
-    ical_data: str
+    summary: str
+    dtstart: str
+    dtend: str
+    all_day: bool = False
+    description: str = ""
+    location: str = ""
+    categories: str = ""
+    rrule: str = ""
+    exdates: list[str] = []
+    reminders: list[dict] = []
+    attachments: list[dict] = []
 
 
 class EventUpdate(BaseModel):
-    ical_data: str
+    summary: str | None = None
+    dtstart: str | None = None
+    dtend: str | None = None
+    all_day: bool | None = None
+    description: str | None = None
+    location: str | None = None
+    categories: str | None = None
+    rrule: str | None = None
+    exdates: list[str] | None = None
+    reminders: list[dict] | None = None
+    attachments: list[dict] | None = None
 
 
 class HealthOut(BaseModel):
@@ -72,7 +105,7 @@ class AuthTokenOut(BaseModel):
 class AuthTokenRequest(BaseModel):
     password: str
     fingerprint: str = ""
-    scopes: list[str] = ["contacts:read", "contacts:write", "events:read", "events:write", "dav:read", "dav:write"]
+    scopes: list[str] = []
 
 
 class ErrorOut(BaseModel):
@@ -89,6 +122,8 @@ class ServerConfigOut(BaseModel):
     mcp_port: int = 8100
     mcp_safety_mode: str = "confirm"
     mcp_readonly: bool = False
+    server_protocol: str = "http_https"
+    ssl_enabled: bool = False
 
 
 class AuthLogOut(BaseModel):
@@ -117,5 +152,10 @@ class StatsOut(BaseModel):
     files_count: int = 0
     disk_used_mb: float = 0.0
     disk_total_mb: float = 0.0
+    disk_other_mb: float = 0.0
+    disk_free_mb: float = 0.0
+    disk_over_quota: bool = False
+    mount_stats: list[dict] = Field(default_factory=list)
     uptime: float = 0.0
     version: str = ""
+    trends: dict[str, str] = Field(default_factory=dict)

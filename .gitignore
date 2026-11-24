@@ -201,6 +201,7 @@ cython_debug/
 .gemini/
 .opencode/
 graphify-out/
+.codegraph/
 docs/
 data/
 

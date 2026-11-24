@@ -10,10 +10,21 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 
 ## 功能特性
 
-- 🌐 **Web 管理界面** — 打开浏览器就能管理所有数据！无需安装任何软件。支持离线访问、日程桌面通知、拖拽上传文件、导入 .vcf/.ics 联系人/日程、图片预览放大缩小（支持触摸拖拽和缩放）、农历显示、主题色自定义、侧栏收缩、骨架屏加载动画、列表 FLIP 动画（v3.2 新增，v3.3 大幅增强）
-- 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式，支持头像照片
-- 📎 **事件附件** — 为日历事件添加文件或链接附件，支持 base64 内联存储
-- 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式，支持重复事件
+- 🌐 **Web 管理界面** — 打开浏览器就能管理所有数据！无需安装任何软件。支持离线访问、日程桌面通知、拖拽上传文件、导入 .vcf/.ics 联系人/日程、图片预览放大缩小（支持触摸拖拽和缩放）、农历显示、主题色自定义、侧栏收缩、骨架屏加载动画、列表 FLIP 动画（v3.2 新增，v3.3 大幅增强，v3.4 增加头像、双击编辑、回收站与全局搜索）
+- 🗑️ **文件回收站** — 删除的文件先放进回收站，可随时还原；支持设置保留天数，避免误删造成永久损失（v3.4 新增）
+- 🔍 **全局搜索** — 联系人和日程支持快速关键词搜索，输入即出结果（v3.4 新增）
+- 🔑 **应用专用密码** — 可以为不同程序单独生成访问密码，并限定只能读联系人、只能看日程等权限，还能设置有效期；已生成的密码可以修改权限、备注和有效期，也可以直接删除（v3.4 新增）
+- 🍎 **Apple 设备一键配置** — 生成配置文件并显示二维码，手机扫码即可安装；附 iPhone/iPad/Mac 安装与证书信任步骤（v3.4 新增）
+- 📄 **Office 文档预览** — 在文件管理中直接预览 Word、Excel、PPT 等文档，无需先下载（v3.4 新增）
+- ✍️ **文本预览与编辑** — txt、md、py、java、js 等文本文件可直接打开，带语法高亮、自动换行、编辑和保存功能（v3.4 新增）
+- 🗜️ **压缩包预览** — 打开 zip/tar/7z/rar 等压缩包查看内部结构，直接预览文本和图片；加密压缩包会按需询问密码，密码在当前标签页关闭前有效（v3.4 新增，rar 单文件提取需系统支持 unrar）
+- 🪪 **联系人/日程文件卡片** — 直接打开 .vcf/.ics 文件，用卡片形式显示并编辑联系人、日程信息（v3.4 新增）
+- 💽 **多磁盘/多目录管理** — 可以把多个磁盘或文件夹挂载到文件管理里，统一浏览和上传；每个挂载点可设置空间上限，概览页用圆环显示数据、其他占用和剩余空间（v3.4 完善）
+- 🧑 **联系人管理** — 创建、编辑、删除联系人，支持vCard格式、头像照片和按分组筛选
+- 📎 **事件附件** — 为日历事件添加文件或链接附件，附件独立存储，移动数据目录后也能正常打开
+- 📅 **日历事件管理** — 创建、编辑、删除日历事件，支持iCalendar格式、重复事件、例外日期和按分类筛选；月视图可一键回到今天
+- ⏰ **提醒预设** — 网页设置里维护常用提醒和默认提醒，新建日程自动带上，也可以从预设快速添加
+- 🔁 **重复日程例外** — 重复日程可以跳过指定日期，例如节假日不生成会议
 - 🔄 **CardDAV + CalDAV + WebDAV** — 通过HTTP提供标准DAV服务，支持手机/电脑客户端同步
 - 📤 **导入/导出** — 支持从vCard(.vcf)/iCalendar(.ics)文件或URL导入，支持导出选中数据
 - 🤖 **MCP 服务** — 支持 AI（opencode、Claude 等）直接通过 MCP 协议管理您的联系人和日历
@@ -24,13 +35,14 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 - 🔗 **远程连接** — GUI 可通过 `--remote` 参数连接到远程服务器，管理远端数据
 - 🔒 **SSL/TLS 支持** — 一键生成自签名证书，HTTP + HTTPS 双端口同时运行，兼容苹果设备同步
 - 🔒 **统一密码保护** — 一个密码同时保护 WebDAV 和 MCP 服务，支持 PBKDF2 安全加密
+- 🔑 **应用专用密码** — 为不同程序生成独立密码，可限定只读、只写某类数据，并设置有效期；这类密码不能连接 MCP
 - 🗜️ **数据库压缩** — 删除数据后空闲空间不浪费，可在设置页手动压缩或启动时自动整理
 - 🛡️ **IP 访问控制** — 白名单/黑名单/CIDR/通配符，支持本机免密码
 - 🔑 **URL 鉴权** — 附件下载链接带防伪签名，防止盗链和滥用
 - 🌐 **Referer 防盗链** — 只允许指定来源的请求访问，防止外部引用
 - 📡 **远程鉴权** — 将请求转发到外部服务验证，可对接自定义认证系统
 - 📋 **鉴权日志** — 登录成功/失败均有日志记录，可溯源
-- 📂 **FTP / FTFS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
+- 📂 **FTP / FTPS / SFTP 文件服务** — 一键启动文件传输服务器，支持端口和根目录配置
 - 🌐 **SMB / CIFS 网络共享** — 连接远程 SMB 服务器，浏览目录、挂载共享
 - 🌐 **WebDAV 文件服务 `/dav/`** — 通过 WebDAV 协议远程管理文件，支持 PROPFIND/GET/PUT/DELETE/MKCOL，新增多挂载点支持
 - 🗂️ **远程文件浏览器** — 图形化浏览 FTP/FTPS/SFTP/SMB 远程文件，支持上传下载删除重命名
@@ -46,7 +58,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 
 ### 前提条件
 
-- Python 3.10+
+- Python 3.12+
 
 ### 安装步骤
 
@@ -88,8 +100,9 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
    | `--port`, `-p` | 8000 | 监听端口 |
    | `--log-level` | INFO | 日志级别 (DEBUG/INFO/WARNING/ERROR/CRITICAL) |
    | `--log-json` | — | JSON 结构化日志输出 |
-   | `--db-path` | data/dav_data.db | 数据库路径 |
-   | `--dav-root` | ./dav_root | WebDAV 根目录 |
+   | `--db-path` | data/dav_data.db | 数据库路径（优先级最高） |
+   | `--data-dir` | — | 数据目录（数据库、日志、附件、回收站都放在这里） |
+   | `--dav-root` | — | 把这个目录注册为 WebDAV 挂载点（不填则不自动挂载） |
 
 5. 远程连接（GUI 连到远程服务器）：
    ```bash
@@ -102,7 +115,7 @@ PersonalDAV 是一个带图形界面和 Web 管理面板的全能 DAV 服务，�
 python tests/run_all.py
 ```
 
-依次执行：pytest 单元测试（23 项）→ MCP 内部工具测试（32 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）。
+依次执行：pytest 单元测试（52 项）→ MCP 内部工具测试（41 个工具）→ MCP HTTP 端到端测试（走 SSE 协议）→ MCP 鉴权测试（401/403/200 + 日志落盘）→ DAV 协议测试 → 无头环境与搜索检查。所有测试都使用临时数据库，不会改动您的真实数据。
 
 ## 使用指南
 
@@ -132,6 +145,7 @@ python tests/run_all.py
 1. 在"设置 → 安全设置"中：
     - 设置统一访问密码（PBKDF2 加密）
     - 复制 MCP 令牌供 AI 连接
+    - 生成应用专用密码：可限定权限和有效期，适合手机客户端、脚本或临时使用；这类密码不能连接 MCP
     - 配置 IP 黑白名单
     - 开启/关闭本机免密码
     - 配置指定 IP 免密码访问
@@ -157,6 +171,9 @@ python tests/run_all.py
 
 3. 如果设置了密码，还需要添加 `Authorization: Bearer <令牌>`（令牌从安全设置页复制）
 
+> [!IMPORTANT]
+> MCP 只接受安全设置页的 **MCP 主令牌**或密码登录。为其他程序生成的应用专用密码不能连接 MCP，避免低权限密码绕过权限限制。
+
 > [!NOTE]
 > 如果使用无界面模式（`main.py --headless` / `python -m personaldavd`），MCP 服务随主服务器自动启用，无需额外配置。
 
@@ -168,11 +185,19 @@ python tests/run_all.py
 |------|------|
 | `GET /api/health` | 服务器健康检查 |
 | `POST /api/auth/token` | 获取访问令牌 |
-| `GET /api/contacts` / `POST /api/contacts` | 联系人列表 / 创建 |
+| `GET /api/contacts` / `POST /api/contacts` | 联系人列表 / 创建（列表支持 `group` 分组筛选） |
+| `GET /api/contacts/groups` | 联系人分组列表（v3.4） |
 | `GET /api/events` / `POST /api/events` | 事件列表 / 创建 |
 | `GET /api/files` / `POST /api/files/upload` | 文件浏览 / 上传（v3.2） |
-| `GET /api/settings` / `PUT /api/settings/:key` | 设置读取 / 修改（v3.2） |
-| `GET /api/stats` | 服务器统计数据（v3.2） |
+| `GET/PUT /api/files/text` | 读取 / 保存文本文件（v3.4） |
+| `POST /api/files/archive/list` / `preview` / `extract` | 压缩包结构、内容预览与单文件提取（v3.4） |
+| `GET/PUT /api/files/card` | 联系人 / 日程文件解析与保存（v3.4） |
+| `GET /api/settings` / `PUT /api/settings/:key` | 设置读取 / 修改（v3.2，密码等敏感项已脱敏） |
+| `GET /api/stats` | 服务器统计数据与较昨日趋势（v3.4） |
+| `GET /api/trash` / `POST /api/trash/restore` | 回收站列表 / 还原（v3.4） |
+| `GET/POST /api/auth/tokens` | 应用专用密码的查看与创建（v3.4） |
+| `GET /api/apple/config` | 生成 Apple 设备配置文件（v3.4） |
+| `GET /api/apple/qr` | 生成 Apple 配置下载二维码（v3.4） |
 | `GET /api/auth/logs` | 鉴权日志查询（v3.2） |
 
 详细文档访问服务器后打开 `http://localhost:8000/api/docs`。
@@ -248,10 +273,11 @@ PersonalDAV/
 │   │   │   └── reminder.js  # 日程桌面通知轮询（v3.3）
 │   │   └── views/           # 登录/概览/联系人/日历/文件/设置
 │   └── package.json
-├── data/                    # 运行产物（自动创建）
+├── data/                    # 运行产物（自动创建，可随 --data-dir 移动）
 │   ├── dav_data.db          # SQLite 数据库
 │   ├── remote_connections.key # Fernet 加密密钥
-│   ├── attachments/         # 附件独立文件存储
+│   ├── calendar_attachments/# 日历附件独立文件存储
+│   ├── trash/               # 文件回收站（v3.4）
 │   └── log/                 # 日志文件
 ├── mcp_tools/               # MCP 工具模块（41 个工具，分文件管理）
 ├── models/                  # 数据模型层（dataclass）
@@ -262,12 +288,16 @@ PersonalDAV/
 │   ├── auth_service.py      # 统一鉴权（PBKDF2 + IP 访问控制）
 │   ├── file_mount_service.py# 多挂载点管理服务（v3.2 新增）
 │   ├── dav_client_service.py# WebDAV 客户端（远程挂载，v3.2 新增）
+│   ├── api_scopes.py        # 令牌作用域与路由权限映射（v3.4 新增）
+│   ├── api_token_service.py # 应用专用密码（v3.4 新增）
+│   ├── stats_service.py     # 多挂载统计与趋势（v3.4 新增）
+│   ├── trash_service.py     # 文件回收站（v3.4 新增）
 │   ├── mcp_server.py        # MCP SSE 服务器
 │   ├── ftp_service.py       # FTP/FTPS/SFTP/TFTP 服务器
 │   ├── sync_service.py      # Nextcloud 定时同步
 │   └── ...
 ├── network/                 # 网络层
-│   ├── dav_server.py        # CardDAV + CalDAV + WebDAV HTTP 服务
+│   ├── dav_server.py        # 旧版 DAV 服务（仅兼容旧测试/工具）
 │   ├── dav_client.py        # WebDAV 客户端（远程导入）
 │   └── webdav_helper.py     # XML 响应构建
 ├── ui/                      # 视图层（Tkinter）
@@ -278,9 +308,11 @@ PersonalDAV/
 ├── utils/                   # 工具层
 │   ├── validators.py        # 端口/IP/密码强度校验
 │   ├── attachment_store.py  # 附件文件存储管理
+│   ├── path_helper.py       # 数据目录路径解析（v3.4）
+│   ├── server_registry.py   # GUI/无头/MCP 共享服务器实例（v3.4）
 │   ├── crypto.py            # Fernet 加密
 │   └── ...
-└── tests/                   # 测试（pytest + MCP 集成 + 鉴权测试）
+└── tests/                   # 测试（pytest + MCP + 鉴权 + 无头环境）
 ```
 
 ```mermaid
@@ -324,7 +356,7 @@ graph TB
 
     subgraph Data["数据层"]
         DB[("SQLite (WAL)")]
-        FS[("文件系统<br/>attachments/")]
+        FS[("文件系统<br/>calendar_attachments/ + trash/")]
     end
 
     WebUI -->|HTTP| REST
@@ -360,6 +392,8 @@ graph TB
 - 该服务仅设计用于本地网络或个人使用
 - 开启密码后请妥善保管，密码丢失无法找回
 - 请勿在公共网络环境中使用，建议配合 IP 白名单 + 强密码
+- RAR 压缩包的结构浏览可用，但解压或提取文件需要系统已安装 `unrar`；打包版 EXE 不内置该工具
+- Office 预览的 LibreOffice / ONLYOFFICE 模式需要额外安装对应软件或服务，微软 Office Online 模式需要文件所在地址能被公网访问
 
 ## 贡献
 
@@ -382,12 +416,19 @@ graph TB
 
 ```bash
 pip install -e ".[dev]"
-python tests/run_all.py   # pytest 23 项 + MCP 测试 + 鉴权测试
+python tests/run_all.py   # pytest 52 项 + MCP 测试 + 鉴权测试 + 无头检查
 ```
+
+### 发布流程
+
+1. 推送开发分支，等待 GitHub Actions 测试通过
+2. 在 Actions 页面手动运行 CI，勾选 `package`，下载构建出的 EXE 验收
+3. 验收通过后再打 `v*` 标签，由 Actions 生成 Draft Release
+4. 确认 Release 内容后手动发布；如果发布后发现问题，用补丁版本（如 `v3.4.1`）修复，不移动旧标签
 
 ### 代码规范
 
-- Python 3.10+，使用类型注解
+- Python 3.12+，使用类型注解
 - 新代码须通过 `mypy --strict` 检查
 - 导入顺序：标准库 → 第三方 → 本地模块
 - 类名 `PascalCase`，函数/变量 `snake_case`

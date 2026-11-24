@@ -4,10 +4,12 @@ import router from './router/index.js'
 import { startReminderCheck } from './services/reminder.js'
 import { showToast } from './utils/toast.js'
 import { showConfirm } from './utils/confirm.js'
+import { showPrompt } from './utils/prompt.js'
 import './theme.css'
 
 window.showToast = showToast
 window.showConfirm = showConfirm
+window.showPrompt = showPrompt
 
 function applySavedTheme() {
   try {

@@ -10,13 +10,23 @@ from fastapi import APIRouter, Request, Response
 from services.contact_service import ContactService
 from services.event_service import EventService
 from services.settings_service import SettingsService
-from utils.attachment_store import ATTACHMENTS_DIR
+from utils.attachment_store import get_attachments_dir
 
 dav_router = APIRouter(tags=["DAV 协议"])
 
 
 def _etag(raw: str) -> str:
     return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
+
+def _file_etag(fs_path: str) -> str:
+    h = hashlib.md5()
+    with open(fs_path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return f'"{h.hexdigest()}"'
 
 
 def _ctag(service) -> str:
@@ -110,7 +120,7 @@ async def contacts_handler(request: Request, rest: str = ""):
 
     if method == "PROPFIND":
         depth = request.headers.get("Depth", "0")
-        is_collection = path.endswith("/contacts") or path.endswith("/contacts/") or (not path.endswith(".vcf"))
+        is_collection = path.endswith("/contacts") or path.endswith("/contacts/")
         if is_collection:
             responses = [(path + "/", "", "", "httpd/unix-directory", 0)]
             if depth != "0":
@@ -202,7 +212,7 @@ async def events_handler(request: Request, rest: str = ""):
 
     if method == "PROPFIND":
         depth = request.headers.get("Depth", "0")
-        is_collection = path.endswith("/events") or path.endswith("/events/") or (not path.endswith(".ics"))
+        is_collection = path.endswith("/events") or path.endswith("/events/")
         if is_collection:
             responses = [(path + "/", "", "", "httpd/unix-directory", 0)]
             if depth != "0":
@@ -245,8 +255,9 @@ async def events_handler(request: Request, rest: str = ""):
 @dav_router.api_route("/attachments/{filename}", methods=["GET", "HEAD"], include_in_schema=False)
 async def attachment_asgi(request: Request, filename: str):
     """附件下载 — 返回日历事件中引用的附件文件。"""
-    safe_path = os.path.normpath(os.path.join(ATTACHMENTS_DIR, os.path.basename(filename)))
-    if not safe_path.startswith(os.path.normpath(ATTACHMENTS_DIR)):
+    attachments_dir = get_attachments_dir()
+    safe_path = os.path.normpath(os.path.join(attachments_dir, os.path.basename(filename)))
+    if not safe_path.startswith(os.path.normpath(attachments_dir)):
         return Response("Forbidden", status_code=403)
     if not os.path.isfile(safe_path):
         return Response("Not found", status_code=404)
@@ -353,10 +364,9 @@ async def webdav_handler(request: Request, rest: str = ""):
             fs_path = _resolve(rest)
         except ValueError:
             return Response("Forbidden", status_code=403)
-        if os.path.isdir(fs_path):
-            shutil.rmtree(fs_path)
-        elif os.path.isfile(fs_path):
-            os.remove(fs_path)
+        if os.path.exists(fs_path):
+            from services.trash_service import TrashService
+            TrashService.delete(fs_path, f"/dav/{rest}")
         else:
             return Response("Not found", status_code=404)
         return Response(status_code=204)
@@ -384,8 +394,7 @@ async def webdav_handler(request: Request, rest: str = ""):
         depth = request.headers.get("Depth", "0")
         responses = []
         if os.path.isfile(fs_path):
-            with open(fs_path, "rb") as f:
-                etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
+            etag_v = _file_etag(fs_path)
             s = os.stat(fs_path)
             responses.append((href_base, "", etag_v, "application/octet-stream", s.st_size))
         else:
@@ -398,8 +407,7 @@ async def webdav_handler(request: Request, rest: str = ""):
                     if os.path.isdir(child):
                         responses.append((href, "", "", "httpd/unix-directory", 0))
                     else:
-                        with open(child, "rb") as f:
-                            etag_v = f'"{hashlib.md5(f.read()).hexdigest()}"'
+                        etag_v = _file_etag(child)
                         responses.append((href, "", etag_v, "application/octet-stream", s.st_size))
         xml = _multistatus_xml(responses)
         return Response(content=xml, media_type="text/xml; charset=utf-8", status_code=207)

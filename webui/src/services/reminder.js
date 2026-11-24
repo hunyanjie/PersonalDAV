@@ -1,12 +1,9 @@
 import api from '../api.js'
+import { pad } from '../utils/format.js'
 
 const CHECK_INTERVAL = 60000
 const LOOKAHEAD_MINUTES = 15
 const _notified = new Set()
-
-function pad(n) {
-  return String(n).padStart(2, '0')
-}
 
 function toYMD(d) {
   return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`

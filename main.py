@@ -2,15 +2,24 @@ import argparse
 import logging
 import os
 import shutil
+import sys
 import base64
 
-def _migrate_old_files():
-    os.makedirs("data/log", exist_ok=True)
+# PyInstaller -w（无控制台）打包后 sys.stdout/stderr 为 None，
+# 直接交给 logging/uvicorn 会抛异常并让程序以退出码 1 结束。
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
+def _migrate_old_files(target_dir: str = "data"):
+    os.makedirs(os.path.join(target_dir, "log"), exist_ok=True)
 
     old_files = {
-        "dav_data.db": "data/dav_data.db",
-        "dav_data.db.bak": "data/dav_data.db.bak",
-        "remote_connections.key": "data/remote_connections.key",
+        "dav_data.db": os.path.join(target_dir, "dav_data.db"),
+        "dav_data.db.bak": os.path.join(target_dir, "dav_data.db.bak"),
+        "remote_connections.key": os.path.join(target_dir, "remote_connections.key"),
     }
     for old, new in old_files.items():
         if os.path.isfile(old) and not os.path.isfile(new):
@@ -21,7 +30,7 @@ def _migrate_old_files():
                 logging.getLogger(__name__).warning(f"迁移 {old} 失败: {e}")
 
     old_log = "dav_server.log"
-    new_log = "data/log/dav_server.log"
+    new_log = os.path.join(target_dir, "log", "dav_server.log")
     if os.path.isfile(old_log) and not os.path.isfile(new_log):
         try:
             shutil.copy2(old_log, new_log)
@@ -34,15 +43,15 @@ def _migrate_old_files():
         s = SettingsService()
         cur = s.get_setting("data_dir", "")
         if not cur:
-            s.set_setting("data_dir", "data")
-            logging.getLogger(__name__).info("已设置 data_dir = data")
+            s.set_setting("data_dir", target_dir)
+            logging.getLogger(__name__).info(f"已设置 data_dir = {target_dir}")
     except Exception as e:
         logging.getLogger(__name__).warning(f"设置 data_dir 失败: {e}")
 
 
-def _migrate_attachment_folder():
+def _migrate_attachment_folder(target_dir: str = "data"):
     old_dir = os.path.join("data", "attachments")
-    new_dir = os.path.join("data", "calendar_attachments")
+    new_dir = os.path.join(target_dir, "calendar_attachments")
     if os.path.isdir(old_dir) and not os.path.isdir(new_dir):
         try:
             os.makedirs(new_dir, exist_ok=True)
@@ -52,7 +61,7 @@ def _migrate_attachment_folder():
                 if os.path.isfile(src):
                     shutil.move(src, dst)
             os.rmdir(old_dir)
-            logging.getLogger(__name__).info("附件目录已迁移: data/attachments -> data/calendar_attachments")
+            logging.getLogger(__name__).info(f"附件目录已迁移: {old_dir} -> {new_dir}")
         except Exception as e:
             logging.getLogger(__name__).warning(f"附件目录迁移失败: {e}")
 
@@ -140,6 +149,10 @@ def main():
         if args.log_level:
             cfg.log_level = args.log_level
         cfg.log_json = args.log_json
+        if args.data_dir:
+            cfg.data_dir = args.data_dir
+            if not args.db_path:
+                cfg.db_path = os.path.join(args.data_dir, "dav_data.db")
         if args.db_path:
             cfg.db_path = args.db_path
         if args.dav_root:
@@ -156,8 +169,14 @@ def main():
         from database.db_manager import Database
         Database(db_path=db_path)
 
-    _migrate_old_files()
-    _migrate_attachment_folder()
+    from services.settings_service import SettingsService
+    if args.data_dir:
+        # 数据库路径已经确定后再写入 data_dir，供附件/回收站/日志使用。
+        SettingsService().set_setting("data_dir", args.data_dir)
+    target_data_dir = args.data_dir or SettingsService().get_setting("data_dir", "data") or "data"
+
+    _migrate_old_files(target_data_dir)
+    _migrate_attachment_folder(target_data_dir)
     _migrate_inline_attachments()
 
     from tkinterdnd2 import TkinterDnD

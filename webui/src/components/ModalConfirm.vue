@@ -10,7 +10,8 @@
           <slot>{{ message }}</slot>
         </div>
         <div class="modal-footer">
-          <button class="btn-sm" @click="onCancel">{{ cancelText }}</button>
+          <button v-if="showCancel" class="btn-sm" @click="onCancel">{{ cancelText }}</button>
+          <button v-if="extraText" class="btn-sm" @click="onExtra">{{ extraText }}</button>
           <button class="btn-sm" :class="'btn-' + type" @click="onConfirm" ref="confirmBtn">{{ confirmText }}</button>
         </div>
       </div>
@@ -28,8 +29,10 @@ export default {
     type: { type: String, default: 'info' },
     confirmText: { type: String, default: '确定' },
     cancelText: { type: String, default: '取消' },
+    extraText: { type: String, default: null },
+    showCancel: { type: Boolean, default: true },
   },
-  emits: ['confirm', 'cancel', 'update:visible'],
+  emits: ['confirm', 'cancel', 'extra', 'update:visible'],
   components: { AlertTriangle, AlertCircle, Info, CheckCircle },
   computed: {
     iconComp() {
@@ -47,6 +50,7 @@ export default {
   methods: {
     onConfirm() { this.$emit('confirm'); this.close() },
     onCancel() { this.$emit('cancel'); this.close() },
+    onExtra() { this.$emit('extra'); this.close() },
     close() { this.$emit('update:visible', false) },
   },
 }

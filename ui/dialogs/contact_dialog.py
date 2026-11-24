@@ -446,6 +446,7 @@ class ContactDialog(tk.Toplevel):
             if k and k.upper() not in STANDARD_VCARD_FIELDS + ['X-PHONETIC-FIRST-NAME', 'X-PHONETIC-LAST-NAME']:
                 try: v.add(k.lower()).value = val
                 except Exception:
+                    from utils.logger import logger
                     logger.debug("忽略异常")
 
         vobject.vcard.wacky_apple_photo_serialize = False

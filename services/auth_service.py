@@ -394,9 +394,9 @@ class AuthService:
             expected = AuthService._compute_hash(prev, r[1], r[2], r[3], r[4] or "", r[5] or "")
             if expected != r[7]:
                 broken.append({"id": r[0], "expected": expected, "actual": r[7]})
-            prev = r[7]
             if r[6] != "0" and r[6] != prev:
                 broken.append({"id": r[0], "type": "prev_hash_mismatch", "expected_prev": prev, "stored_prev": r[6]})
+            prev = r[7]
         return broken
 
     def get_auth_logs_filtered(self, protocol: str = "", limit: int = 500) -> list[dict]:

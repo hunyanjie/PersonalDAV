@@ -1,15 +1,30 @@
 import os
 import uuid
 import base64
-import shutil
-from typing import BinaryIO
 from utils.logger import logger
 
-ATTACHMENTS_DIR = os.path.join("data", "calendar_attachments")
+
+def get_attachments_dir() -> str:
+    """返回当前数据目录下的日历附件目录（随 data_dir 设置变化）。"""
+    from utils.path_helper import resolve_data_path
+    path = resolve_data_path("calendar_attachments")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
-def _ensure_dir():
-    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+def _resolve_path(filepath: str) -> str:
+    """兼容旧记录中写死的 data/calendar_attachments/... 路径。"""
+    if not filepath:
+        return filepath
+    if os.path.isfile(filepath):
+        return filepath
+    # 旧记录可能保存的是相对路径；先按原始路径找，再按文件名回落到当前附件目录。
+    from utils.path_helper import resolve_data_path
+    candidate = resolve_data_path(filepath)
+    if os.path.isfile(candidate):
+        return candidate
+    fallback = os.path.join(get_attachments_dir(), os.path.basename(filepath))
+    return fallback if os.path.isfile(fallback) else filepath
 
 
 def _ext(ext: str) -> str:
@@ -17,10 +32,10 @@ def _ext(ext: str) -> str:
 
 
 def save(data: bytes, filename: str, fmttype: str = "application/octet-stream") -> dict:
-    _ensure_dir()
+    attachments_dir = get_attachments_dir()
     uid = str(uuid.uuid4())
     _, e = os.path.splitext(filename)
-    dest = os.path.join(ATTACHMENTS_DIR, f"{uid}{_ext(e)}")
+    dest = os.path.join(attachments_dir, f"{uid}{_ext(e)}")
     with open(dest, "wb") as f:
         f.write(data)
     size = len(data)
@@ -29,7 +44,7 @@ def save(data: bytes, filename: str, fmttype: str = "application/octet-stream") 
 
 
 def read(record: dict) -> bytes | None:
-    fp = record.get("filepath", "")
+    fp = _resolve_path(record.get("filepath", ""))
     if not fp or not os.path.isfile(fp):
         return None
     try:
@@ -40,7 +55,7 @@ def read(record: dict) -> bytes | None:
 
 
 def delete(record: dict):
-    fp = record.get("filepath", "")
+    fp = _resolve_path(record.get("filepath", ""))
     if fp and os.path.isfile(fp):
         try:
             os.remove(fp)

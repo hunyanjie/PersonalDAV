@@ -6,6 +6,9 @@
           <button class="btn-icon" @click="monthOffset-=12" title="上一年"><ChevronsLeft :size="18" /></button>
           <button class="btn-nav" @click="monthOffset--"><ChevronLeft :size="18" /> <span class="hide-mobile">上月</span></button>
           <span class="month-label">{{ year }} 年 {{ month }} 月</span>
+          <button class="btn-nav btn-today" @click="goToday" title="回到今天">
+            <CalendarDays :size="18" /> <span>今天</span>
+          </button>
           <button class="btn-nav" @click="monthOffset++"><span class="hide-mobile">下月</span> <ChevronRight :size="18" /></button>
           <button class="btn-icon" @click="monthOffset+=12" title="下一年"><ChevronsRight :size="18" /></button>
         </div>
@@ -16,6 +19,10 @@
           <Search :size="16" class="search-icon" />
           <input v-model="searchQuery" class="search-input" placeholder="搜索日程..." @input="doSearch" />
         </div>
+        <select v-model="categoryFilter" class="cat-select" title="按分类筛选">
+          <option value="">全部分类</option>
+          <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+        </select>
       </div>
       
       <div class="toolbar-right">
@@ -49,7 +56,8 @@
             <tr v-for="(week, wi) in weeks" :key="wi">
               <td v-for="(day, di) in week" :key="di"
                 :class="cellClass(day)"
-                @click="day.current && selectDay(day)">
+                @click="day.current && selectDay(day)"
+                @dblclick="day.current && openDayEvents(day)">
                 <div class="day-cell-content">
                   <div class="day-num">{{ day.day }}</div>
                   <div class="event-dots">
@@ -127,43 +135,22 @@
       </div>
     </transition>
 
-    <!-- Detail Modal -->
-    <transition name="modal">
-      <div v-if="detailEvent" class="modal-overlay" @click.self="detailEvent = null">
-        <div class="modal-card glass no-transition">
-          <div class="modal-header">
-            <h3>{{ detailEvent.summary || '(无标题)' }}</h3>
-            <button class="btn-close-circle" @click="detailEvent = null"><X :size="20" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="modal-row">
-              <Clock :size="18" class="row-icon" />
-              <div class="row-content">
-                <div class="row-val">{{ formatTime(detailEvent.dtstart) }} - {{ formatTime(detailEvent.dtend) }}</div>
-                <div class="row-label">{{ formatDateFull(detailEvent.dtstart) }}</div>
-              </div>
-            </div>
-            <div v-if="detailEvent.location" class="modal-row">
-              <MapPin :size="18" class="row-icon" />
-              <div class="row-content"><div class="row-val">{{ detailEvent.location }}</div></div>
-            </div>
-            <div v-if="detailEvent.categories" class="modal-row">
-              <Layers :size="18" class="row-icon" />
-              <div class="row-content"><div class="row-val">{{ detailEvent.categories }}</div></div>
-            </div>
-            <div v-if="detailEvent.description" class="modal-row">
-              <FileText :size="18" class="row-icon" />
-              <div class="row-content"><div class="row-val desc-text">{{ detailEvent.description }}</div></div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-action" @click="exportSingle(detailEvent)"><Share2 :size="14" /> 导出</button>
-            <router-link :to="`/calendar/${detailEvent.uid}/edit`" class="btn-action"><Pencil :size="14" /> 编辑</router-link>
-            <button class="btn-action btn-danger" @click="deleteSingle(detailEvent)"><Trash2 :size="14" /> 删除</button>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <!-- Detail Overlay -->
+    <EventDetailModal
+      :visible="!!detailEvent"
+      :event="detailEvent"
+      @close="detailEvent = null"
+      @edit="onDetailEdit"
+      @delete="deleteSingle(detailEvent)"
+      @export="exportSingle"
+    />
+
+    <ScheduleEditModal 
+      :visible="!!editModal" 
+      :eventId="editModal?.isNew ? null : editModal?.uid"
+      @close="editModal = null" 
+      @save="onEventSaved" 
+    />
   </div>
 </template>
 
@@ -171,18 +158,14 @@
 import { 
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
   Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
-  MapPin, Layers, FileText, X, Calendar as CalendarIcon
+  MapPin, Layers, FileText, X, Calendar as CalendarIcon, File, Tag, Pencil, Trash2
 } from 'lucide-vue-next'
+
 import api from '../api.js'
-
-function pad(n) { return String(n).padStart(2, '0') }
-
-function icalDateToObj(s) {
-  if (!s) return null
-  const m = s.match(/^(\d{4})-?(\d{2})-?(\d{2})[T ]?(\d{2}):?(\d{2})?(:\d{2})?/)
-  if (!m) return null
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4] || 0, +(m[5] || 0), 0)
-}
+import ScheduleEditModal from '../components/ScheduleEditModal.vue'
+import EventDetailModal from '../components/EventDetailModal.vue'
+import { icalDateToObj, eventStatus, parseAttachments } from '../utils/ical.js'
+import { pad } from '../utils/format.js'
 
 function icalDateToStr(s) {
   if (!s) return ''
@@ -197,28 +180,24 @@ function eventSpansDate(e, dateStr) {
   return dateStr >= start && dateStr <= end
 }
 
+function splitCategories(value) {
+  return String(value || '').split(/[;,；，]/).map(s => s.trim()).filter(Boolean)
+}
+
 function toHours(d) {
   if (!d) return 0
   return d.getHours() + d.getMinutes() / 60
-}
-
-function eventStatus(e, now) {
-  const st = icalDateToObj(e.dtstart)
-  const et = icalDateToObj(e.dtend)
-  if (!st || !et) return 'upcoming'
-  if (now > et) return 'ended'
-  if (now >= st && now <= et) return 'ongoing'
-  return 'upcoming'
 }
 
 export default {
   components: { 
     ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, 
     Download, Plus, AlertCircle, CalendarDays, Share2, Clock, 
-    MapPin, Layers, FileText, X, CalendarIcon
+    MapPin, Layers, FileText, X, CalendarIcon, ScheduleEditModal, EventDetailModal
   },
   data: () => ({
-    events: [],
+    allEvents: [],
+    categoryFilter: '',
     monthOffset: 0,
     selectedDay: null,
     searchQuery: '',
@@ -226,6 +205,7 @@ export default {
     _searchTimer: null,
     errorMsg: '',
     detailEvent: null,
+    editModal: null,
     selectedUids: [],
     ctxMenu: { show: false, x: 0, y: 0, uids: [] },
     currentTime: new Date(),
@@ -241,6 +221,15 @@ export default {
     monthOffset() { this.selectedDay = null; this.load() },
   },
   computed: {
+    events() {
+      if (!this.categoryFilter) return this.allEvents
+      return this.allEvents.filter(e => splitCategories(e.categories).includes(this.categoryFilter))
+    },
+    categories() {
+      const values = new Set()
+      this.allEvents.forEach(e => splitCategories(e.categories).forEach(c => values.add(c)))
+      return [...values].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    },
     now() { return this.currentTime },
     todayStr() {
       const d = this.currentTime
@@ -256,6 +245,12 @@ export default {
       return this.selectedDay && this.selectedDay.year === this.todayDate.year
         && this.selectedDay.month === this.todayDate.month
         && this.selectedDay.day === this.todayDate.day
+    },
+    selectedEvent() {
+      if (this.selectedUids.length !== 1) return null
+      const e = this.events.find(x => x.uid === this.selectedUids[0])
+      if (!e) return null
+      return { ...e, attachments: parseAttachments(e.ical) }
     },
     weeks() {
       const y = this.calNow.getFullYear(), m = this.calNow.getMonth()
@@ -308,9 +303,9 @@ export default {
       const { from, to } = this.monthRange()
       try {
         const res = await api.listEvents(0, 500, from, to)
-        this.events = Array.isArray(res) ? res : (res.items || [])
+        this.allEvents = Array.isArray(res) ? res : (res.items || [])
       } catch (e) {
-        this.events = []
+        this.allEvents = []
         this.errorMsg = '加载日程失败'
       }
       this.selectToday()
@@ -330,6 +325,10 @@ export default {
       this.selectedDay = { year: this.year, month: this.month, day: day.day }
       this.selectedUids = []
       this.ctxMenu.show = false
+    },
+    openDayEvents(day) {
+      const dateStr = `${this.year}-${String(this.month+1).padStart(2,'0')}-${String(day.day).padStart(2,'0')}`
+      this.$router.push(`/schedule?date=${dateStr}`)
     },
     cellClass(day) {
       return {
@@ -351,7 +350,7 @@ export default {
       this._searchTimer = setTimeout(() => {
         if (this.searchQuery.trim()) {
           api.searchEvents(this.searchQuery, '', '', 0, 500).then(results => {
-            this.events = Array.isArray(results) ? results : (results.items || [])
+            this.allEvents = Array.isArray(results) ? results : (results.items || [])
             this.selectedDay = null
           }).catch(() => { this.errorMsg = '搜索失败' })
         } else {
@@ -366,6 +365,17 @@ export default {
       const target = { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() }
       this.monthOffset = (target.year - new Date().getFullYear()) * 12 + (target.month - 1 - new Date().getMonth())
       this.$nextTick(() => { this.selectedDay = target })
+    },
+    goToday() {
+      const now = new Date()
+      const target = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }
+      const changedMonth = this.monthOffset !== 0
+      this.searchQuery = ''
+      this.jumpDate = ''
+      this.monthOffset = 0
+      this.selectedDay = target
+      this.selectedUids = []
+      if (!changedMonth) this.load()
     },
     eventLeft(e) {
       const st = icalDateToObj(e.dtstart)
@@ -403,6 +413,7 @@ export default {
       return d ? d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }) : ''
     },
     onCardClick(e, ev) {
+      console.log('Calendar: Card clicked', e);
       if (ev.ctrlKey || ev.metaKey) {
         const idx = this.selectedUids.indexOf(e.uid)
         if (idx >= 0) this.selectedUids.splice(idx, 1); else this.selectedUids.push(e.uid)
@@ -415,46 +426,58 @@ export default {
       this.ctxMenu = { show: true, x: ev.clientX, y: ev.clientY, uids: [...this.selectedUids] }
     },
     onClickAway() { this.ctxMenu.show = false },
-    openDetail(e) { this.detailEvent = e; this.ctxMenu.show = false },
-    _toICS(events) {
-      const vevents = events.map(e => [
-        'BEGIN:VEVENT', `UID:${e.uid || ''}`,
-        `DTSTART:${(e.dtstart || '').replace(/[-:]/g, '')}`,
-        `DTEND:${(e.dtend || '').replace(/[-:]/g, '')}`,
-        `SUMMARY:${e.summary || ''}`,
-        e.description ? `DESCRIPTION:${e.description}` : '',
-        'END:VEVENT',
-      ].filter(Boolean).join('\r\n')).join('\r\n')
-      return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${vevents}\r\nEND:VCALENDAR`
+    openDetail(e) {
+      this.detailEvent = { ...e, attachments: parseAttachments(e.ical) }
+      this.ctxMenu.show = false
     },
-    _downloadIcs(content, name) {
-      const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
-      const url = URL.createObjectURL(blob); const a = document.createElement('a')
-      a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url)
+    async exportDay() {
+      const uids = this.dayEvents.map(e => e.uid).filter(Boolean)
+      if (!uids.length) return
+      await api.exportEventsIcs({ uids: uids.join(',') })
     },
-    exportDay() { this._downloadIcs(this._toICS(this.dayEvents), `日程_${this.todayStr}.ics`) },
-    exportSingle(e) { this._downloadIcs(this._toICS([e]), `${e.summary || '日程'}.ics`); this.detailEvent = null },
-    exportSelected() {
-      const items = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid))
-      this._downloadIcs(this._toICS(items), `日程_${Date.now()}.ics`); this.ctxMenu.show = false
+    async exportSingle(e) {
+      this.detailEvent = null
+      await api.exportEventsIcs({ uids: e.uid })
     },
-    editSelected() { if (this.ctxMenu.uids.length === 1) this.$router.push(`/calendar/${this.ctxMenu.uids[0]}/edit`) },
+    async exportSelected() {
+      const uids = this.dayEvents.filter(x => this.ctxMenu.uids.includes(x.uid)).map(e => e.uid).filter(Boolean)
+      if (!uids.length) return
+      this.ctxMenu.show = false
+      await api.exportEventsIcs({ uids: uids.join(',') })
+    },
+    onEventSaved() {
+      this.editModal = null
+      this.load()
+    },
+    onDetailEdit(e) {
+      console.log('Calendar: onDetailEdit triggered. Event:', e);
+      if (!e || !e.uid) {
+        console.error('Calendar: Event UID is missing!');
+        return;
+      }
+      this.editModal = { uid: e.uid, isNew: false }
+      this.detailEvent = null
+      console.log('Calendar: editModal set to:', this.editModal);
+    },
     async deleteSelected() {
       if (!await window.showConfirm({ message: `确认删除选中的 ${this.ctxMenu.uids.length} 个日程？`, type: 'danger' })) return
-      Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid))).then(() => { this.ctxMenu.show = false; this.load() })
+      try {
+        await Promise.all(this.ctxMenu.uids.map(uid => api.deleteEvent(uid)))
+        this.ctxMenu.show = false; this.load()
+      } catch(e) { window.showToast('删除失败', 'error') }
     },
     async deleteSingle(e) {
       if (!await window.showConfirm({ message: '确认删除此日程？', type: 'danger' })) return
-      api.deleteEvent(e.uid).then(() => { this.detailEvent = null; this.load() })
+      try {
+        await api.deleteEvent(e.uid)
+        this.detailEvent = null; this.load()
+      } catch(e) { window.showToast('删除失败', 'error') }
     },
     async doImportICS(e) {
       const file = e.target.files[0]; if (!file) return
       try {
-        const text = await file.text(); const blocks = text.split(/(?=BEGIN:VEVENT)/).filter(Boolean)
-        for (const block of blocks) {
-          const ical = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalDAV//CN\r\n${block.trim()}\r\nEND:VCALENDAR`
-          await api.createEvent(ical)
-        }
+        const text = await file.text()
+        await api.importEventIcs(text)
         this.load()
       } catch(e) { window.showToast('导入失败', 'error') }
       e.target.value = ''
@@ -485,7 +508,7 @@ export default {
 
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 12px; }
 .action-group { display: flex; flex: 1; gap: 8px; }
-.toolbar-center { flex: 1; display: flex; justify-content: center; min-width: 240px; }
+.toolbar-center { flex: 1; display: flex; justify-content: center; align-items: center; gap: 10px; min-width: 240px; }
 
 .nav-controls { display: flex; align-items: center; gap: 8px; }
 .btn-nav, .btn-icon, .btn-tool { 
@@ -516,6 +539,7 @@ export default {
 .search-shell {
   display: flex;
   align-items: center;
+  flex: 1;
   width: 100%;
   max-width: 400px;
   position: relative;
@@ -524,6 +548,17 @@ export default {
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); }
 .search-input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 14px; outline: none; background: #fafafa; transition: all .2s; }
 .search-input:focus { border-color: var(--brand); background: white; box-shadow: 0 0 0 3px var(--brand-ring); }
+.cat-select {
+  padding: 10px 12px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  background: #fafafa;
+  color: var(--text-primary);
+  font-size: 14px;
+  max-width: 160px;
+  cursor: pointer;
+}
+.cat-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
 .date-input { padding: 9px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-md); font-size: 13px; outline: none; background: #fafafa; }
 
 .calendar-grid-wrapper { 
@@ -593,8 +628,8 @@ export default {
 .search-results-panel { padding: 24px; background: var(--bg-card); border-radius: var(--radius-lg); display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; border: 1px solid var(--border-base); }
 .card-date { font-size: 13px; color: var(--brand); margin-top: 8px; font-weight: 700; display: inline-block; }
 
-.ctx-menu { position: fixed; z-index: 3000; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border: 1px solid var(--border-base); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; padding: 8px; border: 1px solid rgba(0,0,0,0.05); }
-.ctx-item { padding: 12px 16px; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 12px; border-radius: var(--radius-sm); color: var(--text-secondary); font-weight: 500; transition: .2s; }
+.ctx-menu { position: fixed; z-index: 1100; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 6px; min-width: 150px; border: 1px solid var(--border-base); }
+.ctx-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; color: var(--text-secondary); transition: background-color .2s, color .2s, transform .2s; }
 .ctx-item:hover { background: var(--brand); color: white; transform: translateX(4px); }
 .ctx-divider { height: 1px; background: var(--border-base); margin: 4px 0; }
 .ctx-item.danger:hover { background: var(--danger); }
@@ -656,4 +691,29 @@ button:active, .btn-icon:active, .btn-nav:active, .btn-tool:active { transform: 
   .modal-card { min-width: 100vw; height: 100vh; border-radius: 0; margin: 0; }
   .event-cards { grid-template-columns: 1fr; }
 }
+
+/* Detail panel CSS (from Schedule.vue) */
+
+.detail-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:2000; backdrop-filter:blur(8px); }
+.detail-box { background:white; border-radius:var(--radius-xl); width:100%; max-width:500px; max-height:90vh; overflow-y:auto; box-shadow:var(--shadow-xl); border:1px solid var(--glass-border); position:relative; padding:32px; }
+.close-btn { background:transparent; border:none; padding:4px; color:var(--text-tertiary); cursor:pointer; transition:.2s cubic-bezier(0.4,0,0.2,1); display:flex; position:absolute; top:20px; right:20px; z-index:10; }
+.close-btn:hover { color:var(--text-primary); transform:rotate(90deg); }
+.detail-header h2 { margin:0; font-size:22px; color:var(--text-primary); line-height:1.3; padding-right:32px; }
+.detail-meta { margin-top:12px; }
+.meta-tag { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; background:var(--bg-hover); border-radius:20px; font-size:12px; color:var(--text-secondary); font-weight:500; }
+.detail-body { margin-top:32px; display:flex; flex-direction:column; gap:28px; }
+.detail-row { display:flex; gap:20px; }
+.detail-icon { color:var(--brand); flex-shrink:0; margin-top:2px; opacity:0.8; }
+.row-content { flex:1; }
+.time-range { font-weight:700; font-size:18px; color:var(--text-primary); }
+.date-val { color:var(--text-secondary); font-size:14px; margin-top:2px; font-weight:500; }
+.row-val { font-size:15px; color:var(--text-primary); line-height:1.5; }
+.desc-text { white-space:pre-wrap; word-break:break-all; color:var(--text-secondary); }
+.detail-footer { margin-top:48px; border-top:1px solid var(--border-base); padding-top:24px; display:flex; flex-wrap:wrap; gap:10px; }
+.btn-action { display:flex; align-items:center; gap:8px; padding:8px 16px; border-radius:var(--radius-sm); border:1px solid var(--border-strong); background:white; cursor:pointer; font-size:13px; font-weight:500; transition:all .2s; color:var(--text-secondary); text-decoration:none; }
+.btn-action:hover { border-color:var(--brand); color:var(--brand); background:var(--bg-info); }
+.btn-danger { color:var(--danger); border-color:var(--danger-border); }
+.btn-danger:hover { background:var(--bg-danger); border-color:var(--danger); }
+.attachment-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; }
+.file-name { font-size:13px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>

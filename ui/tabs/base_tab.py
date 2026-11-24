@@ -101,6 +101,7 @@ class BaseTreeTab(ttk.Frame):
                 else:
                     self._all_data.append((" ", uid, r.get("summary", ""),
                                            r.get("dtstart", ""), r.get("dtend", ""),
+                                           r.get("groups", ""),
                                            r.get("created_at", ""), r.get("updated_at", "")))
             self._rerender()
         except Exception:

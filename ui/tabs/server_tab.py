@@ -23,8 +23,9 @@ class ServerTab(ttk.Frame):
         self.server_instance = None
 
         self.ssl_enabled = tk.BooleanVar(value=self.settings_service.get_setting("ssl_enabled", "False") == "True")
-        self.ssl_cert_var = tk.StringVar(value=self.settings_service.get_setting("ssl_certfile", ""))
-        self.ssl_key_var = tk.StringVar(value=self.settings_service.get_setting("ssl_keyfile", ""))
+        from utils.cert_helper import normalize_cert_path
+        self.ssl_cert_var = tk.StringVar(value=normalize_cert_path(self.settings_service.get_setting("ssl_certfile", "")))
+        self.ssl_key_var = tk.StringVar(value=normalize_cert_path(self.settings_service.get_setting("ssl_keyfile", "")))
         self.webui_enabled = tk.BooleanVar(value=self.settings_service.get_setting("webui_enabled", "True") == "True")
 
         self.ftp_service = FTPService()
@@ -37,8 +38,9 @@ class ServerTab(ttk.Frame):
             self.port_entry.delete(0, tk.END)
             self.port_entry.insert(0, new_port)
         self.ssl_enabled.set(self.settings_service.get_setting("ssl_enabled", "False") == "True")
-        self.ssl_cert_var.set(self.settings_service.get_setting("ssl_certfile", ""))
-        self.ssl_key_var.set(self.settings_service.get_setting("ssl_keyfile", ""))
+        from utils.cert_helper import normalize_cert_path
+        self.ssl_cert_var.set(normalize_cert_path(self.settings_service.get_setting("ssl_certfile", "")))
+        self.ssl_key_var.set(normalize_cert_path(self.settings_service.get_setting("ssl_keyfile", "")))
         self.webui_enabled.set(self.settings_service.get_setting("webui_enabled", "True") == "True")
         self._update_info()
 
@@ -277,8 +279,10 @@ REST API 文档:
             self.settings_service.set_setting("default_port", self.port_entry.get())
 
         ssl_enabled = self.ssl_enabled.get()
-        ssl_cert = self.ssl_cert_var.get().strip()
-        ssl_key = self.ssl_key_var.get().strip()
+        from utils.cert_helper import normalize_cert_path
+        ssl_cert = normalize_cert_path(self.ssl_cert_var.get())
+        ssl_key = normalize_cert_path(self.ssl_key_var.get())
+        protocol = self.settings_service.get_setting("server_protocol", "http_https")
 
         self.settings_service.set_setting("ssl_enabled", str(ssl_enabled))
         self.settings_service.set_setting("ssl_certfile", ssl_cert)
@@ -294,6 +298,7 @@ REST API 文档:
             ssl_certfile=ssl_cert,
             ssl_keyfile=ssl_key,
             webui_enabled=self.webui_enabled.get(),
+            server_protocol=protocol,
         )
         try:
             self.server_instance = DaemonServer(cfg)
@@ -309,7 +314,9 @@ REST API 文档:
         self.stop_btn.config(state=tk.NORMAL)
         self.port_entry.config(state=tk.DISABLED)
         self._webui_cb.config(state=tk.DISABLED)
-        if ssl_enabled:
+        if protocol == 'https_only':
+            msg = f"服务器已启动 (仅 HTTPS:{int(port)+1})"
+        elif protocol == 'http_https' and ssl_enabled:
             msg = f"服务器已启动 (HTTP:{port} + HTTPS:{int(port)+1})"
         else:
             msg = f"服务器已启动 (HTTP:{port})"
@@ -320,7 +327,10 @@ REST API 文档:
     def stop_server(self):
         if self.server_instance:
             self.server_instance.stop()
+            if self.server_thread and self.server_thread.is_alive():
+                self.server_thread.join(timeout=10)
             self.server_instance = None
+            self.server_thread = None
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.port_entry.config(state=tk.NORMAL)

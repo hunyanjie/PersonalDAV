@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 from contextlib import asynccontextmanager
+from logging import getLogger
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +18,7 @@ from .files import files_router
 from .auth import AuthMiddleware
 from .logging import StructuredLogger
 from .mcp import create_mcp_app
+from utils.server_registry import server_instance
 
 
 def _unique_id(route: APIRoute) -> str:
@@ -63,14 +65,46 @@ UVICORN_LOG_CONFIG = {
 }
 
 
+def _resolve_db_path(cfg: "DaemonConfig") -> str:
+    """--data-dir 未显式指定 --db-path 时，把数据库放到数据目录下。"""
+    from .config import DEFAULT_DAEMON_DB
+    if cfg.data_dir and cfg.db_path == DEFAULT_DAEMON_DB:
+        return os.path.join(cfg.data_dir, "dav_data.db")
+    return cfg.db_path
+
+
 # Ensure database & WebDAV root exist before first request
 def _init_environment(cfg: "DaemonConfig"):
-    import sqlite3
-    os.makedirs(os.path.dirname(cfg.db_path) or ".", exist_ok=True)
+    db_path = _resolve_db_path(cfg)
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+
+    # 必须先固定数据库路径，再让任何服务/设置访问数据库。
+    from database.db_manager import Database
+    existing = Database._instance
+    if existing is None:
+        Database(db_path=db_path)
+    elif os.path.abspath(existing.db_path) != os.path.abspath(db_path):
+        getLogger("personaldavd").warning(
+            "数据库已初始化于 %s，忽略本次指定的 %s", existing.db_path, db_path
+        )
+
+    if cfg.data_dir:
+        os.makedirs(cfg.data_dir, exist_ok=True)
+        from services.settings_service import SettingsService
+        SettingsService().set_setting("data_dir", cfg.data_dir)
+
     if cfg.dav_root:
         os.makedirs(cfg.dav_root, exist_ok=True)
-    conn = sqlite3.connect(cfg.db_path)
-    conn.close()
+        from services.file_mount_service import FileMountService
+        name = os.path.basename(os.path.abspath(cfg.dav_root)) or "DAVStorage"
+        try:
+            FileMountService().add_mount(name, cfg.dav_root)
+        except ValueError:
+            pass  # 同名挂载已存在
+
+    # 同步回收站索引（此时 data_dir 已确定）
+    from services.trash_service import TrashService
+    TrashService.startup_init()
 
 
 @asynccontextmanager
@@ -99,18 +133,45 @@ def create_app(config: DaemonConfig | None = None) -> FastAPI:
     app.state.config = cfg
     app.add_middleware(AuthMiddleware)
 
-    if cfg.webui_enabled:
-        app.include_router(api_router, prefix="/api")
-        app.include_router(files_router, prefix="/api")
-        app.mount("/mcp", create_mcp_app(), name="mcp")
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request, exc):
+        import traceback
+        tb = traceback.format_exc()
+        logger = getLogger("personaldavd")
+        logger.error("未捕获异常 [%s %s]: %s\n%s", request.method, request.url.path, exc, tb)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"{type(exc).__name__}: {exc}", "path": request.url.path}
+        )
 
+    # REST API 与 MCP 独立于 Web 面板开关；关闭 WebUI 只影响 SPA 静态页面。
+    app.include_router(api_router, prefix="/api")
+    app.include_router(files_router, prefix="/api")
+    app.mount("/mcp", create_mcp_app(), name="mcp")
+
+    if cfg.webui_enabled:
         webui_dist = os.path.join(os.path.dirname(__file__), "..", "webui", "dist")
         if os.path.isdir(webui_dist):
             from fastapi.responses import FileResponse
-            app.mount("/assets", StaticFiles(directory=os.path.join(webui_dist, "assets")), name="spa_assets")
+            assets_dir = os.path.join(webui_dist, "assets")
+            if os.path.isdir(assets_dir):
+                app.mount("/assets", StaticFiles(directory=assets_dir), name="spa_assets")
+            icons_dir = os.path.join(webui_dist, "icons")
+            if os.path.isdir(icons_dir):
+                app.mount("/icons", StaticFiles(directory=icons_dir), name="spa_icons")
+
             @app.get("/", include_in_schema=False)
             async def serve_spa():
                 return FileResponse(os.path.join(webui_dist, "index.html"))
+
+            @app.get("/manifest.json", include_in_schema=False)
+            async def serve_manifest():
+                return FileResponse(os.path.join(webui_dist, "manifest.json"))
+
+            @app.get("/sw.js", include_in_schema=False)
+            async def serve_sw():
+                return FileResponse(os.path.join(webui_dist, "sw.js"))
 
     app.include_router(dav_router)
     return app
@@ -134,25 +195,30 @@ class DaemonServer:
         import time as _time
         import uvicorn
         import logging as _logging
+        server_instance[0] = self
         self.start_time = _time.time()
         self._servers.clear()
         self._secondary_threads.clear()
         self.ssl_port = None
+        self.http_port = None
+        protocol = getattr(self.config, 'server_protocol', 'http_https')
+        can_https = self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile
 
-        # Each server needs its own app instance to avoid lifespan/logger conflicts
-        app_http = create_app(self.config)
-        uv_config_http = uvicorn.Config(
-            app_http,
-            host=self.config.host,
-            port=self.config.port,
-            log_level=self.config.log_level.lower(),
-            log_config=UVICORN_LOG_CONFIG,
-        )
-        server_http = uvicorn.Server(uv_config_http)
-        self._servers.append(server_http)
+        if protocol != 'https_only':
+            app_http = create_app(self.config)
+            uv_config_http = uvicorn.Config(
+                app_http,
+                host=self.config.host,
+                port=self.config.port,
+                log_level=self.config.log_level.lower(),
+                log_config=UVICORN_LOG_CONFIG,
+            )
+            server_http = uvicorn.Server(uv_config_http)
+            self._servers.append(server_http)
+            self.http_port = self.config.port
 
         # HTTPS — if SSL enabled (port = config.port + 1)
-        if self.config.ssl_enabled and self.config.ssl_keyfile and self.config.ssl_certfile:
+        if protocol != 'http_only' and can_https:
             import os as _os
             if not _os.path.isfile(self.config.ssl_certfile):
                 _logging.warning("HTTPS 服务未启动: 证书文件不存在 (%s)", self.config.ssl_certfile)
@@ -174,7 +240,6 @@ class DaemonServer:
                 self._servers.append(server_https)
 
                 def _run_https(srv):
-                    """Wrap HTTPS server run with error logging."""
                     try:
                         srv.run()
                     except Exception as exc:
@@ -186,8 +251,15 @@ class DaemonServer:
                 self.ssl_port = ssl_port
                 _logging.info("HTTPS 服务已启动 (端口 %s)", ssl_port)
 
-        # Block on HTTP (headless mode), or just run (GUI background thread)
-        server_http.run()
+        if protocol == 'https_only':
+            if can_https:
+                _logging.info("仅 HTTPS 模式，HTTP 服务已跳过。请通过 https://127.0.0.1:%s 访问", self.ssl_port or (self.config.port + 1))
+            else:
+                _logging.warning("HTTPS 仅模式但 SSL 未正确配置，无法启动任何服务")
+            if self._servers:
+                self._servers[0].run()
+        else:
+            server_http.run()
 
     def stop(self):
         for srv in self._servers:
@@ -195,6 +267,8 @@ class DaemonServer:
         self._servers.clear()
         self._secondary_threads.clear()
         self.ssl_port = None
+        if server_instance[0] is self:
+            server_instance[0] = None
 
 
 def run_daemon(config: DaemonConfig | None = None):

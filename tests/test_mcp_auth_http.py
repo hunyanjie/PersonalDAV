@@ -1,6 +1,8 @@
 """测试 MCP 鉴权中间件 — 通过 HTTP 直打端点验证 401/403/200 + 日志落盘"""
 import sys, time, io
 sys.path.insert(0, '.')
+from tests._test_db import init_temp_db
+init_temp_db("pdav-mcp-auth-")
 import httpx
 from services.mcp_server import MCPServer
 from services.auth_service import AuthService

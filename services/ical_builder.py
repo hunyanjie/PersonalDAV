@@ -426,7 +426,11 @@ def _build_extra_fields(ev, data):
     if data.get('url', '').strip():
         ev.add('url').value = data['url'].strip()
     if data.get('categories'):
-        ev.add('categories').value = data['categories']
+        # 将逗号分隔的字符串解析为列表，供 vobject 处理
+        # vobject 会自动处理列表内的逗号转义，输出正确的 iCal 格式
+        cats = [c.strip() for c in str(data['categories']).split(',') if c.strip()]
+        if cats:
+            ev.add('categories').value = cats
     if data.get('force_reminder'):
         ev.add('x-force-reminder').value = "1"
     if data.get('sync_tz'):

@@ -47,6 +47,98 @@
             </div>
           </section>
 
+          <!-- Apple Device Config -->
+          <section v-if="activeSection === 'apple-config'" class="config-section">
+            <h3><Smartphone :size="20" /> Apple 设备一键配置</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>生成 .mobileconfig 文件，在 iPhone/iPad 上用 Safari 打开即可自动配置 CardDAV（联系人）和 CalDAV（日历）账户。</span>
+            </div>
+            <div class="form-grid">
+              <div class="form-item full">
+                <label>服务器地址</label>
+                <input v-model="appleConfigHost" placeholder="例如: dav.example.com" />
+                <p class="help-text" style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">填入外部可访问的域名或 IP 地址。留空使用当前主机名。</p>
+              </div>
+              <div class="form-item full" style="margin-top: 8px;">
+                <button class="btn-sm btn-primary" @click="downloadAppleConfig">
+                  <Download :size="16" /> 下载配置 (.mobileconfig)
+                </button>
+              </div>
+            </div>
+
+            <div class="apple-qr-card">
+              <div class="apple-qr-head">
+                <h4>手机扫码安装</h4>
+                <p>用 iPhone 或 iPad 的相机扫描下方二维码，然后在 Safari 中打开并安装描述文件。</p>
+              </div>
+              <div class="apple-qr-body">
+                <img v-if="appleConfigQr" :src="appleConfigQr" class="apple-qr-img" alt="Apple 配置二维码" />
+                <div v-else class="apple-qr-empty">点击“生成二维码”后显示</div>
+                <button class="btn-sm" @click="loadAppleConfigQr" :disabled="appleQrLoading">
+                  <RotateCw :size="14" :class="{ spinning: appleQrLoading }" /> {{ appleConfigQr ? '刷新二维码' : '生成二维码' }}
+                </button>
+              </div>
+              <p class="apple-qr-tip">二维码包含临时下载凭证，默认 5 分钟内有效。安装前请确保手机能访问上方服务器地址。</p>
+            </div>
+
+            <div class="apple-guide">
+              <h4>安装与信任步骤</h4>
+              <ol>
+                <li><strong>iPhone / iPad：</strong>扫描二维码 → 在 Safari 中打开 → 点击“允许”下载描述文件。</li>
+                <li>打开“设置 → 通用 → VPN 与设备管理”，找到 PersonalDAV 描述文件并点击安装。</li>
+                <li>如果使用 HTTPS 自签名证书：先在“设置 → 通用 → 关于本机 → 证书信任设置”中开启 PersonalDAV 证书信任。</li>
+                <li><strong>macOS：</strong>下载后用“系统设置 → 隐私与安全性”允许安装；自签名证书需在“钥匙串访问”中设为“始终信任”。</li>
+              </ol>
+            </div>
+          </section>
+
+          <!-- Reminder Presets -->
+          <section v-if="activeSection === 'reminders'" class="config-section">
+            <h3><Bell :size="20" /> 提醒设置</h3>
+            <div class="info-banner">
+              <Info :size="16" />
+              <span>这里维护新建日程时可快速选择的提醒预设。修改后请点击底部“保存提醒设置”。</span>
+            </div>
+
+            <div class="reminder-grid">
+              <div class="reminder-card">
+                <h4>常规事件预设</h4>
+                <div v-for="(p, i) in reminderPresets" :key="'p'+i" class="reminder-edit-row">
+                  <input v-model="reminderPresets[i]" placeholder="例如: 15分钟前" />
+                  <button class="btn-icon-danger" @click="reminderPresets.splice(i, 1)" title="删除">×</button>
+                </div>
+                <button class="btn-sm" @click="reminderPresets.push('15分钟前')"><Plus :size="14" /> 添加预设</button>
+              </div>
+
+              <div class="reminder-card">
+                <h4>全天事件预设</h4>
+                <div v-for="(p, i) in reminderAlldayPresets" :key="'ap'+i" class="reminder-edit-row">
+                  <input v-model="reminderAlldayPresets[i]" placeholder="例如: 当天上午9点" />
+                  <button class="btn-icon-danger" @click="reminderAlldayPresets.splice(i, 1)" title="删除">×</button>
+                </div>
+                <button class="btn-sm" @click="reminderAlldayPresets.push('当天上午9点')"><Plus :size="14" /> 添加预设</button>
+              </div>
+            </div>
+
+            <div class="reminder-grid" style="margin-top: 20px;">
+              <div class="reminder-card">
+                <h4>新建日程时自动勾选（常规）</h4>
+                <label v-for="opt in defaultReminderOptions" :key="opt" class="reminder-check-row">
+                  <input type="checkbox" :value="opt" v-model="defaultReminders" /> {{ opt }}
+                </label>
+              </div>
+              <div class="reminder-card">
+                <h4>新建日程时自动勾选（全天）</h4>
+                <label v-for="opt in defaultAlldayOptions" :key="opt" class="reminder-check-row">
+                  <input type="checkbox" :value="opt" v-model="defaultAlldayReminders" /> {{ opt }}
+                </label>
+              </div>
+            </div>
+
+            <button class="btn-sm btn-primary" style="margin-top: 24px;" @click="saveReminderSettings">保存提醒设置</button>
+          </section>
+
           <!-- Mount Settings -->
           <section v-if="activeSection === 'mounts'" class="config-section">
             <h3><FolderTree :size="20" /> 文件挂载点管理</h3>
@@ -58,11 +150,13 @@
               <div class="mount-header">
                 <span class="mh-name">挂载名称</span>
                 <span class="mh-path hide-mobile">文件系统路径</span>
+                <span class="mh-quota hide-mobile">空间上限</span>
                 <span class="mh-actions">操作</span>
               </div>
               <div v-for="m in mounts" :key="m.name" class="mount-row" :class="{ editing: editingMount === m.name }">
                 <span class="mh-name">{{ m.name }}</span>
                 <span class="mh-path hide-mobile">{{ m.path }}</span>
+                <span class="mh-quota hide-mobile">{{ m.quota_mb ? m.quota_mb + ' MB' : '设备容量' }}</span>
                 <span class="mh-actions">
                   <button class="btn-edit-sm" @click="startEditMount(m)"><Pencil :size="12" /> <span class="hide-mobile">编辑</span></button>
                   <button class="btn-edit-sm btn-danger" @click="doDeleteMount(m.name)"><Trash2 :size="12" /> <span class="hide-mobile">删除</span></button>
@@ -83,6 +177,11 @@
                   <div class="form-item full">
                     <label>文件系统路径</label>
                     <input v-model="mountForm.path" placeholder="例如: /home/user/Documents" />
+                  </div>
+                  <div class="form-item full">
+                    <label>空间上限（MB，留空表示使用设备容量）</label>
+                    <input v-model="mountForm.quota_mb" type="number" min="1" placeholder="例如: 10240，留空不限制" />
+                    <span class="form-hint">实际文件可以超过该上限，概览页会提示已超出分配空间。</span>
                   </div>
                 </div>
                 <div class="dialog-actions" style="display:flex; margin-top:16px; gap: 12px;">
@@ -121,39 +220,127 @@
                 </label>
               </div>
             </div>
+            <div style="margin-top: 16px; border-top: 1px solid var(--border-base); padding-top: 12px;">
+              <h4 style="font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">API 令牌 <span style="font-weight:400; font-size:12px; color:var(--text-muted);">可自定义权限和有效期</span></h4>
+
+              <!-- 令牌列表 -->
+              <div style="max-height: 250px; overflow-y: auto; padding-right: 8px;">
+                <div v-for="t in apiTokens" :key="t.id" class="setting-row" style="padding: 6px 0;">
+                  <div class="setting-info">
+                    <div v-if="editingTokenId === t.id" style="display:flex; gap:8px; align-items:center; margin-right:16px;">
+                      <input v-model="editingTokenNote" @keyup.enter="confirmUpdateTokenNote(t.id)" @keyup.esc="editingTokenId = null" style="flex:1; padding:4px 8px; border:1px solid var(--brand); border-radius:4px; font-size:13px;" ref="tokenNoteInput" />
+                      <button class="btn-edit-sm" @click="confirmUpdateTokenNote(t.id)">保存</button>
+                      <button class="btn-edit-sm" @click="editingTokenId = null">取消</button>
+                    </div>
+                    <div v-else style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:8px;">
+                      <span>{{ t.note || t.id.slice(0,8)+'…' }}</span>
+                      <button class="btn-inline-edit" @click="startEditTokenNote(t)" title="修改备注"><Pencil :size="12" /></button>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; flex-wrap:wrap;">
+                      <span v-for="s in t.scopes" :key="s" class="scope-badge">{{ s }}</span>
+                      <span v-if="t.expires_at" style="color:#e67e22;">到期 {{ t.expires_at.slice(0,10) }}</span>
+                      <span v-else style="color:#27ae60;">永不过期</span>
+                      <span v-if="t.last_used_at">上次使用 {{ t.last_used_at.slice(0,10) }}</span>
+                    </div>
+                  </div>
+                  <div class="setting-control">
+                    <button class="btn-sm btn-danger" @click="deleteApiToken(t.id)" style="border-color:#e74c3c; color:#e74c3c; padding:4px 10px; font-size:12px;">删除</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="!apiTokens.length" style="padding:8px 0; font-size:13px; color:var(--text-muted);">暂无 API 令牌</div>
+
+              <button class="btn-sm" @click="showCreateToken = true" style="margin-top:8px;">+ 创建令牌</button>
+
+              <!-- 创建令牌弹窗 -->
+              <transition name="modal">
+                <div v-if="showCreateToken" class="modal-overlay" @click.self="closeTokenDialog()">
+                  <div class="modal-dialog" style="max-width:560px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                      <h4 style="margin:0;">创建 API 令牌</h4>
+                      <button class="btn-sm" @click="closeTokenDialog()" style="border:none; background:transparent; font-size:20px; cursor:pointer;">×</button>
+                    </div>
+                    <div v-if="!newTokenResult">
+                      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">选择权限 (支持多选):</p>
+                      <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; max-height:240px; overflow-y:auto; margin-bottom:12px;">
+                        <label v-for="(label, scope) in scopeOptions" :key="scope" class="scope-checkbox">
+                          <input type="checkbox" :value="scope" v-model="tokenFormScopes" />
+                          <span>{{ label }}</span>
+                        </label>
+                      </div>
+                      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">备注</label>
+                          <input v-model="tokenFormNote" placeholder="例如: 给 opencode 用" style="width:200px; padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;" />
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">过期时间</label>
+                          <select v-model="tokenFormExpires" style="padding:6px; border:1px solid var(--border-base); border-radius:4px; font-size:13px;">
+                            <option value="">永不过期</option>
+                            <option value="7">7 天</option>
+                            <option value="30">30 天</option>
+                            <option value="90">90 天</option>
+                            <option value="365">1 年</option>
+                            <option value="custom">自定义</option>
+                          </select>
+                          <div v-if="tokenFormExpires==='custom'" style="display:flex; align-items:center; gap:4px;">
+                             <input v-model="tokenFormCustomDate" type="number" min="1" style="width:60px; padding:4px; border:1px solid var(--border-base); border-radius:4px;" />
+                             <span style="font-size:12px; color:var(--text-muted);">天</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button class="btn-sm btn-primary" @click="createApiToken" :disabled="!tokenFormScopes.length" style="background:var(--brand); color:white; border:none; padding:8px 20px;">生成令牌</button>
+                    </div>
+                    <div v-else>
+                      <p style="font-size:13px; color:var(--text-muted); margin-bottom:8px;">令牌已生成，请立即复制并保存。关闭弹窗后将无法再次查看。</p>
+                      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+                        <input :value="newTokenResult.token" readonly style="flex:1; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--brand); border-radius:4px; background:var(--bg-hover);" @click="$event.target.select()" />
+                        <button class="btn-sm" @click="copyToken(newTokenResult.token)" style="white-space:nowrap;">复制</button>
+                      </div>
+                      <p style="font-size:11px; color:var(--text-muted);">权限: {{ newTokenResult.scopes.join(', ') }}</p>
+                      <p v-if="newTokenResult.expires_at" style="font-size:11px; color:var(--text-muted);">到期: {{ newTokenResult.expires_at.slice(0,10) }}</p>
+                      <button class="btn-sm" @click="closeTokenDialog()" style="margin-top:8px;">关闭</button>
+                    </div>
+                  </div>
+                </div>
+              </transition>
+            </div>
           </section>
 
           <!-- App Settings -->
           <section v-if="activeSection === 'app'" class="config-section">
             <h3><Sliders :size="20" /> 可配置选项</h3>
             <div class="settings-list">
-              <div v-for="def in editableDefs" :key="def.key" class="setting-row">
-                <div class="setting-info">
-                  <div class="setting-label">{{ def.label }}</div>
-                  <div class="setting-key">{{ def.key }}</div>
-                </div>
-                <div class="setting-control">
-                  <template v-if="def.type === 'check'">
-                    <input type="checkbox" v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])" />
-                  </template>
-                  <template v-else-if="def.type === 'combo'">
-                    <select v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])">
-                      <option v-for="opt in def.options" :key="opt.val" :value="opt.val">{{ opt.text }}</option>
-                    </select>
-                  </template>
-                  <template v-else>
-                    <div class="input-group">
-                      <input v-if="editingKey === def.key" v-model="editValue" :type="def.inputType || 'text'" class="edit-input" />
-                      <span v-else class="val-text">{{ settings[def.key] }}</span>
-                      <button v-if="editingKey === def.key" class="btn-save-sm" @click="confirmUpdate(def)">保存</button>
-                      <button v-if="editingKey === def.key" class="btn-cancel-sm" @click="editingKey = null">取消</button>
-                      <button v-else class="btn-edit-sm" @click="startEdit(def.key, settings[def.key])">修改</button>
-                    </div>
-                  </template>
+              <div v-for="def in editableDefs" :key="def.key">
+                <div v-if="!def.showIf || def.showIf(settings)" class="setting-row">
+                  <div class="setting-info">
+                    <div class="setting-label">{{ def.label }}</div>
+                    <div class="setting-key">{{ def.key }}</div>
+                  </div>
+                  <div class="setting-control">
+                    <template v-if="def.type === 'check'">
+                      <input type="checkbox" v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])" />
+                    </template>
+                    <template v-else-if="def.type === 'combo'">
+                      <select v-model="settings[def.key]" @change="doUpdate(def.key, settings[def.key])">
+                        <option v-for="opt in def.options" :key="opt.val" :value="opt.val">{{ opt.text }}</option>
+                      </select>
+                    </template>
+                    <template v-else>
+                      <div class="input-group">
+                        <input v-if="editingKey === def.key" v-model="editValue" :type="def.inputType || 'text'" class="edit-input" />
+                        <span v-else class="val-text">{{ settings[def.key] }}</span>
+                        <button v-if="editingKey === def.key" class="btn-save-sm" @click="confirmUpdate(def)">保存</button>
+                        <button v-if="editingKey === def.key" class="btn-cancel-sm" @click="editingKey = null">取消</button>
+                        <button v-else class="btn-edit-sm" @click="startEdit(def.key, settings[def.key])">修改</button>
+                      </div>
+                    </template>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
+
 
           <!-- Auth Logs -->
           <section v-if="activeSection === 'logs'" class="config-section">
@@ -264,7 +451,7 @@
 import { 
   Server, Sliders, FolderTree, Bot, ShieldCheck, 
   Terminal, Palette, Info, Pencil, Trash2, Plus, 
-  RotateCw, RotateCcw
+  RotateCw, RotateCcw, Download, Smartphone, Bell
 } from 'lucide-vue-next'
 import api from '../api.js'
 
@@ -290,13 +477,25 @@ const SETTING_DEFS = [
   { key: 'ftp_encoding', label: 'FTP 文件编码', type: 'combo', options: [
     { text: 'UTF-8', val: 'utf-8' }, { text: 'GBK (中文)', val: 'gbk' }, { text: 'Big5', val: 'big5' }
   ]},
+  { key: 'office_preview_mode', label: 'Office 文档预览', type: 'combo', options: [
+    { text: '关闭', val: 'off' }, { text: 'LibreOffice（推荐）', val: 'libreoffice' },
+    { text: 'ONLYOFFICE（Docker）', val: 'onlyoffice' }, { text: '微软 Office Online（需公网 IP）', val: 'ms_online' },
+    { text: '每次询问', val: 'ask' }
+  ]},
+  { key: 'trash_retention_days', label: '回收站保留天数', type: 'combo', options: [
+    { text: '1 天', val: '1' }, { text: '3 天', val: '3' }, { text: '5 天', val: '5' },
+    { text: '7 天', val: '7' }, { text: '14 天', val: '14' }, { text: '30 天（推荐）', val: '30' },
+    { text: '自定义', val: 'custom' }
+  ]},
+  { key: 'trash_retention_custom', label: '自定义保留天数', type: 'text', inputType: 'number', min: 1, showIf: s => s.trash_retention_days === 'custom' },
+  { key: 'onlyoffice_host', label: 'ONLYOFFICE 服务器地址', type: 'text', placeholder: 'http://192.168.1.100:8081' },
 ]
 
 export default {
   components: { 
     Server, Sliders, FolderTree, Bot, ShieldCheck, 
     Terminal, Palette, Info, Pencil, Trash2, Plus, 
-    RotateCw, RotateCcw
+    RotateCw, RotateCcw, Download, Smartphone
   },
   data: () => ({
     activeSection: 'server',
@@ -304,6 +503,8 @@ export default {
       { id: 'server', label: '核心配置', iconComp: 'Server' },
       { id: 'app', label: '通用选项', iconComp: 'Sliders' },
       { id: 'mounts', label: '文件挂载', iconComp: 'FolderTree' },
+      { id: 'reminders', label: '提醒设置', iconComp: 'Bell' },
+      { id: 'apple-config', label: 'Apple 配置', iconComp: 'Smartphone' },
       { id: 'mcp', label: 'AI 服务', iconComp: 'Bot' },
       { id: 'logs', label: '安全审计', iconComp: 'ShieldCheck' },
       { id: 'syslogs', label: '系统日志', iconComp: 'Terminal' },
@@ -313,6 +514,26 @@ export default {
     settings: {},
     authLogs: [],
     systemLogs: [],
+    apiTokens: [],
+    editingTokenId: null,
+    editingTokenNote: '',
+    showCreateToken: false,
+    tokenFormScopes: [],
+    tokenFormNote: '',
+    tokenFormExpires: '',
+    tokenFormCustomDate: '',
+    newTokenResult: null,
+    scopeOptions: {
+      'contacts:read':'联系人(只读)','contacts:create':'联系人(创建)','contacts:update':'联系人(编辑)','contacts:delete':'联系人(删除)',
+      'events:read':'日程(只读)','events:create':'日程(创建)','events:update':'日程(编辑)','events:delete':'日程(删除)',
+      'files:read':'文件(只读)','files:upload':'文件(上传)','files:rename':'文件(重命名)','files:delete':'文件(删除)',
+      'files:manage':'文件挂载点管理',
+      'dav:read':'DAV(只读)','dav:write':'DAV(读写)',
+      'settings:read':'设置(只读)','settings:write':'设置(编辑)',
+      'trash:read':'回收站(只读)','trash:write':'回收站(还原/清空)',
+      'logs:read':'日志(只读)','stats:read':'统计(只读)',
+      'tokens:manage':'API 令牌管理',
+    },
     editingKey: null,
     editValue: '',
     editableDefs: SETTING_DEFS,
@@ -320,7 +541,16 @@ export default {
     mounts: [],
     showMountForm: false,
     editingMount: null,
-    mountForm: { name: '', path: '' },
+    mountForm: { name: '', path: '', quota_mb: '' },
+    appleConfigHost: window.location.hostname || 'localhost',
+    appleConfigQr: '',
+    appleQrLoading: false,
+    reminderPresets: [],
+    reminderAlldayPresets: [],
+    defaultReminders: [],
+    defaultAlldayReminders: [],
+    defaultReminderOptions: ["日程发生时", "5分钟前", "15分钟前", "30分钟前", "1小时前", "2小时前", "1天前", "2天前", "7天前"],
+    defaultAlldayOptions: ["当天上午9点", "1天前上午9点", "2天前上午9点", "3天前上午9点", "5天前上午9点", "7天前上午9点"],
     presets: PRESETS,
     themeH: 210,
     themeS: 88,
@@ -349,6 +579,7 @@ export default {
     this.loadTheme()
     await this.load()
     await this.loadMounts()
+    this.loadApiTokens()
     this._logTimer = setInterval(() => {
       if (this.activeSection === 'syslogs') this.loadSystemLogs()
     }, 5000)
@@ -366,15 +597,95 @@ export default {
         const processed = { ...raw }
         this.editableDefs.forEach(d => {
           if (d.type === 'check') processed[d.key] = raw[d.key] === 'True'
+          else if (d.type === 'number') processed[d.key] = parseInt(raw[d.key]) || 0
         })
         this.settings = processed
+        this.loadReminderSettings(raw)
       } catch(e) {}
       await this.loadLogs()
       await this.loadSystemLogs()
       this.loading = false
     },
+    loadReminderSettings(raw) {
+      const parse = v => String(v || '').split(';').map(s => s.trim()).filter(Boolean)
+      this.reminderPresets = parse(raw.preset_reminders)
+      this.reminderAlldayPresets = parse(raw.preset_allday_reminders)
+      this.defaultReminders = parse(raw.default_reminders)
+      this.defaultAlldayReminders = parse(raw.default_allday_reminders)
+    },
+    async saveReminderSettings() {
+      const join = arr => arr.map(s => String(s || '').trim()).filter(Boolean).join(';')
+      try {
+        await api.updateSetting('preset_reminders', join(this.reminderPresets))
+        await api.updateSetting('preset_allday_reminders', join(this.reminderAlldayPresets))
+        await api.updateSetting('default_reminders', join(this.defaultReminders))
+        await api.updateSetting('default_allday_reminders', join(this.defaultAlldayReminders))
+        window.showToast('提醒设置已保存', 'success')
+      } catch(e) { window.showToast('保存失败：' + (e.message || e), 'error') }
+    },
     async loadLogs() {
       try { this.authLogs = await api.authLogs(30) } catch(e) {}
+    },
+    async loadApiTokens() {
+      try {
+        this.apiTokens = await api.listApiTokens()
+      } catch(e) { /* not critical */ }
+    },
+    async createApiToken() {
+      const scopes = this.tokenFormScopes
+      if (!scopes.length) return window.showToast('请至少选择一个权限', 'warning')
+      let expires_at = ''
+      if (this.tokenFormExpires === 'custom') {
+        if (!this.tokenFormCustomDate) return window.showToast('请选择自定义过期日期', 'warning')
+        expires_at = this.tokenFormCustomDate + 'T23:59:59'
+      } else if (this.tokenFormExpires) {
+        const d = new Date()
+        d.setDate(d.getDate() + parseInt(this.tokenFormExpires))
+        expires_at = d.toISOString().slice(0, 19)
+      }
+      try {
+        const res = await api.createApiToken(this.tokenFormScopes, this.tokenFormNote, expires_at)
+        this.newTokenResult = res
+        this.loadApiTokens()
+      } catch(e) { window.showToast('创建失败: ' + (e.message || e), 'error') }
+    },
+    async deleteApiToken(id) {
+      if (!await window.showConfirm({ message: '确定删除此令牌?', type: 'danger' })) return
+      try {
+        await api.deleteApiToken(id)
+        this.loadApiTokens()
+        window.showToast('令牌已删除', 'success')
+      } catch(e) { window.showToast('删除失败: ' + (e.message || e), 'error') }
+    },
+    startEditTokenNote(t) {
+      this.editingTokenId = t.id
+      this.editingTokenNote = t.note || ''
+      this.$nextTick(() => {
+        if (this.$refs.tokenNoteInput && this.$refs.tokenNoteInput[0]) this.$refs.tokenNoteInput[0].focus()
+      })
+    },
+    async confirmUpdateTokenNote(id) {
+      try {
+        await api.updateTokenNote(id, this.editingTokenNote)
+        this.editingTokenId = null
+        this.loadApiTokens()
+        window.showToast('备注已更新', 'success')
+      } catch(e) { window.showToast('更新失败: ' + (e.message || e), 'error') }
+    },
+    copyToken(raw) {
+      navigator.clipboard.writeText(raw).then(() => {
+        window.showToast('已复制', 'success')
+      }).catch(() => {
+        window.showToast('复制失败', 'error')
+      })
+    },
+    closeTokenDialog() {
+      this.showCreateToken = false
+      this.newTokenResult = null
+      this.tokenFormScopes = []
+      this.tokenFormNote = ''
+      this.tokenFormExpires = ''
+      this.tokenFormCustomDate = ''
     },
     async loadSystemLogs() {
       try { 
@@ -414,22 +725,23 @@ export default {
     },
     showAddMountForm() {
       this.editingMount = null
-      this.mountForm = { name: '', path: '' }
+      this.mountForm = { name: '', path: '', quota_mb: '' }
       this.showMountForm = true
     },
     startEditMount(m) {
       this.editingMount = m.name
-      this.mountForm = { name: m.name, path: m.path }
+      this.mountForm = { name: m.name, path: m.path, quota_mb: m.quota_mb || '' }
       this.showMountForm = true
     },
     async saveMount() {
-      const { name, path } = this.mountForm
+      const { name, path, quota_mb } = this.mountForm
       if (!name || !path) return
+      const quota = quota_mb === '' || quota_mb === null ? null : Number(quota_mb)
       try {
         if (this.editingMount) {
-          await api.updateMount(this.editingMount, name, path)
+          await api.updateMount(this.editingMount, name, path, quota)
         } else {
-          await api.addMount(name, path)
+          await api.addMount(name, path, quota)
         }
         this.showMountForm = false
         this.editingMount = null
@@ -501,6 +813,25 @@ export default {
       try {
         await api.updateSetting('theme_hsl', '')
       } catch (e) {}
+    },
+    async downloadAppleConfig() {
+      try {
+        const host = this.appleConfigHost || window.location.hostname || 'localhost'
+        await api.downloadAppleConfig(host)
+        window.showToast('配置已下载，在 iPhone/iPad 上用 Safari 打开', 'success')
+      } catch(e) { window.showToast('下载失败：' + (e.message || e), 'error') }
+    },
+    async loadAppleConfigQr() {
+      this.appleQrLoading = true
+      try {
+        const host = this.appleConfigHost || window.location.hostname || 'localhost'
+        if (this.appleConfigQr) URL.revokeObjectURL(this.appleConfigQr)
+        this.appleConfigQr = await api.appleConfigQr(host)
+      } catch(e) {
+        window.showToast('二维码生成失败：' + (e.message || e), 'error')
+      } finally {
+        this.appleQrLoading = false
+      }
     },
   },
 }
@@ -576,7 +907,9 @@ export default {
 .mount-row.editing { background: var(--bg-info); }
 .mh-name { width: 30%; font-weight: 600; color: var(--text-primary); }
 .mh-path { flex: 1; color: var(--text-secondary); font-family: monospace; font-size: 13px; opacity: 0.8; }
+.mh-quota { width: 110px; text-align: right; color: var(--text-secondary); font-size: 13px; padding-right: 16px; }
 .mh-actions { width: 160px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
+.form-hint { display: block; margin-top: 6px; color: var(--text-tertiary); font-size: 12px; }
 
 .mount-form { margin-top: 24px; padding: 28px; background: #fafafa; border-radius: var(--radius-lg); border: 1px solid var(--border-base); }
 .mount-form h4 { margin: 0 0 20px; font-size: 16px; }
@@ -646,5 +979,50 @@ export default {
 @media (max-width: 400px) {
   .nav-btn { font-size: 11px; padding: 6px 8px; gap: 6px; }
   .nav-btn svg { width: 14px; height: 14px; }
+}
+.scope-badge { display:inline-block; font-size:10px; background:var(--brand); color:white; padding:1px 6px; border-radius:3px; font-weight:600; }
+.scope-checkbox { display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; padding:4px; }
+.scope-checkbox:hover { background:var(--bg-hover); border-radius:4px; }
+.modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
+.modal-dialog { background:white; border-radius:12px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.15); max-width:560px; width:90%; max-height:80vh; overflow-y:auto; }
+.btn-primary { background:var(--brand); color:white; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; transition:.2s; }
+.btn-primary:hover { opacity:0.85; }
+.btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
+.btn-inline-edit { background:transparent; border:none; color:var(--brand); cursor:pointer; padding:2px; display:inline-flex; align-items:center; opacity:0.6; transition:.2s; }
+.btn-inline-edit:hover { opacity:1; background:var(--bg-hover); border-radius:4px; }
+
+/* Modal Transitions */
+.modal-enter-active .modal-overlay { transition: opacity 0.2s ease; }
+.modal-enter-active .modal-dialog { transition: transform 0.25s, opacity 0.2s ease; }
+.modal-leave-active .modal-overlay { transition: opacity 0.15s ease; }
+.modal-leave-active .modal-dialog { transition: transform 0.15s ease, opacity 0.15s ease; }
+.modal-enter-from .modal-overlay { opacity: 0; }
+.modal-enter-from .modal-dialog { opacity: 0; transform: scale(0.95) }
+.modal-leave-to .modal-overlay { opacity: 0; }
+.modal-leave-to .modal-dialog { opacity: 0; transform: scale(0.95); }
+
+/* Reminder presets */
+.reminder-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.reminder-card { background: #fafafa; border: 1px solid var(--border-base); border-radius: var(--radius-md); padding: 18px; }
+.reminder-card h4 { margin: 0 0 14px; font-size: 15px; color: var(--text-primary); }
+.reminder-edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.reminder-edit-row input { flex: 1; padding: 8px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-sm); font-size: 14px; background: white; }
+.btn-icon-danger { width: 30px; height: 30px; border: 1px solid var(--border-input); background: white; border-radius: var(--radius-sm); color: var(--danger, #d33); cursor: pointer; font-size: 18px; line-height: 1; }
+.btn-icon-danger:hover { background: #fff1f0; border-color: var(--danger, #d33); }
+.reminder-check-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; color: var(--text-primary); cursor: pointer; }
+
+/* Apple config QR and guide */
+.apple-qr-card { margin-top: 28px; padding: 20px; border: 1px solid var(--border-base); border-radius: var(--radius-md); background: #fafafa; }
+.apple-qr-head h4, .apple-guide h4 { margin: 0 0 6px; font-size: 15px; color: var(--text-primary); }
+.apple-qr-head p { margin: 0 0 16px; font-size: 13px; color: var(--text-secondary); }
+.apple-qr-body { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.apple-qr-img { width: 180px; height: 180px; background: white; border-radius: 8px; padding: 8px; border: 1px solid var(--border-base); }
+.apple-qr-empty { width: 180px; height: 180px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-tertiary); font-size: 13px; background: white; border: 1px dashed var(--border-input); border-radius: 8px; }
+.apple-qr-tip { margin: 14px 0 0; font-size: 12px; color: var(--text-tertiary); }
+.apple-guide { margin-top: 20px; padding: 20px; border: 1px solid var(--border-base); border-radius: var(--radius-md); }
+.apple-guide ol { margin: 10px 0 0; padding-left: 22px; color: var(--text-secondary); font-size: 13px; line-height: 1.9; }
+
+@media (max-width: 768px) {
+  .reminder-grid { grid-template-columns: 1fr; }
 }
 </style>

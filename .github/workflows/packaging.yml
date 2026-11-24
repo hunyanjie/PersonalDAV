@@ -4,11 +4,21 @@ on:
   push:
     branches:
       - master
+      - '3.4'
+      - 'release/**'
     tags:
       - 'v*'
   pull_request:
     branches:
       - master
+      - '3.4'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: '构建 EXE 供验收（不创建 Release）'
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -35,8 +45,11 @@ jobs:
 
   build:
     needs: test
-    if: github.ref_type == 'tag'
+    # 标签：正式构建；手动触发：只构建验收包，不发布。
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.package == 'true')
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python 3.12
@@ -52,28 +65,98 @@ jobs:
       uses: crazy-max/ghaction-upx@v3
       with:
         install-only: true
-    - name: Set version
+    - name: Resolve and verify version
+      id: version
       shell: pwsh
       run: |
-        $v = "${{ github.ref_name }}".Substring(1)
-        echo "VERSION=$v" >> $env:GITHUB_ENV
+        $appVersion = (python -c "import config; print(config.SOFTWARE_VERSION)").Trim()
+        if ("${{ github.ref_type }}" -eq "tag") {
+          $version = "${{ github.ref_name }}".Substring(1)
+          if ($appVersion -ne $version) {
+            throw "标签版本 v$version 与 config.py SOFTWARE_VERSION=$appVersion 不一致"
+          }
+        } else {
+          $version = "$appVersion-dev-" + "${{ github.sha }}".Substring(0, 7)
+        }
+        "version=$version" >> $env:GITHUB_OUTPUT
+        "VERSION=$version" >> $env:GITHUB_ENV
     - name: Package to EXE
       shell: pwsh
       run: |
         $tkdnd = & python -c "import tkinterdnd2,os;print(os.path.join(os.path.dirname(tkinterdnd2.__file__),'tkdnd','win-x64'))"
-        & pyinstaller --onefile --clean -w --name "PersonalDAV-v$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --hidden-import tkinterdnd2 main.py
+        & pyinstaller --onefile --clean -w --name "PersonalDAV-v$env:VERSION" --add-data "$tkdnd;tkinterdnd2/tkdnd/win-x64" --add-data "webui/dist;webui/dist" --hidden-import tkinterdnd2 --hidden-import qrcode.image.svg --hidden-import py7zr --hidden-import rarfile --hidden-import pyzipper main.py
+    - name: Smoke test packaged EXE
+      shell: pwsh
+      run: |
+        $exe = (Resolve-Path "dist/PersonalDAV-v$env:VERSION.exe").Path
+        $dataDir = Join-Path $env:RUNNER_TEMP "pdav-smoke-$env:GITHUB_RUN_ID"
+        New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+        $proc = Start-Process -FilePath $exe -ArgumentList @('--headless','--host','127.0.0.1','--port','18099','--data-dir',$dataDir) -PassThru
+        try {
+          $healthy = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 1
+            if ($proc.HasExited) {
+              throw "EXE 提前退出，退出码 $($proc.ExitCode)"
+            }
+            try {
+              $health = Invoke-WebRequest -Uri 'http://127.0.0.1:18099/api/health' -UseBasicParsing -TimeoutSec 2
+              if ($health.StatusCode -eq 200) {
+                $healthy = $true
+                break
+              }
+            } catch {}
+          }
+          if (-not $healthy) {
+            throw "EXE 60 秒内没有通过 /api/health"
+          }
+          $root = Invoke-WebRequest -Uri 'http://127.0.0.1:18099/' -UseBasicParsing -TimeoutSec 5
+          if ($root.StatusCode -ne 200 -or $root.Content -notmatch 'assets/') {
+            throw "EXE 没有提供 WebUI 首页或静态资源"
+          }
+          $match = [regex]::Match($root.Content, 'src="([^"]+\.js)"')
+          if (-not $match.Success) {
+            throw "WebUI 首页没有引用 JS 资源"
+          }
+          $asset = Invoke-WebRequest -Uri ("http://127.0.0.1:18099" + $match.Groups[1].Value) -UseBasicParsing -TimeoutSec 5
+          if ($asset.StatusCode -ne 200) {
+            throw "WebUI JS 资源返回 $($asset.StatusCode)"
+          }
+          Write-Host "EXE 冒烟测试通过：$exe"
+        } finally {
+          if (-not $proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+        }
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: PersonalDAV-${{ env.VERSION }}.exe
-        path: dist/PersonalDAV-v${{ env.VERSION }}.exe
+        name: PersonalDAV-exe
+        path: dist/PersonalDAV-v${{ steps.version.outputs.version }}.exe
+        if-no-files-found: error
+        retention-days: 14
+
+  release:
+    needs: [test, build]
+    if: github.ref_type == 'tag'
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download packaged EXE
+      uses: actions/download-artifact@v4
+      with:
+        name: PersonalDAV-exe
+        path: artifact
     - name: Extract release notes from CHANGELOG.md
       shell: pwsh
       run: python .github/scripts/extract_release_notes.py $env:VERSION
-    - name: Create Release
+    - name: Create Draft Release
       uses: softprops/action-gh-release@v2
       with:
         name: PersonalDAV v${{ env.VERSION }}
         body_path: release_notes.md
-        files: dist/PersonalDAV-v${{ env.VERSION }}.exe
+        files: artifact/PersonalDAV-v${{ env.VERSION }}.exe
         draft: true
+        prerelease: ${{ contains(github.ref_name, '-rc') }}
