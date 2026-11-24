@@ -37,7 +37,7 @@
 
 > v3.3 变动：WebUI 全端企业级交互升级（Toast/Modal/骨架屏/FLIP/Skeleton/EmptyState/Micro-interactions/圆环图/右滑操作）。新增 `utils/cert_helper.py`（SSL 一键证书生成）。新增 `webui/src/components/Toast.vue` / `ModalConfirm.vue` / `EmptyState.vue` / `SkeletonCard.vue`。`personaldavd/daemon.py` 支持双端口 HTTPS+HTTP。FTP 配置从服务器页迁移至设置页并使用 SettingDef。asyncio 日志噪音两处抑制。
 
-> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。WebUI 增加联系人分组筛选、日历分类筛选、提醒预设与默认提醒、重复日程例外日期；Apple 配置增加扫码安装与安装引导，并使用真实协议/端口；回收站支持自定义保留天数。WebUI 文件管理增加文本高亮编辑、压缩包浏览/密码缓存、联系人/日程卡片编辑；挂载点支持空间上限，概览圆环区分数据/其他/剩余空间。
+> v3.4 变动：新增 `services/api_scopes.py` 统一令牌作用域与路由权限映射，API 令牌不再能越权访问设置/令牌/回收站；设置接口对密码哈希、密钥等敏感项脱敏。新增 `services/stats_service.py`（多挂载 + 回收站统计 + 较昨日趋势）。无头模式 `--db-path` / `--data-dir` / `--dav-root` 真正生效，回收站与日历附件跟随 `data_dir`。MCP `server_start/server_status` 改用统一 `DaemonServer` 并返回真实端口。修复新库 FTS5 建表顺序与事件搜索列不匹配。WebUI 增加联系人分组筛选、日历分类筛选、提醒预设与默认提醒、重复日程例外日期；Apple 配置增加扫码安装与安装引导，并使用真实协议/端口；回收站支持自定义保留天数。WebUI 文件管理增加文本高亮编辑、zip/tar/7z/rar 压缩包浏览（AES zip 使用 pyzipper，密码缓存在 sessionStorage）、联系人/日程卡片编辑；挂载点支持空间上限，概览圆环区分数据/其他/剩余空间，中心显示 PersonalDAV 数据占用率。日历增加回到今天和日期头 NaN 修复，CI 拆分为测试、手动验收包与标签发布三段。
 
 ---
 
@@ -197,6 +197,8 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 无控制台（`-w`）打包时 `sys.stdout` / `sys.stderr` 为 `None`，`main.py` 启动时会把它们重定向到 `os.devnull`，避免 logging/uvicorn 写入空流导致进程以退出码 1 结束。
 
 关闭 Web 面板（`webui_enabled=False`）只影响 SPA 静态页面，REST API、MCP 与 DAV 仍正常挂载。
+
+压缩包能力依赖 `py7zr`（7z）、`rarfile`（rar 结构与预览）和 `pyzipper`（AES zip）；RAR 解压或提取还需要系统安装 `unrar`，打包 EXE 不内置该外部工具。Office 预览的 LibreOffice / ONLYOFFICE 模式同样依赖外部程序或服务。
 
 #### CI 与发版流程
 
@@ -1821,7 +1823,7 @@ python -m services.mcp_server --port 8100
 pytest tests/ -v -q
 ```
 
-### 测试结构（共 52 项，325 个子测试）
+### 测试结构（共 52 项，325 个子测试；不含 MCP/DAV/无头脚本）
 
 | 文件 | 测试内容                                                                       |
 |------|----------------------------------------------------------------------------|
@@ -1836,6 +1838,9 @@ pytest tests/ -v -q
 | `test_api_scopes.py` | 令牌作用域映射、未分类 API fail-closed、MCP 路径隔离、敏感设置脱敏 (v3.4)                        |
 | `test_trash_retention.py` | 回收站固定/自定义保留天数、非法值回退、按自定义天数清理 (v3.4)                                |
 | `test_webui_parity.py` | 联系人分组筛选、重复日程 `EXDATE` 往返、Apple 配置实际端口与二维码生成 (v3.4)                        |
+| `test_file_content.py` | 文本读写往返、二进制文件拒绝、zip 内部结构浏览与文本预览 (v3.4)                                |
+| `test_file_mount_service.py` | 多挂载点根目录解析、单挂载点判断、`RLock` 重入回归 (v3.4)                                      |
+| `test_stats_service.py` | 多挂载点统计、配额与超限标记、容量/其他/剩余字段 (v3.4)                                        |
 | `_run_headless_check.py` | 无头模式 `--db-path/--data-dir/--dav-root`、回收站/附件目录、FTS5 新建与搜索 (v3.4)                |
 
 ### 运行全部测试
