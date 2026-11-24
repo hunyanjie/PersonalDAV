@@ -220,6 +220,7 @@ pyinstaller --onefile --clean -w --name PersonalDAV `
 | SSL 相对路径启动报错 | `normalize_cert_path()` 统一转绝对路径；仅在 HTTPS 启用时自动续期 |
 | SSL 设置保存后像卡死 | 先销毁设置窗口再执行保存回调，避免确认框被 `grab_set` 挡住 |
 | 加密压缩包密码窗口反复弹出 | AES zip 改用 pyzipper 读取；错误密码只更新提示，不再自动重新弹窗；密码框按钮改为右对齐 |
+| 日程视图标题 NaN/周 undefined | 日期头把 ISO 日期误传给只接受 iCal 紧凑格式的 `icalDateToObj`，改用原生 `new Date(dateStr + 'T00:00:00')` 并校验有效性 |
 | 多挂载点打开文件管理卡死 | `FileMountService` 实例锁改为 `RLock`；`get_root_entries()` / `resolve()` 在持锁时调用 `is_single_mount` 不再自锁 |
 | 标签切换期间重入事件循环 | `FilesTab.update_ui_state()` 不再调用 `self.update()`，只刷新布局 |
 | 概览空间占用显示 100% | `StatsService._disk_total_mb()` 跳过已删除的挂载点；前端移除 `disk_total_mb` 缺失时按 500 MB 计算的兜底，容量未知时显示 `—` |
